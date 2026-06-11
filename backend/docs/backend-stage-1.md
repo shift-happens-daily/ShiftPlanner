@@ -1,5 +1,3 @@
-Ниже можно вставить в `docs/backend-stage-1.md` или в README.
-
 # Backend Stage 1 Documentation
 
 ## Goal

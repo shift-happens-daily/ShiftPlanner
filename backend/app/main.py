@@ -1,17 +1,28 @@
+import os
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from dotenv import load_dotenv
 
 from app.api import auth, companies, positions, employees, schedule, reports
+
+load_dotenv()
+
+frontend_origins = [
+    origin.strip()
+    for origin in os.getenv("FRONTEND_ORIGINS", "http://localhost:5173").split(",")
+    if origin.strip()
+]
 
 app = FastAPI(
     title="ShiftPlanner API",
     version="0.1.0",
-    description="REST API for ShiftPlanner"
+    description="Stage 1 mock REST API for ShiftPlanner",
 )
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173"],
+    allow_origins=frontend_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
