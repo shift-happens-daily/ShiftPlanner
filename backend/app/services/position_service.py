@@ -3,8 +3,8 @@ from app.schemas.position import PositionCreate, PositionRead
 
 
 def list_positions() -> list[PositionRead]:
-    return mock_db.list_positions()
+    return [PositionRead(**position) for position in mock_db.list_positions()]
 
 
 def create_position(payload: PositionCreate) -> PositionRead:
-    return mock_db.create_position(payload)
+    return PositionRead(**mock_db.create_position(payload))

@@ -1,10 +1,12 @@
 import os
 
-from fastapi import FastAPI
-from fastapi.middleware.cors import CORSMiddleware
 from dotenv import load_dotenv
+from fastapi import FastAPI, Request
+from fastapi.exceptions import RequestValidationError
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 
-from app.api import auth, companies, positions, employees, schedule, reports
+from app.api import auth, companies, employees, positions, reports, schedule
 
 load_dotenv()
 
@@ -16,8 +18,8 @@ frontend_origins = [
 
 app = FastAPI(
     title="ShiftPlanner API",
-    version="0.1.0",
-    description="Stage 1 mock REST API for ShiftPlanner",
+    version="0.2.0",
+    description="Stage 2 mock REST API for ShiftPlanner with JWT auth and in-memory business logic.",
 )
 
 app.add_middleware(
@@ -27,6 +29,17 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+@app.exception_handler(RequestValidationError)
+async def validation_exception_handler(_: Request, exc: RequestValidationError) -> JSONResponse:
+    normalized_errors = []
+    for error in exc.errors():
+        location = [str(item) for item in error["loc"] if item != "body"]
+        field = ".".join(location) if location else "body"
+        normalized_errors.append({"field": field, "message": error["msg"]})
+    return JSONResponse(status_code=422, content={"detail": normalized_errors})
+
 
 app.include_router(auth.router, prefix="/auth", tags=["Auth"])
 app.include_router(companies.router, prefix="/companies", tags=["Companies"])

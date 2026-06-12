@@ -5,6 +5,7 @@ from app.services import (
     position_service,
     report_service,
     schedule_service,
+    security,
 )
 
 __all__ = [
@@ -14,4 +15,5 @@ __all__ = [
     "position_service",
     "report_service",
     "schedule_service",
+    "security",
 ]
