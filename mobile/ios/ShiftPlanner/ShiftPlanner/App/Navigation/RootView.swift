@@ -11,14 +11,11 @@ struct RootView: View {
     
     var body: some View {
         if let user = authViewModel.currentUser {
-            MainView(
-                user: user,
-                onLogout: {
-                    Task {
-                        await authViewModel.logout()
-                    }
-                }
-            )
+            switch user.role {
+            case .manager: ManagerMainView()
+                
+            case .employee: EmployeeMainView()
+            }
         } else {
             switch authScreen {
             case .login:
