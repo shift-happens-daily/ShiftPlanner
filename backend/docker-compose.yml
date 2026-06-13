@@ -1,0 +1,16 @@
+services:
+  postgres:
+    image: postgres:16
+    container_name: shiftplanner_postgres
+    restart: always
+    environment:
+      POSTGRES_DB: shiftplanner
+      POSTGRES_USER: shiftplanner_user
+      POSTGRES_PASSWORD: shiftplanner_password
+    ports:
+      - "5432:5432"
+    volumes:
+      - shiftplanner_pgdata:/var/lib/postgresql/data
+
+volumes:
+  shiftplanner_pgdata:
