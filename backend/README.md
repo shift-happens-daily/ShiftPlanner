@@ -1,22 +1,6 @@
 # ShiftPlanner Backend
 
-This backend is a Stage 2 FastAPI mock API for ShiftPlanner. It keeps all data in memory, but now includes stateful authentication, role-based access control, scheduling resources, and live report calculation.
-
-## What Stage 2 Adds
-
-- JWT-based login with in-memory active token tracking
-- password hashing with `passlib` and `bcrypt`
-- role-aware users: `manager` and `employee`
-- protected routes with Swagger `Authorize` support
-- employee availability management
-- schedule requirements management
-- mock schedule generation
-- manual shift reassignment and removal
-- schedule publishing
-- employee personal schedule endpoints
-- shift exchange requests
-- reports derived from published schedules
-- normalized `422` validation errors
+This backend is a FastAPI API for ShiftPlanner backed by PostgreSQL. Core Stage 2 data is now persistent: users, employees, availability, requirements, schedules, shift assignments, exchange requests, and reports all read and write through SQLAlchemy repositories instead of the old in-memory `MockDatabase`.
 
 ## Stack
 
@@ -24,9 +8,11 @@ This backend is a Stage 2 FastAPI mock API for ShiftPlanner. It keeps all data i
 - FastAPI
 - Pydantic
 - Uvicorn
+- PostgreSQL
+- SQLAlchemy 2.x
+- `psycopg`
 - `python-jose`
 - `passlib` + `bcrypt`
-- in-memory mock repository
 
 ## Architecture
 
@@ -35,7 +21,9 @@ HTTP request
   -> API router
   -> auth / RBAC dependency
   -> service layer
-  -> MockDatabase
+  -> PostgreSQL repository
+  -> SQLAlchemy session
+  -> PostgreSQL
   -> response schema
 ```
 
@@ -45,363 +33,64 @@ Project layout:
 backend/
   app/
     api/
+    models/
     repositories/
     schemas/
     services/
+    database.py
     main.py
+  db/
+    schema.sql
+    seed.sql
+  tests/
+    test_api.py
   .env.example
   Dockerfile
+  docker-compose.yml
   requirements.txt
 ```
 
-## In-Memory Model
+## What Is Persistent
 
-`MockDatabase` stores:
+The PostgreSQL-backed backend now persists:
 
 - companies
+- branches in the database schema
+- users and password hashes
 - positions
 - employees
-- users
-- employee availability records
+- employee weekly availability
+- employee desired days off
+- absences in the database schema
 - schedule requirements
 - generated schedules
-- active JWT tokens
+- shifts and shift assignments
 - shift exchange requests
+- reports derived from published shifts
 
-All data is reset on process restart.
+The only auth state that is still in memory is the active JWT token set used for logout invalidation. After a backend restart, issued tokens are no longer considered active.
 
-## Seeded Demo Data
+## Demo Data
 
-On startup the backend creates:
+After applying `seed.sql`, local development has these demo accounts:
 
-- company: `Demo Company`
-- position: `Barista`
-- employee: `Ivan Ivanov`
-- manager user: `manager@example.com` / `manager123`
-- employee user: `ivan@example.com` / `employee123`
+- `manager@example.com` / `manager123`
+- `ivan@example.com` / `employee123`
 
-## Authentication
+The seed also creates:
 
-### Login
-
-`POST /auth/login`
-
-Request:
-
-```json
-{
-  "email": "manager@example.com",
-  "password": "manager123"
-}
-```
-
-Response:
-
-```json
-{
-  "access_token": "jwt-token",
-  "token_type": "bearer",
-  "role": "manager"
-}
-```
-
-### Register
-
-`POST /auth/register`
-
-Request:
-
-```json
-{
-  "full_name": "Anna Petrova",
-  "email": "anna@example.com",
-  "password": "employee12",
-  "role": "employee"
-}
-```
-
-If the email matches an existing employee record and the role is `employee`, the user is linked to that employee profile automatically.
-
-### Logout
-
-`POST /auth/logout`
-
-The token is removed from the in-memory active token store and becomes invalid immediately.
-
-## Authorization Rules
-
-Manager-only endpoints:
-
-- `POST /companies/`
-- `POST /positions/`
-- `POST /employees/`
-- `POST /schedule/requirements`
-- `POST /schedule/generate`
-- `PATCH /schedule/{id}/shifts/{shift_id}`
-- `POST /schedule/{id}/publish`
-- `GET /schedule/exchange-requests`
-- `PATCH /schedule/exchange-requests/{id}`
-- `GET /reports/employees`
-
-Employee-only endpoints:
-
-- `GET /schedule/my`
-- `GET /employees/me/schedule`
-- `POST /schedule/exchange-requests`
-
-Manager or employee-self endpoints:
-
-- `GET /employees/{id}/availability`
-- `POST /employees/{id}/availability`
-
-All protected routes return `401` without a valid token. Role violations return `403`.
-
-## Validation and Error Shape
-
-Validation errors are normalized to:
-
-```json
-{
-  "detail": [
-    {
-      "field": "payload_or_query_field",
-      "message": "human-readable validation message"
-    }
-  ]
-}
-```
-
-Business errors use:
-
-```json
-{
-  "detail": "human-readable message"
-}
-```
-
-## API Overview
-
-### Health
-
-`GET /health`
-
-Response:
-
-```json
-{
-  "status": "ok"
-}
-```
-
-### Companies
-
-`GET /companies/`
-
-Returns all companies for any authenticated user.
-
-`POST /companies/`
-
-Manager creates a company.
-
-Request:
-
-```json
-{
-  "name": "North Branch"
-}
-```
-
-### Positions
-
-`GET /positions/`
-
-`POST /positions/`
-
-Request:
-
-```json
-{
-  "title": "Cashier"
-}
-```
-
-### Employees
-
-`GET /employees/`
-
-Returns employees with embedded availability data.
-
-`POST /employees/`
-
-Request:
-
-```json
-{
-  "full_name": "Anna Petrova",
-  "email": "anna@example.com",
-  "position_id": 2
-}
-```
-
-### Employee Availability
-
-`GET /employees/{employee_id}/availability`
-
-`POST /employees/{employee_id}/availability`
-
-Request:
-
-```json
-{
-  "weekly_availability": [
-    {
-      "weekday": 0,
-      "start_time": "09:00:00",
-      "end_time": "18:00:00"
-    }
-  ],
-  "desired_days_off": [5, 6]
-}
-```
-
-`weekday` uses Python weekday numbering:
-
-- `0` = Monday
-- `6` = Sunday
-
-### Schedule Requirements
-
-`POST /schedule/requirements`
-
-Request:
-
-```json
-{
-  "position_id": 1,
-  "date": "2026-06-15",
-  "min_staff": 2,
-  "start_time": "10:00:00",
-  "end_time": "18:00:00"
-}
-```
-
-`GET /schedule/requirements?start_date=2026-06-01&end_date=2026-06-30`
-
-### Schedule Generation
-
-`POST /schedule/generate`
-
-Optional request body:
-
-```json
-{
-  "start_date": "2026-06-15",
-  "end_date": "2026-06-21"
-}
-```
-
-Generation behavior:
-
-- requirements are processed in memory
-- the backend creates a simple mock shift using the first employee found for the required position
-- availability is stored in the backend but is not used by schedule generation
-- conflict detection is not applied during generation
-- if no employee exists for the required position, the requirement is returned as unfilled
-- if `min_staff > 1`, only one mock shift is created and the remaining staff count stays unfilled
-
-Response includes:
-
-- `shifts`
-- `conflicts`
-- `unfilled_requirements`
-
-### Schedule Management
-
-`GET /schedule/{schedule_id}`
-
-Returns a generated schedule by ID.
-
-`PATCH /schedule/{schedule_id}/shifts/{shift_id}`
-
-Request to reassign:
-
-```json
-{
-  "action": "reassign",
-  "employee_id": 3
-}
-```
-
-Request to remove:
-
-```json
-{
-  "action": "remove"
-}
-```
-
-`POST /schedule/{schedule_id}/publish`
-
-Transitions a schedule from `draft` to `published`.
-
-### Employee Schedule View
-
-`GET /schedule/my`
-
-Returns shifts from the latest published schedule for the authenticated employee.
-
-`GET /employees/me/schedule`
-
-Alias of the same employee-facing schedule view.
-
-### Shift Exchange Requests
-
-`POST /schedule/exchange-requests`
-
-Employee request:
-
-```json
-{
-  "shift_id": 1,
-  "note": "Need a swap"
-}
-```
-
-`GET /schedule/exchange-requests`
-
-Manager sees pending requests only.
-
-`PATCH /schedule/exchange-requests/{exchange_request_id}`
-
-Request:
-
-```json
-{
-  "status": "approved"
-}
-```
-
-When a request is approved or rejected, the manager handles the follow-up manually.
-
-### Reports
-
-`GET /reports/employees`
-
-Optional query params:
-
-- `start_date`
-- `end_date`
-
-The report is calculated from published shifts only:
-
-- `total_shifts` = count of published shifts in the selected period
-- `total_hours` = sum of shift durations in hours
+- company: `Coffee Bar Barnaul`
+- branch: `Main Branch`
+- positions: `Barista`, `Cashier`
+- employee: `Ivan Barista`
+- one initial shift requirement on `2026-06-15`
 
 ## Environment Variables
 
 Example `.env`:
 
 ```env
+DATABASE_URL=postgresql+psycopg://shiftplanner_user:shiftplanner_password@localhost:5432/shiftplanner
 FRONTEND_ORIGINS=http://localhost:5173
 JWT_SECRET_KEY=change-me-in-production
 JWT_ALGORITHM=HS256
@@ -410,7 +99,37 @@ ACCESS_TOKEN_EXPIRE_MINUTES=60
 
 `FRONTEND_ORIGINS` accepts a comma-separated list.
 
-## Run Locally
+## Run PostgreSQL
+
+From the repository root:
+
+```bash
+docker compose -f backend/docker-compose.yml up -d
+```
+
+## Apply Schema And Seed
+
+PowerShell:
+
+```powershell
+Get-Content backend/db/schema.sql | docker exec -i shiftplanner_postgres psql -U shiftplanner_user -d shiftplanner
+Get-Content backend/db/seed.sql | docker exec -i shiftplanner_postgres psql -U shiftplanner_user -d shiftplanner
+```
+
+Git Bash / Linux / macOS:
+
+```bash
+docker exec -i shiftplanner_postgres psql -U shiftplanner_user -d shiftplanner < backend/db/schema.sql
+docker exec -i shiftplanner_postgres psql -U shiftplanner_user -d shiftplanner < backend/db/seed.sql
+```
+
+If you need a clean reset first:
+
+```powershell
+docker exec shiftplanner_postgres psql -U shiftplanner_user -d shiftplanner -c "DROP SCHEMA IF EXISTS public CASCADE; CREATE SCHEMA public;"
+```
+
+## Run Backend
 
 From the `backend` directory:
 
@@ -442,47 +161,107 @@ Start the server:
 uvicorn app.main:app --reload
 ```
 
-## Local URLs
+## Health Endpoints
 
-- Swagger UI: `http://localhost:8000/docs`
-- OpenAPI schema: `http://localhost:8000/openapi.json`
-- Health check: `http://localhost:8000/health`
+- `GET /health`
+- `GET /health/db`
+
+`/health/db` returns `200` when the API can connect to PostgreSQL and `503` when the database is unavailable.
+
+## Main API Areas
+
+Authentication:
+
+- `POST /auth/login`
+- `POST /auth/register`
+- `POST /auth/logout`
+
+Reference data:
+
+- `GET /companies/`
+- `POST /companies/`
+- `GET /positions/`
+- `POST /positions/`
+- `GET /employees/`
+- `POST /employees/`
+
+Availability:
+
+- `GET /employees/{employee_id}/availability`
+- `POST /employees/{employee_id}/availability`
+
+Scheduling:
+
+- `POST /schedule/requirements`
+- `GET /schedule/requirements`
+- `POST /schedule/generate`
+- `GET /schedule/{schedule_id}`
+- `PATCH /schedule/{schedule_id}/shifts/{shift_id}`
+- `POST /schedule/{schedule_id}/publish`
+- `GET /schedule/my`
+- `GET /employees/me/schedule`
+
+Exchange requests and reports:
+
+- `POST /schedule/exchange-requests`
+- `GET /schedule/exchange-requests`
+- `PATCH /schedule/exchange-requests/{exchange_request_id}`
+- `GET /reports/employees`
 
 ## Recommended Demo Flow
 
-1. Login as manager with `manager@example.com` / `manager123`.
-2. Create a position if needed.
-3. Create an employee.
-4. Set that employee's availability.
-5. Create schedule requirements.
-6. Generate a draft schedule.
-7. Publish the schedule.
-8. Login as employee and open `/schedule/my`.
-9. Create a shift exchange request.
-10. Return as manager and approve or reject it.
-11. Open `/reports/employees`.
+1. Start PostgreSQL.
+2. Apply `schema.sql`.
+3. Apply `seed.sql`.
+4. Start the backend and open `http://localhost:8000/docs`.
+5. Login as `manager@example.com`.
+6. Create a requirement or use the seeded one.
+7. Generate a schedule.
+8. Publish the schedule.
+9. Login as `ivan@example.com`.
+10. Open `/schedule/my`.
+11. Create a shift exchange request.
+12. Switch back to the manager account and approve or reject it.
+13. Open `/reports/employees`.
+14. Restart the backend and confirm that schedules, requirements, and exchange requests are still present.
+
+## Tests
+
+Smoke tests live in `tests/test_api.py` and reset the PostgreSQL schema before each test.
+
+Run them from `backend/`:
+
+```bash
+python -m pytest tests/test_api.py
+```
+
+They cover:
+
+- auth, logout, and RBAC
+- company and position creation
+- employee creation and availability access rules
+- requirement creation
+- schedule generation, reassignment, and publish flow
+- employee personal schedule access
+- exchange request creation and approval
+- report calculation from published shifts
 
 ## Current Limitations
 
-- no PostgreSQL integration
-- no SQLAlchemy models or migrations
-- no persistent storage
-- no refresh tokens
-- no real company scoping or multi-tenant isolation
-- no automated shift reassignment after exchange approval
-- no real schedule generation algorithm
+- schedule generation is still intentionally simple and uses the first matching employee per position
+- availability is persisted but not yet used by the generation logic
+- exchange request approval does not automatically reassign shifts
+- branches and absences exist in the schema but do not yet have dedicated API endpoints
+- active JWT invalidation is still memory-based and resets on backend restart
+- there are no refresh tokens or background jobs
 
 ## Verification Done
 
-The current implementation was smoke-tested with the FastAPI test client for:
+The current PostgreSQL-backed implementation was verified with:
 
-- manager login
-- employee login
-- protected route access
-- requirement creation
-- schedule generation
-- schedule publish
-- employee schedule view
-- exchange request creation and approval
-- live report calculation
-- logout invalidation
+```bash
+python -m compileall app
+python -m pytest tests/test_api.py
+```
+
+It was also manually smoke-tested through `TestClient` for the full flow: manager login, employee login, requirement creation, schedule generation, schedule publish, employee schedule access, exchange request approval, reports, and logout invalidation.

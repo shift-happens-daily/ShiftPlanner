@@ -5,7 +5,10 @@ from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from sqlalchemy import text
+from sqlalchemy.exc import SQLAlchemyError
 
+from app.database import SessionLocal
 from app.api import auth, companies, employees, positions, reports, schedule
 
 load_dotenv()
@@ -18,8 +21,8 @@ frontend_origins = [
 
 app = FastAPI(
     title="ShiftPlanner API",
-    version="0.2.0",
-    description="Stage 2 mock REST API for ShiftPlanner with JWT auth and in-memory business logic.",
+    version="0.3.0",
+    description="Stage 2 REST API for ShiftPlanner with JWT auth, RBAC, and PostgreSQL persistence.",
 )
 
 app.add_middleware(
@@ -52,3 +55,13 @@ app.include_router(reports.router, prefix="/reports", tags=["Reports"])
 @app.get("/health")
 def health_check():
     return {"status": "ok"}
+
+
+@app.get("/health/db")
+def database_health_check():
+    try:
+        with SessionLocal() as session:
+            session.execute(text("SELECT 1"))
+        return {"status": "ok"}
+    except SQLAlchemyError:
+        return JSONResponse(status_code=503, content={"status": "error"})
