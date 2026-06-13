@@ -1,3 +1,17 @@
+
+# macOS
+.DS_Store
+
+# Android
+mobile/android
+mobile/android/.gradle/
+mobile/android/**/build/
+mobile/android/local.properties
+
+# iOS/Xcode
+mobile/ios/**/xcuserdata/
+mobile/ios/**/*.xcuserstate
+mobile/ios/**/DerivedData/
 # Python
 __pycache__/
 *.py[cod]
