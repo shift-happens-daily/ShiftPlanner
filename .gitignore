@@ -12,3 +12,73 @@ mobile/android/local.properties
 mobile/ios/**/xcuserdata/
 mobile/ios/**/*.xcuserstate
 mobile/ios/**/DerivedData/
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.so
+.Python
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+*.egg-info/
+
+# Virtual environments
+venv/
+.venv/
+env/
+ENV/
+
+# Environment variables
+.env
+.env.local
+.env.*.local
+
+# Frontend
+node_modules/
+dist/
+dist-ssr/
+build/
+.next/
+.vite/
+*.local
+
+# Logs
+logs/
+*.log
+*.pid
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+
+# Databases
+*.sqlite3
+*.db
+
+# Docker / migrations temp
+alembic.ini.bak
+
+# IDEs and editors
+.idea/
+.vscode/
+.vscode/*
+!.vscode/extensions.json
+*.swp
+*.swo
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Local stage docs
+backend/docs/backend-stage-2.md
