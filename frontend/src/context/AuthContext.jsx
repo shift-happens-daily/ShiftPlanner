@@ -23,7 +23,7 @@ export function AuthProvider({ children }) {
       email: email,
       role: role,
       position: 'Бармен',
-      company: 'ShiftPlanner Inc.',
+      company: null,
       telegram: '@ivan_petrov'
     };
     setUser(mockUser);
@@ -40,7 +40,7 @@ export function AuthProvider({ children }) {
       email: email,
       role: role,
       position: 'Бармен',
-      company: 'ShiftPlanner Inc.',
+      company: null,
       telegram: '@username'
     };
     setUser(mockUser);
@@ -55,13 +55,20 @@ export function AuthProvider({ children }) {
     return updatedUser;
   };
 
+  const updateCompany = (companyData) => {
+    const updatedUser = { ...user, company: companyData };
+    setUser(updatedUser);
+    localStorage.setItem('user', JSON.stringify(updatedUser));
+    return updatedUser;
+  };
+
   const logout = () => {
     setUser(null);
     localStorage.removeItem('user');
   };
 
   return (
-    <AuthContext.Provider value={{ user, loading, login, register, updateUser, logout }}>
+    <AuthContext.Provider value={{ user, loading, login, register, updateUser, updateCompany, logout }}>
       {children}
     </AuthContext.Provider>
   );
