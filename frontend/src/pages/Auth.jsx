@@ -1,5 +1,10 @@
 // src/pages/Auth.jsx
 import { useState, useEffect } from 'react';
+<<<<<<< HEAD
+=======
+import { useNavigate } from 'react-router-dom';
+import { useAuth } from '../context/AuthContext';
+>>>>>>> frontend
 
 export default function Auth() {
   const [isLogin, setIsLogin] = useState(true);
@@ -13,6 +18,12 @@ export default function Auth() {
     name: ''
   });
 
+<<<<<<< HEAD
+=======
+  const navigate = useNavigate();
+  const { login, register } = useAuth();
+
+>>>>>>> frontend
   // Тексты на разных языках
   const texts = {
     ru: {
@@ -163,6 +174,7 @@ export default function Auth() {
     return () => document.head.removeChild(styleSheet);
   }, []);
 
+<<<<<<< HEAD
   const handleSubmit = (e) => {
     e.preventDefault();
     const isManager = role === 'manager';
@@ -172,6 +184,36 @@ export default function Auth() {
     } else {
       console.log('Регистрация:', { ...formData, role });
       alert(`Регистрация как ${isManager ? 'Менеджер' : 'Сотрудник'}`);
+=======
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    const selectedRole = role;
+    
+    if (isLogin) {
+      try {
+        await login(formData.email, formData.password, selectedRole);
+        // Редирект в зависимости от роли
+        if (selectedRole === 'manager') {
+          navigate('/manager');
+        } else {
+          navigate('/employee');
+        }
+      } catch (error) {
+        alert('Ошибка входа');
+      }
+    } else {
+      try {
+        await register(formData.name, formData.email, formData.password, selectedRole);
+        // Редирект в зависимости от роли
+        if (selectedRole === 'manager') {
+          navigate('/manager');
+        } else {
+          navigate('/employee');
+        }
+      } catch (error) {
+        alert('Ошибка регистрации');
+      }
+>>>>>>> frontend
     }
   };
 
@@ -181,6 +223,10 @@ export default function Auth() {
     setFormData({ email: '', password: '', name: '' });
     setShowPassword(false);
   };
+<<<<<<< HEAD
+=======
+  
+>>>>>>> frontend
   const handleInputChange = (e) => {
     const { name, value } = e.target;
     setFormData(prev => ({ ...prev, [name]: value }));
