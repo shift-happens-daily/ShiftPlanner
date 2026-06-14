@@ -49,8 +49,8 @@ export default function CompanyTab({ language }) {
     ru: {
       title: 'Информация о компании',
       noCompany: 'Вы еще не присоединились ни к одной компании',
-      enterInviteCode: 'Ввести invite code',
-      inviteCodePlaceholder: 'Введите invite code',
+      enterInviteCode: 'Ввести код-приглашение',
+      inviteCodePlaceholder: 'Введите код-приглашение',
       join: 'Присоединиться',
       createCompany: 'Создать компанию',
       companyName: 'Название компании',
