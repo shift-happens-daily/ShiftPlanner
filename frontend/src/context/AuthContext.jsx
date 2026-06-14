@@ -7,7 +7,6 @@ export function AuthProvider({ children }) {
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
 
-  // Проверяем, есть ли сохранённый пользователь при загрузке
   useEffect(() => {
     const storedUser = localStorage.getItem('user');
     if (storedUser) {
@@ -17,13 +16,15 @@ export function AuthProvider({ children }) {
   }, []);
 
   const login = (email, password, role) => {
-    // Временная заглушка (потом заменишь на API)
     const mockUser = {
       id: 1,
-      name: email.includes('manager') ? 'Анна Менеджер' : 'Иван Сотрудник',
+      firstName: 'Иван',
+      lastName: 'Петров',
       email: email,
       role: role,
-      position: 'Бармен'
+      position: 'Бармен',
+      company: 'ShiftPlanner Inc.',
+      telegram: '@ivan_petrov'
     };
     setUser(mockUser);
     localStorage.setItem('user', JSON.stringify(mockUser));
@@ -31,17 +32,27 @@ export function AuthProvider({ children }) {
   };
 
   const register = (name, email, password, role) => {
-    // Временная заглушка (потом заменишь на API)
+    const nameParts = name.split(' ');
     const mockUser = {
       id: 1,
-      name: name,
+      firstName: nameParts[0] || 'Иван',
+      lastName: nameParts[1] || 'Петров',
       email: email,
       role: role,
-      position: 'Бармен'
+      position: 'Бармен',
+      company: 'ShiftPlanner Inc.',
+      telegram: '@username'
     };
     setUser(mockUser);
     localStorage.setItem('user', JSON.stringify(mockUser));
     return mockUser;
+  };
+
+  const updateUser = (updatedData) => {
+    const updatedUser = { ...user, ...updatedData };
+    setUser(updatedUser);
+    localStorage.setItem('user', JSON.stringify(updatedUser));
+    return updatedUser;
   };
 
   const logout = () => {
@@ -50,7 +61,7 @@ export function AuthProvider({ children }) {
   };
 
   return (
-    <AuthContext.Provider value={{ user, loading, login, register, logout }}>
+    <AuthContext.Provider value={{ user, loading, login, register, updateUser, logout }}>
       {children}
     </AuthContext.Provider>
   );
