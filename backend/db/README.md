@@ -125,7 +125,7 @@ VALUES ('Coffee Bar Barnaul', 'COFFEE123');
 Example SQL query for saving employee availability:
 
 ```sql
-INSERT INTO employee_availability (employee_id, day_of_week, start_time, end_time)
+INSERT INTO employee_availability (employee_id, weekday, start_time, end_time)
 VALUES (1, 1, '10:00', '18:00');
 ```
 

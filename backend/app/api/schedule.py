@@ -16,6 +16,8 @@ from app.schemas.auth import UserRead
 from app.schemas.schedule import (
     ScheduleGenerateRequest,
     ScheduleRead,
+    ScheduleRequirementBulkCreate,
+    ScheduleRequirementBulkRead,
     ScheduleRequirementCreate,
     ScheduleRequirementRead,
     ScheduleShiftUpdate,
@@ -51,10 +53,25 @@ def create_requirement(
 def get_requirements(
     start_date: date | None = Query(default=None),
     end_date: date | None = Query(default=None),
+    position_id: int | None = Query(default=None, ge=1),
     _: UserRead = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> list[ScheduleRequirementRead]:
-    return schedule_service.list_requirements(db, start_date=start_date, end_date=end_date)
+    return schedule_service.list_requirements(db, start_date=start_date, end_date=end_date, position_id=position_id)
+
+
+@router.post(
+    "/requirements/bulk",
+    response_model=ScheduleRequirementBulkRead,
+    status_code=status.HTTP_201_CREATED,
+    responses={**BAD_REQUEST_RESPONSE, **UNAUTHORIZED_RESPONSE, **FORBIDDEN_RESPONSE, **VALIDATION_ERROR_RESPONSE},
+)
+def create_bulk_requirements(
+    payload: ScheduleRequirementBulkCreate,
+    _: UserRead = Depends(require_role("manager")),
+    db: Session = Depends(get_db),
+) -> ScheduleRequirementBulkRead:
+    return schedule_service.create_bulk_requirements(db, payload)
 
 
 @router.post(

@@ -1,4 +1,5 @@
-from datetime import time
+from datetime import date, time
+from typing import Literal
 
 from pydantic import BaseModel, Field, model_validator
 
@@ -44,3 +45,58 @@ class EmployeeRead(BaseModel):
     position_id: int
     position_title: str
     availability: AvailabilityRead | None = None
+
+
+AbsenceType = Literal["vacation", "sick_leave", "other"]
+
+
+class AbsenceCreate(BaseModel):
+    absence_type: AbsenceType
+    start_date: date
+    end_date: date
+    comment: str | None = None
+
+    @model_validator(mode="after")
+    def validate_date_range(self) -> "AbsenceCreate":
+        if self.end_date < self.start_date:
+            raise ValueError("end_date must be later than or equal to start_date.")
+        return self
+
+
+class AbsenceRead(AbsenceCreate):
+    id: int
+    employee_id: int
+
+
+class EmployeeCalendarPositionRead(BaseModel):
+    id: int
+    name: str
+
+
+class EmployeeCalendarEmployeeRead(BaseModel):
+    id: int
+    full_name: str
+    position: EmployeeCalendarPositionRead | None = None
+
+
+class EmployeeCalendarShiftRead(BaseModel):
+    shift_id: int
+    schedule_id: int
+    date: date
+    start_time: time
+    end_time: time
+    status: str
+
+
+class EmployeeWorkloadRead(BaseModel):
+    total_shifts: int
+    total_hours: float
+
+
+class EmployeeCalendarSummaryRead(BaseModel):
+    employee: EmployeeCalendarEmployeeRead
+    availability: list[AvailabilityBlock]
+    desired_days_off: list[int]
+    absences: list[AbsenceRead]
+    shifts: list[EmployeeCalendarShiftRead]
+    workload: EmployeeWorkloadRead

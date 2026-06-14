@@ -4,8 +4,11 @@ from sqlalchemy.orm import Session
 from app.models import Position
 
 
-def list_positions(db: Session) -> list[Position]:
-    return list(db.scalars(select(Position).order_by(Position.id)))
+def list_positions(db: Session, company_id: int | None = None) -> list[Position]:
+    query = select(Position).order_by(Position.id)
+    if company_id is not None:
+        query = query.where(Position.company_id == company_id)
+    return list(db.scalars(query))
 
 
 def create_position(db: Session, title: str, company_id: int) -> Position:

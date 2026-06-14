@@ -1,4 +1,5 @@
 from datetime import date
+from datetime import timedelta
 
 from fastapi import HTTPException, status
 from sqlalchemy.orm import Session
@@ -8,6 +9,8 @@ from app.schemas.auth import UserRead
 from app.schemas.schedule import (
     ScheduleGenerateRequest,
     ScheduleRead,
+    ScheduleRequirementBulkCreate,
+    ScheduleRequirementBulkRead,
     ScheduleRequirementCreate,
     ScheduleRequirementRead,
     ScheduleShiftUpdate,
@@ -19,18 +22,20 @@ from app.schemas.schedule import (
 )
 
 
-def list_requirements(db: Session, start_date: date | None = None, end_date: date | None = None) -> list[ScheduleRequirementRead]:
-    requirements = schedule_repository.list_requirements(db, start_date=start_date, end_date=end_date)
+def list_requirements(
+    db: Session,
+    start_date: date | None = None,
+    end_date: date | None = None,
+    position_id: int | None = None,
+) -> list[ScheduleRequirementRead]:
+    requirements = schedule_repository.list_requirements(
+        db,
+        start_date=start_date,
+        end_date=end_date,
+        position_id=position_id,
+    )
     return [
-        ScheduleRequirementRead(
-            id=requirement.id,
-            position_id=requirement.position_id,
-            position_title=position_repository.get_position_by_id(db, requirement.position_id).name,
-            date=requirement.shift_date,
-            min_staff=requirement.required_employees,
-            start_time=requirement.start_time,
-            end_time=requirement.end_time,
-        )
+        _build_requirement_read(db, requirement)
         for requirement in requirements
     ]
 
@@ -48,14 +53,38 @@ def create_requirement(db: Session, payload: ScheduleRequirementCreate) -> Sched
         end_time=payload.end_time,
         required_employees=payload.min_staff,
     )
-    return ScheduleRequirementRead(
-        id=requirement.id,
-        position_id=requirement.position_id,
-        position_title=position.name,
-        date=requirement.shift_date,
-        min_staff=requirement.required_employees,
-        start_time=requirement.start_time,
-        end_time=requirement.end_time,
+    return _build_requirement_read(db, requirement)
+
+
+def create_bulk_requirements(db: Session, payload: ScheduleRequirementBulkCreate) -> ScheduleRequirementBulkRead:
+    positions = {item.id: item for item in position_repository.list_positions(db)}
+    items: list[dict] = []
+    current_date = payload.start_date
+    while current_date <= payload.end_date:
+        if current_date.weekday() in payload.weekdays:
+            for template in payload.requirements:
+                position = positions.get(template.position_id)
+                if position is None:
+                    raise HTTPException(
+                        status_code=status.HTTP_400_BAD_REQUEST,
+                        detail=f"Position {template.position_id} was not found.",
+                    )
+                items.append(
+                    {
+                        "company_id": position.company_id,
+                        "position_id": template.position_id,
+                        "shift_date": current_date,
+                        "start_time": template.start_time,
+                        "end_time": template.end_time,
+                        "required_employees": template.min_staff,
+                    }
+                )
+        current_date += timedelta(days=1)
+
+    requirements = schedule_repository.create_requirements_bulk(db, items)
+    return ScheduleRequirementBulkRead(
+        created_count=len(requirements),
+        requirements=[_build_requirement_read(db, requirement) for requirement in requirements],
     )
 
 
@@ -270,4 +299,17 @@ def _build_shift_read(row: dict) -> ShiftRead:
         date=row["shift_date"],
         start_time=row["start_time"],
         end_time=row["end_time"],
+    )
+
+
+def _build_requirement_read(db: Session, requirement) -> ScheduleRequirementRead:
+    position = position_repository.get_position_by_id(db, requirement.position_id)
+    return ScheduleRequirementRead(
+        id=requirement.id,
+        position_id=requirement.position_id,
+        position_title=position.name if position else "",
+        date=requirement.shift_date,
+        min_staff=requirement.required_employees,
+        start_time=requirement.start_time,
+        end_time=requirement.end_time,
     )
