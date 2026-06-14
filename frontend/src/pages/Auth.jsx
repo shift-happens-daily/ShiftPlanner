@@ -1,5 +1,7 @@
 // src/pages/Auth.jsx
 import { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
+import { useAuth } from '../context/AuthContext';
 
 export default function Auth() {
   const [isLogin, setIsLogin] = useState(true);
@@ -12,6 +14,9 @@ export default function Auth() {
     password: '',
     name: ''
   });
+
+  const navigate = useNavigate();
+  const { login, register } = useAuth();
 
   // Тексты на разных языках
   const texts = {
@@ -163,15 +168,34 @@ export default function Auth() {
     return () => document.head.removeChild(styleSheet);
   }, []);
 
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
-    const isManager = role === 'manager';
+    const selectedRole = role;
+    
     if (isLogin) {
-      console.log('Вход:', { email: formData.email, password: formData.password, role });
-      alert(`Вход выполнен как ${isManager ? 'Менеджер' : 'Сотрудник'}`);
+      try {
+        await login(formData.email, formData.password, selectedRole);
+        // Редирект в зависимости от роли
+        if (selectedRole === 'manager') {
+          navigate('/manager');
+        } else {
+          navigate('/employee');
+        }
+      } catch (error) {
+        alert('Ошибка входа');
+      }
     } else {
-      console.log('Регистрация:', { ...formData, role });
-      alert(`Регистрация как ${isManager ? 'Менеджер' : 'Сотрудник'}`);
+      try {
+        await register(formData.name, formData.email, formData.password, selectedRole);
+        // Редирект в зависимости от роли
+        if (selectedRole === 'manager') {
+          navigate('/manager');
+        } else {
+          navigate('/employee');
+        }
+      } catch (error) {
+        alert('Ошибка регистрации');
+      }
     }
   };
 
@@ -181,6 +205,7 @@ export default function Auth() {
     setFormData({ email: '', password: '', name: '' });
     setShowPassword(false);
   };
+  
   const handleInputChange = (e) => {
     const { name, value } = e.target;
     setFormData(prev => ({ ...prev, [name]: value }));
