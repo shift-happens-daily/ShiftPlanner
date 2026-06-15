@@ -2,6 +2,7 @@ import SwiftUI
 
 struct CompanySetupView: View {
     @Environment(\.dismiss) private var dismiss
+    @EnvironmentObject private var themeManager: ThemeManager
     @StateObject private var viewModel: CompanySetupViewModel
     let onCompanyCreated: ((AppCompany) -> Void)?
 
@@ -17,6 +18,7 @@ struct CompanySetupView: View {
         Form {
             Section("Company") {
                 TextField("Company name", text: $viewModel.companyName)
+                    .themeInputField()
 
                 Toggle("Does the company have branches?", isOn: $viewModel.hasBranches)
                     .onChange(of: viewModel.hasBranches) { _, hasBranches in
@@ -31,8 +33,10 @@ struct CompanySetupView: View {
                     ForEach($viewModel.branches) { $branch in
                         VStack(alignment: .leading, spacing: 12) {
                             TextField("Branch name", text: $branch.name)
+                                .themeInputField()
                             TextField("Branch address", text: $branch.address, axis: .vertical)
                                 .lineLimit(2...4)
+                                .themeInputField()
 
                             if viewModel.branches.count > 1 {
                                 Button("Remove branch", role: .destructive) {
@@ -58,6 +62,7 @@ struct CompanySetupView: View {
                 Section("Address") {
                     TextField("Company address", text: $viewModel.companyAddress, axis: .vertical)
                         .lineLimit(2...4)
+                        .themeInputField()
                 }
             }
 
@@ -73,12 +78,13 @@ struct CompanySetupView: View {
                 } label: {
                     if viewModel.isSaving {
                         ProgressView()
-                            .frame(maxWidth: .infinity)
+                            .tint(themeManager.selectedTheme.primaryActionTextColor)
                     } else {
                         Text("Create company")
-                            .frame(maxWidth: .infinity)
                     }
                 }
+                .buttonStyle(.plain)
+                .themePrimaryAction(isEnabled: !viewModel.isSaving && viewModel.canCreateCompany)
                 .disabled(viewModel.isSaving || !viewModel.canCreateCompany)
             } footer: {
                 Text("For now the backend accepts only the company name. The rest of the form is collected for the upcoming expansion.")
@@ -93,5 +99,7 @@ struct CompanySetupView: View {
         }
         .navigationTitle("Create Company")
         .navigationBarTitleDisplayMode(.inline)
+        .scrollContentBackground(.hidden)
+        .background(themeManager.selectedTheme.screenBackground)
     }
 }

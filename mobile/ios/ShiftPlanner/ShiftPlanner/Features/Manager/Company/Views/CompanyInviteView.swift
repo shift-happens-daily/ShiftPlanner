@@ -7,6 +7,7 @@ enum CompanyInviteMode: Equatable {
 
 struct CompanyInviteView: View {
     @Environment(\.dismiss) private var dismiss
+    @EnvironmentObject private var themeManager: ThemeManager
     @StateObject private var viewModel: CompanyInviteViewModel
 
     let mode: CompanyInviteMode
@@ -29,6 +30,7 @@ struct CompanyInviteView: View {
                     TextField("Enter invite code", text: $viewModel.inviteCode)
                         .textInputAutocapitalization(.characters)
                         .autocorrectionDisabled(true)
+                        .themeInputField()
 
                     Button {
                         Task {
@@ -37,12 +39,13 @@ struct CompanyInviteView: View {
                     } label: {
                         if viewModel.isLoading {
                             ProgressView()
-                                .frame(maxWidth: .infinity)
+                                .tint(themeManager.selectedTheme.primaryActionTextColor)
                         } else {
                             Text("Preview company")
-                                .frame(maxWidth: .infinity)
                         }
                     }
+                    .buttonStyle(.plain)
+                    .themePrimaryAction(isEnabled: !viewModel.isLoading)
                     .disabled(viewModel.isLoading)
                 }
 
@@ -51,8 +54,9 @@ struct CompanyInviteView: View {
                         VStack(alignment: .leading, spacing: 8) {
                             Text(preview.name)
                                 .font(.headline)
+                                .foregroundStyle(themeManager.selectedTheme.primaryTextColor)
                             Text("Invite code: \(preview.inviteCode)")
-                                .foregroundStyle(.secondary)
+                                .foregroundStyle(themeManager.selectedTheme.secondaryTextColor)
 
                             if !preview.branches.isEmpty {
                                 Text("Branches: \(preview.branches.map(\.name).joined(separator: ", "))")
@@ -80,12 +84,13 @@ struct CompanyInviteView: View {
                             } label: {
                                 if viewModel.isLoading {
                                     ProgressView()
-                                        .frame(maxWidth: .infinity)
+                                        .tint(themeManager.selectedTheme.primaryActionTextColor)
                                 } else {
                                     Text("Join company")
-                                        .frame(maxWidth: .infinity)
                                 }
                             }
+                            .buttonStyle(.plain)
+                            .themePrimaryAction(isEnabled: !viewModel.isLoading)
                             .disabled(viewModel.isLoading)
                         }
                     } else {
@@ -100,12 +105,14 @@ struct CompanyInviteView: View {
                 if let errorMessage = viewModel.errorMessage {
                     Section {
                         Text(errorMessage)
-                            .foregroundStyle(.red)
+                            .foregroundStyle(themeManager.selectedTheme.destructiveColor)
                     }
                 }
             }
             .navigationTitle(mode == .employeeJoin ? "Join Company" : "Invite Code")
             .navigationBarTitleDisplayMode(.inline)
+            .scrollContentBackground(.hidden)
+            .background(themeManager.selectedTheme.screenBackground)
         }
     }
 }

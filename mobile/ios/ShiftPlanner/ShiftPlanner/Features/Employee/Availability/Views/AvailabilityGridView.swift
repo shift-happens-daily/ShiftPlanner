@@ -1,6 +1,7 @@
 import SwiftUI
 
 struct AvailabilityGridView: View {
+    @EnvironmentObject private var themeManager: ThemeManager
     @ObservedObject var viewModel: AvailabilityViewModel
 
     private let timeColumnWidth: CGFloat = 40
@@ -31,8 +32,7 @@ struct AvailabilityGridView: View {
         }
         .frame(height: contentHeight)
         .padding(10)
-        .background(.ultraThinMaterial)
-        .clipShape(RoundedRectangle(cornerRadius: 28, style: .continuous))
+        .themeCard()
     }
 
     private func headerRow(dayColumnWidth: CGFloat) -> some View {
@@ -45,7 +45,7 @@ struct AvailabilityGridView: View {
                     Text(viewModel.shortDayLabel(for: dayIndex))
                         .font(.system(size: 10, weight: .semibold))
                         .fontWeight(.semibold)
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(themeManager.selectedTheme.secondaryTextColor)
 
                     Text(viewModel.dayNumberLabel(for: dayIndex))
                         .font(.system(size: 13, weight: .bold))
@@ -60,7 +60,7 @@ struct AvailabilityGridView: View {
             ForEach(viewModel.timeSlots.indices, id: \.self) { slotIndex in
                 Text(viewModel.timeLabel(for: slotIndex))
                     .font(.system(size: 10))
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(themeManager.selectedTheme.secondaryTextColor)
                     .frame(width: timeColumnWidth, height: slotHeight, alignment: .topTrailing)
                     .padding(.trailing, 4)
             }

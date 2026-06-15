@@ -1,6 +1,7 @@
 import SwiftUI
 
 struct CompanyMembershipBannerView: View {
+    @EnvironmentObject private var themeManager: ThemeManager
     let title: String
     let buttonTitle: String
     let action: () -> Void
@@ -10,14 +11,15 @@ struct CompanyMembershipBannerView: View {
             Text(title)
                 .font(.subheadline)
                 .fontWeight(.medium)
+                .foregroundStyle(themeManager.selectedTheme.primaryTextColor)
 
             Button(buttonTitle, action: action)
-                .buttonStyle(.borderedProminent)
+                .buttonStyle(.plain)
+                .themePrimaryAction()
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding()
-        .background(.ultraThinMaterial)
-        .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
+        .themeCard()
         .padding(.horizontal)
         .padding(.top, 8)
     }

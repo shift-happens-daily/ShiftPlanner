@@ -1,6 +1,7 @@
 import SwiftUI
 
 struct AvailabilityStatePickerView: View {
+    @EnvironmentObject private var themeManager: ThemeManager
     let selectedState: AvailabilityState
     let onSelectState: (AvailabilityState) -> Void
     let onCopyPreviousWeek: () -> Void
@@ -30,7 +31,7 @@ struct AvailabilityStatePickerView: View {
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, 10)
                         .padding(.horizontal, 8)
-                        .background(selectedState == state ? state.fillColor.opacity(0.22) : .white.opacity(0.68))
+                        .background(selectedState == state ? state.fillColor.opacity(0.22) : themeManager.selectedTheme.surfaceColor.opacity(0.88))
                         .overlay {
                             RoundedRectangle(cornerRadius: 14, style: .continuous)
                                 .stroke(selectedState == state ? state.borderColor : .clear, lineWidth: 1.5)
@@ -45,20 +46,19 @@ struct AvailabilityStatePickerView: View {
                 Button("Copy previous week", action: onCopyPreviousWeek)
                     .buttonStyle(.plain)
                     .font(.footnote)
-                    .foregroundStyle(.blue)
+                    .foregroundStyle(themeManager.selectedTheme.accentColor)
                     .disabled(isSaving)
 
                 Button("Reset week", action: onResetWeek)
                     .buttonStyle(.plain)
                     .font(.footnote)
-                    .foregroundStyle(.red)
+                    .foregroundStyle(themeManager.selectedTheme.destructiveColor)
                     .disabled(isSaving)
 
                 Spacer()
             }
         }
         .padding(12)
-        .background(.ultraThinMaterial)
-        .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
+        .themeCard()
     }
 }

@@ -2,6 +2,7 @@ import SwiftUI
 
 struct LoginView: View {
     @ObservedObject var viewModel: AuthViewModel
+    @EnvironmentObject private var themeManager: ThemeManager
     let onShowSignUp: () -> Void
     
     var body: some View {
@@ -12,25 +13,26 @@ struct LoginView: View {
                 Text("ShiftPlanner")
                     .font(.largeTitle)
                     .bold()
+                    .foregroundStyle(themeManager.selectedTheme.primaryTextColor)
                 Text("Sign in to your account")
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(themeManager.selectedTheme.secondaryTextColor)
             }
             
             VStack(spacing: 12) {
                 TextField("Email", text: $viewModel.email)
-                    .textFieldStyle(.roundedBorder)
                     .autocapitalization(.none)
                     .autocorrectionDisabled(true)
                     .keyboardType(.emailAddress)
+                    .themeInputField()
                 
                 SecureField("Password", text: $viewModel.password)
-                    .textFieldStyle(.roundedBorder)
+                    .themeInputField()
             }
             
             if let errorMessage = viewModel.errorMessage {
                 Text(errorMessage)
                     .font(.footnote)
-                    .foregroundColor(.red)
+                    .foregroundStyle(themeManager.selectedTheme.destructiveColor)
             }
             
             Button {
@@ -40,21 +42,25 @@ struct LoginView: View {
             } label: {
                 if viewModel.isLoading {
                     ProgressView()
+                        .tint(themeManager.selectedTheme.primaryActionTextColor)
                 } else {
                     Text("Login")
-                        .frame(maxWidth: .infinity)
                 }
             }
-            .buttonStyle(.borderedProminent)
+            .buttonStyle(.plain)
+            .themePrimaryAction(isEnabled: !viewModel.isLoading)
             .disabled(viewModel.isLoading)
             
             Button("Create account") {
                 onShowSignUp()
             }
+            .buttonStyle(.plain)
+            .themeSecondaryAction()
             .disabled(viewModel.isLoading)
             
             Spacer()
         }
         .padding()
+        .background(themeManager.selectedTheme.screenBackground.ignoresSafeArea())
     }
 }

@@ -1,6 +1,7 @@
 import SwiftUI
 
 struct AvailabilityView: View {
+    @EnvironmentObject private var themeManager: ThemeManager
     @StateObject private var viewModel: AvailabilityViewModel
 
     init(
@@ -41,7 +42,7 @@ struct AvailabilityView: View {
                         HStack(spacing: 10) {
                             if viewModel.isSaving {
                                 ProgressView()
-                                    .tint(.white)
+                                    .tint(themeManager.selectedTheme.primaryActionTextColor)
                             }
 
                             Text(viewModel.isSaving ? "Saving..." : "Save availability")
@@ -50,10 +51,10 @@ struct AvailabilityView: View {
                         }
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, 16)
-                        .foregroundStyle(.white)
+                        .foregroundStyle(themeManager.selectedTheme.primaryActionTextColor)
                         .background(
                             RoundedRectangle(cornerRadius: 18, style: .continuous)
-                                .fill(viewModel.canSave ? Color.blue : Color.gray.opacity(0.55))
+                                .fill(viewModel.canSave ? themeManager.selectedTheme.primaryActionFillColor : themeManager.selectedTheme.secondaryTextColor.opacity(0.45))
                         )
                     }
                     .buttonStyle(.plain)
@@ -77,7 +78,7 @@ struct AvailabilityView: View {
                 }
                 .padding()
             }
-            .background(Color(.systemGroupedBackground))
+            .background(themeManager.selectedTheme.screenBackground)
             .navigationTitle("Availability")
             .navigationBarTitleDisplayMode(.inline)
             .task {

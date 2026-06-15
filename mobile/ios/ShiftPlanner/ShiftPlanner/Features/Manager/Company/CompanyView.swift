@@ -2,6 +2,7 @@ import SwiftUI
 import UIKit
 
 struct CompanyView: View {
+    @EnvironmentObject private var themeManager: ThemeManager
     let user: AppUser
     let onUserUpdated: (AppUser) -> Void
 
@@ -38,7 +39,8 @@ struct CompanyView: View {
                                     UIPasteboard.general.string = company.inviteCode
                                     didCopyInviteCode = true
                                 }
-                                .buttonStyle(.bordered)
+                                .buttonStyle(.plain)
+                                .themeSecondaryAction()
 
                                 ShareLink(
                                     item: "Join \(company.name) in ShiftPlanner with invite code: \(company.inviteCode)",
@@ -47,63 +49,67 @@ struct CompanyView: View {
                                     Label("Share", systemImage: "square.and.arrow.up")
                                 }
                                 .buttonStyle(.borderedProminent)
+                                .tint(themeManager.selectedTheme.primaryActionFillColor)
                             }
 
                             Text("Share this code with employees so they can join the company.")
                                 .font(.footnote)
-                                .foregroundStyle(.secondary)
+                                .foregroundStyle(themeManager.selectedTheme.secondaryTextColor)
                         }
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .padding()
-                        .background(Color.blue.opacity(0.08))
-                        .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
+                        .themeCard()
                     } else {
                         VStack(alignment: .leading, spacing: 16) {
                             Text("You are not attached to a company yet.")
                                 .font(.title3)
                                 .bold()
+                                .foregroundStyle(themeManager.selectedTheme.primaryTextColor)
 
                             Text("You can enter an invite code if your company already exists, or create a new company.")
-                                .foregroundStyle(.secondary)
+                                .foregroundStyle(themeManager.selectedTheme.secondaryTextColor)
                         }
 
                         VStack(alignment: .leading, spacing: 12) {
                             Text("Join by invite code")
                                 .font(.headline)
+                                .foregroundStyle(themeManager.selectedTheme.primaryTextColor)
                             Text("Useful when your company already exists or when multiple managers will be supported.")
-                                .foregroundStyle(.secondary)
+                                .foregroundStyle(themeManager.selectedTheme.secondaryTextColor)
 
                             Button("Enter invite code") {
                                 isShowingInviteSheet = true
                             }
-                            .buttonStyle(.bordered)
+                            .buttonStyle(.plain)
+                            .themeSecondaryAction()
                         }
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .padding()
-                        .background(Color.orange.opacity(0.08))
-                        .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
+                        .themeCard()
 
                         VStack(alignment: .leading, spacing: 12) {
                             Text("Create a company")
                                 .font(.headline)
+                                .foregroundStyle(themeManager.selectedTheme.primaryTextColor)
                             Text("Set up the company name now and prepare branch data for the upcoming backend expansion.")
-                                .foregroundStyle(.secondary)
+                                .foregroundStyle(themeManager.selectedTheme.secondaryTextColor)
 
                             NavigationLink("Open company setup") {
                                 CompanySetupView { createdCompany in
                                     companyOverride = createdCompany
                                 }
                             }
-                            .buttonStyle(.borderedProminent)
+                            .buttonStyle(.plain)
+                            .themePrimaryAction()
                         }
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .padding()
-                        .background(Color.blue.opacity(0.08))
-                        .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
+                        .themeCard()
                     }
                 }
                 .padding()
             }
+            .background(themeManager.selectedTheme.screenBackground)
             .navigationTitle("Company")
             .navigationBarTitleDisplayMode(.inline)
             .onChange(of: user.company?.inviteCode) { _, _ in

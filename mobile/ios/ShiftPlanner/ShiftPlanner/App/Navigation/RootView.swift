@@ -6,6 +6,7 @@ enum AuthScreen {
 }
 struct RootView: View {
     @StateObject private var authViewModel = AuthViewModel(repository: APIAuthRepository())
+    @EnvironmentObject private var themeManager: ThemeManager
     
     @State private var authScreen: AuthScreen = .login
     @State private var didLoadSession = false
@@ -49,6 +50,7 @@ struct RootView: View {
                 }
             }
         }
+        .background(themeManager.selectedTheme.screenBackground.ignoresSafeArea())
         .task {
             guard !didLoadSession else { return }
             didLoadSession = true

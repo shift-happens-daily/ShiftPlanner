@@ -1,6 +1,7 @@
 import SwiftUI
 
 struct WeekSwitcherView: View {
+    @EnvironmentObject private var themeManager: ThemeManager
     let title: String
     let onPreviousWeek: () -> Void
     let onNextWeek: () -> Void
@@ -11,7 +12,7 @@ struct WeekSwitcherView: View {
                 Image(systemName: "chevron.left")
                     .font(.headline)
                     .frame(width: 40, height: 40)
-                    .background(.white.opacity(0.72))
+                    .background(themeManager.selectedTheme.surfaceColor.opacity(0.92))
                     .clipShape(Circle())
             }
 
@@ -20,10 +21,11 @@ struct WeekSwitcherView: View {
             VStack(spacing: 4) {
                 Text("Week")
                     .font(.caption)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(themeManager.selectedTheme.secondaryTextColor)
                 Text(title)
                     .font(.headline)
                     .fontWeight(.semibold)
+                    .foregroundStyle(themeManager.selectedTheme.primaryTextColor)
             }
 
             Spacer()
@@ -32,13 +34,12 @@ struct WeekSwitcherView: View {
                 Image(systemName: "chevron.right")
                     .font(.headline)
                     .frame(width: 40, height: 40)
-                    .background(.white.opacity(0.72))
+                    .background(themeManager.selectedTheme.surfaceColor.opacity(0.92))
                     .clipShape(Circle())
             }
         }
         .padding(.horizontal, 8)
         .padding(.vertical, 12)
-        .background(.ultraThinMaterial)
-        .clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
+        .themeCard()
     }
 }
