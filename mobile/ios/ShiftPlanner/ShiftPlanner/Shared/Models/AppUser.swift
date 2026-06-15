@@ -20,3 +20,4 @@ enum UserRole: String, Codable, CaseIterable, Identifiable {
         }
     }
 }
+
