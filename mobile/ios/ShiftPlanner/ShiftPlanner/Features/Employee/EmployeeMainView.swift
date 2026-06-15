@@ -9,7 +9,16 @@ struct EmployeeMainView: View {
 
     var body: some View {
         TabView {
-            AvailabilityView(user: user)
+            Group {
+                if user.hasCompany, user.employeeId != nil {
+                    AvailabilityView(user: user)
+                        .id(user.employeeId)
+                } else {
+                    AvailabilityLockedView {
+                        isShowingInviteSheet = true
+                    }
+                }
+            }
                 .tabItem {
                     Label("Availability", systemImage: "clock.badge.checkmark")
                 }
@@ -23,16 +32,6 @@ struct EmployeeMainView: View {
                 .tabItem {
                     Label("Profile", systemImage: "person.crop.circle")
                 }
-        }
-        .safeAreaInset(edge: .top) {
-            if !user.hasCompany {
-                CompanyMembershipBannerView(
-                    title: "You haven't joined a company yet. Enter an invite code to continue.",
-                    buttonTitle: "Enter invite code"
-                ) {
-                    isShowingInviteSheet = true
-                }
-            }
         }
         .sheet(isPresented: $isShowingInviteSheet) {
             CompanyInviteView(
