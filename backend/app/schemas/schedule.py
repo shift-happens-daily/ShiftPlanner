@@ -23,6 +23,40 @@ class ScheduleRequirementRead(ScheduleRequirementCreate):
     position_title: str
 
 
+class ScheduleRequirementTemplateCreate(BaseModel):
+    position_id: int = Field(ge=1)
+    min_staff: int = Field(ge=1)
+    start_time: time
+    end_time: time
+
+    @model_validator(mode="after")
+    def validate_time_range(self) -> "ScheduleRequirementTemplateCreate":
+        if self.end_time <= self.start_time:
+            raise ValueError("end_time must be later than start_time.")
+        return self
+
+
+class ScheduleRequirementBulkCreate(BaseModel):
+    start_date: date
+    end_date: date
+    weekdays: list[int] = Field(min_length=1)
+    requirements: list[ScheduleRequirementTemplateCreate] = Field(min_length=1)
+
+    @model_validator(mode="after")
+    def validate_bulk_payload(self) -> "ScheduleRequirementBulkCreate":
+        if self.end_date < self.start_date:
+            raise ValueError("end_date must be later than or equal to start_date.")
+        invalid_days = [day for day in self.weekdays if day < 0 or day > 6]
+        if invalid_days:
+            raise ValueError("weekdays must contain values between 0 and 6.")
+        return self
+
+
+class ScheduleRequirementBulkRead(BaseModel):
+    created_count: int
+    requirements: list[ScheduleRequirementRead]
+
+
 class ScheduleGenerateRequest(BaseModel):
     start_date: date | None = None
     end_date: date | None = None

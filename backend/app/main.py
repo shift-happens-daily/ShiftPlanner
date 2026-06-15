@@ -9,7 +9,7 @@ from sqlalchemy import text
 from sqlalchemy.exc import SQLAlchemyError
 
 from app.database import SessionLocal
-from app.api import auth, companies, employees, positions, reports, schedule
+from app.api import auth, companies, employees, imports, positions, reports, schedule
 
 load_dotenv()
 
@@ -48,6 +48,7 @@ app.include_router(auth.router, prefix="/auth", tags=["Auth"])
 app.include_router(companies.router, prefix="/companies", tags=["Companies"])
 app.include_router(positions.router, prefix="/positions", tags=["Positions"])
 app.include_router(employees.router, prefix="/employees", tags=["Employees"])
+app.include_router(imports.router, prefix="/imports", tags=["Imports"])
 app.include_router(schedule.router, prefix="/schedule", tags=["Schedule"])
 app.include_router(reports.router, prefix="/reports", tags=["Reports"])
 

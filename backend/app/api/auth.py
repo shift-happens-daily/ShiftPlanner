@@ -6,6 +6,7 @@ from app.api.dependencies import get_current_user, oauth2_scheme
 from app.api.responses import UNAUTHORIZED_RESPONSE, VALIDATION_ERROR_RESPONSE
 from app.database import get_db
 from app.schemas.auth import (
+    CurrentUserResponse,
     LoginRequest,
     LoginResponse,
     LogoutResponse,
@@ -13,8 +14,6 @@ from app.schemas.auth import (
     RegisterResponse,
 )
 from app.services import auth_service
-
-
 
 router = APIRouter()
 
@@ -43,6 +42,7 @@ def login_for_swagger(
     )
     return auth_service.login(db, payload)
 
+
 @router.post(
     "/register",
     response_model=RegisterResponse,
@@ -51,6 +51,18 @@ def login_for_swagger(
 )
 def register(payload: RegisterRequest, db: Session = Depends(get_db)) -> RegisterResponse:
     return auth_service.register(db, payload)
+
+
+@router.get(
+    "/me",
+    response_model=CurrentUserResponse,
+    responses={**UNAUTHORIZED_RESPONSE},
+)
+def get_me(
+    current_user=Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> CurrentUserResponse:
+    return auth_service.get_current_user_profile(db, current_user)
 
 
 @router.post(

@@ -1,18 +1,18 @@
 # ShiftPlanner Backend
 
-This backend is a FastAPI API for ShiftPlanner backed by PostgreSQL. Core Stage 2 data is now persistent: users, employees, availability, requirements, schedules, shift assignments, exchange requests, and reports all read and write through SQLAlchemy repositories instead of the old in-memory `MockDatabase`.
+FastAPI backend for ShiftPlanner with PostgreSQL persistence, SQLAlchemy repositories, JWT auth, RBAC, invite-based company joining, absences, reporting, and XLSX import for schedule requirements.
 
 ## Stack
 
 - Python
 - FastAPI
-- Pydantic
-- Uvicorn
 - PostgreSQL
 - SQLAlchemy 2.x
 - `psycopg`
+- Pydantic
 - `python-jose`
 - `passlib` + `bcrypt`
+- `openpyxl`
 
 ## Architecture
 
@@ -27,65 +27,39 @@ HTTP request
   -> response schema
 ```
 
-Project layout:
+## Persistent Data
 
-```text
-backend/
-  app/
-    api/
-    models/
-    repositories/
-    schemas/
-    services/
-    database.py
-    main.py
-  db/
-    schema.sql
-    seed.sql
-  tests/
-    test_api.py
-  .env.example
-  Dockerfile
-  docker-compose.yml
-  requirements.txt
-```
+The backend now persists:
 
-## What Is Persistent
-
-The PostgreSQL-backed backend now persists:
-
-- companies
-- branches in the database schema
+- companies and invite codes
+- branches
 - users and password hashes
+- employee profiles
 - positions
-- employees
-- employee weekly availability
-- employee desired days off
-- absences in the database schema
+- availability and desired days off
+- absences
 - schedule requirements
-- generated schedules
-- shifts and shift assignments
+- schedules, shifts, and assignments
 - shift exchange requests
-- reports derived from published shifts
+- reports based on published shifts
 
-The only auth state that is still in memory is the active JWT token set used for logout invalidation. After a backend restart, issued tokens are no longer considered active.
+The only auth state that still stays in memory is the active access-token set used for logout invalidation. After backend restart, previously issued tokens are not treated as active.
 
-## Demo Data
+## Demo Accounts
 
-After applying `seed.sql`, local development has these demo accounts:
+After applying `backend/db/seed.sql`:
 
 - `manager@example.com` / `manager123`
 - `ivan@example.com` / `employee123`
 
-The seed also creates:
+Seeded company data:
 
 - company: `Coffee Bar Barnaul`
+- invite code: `COFFEE123`
 - branch: `Main Branch`
 - positions: `Barista`, `Cashier`
-- employee: `Ivan Barista`
-- one initial shift requirement on `2026-06-15`
 
-## Environment Variables
+## Environment
 
 Example `.env`:
 
@@ -97,17 +71,15 @@ JWT_ALGORITHM=HS256
 ACCESS_TOKEN_EXPIRE_MINUTES=60
 ```
 
-`FRONTEND_ORIGINS` accepts a comma-separated list.
-
 ## Run PostgreSQL
 
-From the repository root:
+From repository root:
 
 ```bash
 docker compose -f backend/docker-compose.yml up -d
 ```
 
-## Apply Schema And Seed
+Apply schema and seed.
 
 PowerShell:
 
@@ -123,21 +95,15 @@ docker exec -i shiftplanner_postgres psql -U shiftplanner_user -d shiftplanner <
 docker exec -i shiftplanner_postgres psql -U shiftplanner_user -d shiftplanner < backend/db/seed.sql
 ```
 
-If you need a clean reset first:
-
-```powershell
-docker exec shiftplanner_postgres psql -U shiftplanner_user -d shiftplanner -c "DROP SCHEMA IF EXISTS public CASCADE; CREATE SCHEMA public;"
-```
-
 ## Run Backend
 
-From the `backend` directory:
+From `backend/`:
 
 ```bash
 python -m venv .venv
 ```
 
-On Windows:
+Windows:
 
 ```bash
 .venv\Scripts\activate
@@ -155,113 +121,227 @@ Create `.env`:
 copy .env.example .env
 ```
 
-Start the server:
+Start API:
 
 ```bash
 uvicorn app.main:app --reload
 ```
 
-## Health Endpoints
+Useful URLs:
 
-- `GET /health`
-- `GET /health/db`
+- Swagger UI: `http://localhost:8000/docs`
+- OpenAPI schema: `http://localhost:8000/openapi.json`
+- Health: `http://localhost:8000/health`
+- DB health: `http://localhost:8000/health/db`
 
-`/health/db` returns `200` when the API can connect to PostgreSQL and `503` when the database is unavailable.
+## Auth And Swagger
 
-## Main API Areas
-
-Authentication:
+Main frontend login endpoint:
 
 - `POST /auth/login`
+
+Swagger-compatible token endpoint:
+
+- `POST /auth/token`
+
+`POST /auth/login` returns token and role. The frontend should then call `GET /auth/me` with the Bearer token to get the full profile, employee id, company, branch, and position.
+
+Swagger `Authorize` uses `/auth/token`, not `/auth/login`.
+
+Typical frontend auth flow:
+
+1. Call `POST /auth/login` or `POST /auth/register`.
+2. Store the returned bearer token.
+3. Call `GET /auth/me`.
+4. Use the returned `role`, `employee_id`, `company`, `branch`, and `position` in the UI.
+
+## Main Endpoints
+
+Auth:
+
+- `POST /auth/login`
+- `POST /auth/token`
 - `POST /auth/register`
+- `GET /auth/me`
 - `POST /auth/logout`
 
-Reference data:
+Companies and invite flow:
 
 - `GET /companies/`
 - `POST /companies/`
-- `GET /positions/`
-- `POST /positions/`
+- `GET /companies/invite/{invite_code}`
+- `POST /companies/join`
+
+Employees:
+
 - `GET /employees/`
 - `POST /employees/`
-
-Availability:
-
 - `GET /employees/{employee_id}/availability`
 - `POST /employees/{employee_id}/availability`
+- `GET /employees/{employee_id}/absences`
+- `POST /employees/{employee_id}/absences`
+- `DELETE /employees/{employee_id}/absences/{absence_id}`
+- `GET /employees/{employee_id}/calendar-summary`
+- `GET /employees/me/absences`
+- `POST /employees/me/absences`
+- `GET /employees/me/calendar-summary`
+- `GET /employees/me/schedule`
 
 Scheduling:
 
 - `POST /schedule/requirements`
+- `POST /schedule/requirements/bulk`
 - `GET /schedule/requirements`
 - `POST /schedule/generate`
 - `GET /schedule/{schedule_id}`
 - `PATCH /schedule/{schedule_id}/shifts/{shift_id}`
 - `POST /schedule/{schedule_id}/publish`
 - `GET /schedule/my`
-- `GET /employees/me/schedule`
-
-Exchange requests and reports:
-
 - `POST /schedule/exchange-requests`
 - `GET /schedule/exchange-requests`
 - `PATCH /schedule/exchange-requests/{exchange_request_id}`
+
+Reports:
+
 - `GET /reports/employees`
+- `GET /reports/me`
 
-## Recommended Demo Flow
+Imports:
 
-1. Start PostgreSQL.
-2. Apply `schema.sql`.
-3. Apply `seed.sql`.
-4. Start the backend and open `http://localhost:8000/docs`.
-5. Login as `manager@example.com`.
-6. Create a requirement or use the seeded one.
-7. Generate a schedule.
-8. Publish the schedule.
-9. Login as `ivan@example.com`.
-10. Open `/schedule/my`.
-11. Create a shift exchange request.
-12. Switch back to the manager account and approve or reject it.
-13. Open `/reports/employees`.
-14. Restart the backend and confirm that schedules, requirements, and exchange requests are still present.
+- `POST /imports/requirements/xlsx`
 
-## Tests
+## Invite Join Flow
 
-Smoke tests live in `tests/test_api.py` and reset the PostgreSQL schema before each test.
+Recommended frontend flow:
 
-Run them from `backend/`:
+1. User logs in or registers.
+2. Frontend calls `GET /companies/invite/{invite_code}`.
+3. User confirms company and chooses branch and position.
+4. Frontend calls `POST /companies/join`.
+5. Frontend calls `GET /auth/me` again.
 
-```bash
-python -m pytest tests/test_api.py
-```
+`POST /companies/join` currently allows employee users only. Manager join requests are rejected with `403`.
 
-They cover:
+## Absences
 
-- auth, logout, and RBAC
-- company and position creation
-- employee creation and availability access rules
-- requirement creation
-- schedule generation, reassignment, and publish flow
-- employee personal schedule access
-- exchange request creation and approval
-- report calculation from published shifts
+Absence types:
+
+- `vacation`
+- `sick_leave`
+- `other`
+
+Rules:
+
+- manager can create, view, and delete absences for any employee
+- employee can create, view, and delete only own absences
+- filtering by `start_date` and `end_date` is supported
+- absences are persisted but not yet used by schedule generation
+
+## Bulk Requirements
+
+`POST /schedule/requirements/bulk` lets a manager create repeated requirement rows for a date range and selected weekdays.
+
+Example use case:
+
+- create weekday barista requirements for a whole week in one request
+- create multiple position templates in one payload
+
+`GET /schedule/requirements` supports:
+
+- `start_date`
+- `end_date`
+- `position_id`
+
+## Calendar Summary And Workload
+
+`GET /employees/{employee_id}/calendar-summary` and `GET /employees/me/calendar-summary` return:
+
+- employee basic info
+- weekly availability
+- desired days off
+- absences in the selected period
+- published assigned shifts in the selected period
+- workload totals: `total_shifts`, `total_hours`
+
+Workload counts published schedules only.
+
+## Reports
+
+Manager report:
+
+- `GET /reports/employees?start_date=...&end_date=...`
+
+Employee self report:
+
+- `GET /reports/me?start_date=...&end_date=...`
+
+Reports include published shifts only.
+
+## XLSX Import
+
+Implemented import:
+
+- `POST /imports/requirements/xlsx`
+
+Expected columns:
+
+- `date`
+- `position_id`
+- `start_time`
+- `end_time`
+- `min_staff`
+
+The endpoint returns:
+
+- `created_count`
+- row-level `errors`
+
+Availability XLSX import is not implemented in this stage.
 
 ## Current Limitations
 
-- schedule generation is still intentionally simple and uses the first matching employee per position
-- availability is persisted but not yet used by the generation logic
-- exchange request approval does not automatically reassign shifts
-- branches and absences exist in the schema but do not yet have dedicated API endpoints
-- active JWT invalidation is still memory-based and resets on backend restart
-- there are no refresh tokens or background jobs
+- schedule generation is still intentionally simple and uses the first matching employee
+- availability and absences are not used by generation yet
+- no conflict-detection algorithm
+- no automatic reassignment after exchange approval
+- no refresh tokens
+- no background jobs
+- no real calendar synchronization
 
-## Verification Done
+## Tests
 
-The current PostgreSQL-backed implementation was verified with:
+Run from `backend/`:
 
 ```bash
 python -m compileall app
-python -m pytest tests/test_api.py
+python -m pytest
 ```
 
-It was also manually smoke-tested through `TestClient` for the full flow: manager login, employee login, requirement creation, schedule generation, schedule publish, employee schedule access, exchange request approval, reports, and logout invalidation.
+Current tests cover:
+
+- `/auth/login`, `/auth/token`, `/auth/me`
+- invite preview and join flow
+- absences permissions and filters
+- bulk requirements creation
+- calendar summary and published workload
+- reports
+- XLSX import
+- exchange request regression flow
+
+## Manual Verification Flow
+
+1. Start PostgreSQL.
+2. Apply schema and seed.
+3. Start backend.
+4. Open `/docs`.
+5. Authorize as manager through `/auth/token`.
+6. Call `GET /auth/me`.
+7. Preview invite code `COFFEE123`.
+8. Register or login employee.
+9. Join company by invite code.
+10. Call `GET /auth/me` again.
+11. Create absence.
+12. Create bulk requirements.
+13. Generate and publish schedule using existing simple generation.
+14. Check calendar summary.
+15. Check reports.
