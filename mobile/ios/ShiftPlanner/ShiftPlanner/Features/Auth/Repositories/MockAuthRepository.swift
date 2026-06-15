@@ -39,7 +39,9 @@ final class MockAuthRepository: AuthRepository {
             id: UUID().uuidString,
             email: email,
             name: "Test User",
-            role: .manager
+            role: .manager,
+            employeeId: nil,
+            company: nil
         )
 
         currentUser = user
@@ -64,7 +66,9 @@ final class MockAuthRepository: AuthRepository {
             id: UUID().uuidString,
             email: email,
             name: name,
-            role: role
+            role: role,
+            employeeId: nil,
+            company: nil
         )
 
         currentUser = user

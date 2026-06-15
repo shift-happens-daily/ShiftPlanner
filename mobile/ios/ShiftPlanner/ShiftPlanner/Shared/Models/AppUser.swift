@@ -5,6 +5,12 @@ struct AppUser: Identifiable, Codable {
     let email: String
     let name: String
     let role: UserRole
+    let employeeId: Int?
+    let company: AppCompanySummary?
+
+    var hasCompany: Bool {
+        company != nil
+    }
 }
 
 enum UserRole: String, Codable, CaseIterable, Identifiable {
@@ -20,4 +26,3 @@ enum UserRole: String, Codable, CaseIterable, Identifiable {
         }
     }
 }
-

@@ -81,10 +81,6 @@ final class APIAuthRepository: AuthRepository {
     }
 
     func getCurrentUser() async -> AppUser? {
-        if let currentUser {
-            return currentUser
-        }
-
         guard apiClient.accessToken != nil else {
             return nil
         }
@@ -107,12 +103,6 @@ final class APIAuthRepository: AuthRepository {
             requiresAuthorization: true
         )
         let response = try await apiClient.send(request, as: CurrentUserResponse.self)
-
-        return AppUser(
-            id: String(response.id),
-            email: response.email,
-            name: response.fullName,
-            role: response.role
-        )
+        return response.asAppUser()
     }
 }

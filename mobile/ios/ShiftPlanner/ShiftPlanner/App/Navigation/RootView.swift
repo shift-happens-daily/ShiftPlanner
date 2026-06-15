@@ -8,14 +8,33 @@ struct RootView: View {
     @StateObject private var authViewModel = AuthViewModel(repository: APIAuthRepository())
     
     @State private var authScreen: AuthScreen = .login
+    @State private var didLoadSession = false
     
     var body: some View {
         Group {
             if let user = authViewModel.currentUser {
                 switch user.role {
-                case .manager: ManagerMainView()
+                case .manager:
+                    ManagerMainView(
+                        user: user,
+                        onLogout: {
+                            await authViewModel.logout()
+                        },
+                        onUserUpdated: { updatedUser in
+                            authViewModel.updateCurrentUser(updatedUser)
+                        }
+                    )
                     
-                case .employee: EmployeeMainView()
+                case .employee:
+                    EmployeeMainView(
+                        user: user,
+                        onLogout: {
+                            await authViewModel.logout()
+                        },
+                        onUserUpdated: { updatedUser in
+                            authViewModel.updateCurrentUser(updatedUser)
+                        }
+                    )
                 }
             } else {
                 switch authScreen {
@@ -31,6 +50,8 @@ struct RootView: View {
             }
         }
         .task {
+            guard !didLoadSession else { return }
+            didLoadSession = true
             await authViewModel.loadCurrentUser()
         }
     }
