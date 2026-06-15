@@ -13,12 +13,13 @@ export default function ProfileTab({ language, user }) {
       fullName: 'Полное имя',
       email: 'Email',
       role: 'Роль',
-      employeeId: 'Employee ID',
+      employeeId: 'ID сотрудника',
       company: 'Компания',
       branch: 'Филиал',
       position: 'Позиция',
       refresh: 'Обновить',
       empty: 'Нет данных',
+      noCompany: 'Не привязана',
       manager: 'Менеджер',
       employee: 'Сотрудник',
       refreshError: 'Не удалось обновить профиль.',
@@ -34,6 +35,7 @@ export default function ProfileTab({ language, user }) {
       position: 'Position',
       refresh: 'Refresh',
       empty: 'No data',
+      noCompany: 'Not linked',
       manager: 'Manager',
       employee: 'Employee',
       refreshError: 'Failed to refresh profile.',
@@ -42,9 +44,73 @@ export default function ProfileTab({ language, user }) {
 
   const t = texts[language] || texts.ru;
 
+  const role = user?.role;
+  const isManager = role === 'manager';
+  const isEmployee = role === 'employee';
+
+  const fullName = user?.fullName || user?.full_name || user?.name || t.empty;
+  const email = user?.email || t.empty;
+  const employeeId = user?.employeeId || user?.employee_id;
+  const managerCompanyStorageKey = `shiftplanner_manager_company_${user?.email || 'current'}`;
+
+  let savedManagerCompany = null;
+
+  try {
+    const rawCompany = localStorage.getItem(managerCompanyStorageKey);
+    savedManagerCompany = rawCompany ? JSON.parse(rawCompany) : null;
+  } catch {
+    savedManagerCompany = null;
+  }
+
+const fallbackCompany = user?.role === 'manager' ? savedManagerCompany : null;
+const companyName = user?.company?.name || fallbackCompany?.name;
+  const branchName = user?.branch?.name;
+  const positionName = user?.position?.name;
+
+  const rows = [
+    {
+      label: t.fullName,
+      value: fullName,
+    },
+    {
+      label: t.email,
+      value: email,
+    },
+    {
+      label: t.role,
+      value: isManager ? t.manager : isEmployee ? t.employee : t.empty,
+    },
+    {
+      label: t.company,
+      value: companyName || t.noCompany,
+      muted: !companyName,
+    },
+  ];
+
+  if (isEmployee) {
+    rows.push(
+      {
+        label: t.employeeId,
+        value: employeeId || t.empty,
+        muted: !employeeId,
+      },
+      {
+        label: t.branch,
+        value: branchName || t.empty,
+        muted: !branchName,
+      },
+      {
+        label: t.position,
+        value: positionName || t.empty,
+        muted: !positionName,
+      },
+    );
+  }
+
   const handleRefresh = async () => {
     setIsRefreshing(true);
     setErrorMessage('');
+
     try {
       await refreshUser();
     } catch (error) {
@@ -54,97 +120,169 @@ export default function ProfileTab({ language, user }) {
     }
   };
 
-  const rows = [
-    { label: t.fullName, value: user?.fullName },
-    { label: t.email, value: user?.email },
-    { label: t.role, value: user?.role ? t[user.role] : null },
-    { label: t.employeeId, value: user?.employeeId },
-    { label: t.company, value: user?.company?.name },
-    { label: t.branch, value: user?.branch?.name },
-    { label: t.position, value: user?.position?.name },
-  ];
-
   return (
-    <div style={styles.card}>
-      <div style={styles.header}>
-        <div>
-          <h2 style={styles.title}>{t.title}</h2>
-        </div>
-        <button onClick={handleRefresh} style={styles.actionButton} disabled={isRefreshing}>
-          {isRefreshing ? '...' : t.refresh}
-        </button>
-      </div>
-
-      {errorMessage && <div style={styles.error}>{errorMessage}</div>}
-
-      <div style={styles.infoList}>
-        {rows.map((row) => (
-          <div key={row.label} style={styles.infoRow}>
-            <span style={styles.infoLabel}>{row.label}</span>
-            <span style={styles.infoValue}>{row.value || t.empty}</span>
+    <section style={styles.page}>
+      <div style={styles.card}>
+        <div style={styles.header}>
+          <div>
+            <h2 style={styles.title}>{t.title}</h2>
+            <p style={styles.subtitle}>{t.subtitle}</p>
           </div>
-        ))}
+
+          <button
+            type="button"
+            onClick={handleRefresh}
+            style={isRefreshing ? styles.refreshButtonDisabled : styles.refreshButton}
+            disabled={isRefreshing}
+          >
+            {isRefreshing ? '...' : t.refresh}
+          </button>
+        </div>
+
+        {errorMessage && <div style={styles.error}>{errorMessage}</div>}
+
+        <div style={styles.rows}>
+          {rows.map((row) => (
+            <div key={row.label} style={styles.row}>
+              <span style={styles.label}>{row.label}</span>
+              <span style={row.muted ? styles.valueMuted : styles.value}>
+                {row.value || t.empty}
+              </span>
+            </div>
+          ))}
+        </div>
       </div>
-    </div>
+    </section>
   );
 }
 
 const styles = {
-  card: {
-    background: '#F4FAFF',
-    borderRadius: '24px',
-    padding: '24px',
-    maxWidth: '820px',
-    margin: '0 auto',
+    page: {
+    width: '100%',
+    height: '100%',
+    boxSizing: 'border-box',
+    padding: '56px 24px',
+    display: 'flex',
+    justifyContent: 'center',
+    alignItems: 'flex-start',
+    overflow: 'hidden',
   },
+
+  card: {
+    width: 'min(100%, 1040px)',
+    minHeight: '520px',
+    maxHeight: '100%',
+    boxSizing: 'border-box',
+    padding: '36px 44px',
+    borderRadius: '28px',
+    background: '#f4faff',
+    border: '1px solid rgba(222, 231, 231, 0.95)',
+    boxShadow: '0 24px 60px rgba(0, 38, 66, 0.18)',
+    overflow: 'hidden',
+
+    display: 'flex',
+    flexDirection: 'column',
+  },
+
   header: {
     display: 'flex',
     justifyContent: 'space-between',
-    alignItems: 'flex-start',
+    alignItems: 'center',
     gap: '16px',
-    flexWrap: 'wrap',
     marginBottom: '20px',
   },
+
   title: {
-    fontSize: '24px',
-    fontWeight: '600',
-    color: '#002642',
     margin: 0,
+    color: '#002642',
+    fontSize: '26px',
+    fontWeight: '800',
+    letterSpacing: '-0.02em',
   },
-  actionButton: {
-    padding: '10px 16px',
-    background: '#002642',
+
+  subtitle: {
+    margin: '4px 0 0',
+    color: '#4f646f',
+    fontSize: '14px',
+    fontWeight: '500',
+  },
+
+  refreshButton: {
+    padding: '9px 16px',
     border: 'none',
     borderRadius: '12px',
-    color: '#F4FAFF',
-    fontWeight: '600',
+    background: '#002642',
+    color: '#f4faff',
+    fontSize: '14px',
+    fontWeight: '700',
     cursor: 'pointer',
   },
-  error: {
-    marginBottom: '16px',
-    padding: '12px 14px',
+
+  refreshButtonDisabled: {
+    padding: '9px 16px',
+    border: 'none',
     borderRadius: '12px',
-    background: '#FDEAEA',
-    color: '#A61B1B',
+    background: '#4f646f',
+    color: '#f4faff',
     fontSize: '14px',
+    fontWeight: '700',
+    cursor: 'default',
+    opacity: 0.7,
   },
-  infoList: {
-    display: 'flex',
-    flexDirection: 'column',
-    gap: '14px',
-  },
-  infoRow: {
-    display: 'grid',
-    gridTemplateColumns: '180px 1fr',
-    gap: '12px',
-    paddingBottom: '14px',
-    borderBottom: '1px solid #DEE7E7',
-  },
-  infoLabel: {
-    color: '#4F646F',
+
+  error: {
+    marginBottom: '14px',
+    padding: '10px 12px',
+    borderRadius: '12px',
+    background: 'rgba(215, 173, 207, 0.35)',
+    color: '#8d1d1d',
+    fontSize: '14px',
     fontWeight: '600',
   },
-  infoValue: {
+
+  rows: {
+    flex: 1,
+    display: 'grid',
+    gridTemplateColumns: 'repeat(2, minmax(320px, 1fr))',
+    gap: '34px 42px',
+    alignContent: 'center',
+    justifyContent: 'center',
+  },
+
+  row: {
+    minHeight: '115px',
+    boxSizing: 'border-box',
+    padding: '22px 24px',
+    borderRadius: '20px',
+    background: '#ffffff',
+    border: '1px solid rgba(79, 100, 111, 0.12)',
+
+    display: 'flex',
+    flexDirection: 'column',
+    justifyContent: 'center',
+    alignItems: 'center',
+    textAlign: 'center',
+
+    gap: '8px',
+  },
+
+  label: {
+    color: '#4f646f',
+    fontSize: '14px',
+    fontWeight: '700',
+  },
+
+  value: {
     color: '#002642',
+    fontSize: '20px',
+    fontWeight: '800',
+    overflowWrap: 'anywhere',
+  },
+
+  valueMuted: {
+    color: 'rgba(79, 100, 111, 0.7)',
+    fontSize: '20px',
+    fontWeight: '700',
+    overflowWrap: 'anywhere',
   },
 };

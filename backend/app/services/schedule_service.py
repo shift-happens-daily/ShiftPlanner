@@ -313,3 +313,11 @@ def _build_requirement_read(db: Session, requirement) -> ScheduleRequirementRead
         start_time=requirement.start_time,
         end_time=requirement.end_time,
     )
+
+def delete_requirement(db: Session, requirement_id: int) -> None:
+    requirement = schedule_repository.get_requirement_by_id(db, requirement_id)
+
+    if not requirement:
+        raise HTTPException(status_code=404, detail="Requirement not found")
+
+    schedule_repository.delete_requirement(db, requirement)

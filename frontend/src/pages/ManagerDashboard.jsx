@@ -23,60 +23,60 @@ export default function ManagerDashboard() {
   const texts = {
     ru: {
       title: 'ShiftPlanner',
-      logout: 'Выйти'
+      logout: 'Выйти',
     },
     en: {
       title: 'ShiftPlanner',
-      logout: 'Logout'
-    }
+      logout: 'Logout',
+    },
   };
 
-  const t = texts[language];
+  const t = texts[language] || texts.ru;
 
   return (
     <div style={styles.container}>
-      <div style={styles.header}>
-        <h1 style={styles.title}>{t.title}</h1>
-        <div style={styles.headerRight}>
-          <LanguageSwitcher onLanguageChange={handleLanguageChange} variant="light" />
-          <button onClick={handleLogout} style={styles.logoutBtn}>{t.logout}</button>
-        </div>
-      </div>
-      <DashboardTabs userRole={user?.role || 'manager'} language={language} />
+      <DashboardTabs
+        userRole={user?.role || 'manager'}
+        language={language}
+        title={t.title}
+        rightSlot={(
+          <div style={styles.headerRight}>
+            <LanguageSwitcher onLanguageChange={handleLanguageChange} variant="light" />
+            <button type="button" onClick={handleLogout} style={styles.logoutBtn}>
+              {t.logout}
+            </button>
+          </div>
+        )}
+      />
     </div>
   );
 }
 
 const styles = {
   container: {
-    minHeight: '100vh',
-    background: 'linear-gradient(135deg, #002642 0%, #4F646F 100%)'
+    height: '100dvh',
+    width: '100%',
+    background: 'linear-gradient(135deg, #002642 0%, #4f646f 100%)',
+    overflow: 'hidden',
   },
-  header: {
-    display: 'flex',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    padding: '16px 20px',
-    background: '#DEE7E7'
-  },
-  title: {
-    fontSize: '20px',
-    fontWeight: '600',
-    color: '#002642',
-    margin: 0
-  },
+
   headerRight: {
     display: 'flex',
+    alignItems: 'center',
     gap: '12px',
-    alignItems: 'center'
+    flexShrink: 0,
   },
+
   logoutBtn: {
-    padding: '8px 16px',
-    background: '#B7ADCF',
+    height: '42px',
+    padding: '0 22px',
+    background: '#d7adcf',
     border: 'none',
-    borderRadius: '12px',
+    borderRadius: '16px',
     color: '#002642',
-    fontWeight: '500',
-    cursor: 'pointer'
-  }
+    fontWeight: '900',
+    fontSize: '15px',
+    cursor: 'pointer',
+  },
 };
+

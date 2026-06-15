@@ -1,11 +1,24 @@
 from fastapi import APIRouter, Depends, status
 from sqlalchemy.orm import Session
 
-from app.api.dependencies import get_current_user, require_role
-from app.api.responses import BAD_REQUEST_RESPONSE, FORBIDDEN_RESPONSE, NOT_FOUND_RESPONSE, UNAUTHORIZED_RESPONSE, VALIDATION_ERROR_RESPONSE
+from app.api.dependencies import get_current_user, require_manager, require_role
+from app.api.responses import (
+    BAD_REQUEST_RESPONSE,
+    FORBIDDEN_RESPONSE,
+    NOT_FOUND_RESPONSE,
+    UNAUTHORIZED_RESPONSE,
+    VALIDATION_ERROR_RESPONSE,
+)
 from app.database import get_db
 from app.schemas.auth import CurrentUserResponse, UserRead
-from app.schemas.company import CompanyCreate, CompanyInvitePreviewRead, CompanyJoinRequest, CompanyRead, CompanySummaryRead
+from app.schemas.company import (
+    BranchCreate,
+    BranchResponse,
+    CompanyCreate,
+    CompanyJoinRequest,
+    CompanyRead,
+    CompanySummaryRead,
+)
 from app.services import company_service
 
 router = APIRouter()
@@ -31,22 +44,17 @@ def get_companies(
 )
 def create_company(
     payload: CompanyCreate,
-    _: UserRead = Depends(require_role("manager")),
+    current_user: UserRead = Depends(require_role("manager")),
     db: Session = Depends(get_db),
 ) -> CompanyRead:
-    return company_service.create_company(db, payload)
+    return company_service.create_company(db, payload, current_user)
 
 
-@router.get(
-    "/invite/{invite_code}",
-    response_model=CompanyInvitePreviewRead,
-    responses={**UNAUTHORIZED_RESPONSE, **NOT_FOUND_RESPONSE},
-)
-def preview_company_invite(
+@router.get("/invite/{invite_code}")
+def preview_invite_code(
     invite_code: str,
-    _: UserRead = Depends(get_current_user),
     db: Session = Depends(get_db),
-) -> CompanyInvitePreviewRead:
+):
     return company_service.preview_invite_code(db, invite_code)
 
 
@@ -61,3 +69,45 @@ def join_company(
     db: Session = Depends(get_db),
 ) -> CurrentUserResponse:
     return company_service.join_company_by_invite(db, payload, current_user)
+
+
+@router.delete(
+    "/{company_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    responses={**UNAUTHORIZED_RESPONSE, **FORBIDDEN_RESPONSE, **NOT_FOUND_RESPONSE},
+)
+def delete_company(
+    company_id: int,
+    _: UserRead = Depends(require_manager),
+    db: Session = Depends(get_db),
+) -> None:
+    company_service.delete_company(db, company_id)
+
+
+@router.get(
+    "/{company_id}/branches",
+    response_model=list[BranchResponse],
+    responses={**UNAUTHORIZED_RESPONSE, **FORBIDDEN_RESPONSE, **NOT_FOUND_RESPONSE},
+)
+def list_company_branches(
+    company_id: int,
+    _: UserRead = Depends(require_manager),
+    db: Session = Depends(get_db),
+) -> list[BranchResponse]:
+    return company_service.list_company_branches(db, company_id)
+
+
+@router.post(
+    "/{company_id}/branches",
+    response_model=BranchResponse,
+    status_code=status.HTTP_201_CREATED,
+    responses={**UNAUTHORIZED_RESPONSE, **FORBIDDEN_RESPONSE, **VALIDATION_ERROR_RESPONSE, **NOT_FOUND_RESPONSE},
+)
+def create_company_branch(
+    company_id: int,
+    payload: BranchCreate,
+    _: UserRead = Depends(require_manager),
+    db: Session = Depends(get_db),
+) -> BranchResponse:
+    return company_service.create_company_branch(db, company_id, payload.name)
+

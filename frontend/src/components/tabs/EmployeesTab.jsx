@@ -27,28 +27,64 @@ function createAvailabilityBlock() {
   return { weekday: 0, start_time: '09:00:00', end_time: '18:00:00' };
 }
 
-export default function EmployeesTab({ language, userRole }) {
+function normalizeArray(value) {
+  return Array.isArray(value) ? value : [];
+}
+
+function normalizeError(error, fallback, language) {
+  const message = extractApiErrorMessage(error, fallback, language);
+
+  if (!message) {
+    return fallback;
+  }
+
+  return message;
+}
+
+function getPositionLabel(position) {
+  return position?.title || position?.name || position?.position_title || '';
+}
+
+function getEmployeePosition(employee) {
+  return employee?.position_title || employee?.position?.title || employee?.position?.name || '';
+}
+
+function isValidEmail(email) {
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
+}
+
+function getCompanyId(company) {
+  return company?.id || company?.company_id || null;
+}
+
+export default function EmployeesTab({ language, userRole, user }) {
   const [employees, setEmployees] = useState([]);
   const [positions, setPositions] = useState([]);
   const [selectedEmployeeId, setSelectedEmployeeId] = useState('');
+
   const [availabilityForm, setAvailabilityForm] = useState({
     weekly_availability: [],
     desired_days_off: [],
   });
+
   const [employeeAbsences, setEmployeeAbsences] = useState([]);
   const [employeeSummary, setEmployeeSummary] = useState(null);
+
   const [employeeForm, setEmployeeForm] = useState({
     full_name: '',
     email: '',
     position_id: '',
   });
+
   const [positionTitle, setPositionTitle] = useState('');
+
   const [absenceForm, setAbsenceForm] = useState({
     absence_type: 'vacation',
     start_date: '',
     end_date: '',
     comment: '',
   });
+
   const [isLoading, setIsLoading] = useState(true);
   const [isDetailsLoading, setIsDetailsLoading] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -57,7 +93,8 @@ export default function EmployeesTab({ language, userRole }) {
 
   const texts = {
     ru: {
-      title: 'Сотрудники и позиции',
+      title: 'Сотрудники',
+      subtitle: 'Позиции, сотрудники, доступность и отсутствия',
       employees: 'Сотрудники',
       positions: 'Позиции',
       availability: 'Доступность',
@@ -69,30 +106,51 @@ export default function EmployeesTab({ language, userRole }) {
       totalShifts: 'Смены',
       createEmployee: 'Создать сотрудника',
       createPosition: 'Создать позицию',
+      employeeDetails: 'Карточка сотрудника',
       fullName: 'Имя и фамилия',
       email: 'Email',
       position: 'Позиция',
       save: 'Сохранить',
       addRow: 'Добавить интервал',
       addAbsence: 'Добавить отсутствие',
-      type: 'Тип',
       startDate: 'Начало',
       endDate: 'Окончание',
       comment: 'Комментарий',
       empty: 'Нет данных',
       loading: 'Загрузка...',
       selectEmployee: 'Выберите сотрудника',
+      selectPosition: 'Выберите позицию',
       vacation: 'Отпуск',
       sick_leave: 'Больничный',
       other: 'Другое',
-      created: 'Данные сохранены.',
+      absenceAdded: 'Отсутствие добавлено.',
+      absenceDeleted: 'Отсутствие удалено.',
       managerOnly: 'Раздел доступен менеджеру.',
       delete: 'Удалить',
       draft: 'Черновик',
       published: 'Опубликовано',
+      noEmployees: 'Сотрудники пока не добавлены.',
+      noIntervals: 'Интервалы доступности не добавлены.',
+      noAbsences: 'Отсутствия не добавлены.',
+      noShifts: 'Смены не найдены.',
+      requiredPosition: 'Введите название позиции.',
+      requiredEmployeeName: 'Введите имя и фамилию сотрудника.',
+      requiredEmployeeEmail: 'Введите email сотрудника.',
+      invalidEmployeeEmail: 'Введите корректный email сотрудника.',
+      requiredEmployeePosition: 'Выберите позицию сотрудника.',
+      duplicateEmployee:
+        'Пользователь или сотрудник с таким email уже существует. Используйте другой email или попросите сотрудника присоединиться по инвайт-коду.',
+      
+      positionCreated: 'Позиция создана.',
+      employeeCreated: 'Сотрудник создан.',
+      availabilitySaved: 'Доступность сохранена.',
+      createEmployeeHint: 'Для уже зарегистрированного сотрудника лучше использовать инвайт-код.',
+      noCompanyForPosition: 'Сначала создайте компанию во вкладке «Компания». Компания должна прийти из /auth/me, localStorage больше не используется.',
+      noPositionsHint: 'Сначала создайте позицию, потом добавьте сотрудника.',
     },
     en: {
-      title: 'Employees and positions',
+      title: 'Employees',
+      subtitle: 'Positions, employees, availability, and absences',
       employees: 'Employees',
       positions: 'Positions',
       availability: 'Availability',
@@ -104,36 +162,89 @@ export default function EmployeesTab({ language, userRole }) {
       totalShifts: 'Shifts',
       createEmployee: 'Create employee',
       createPosition: 'Create position',
+      employeeDetails: 'Employee card',
       fullName: 'Full name',
       email: 'Email',
       position: 'Position',
       save: 'Save',
       addRow: 'Add interval',
       addAbsence: 'Add absence',
-      type: 'Type',
       startDate: 'Start date',
       endDate: 'End date',
       comment: 'Comment',
       empty: 'No data',
       loading: 'Loading...',
       selectEmployee: 'Select employee',
+      selectPosition: 'Select position',
       vacation: 'Vacation',
       sick_leave: 'Sick leave',
       other: 'Other',
-      created: 'Data saved.',
+      absenceAdded: 'Absence added.',
+      absenceDeleted: 'Absence deleted.',
       managerOnly: 'Manager access only.',
       delete: 'Delete',
       draft: 'Draft',
       published: 'Published',
+      noEmployees: 'No employees yet.',
+      noIntervals: 'No availability intervals yet.',
+      noAbsences: 'No absences yet.',
+      noShifts: 'No shifts found.',
+      requiredPosition: 'Enter position title.',
+      requiredEmployeeName: 'Enter employee full name.',
+      requiredEmployeeEmail: 'Enter employee email.',
+      invalidEmployeeEmail: 'Enter a valid employee email.',
+      requiredEmployeePosition: 'Select employee position.',
+      duplicateEmployee:
+        'A user or employee with this email already exists. Use another email or ask the employee to join by invite code.',
+      positionCreated: 'Position created.',
+      employeeCreated: 'Employee created.',
+      availabilitySaved: 'Availability saved.',
+      createEmployeeHint: 'For an already registered employee, use the invite code flow.',
+      noCompanyForPosition: 'Create a company in the Company tab first. The company must come from /auth/me; localStorage is no longer used.',
+      noPositionsHint: 'Create a position first, then add an employee.',
     },
   };
 
   const t = texts[language] || texts.ru;
 
+  const currentCompany = user?.company || null;
+  const currentCompanyId = getCompanyId(currentCompany);
+
+  const visiblePositions = useMemo(() => {
+    if (!currentCompanyId) {
+      return positions;
+    }
+
+    return positions.filter((position) => {
+      const positionCompanyId = position.company_id || position.companyId;
+
+      if (!positionCompanyId) {
+        return false;
+      }
+
+      return String(positionCompanyId) === String(currentCompanyId);
+    });
+  }, [positions, currentCompanyId]);
+
+  useEffect(() => {
+    if (!errorMessage && !successMessage) {
+      return undefined;
+    }
+
+    const timer = setTimeout(() => {
+      setErrorMessage('');
+      setSuccessMessage('');
+    }, errorMessage ? 5000 : 2500);
+
+    return () => clearTimeout(timer);
+  }, [errorMessage, successMessage]);
+
   const selectedEmployee = useMemo(
     () => employees.find((employee) => String(employee.id) === String(selectedEmployeeId)),
     [employees, selectedEmployeeId]
   );
+
+  const selectedEmployeePosition = getEmployeePosition(selectedEmployee);
 
   useEffect(() => {
     if (userRole !== 'manager') {
@@ -144,6 +255,8 @@ export default function EmployeesTab({ language, userRole }) {
 
     async function bootstrap() {
       setIsLoading(true);
+      setErrorMessage('');
+
       try {
         const [employeesData, positionsData] = await Promise.all([
           listEmployees(),
@@ -154,14 +267,20 @@ export default function EmployeesTab({ language, userRole }) {
           return;
         }
 
-        setEmployees(employeesData);
-        setPositions(positionsData);
-        if (employeesData[0]) {
-          setSelectedEmployeeId(String(employeesData[0].id));
+        const safeEmployees = normalizeArray(employeesData);
+        const safePositions = normalizeArray(positionsData);
+
+        setEmployees(safeEmployees);
+        setPositions(safePositions);
+
+        if (safeEmployees[0]) {
+          setSelectedEmployeeId(String(safeEmployees[0].id));
+        } else {
+          setSelectedEmployeeId('');
         }
       } catch (error) {
         if (isMounted) {
-          setErrorMessage(extractApiErrorMessage(error, null, language));
+          setErrorMessage(normalizeError(error, t.empty, language));
         }
       } finally {
         if (isMounted) {
@@ -171,13 +290,17 @@ export default function EmployeesTab({ language, userRole }) {
     }
 
     bootstrap();
+
     return () => {
       isMounted = false;
     };
-  }, [language, userRole]);
+  }, [language, t.empty, userRole]);
 
   useEffect(() => {
     if (!selectedEmployeeId || userRole !== 'manager') {
+      setAvailabilityForm({ weekly_availability: [], desired_days_off: [] });
+      setEmployeeAbsences([]);
+      setEmployeeSummary(null);
       return undefined;
     }
 
@@ -186,6 +309,7 @@ export default function EmployeesTab({ language, userRole }) {
     async function loadDetails() {
       setIsDetailsLoading(true);
       setErrorMessage('');
+
       try {
         const [availabilityData, absencesData, summaryData] = await Promise.all([
           getEmployeeAvailability(selectedEmployeeId),
@@ -197,17 +321,22 @@ export default function EmployeesTab({ language, userRole }) {
           return;
         }
 
+        const weeklyAvailability = normalizeArray(availabilityData?.weekly_availability);
+        const desiredDaysOff = normalizeArray(availabilityData?.desired_days_off);
+
         setAvailabilityForm({
-          weekly_availability: availabilityData.weekly_availability.length
-            ? availabilityData.weekly_availability
-            : [],
-          desired_days_off: availabilityData.desired_days_off || [],
+          weekly_availability: weeklyAvailability,
+          desired_days_off: desiredDaysOff,
         });
-        setEmployeeAbsences(absencesData);
+
+        setEmployeeAbsences(normalizeArray(absencesData));
         setEmployeeSummary(mapEmployeeCalendarSummary(summaryData));
       } catch (error) {
         if (isMounted) {
-          setErrorMessage(extractApiErrorMessage(error, null, language));
+          setAvailabilityForm({ weekly_availability: [], desired_days_off: [] });
+          setEmployeeAbsences([]);
+          setEmployeeSummary(null);
+          setErrorMessage(normalizeError(error, t.empty, language));
         }
       } finally {
         if (isMounted) {
@@ -217,71 +346,133 @@ export default function EmployeesTab({ language, userRole }) {
     }
 
     loadDetails();
+
     return () => {
       isMounted = false;
     };
-  }, [language, selectedEmployeeId, userRole]);
+  }, [language, selectedEmployeeId, t.empty, userRole]);
 
   if (userRole !== 'manager') {
-    return <div style={styles.card}>{t.managerOnly}</div>;
+    return (
+      <section style={styles.page}>
+        <div style={styles.card}>{t.managerOnly}</div>
+      </section>
+    );
   }
 
+  const clearMessages = () => {
+    setErrorMessage('');
+    setSuccessMessage('');
+  };
+
+  const getFriendlyError = (error, fallback) => {
+    const rawMessage = normalizeError(error, fallback, language);
+    const lowerMessage = String(rawMessage).toLowerCase();
+
+    if (
+      lowerMessage.includes('already exists') ||
+      lowerMessage.includes('уже существует') ||
+      lowerMessage.includes('duplicate') ||
+      lowerMessage.includes('unique')
+    ) {
+      return t.duplicateEmployee;
+    }
+
+    return rawMessage;
+  };
+
   const reloadEmployees = async (preferEmployeeId) => {
-    const employeesData = await listEmployees();
+    const employeesData = normalizeArray(await listEmployees());
     setEmployees(employeesData);
+
     if (preferEmployeeId) {
       setSelectedEmployeeId(String(preferEmployeeId));
-    } else if (!employeesData.some((employee) => String(employee.id) === String(selectedEmployeeId))) {
+      return;
+    }
+
+    if (!employeesData.some((employee) => String(employee.id) === String(selectedEmployeeId))) {
       setSelectedEmployeeId(employeesData[0] ? String(employeesData[0].id) : '');
     }
   };
 
   const reloadPositions = async () => {
-    const positionsData = await listPositions();
+    const positionsData = normalizeArray(await listPositions());
     setPositions(positionsData);
   };
 
   const handleCreatePosition = async () => {
     if (!positionTitle.trim()) {
-      setErrorMessage(t.position);
+      setErrorMessage(t.requiredPosition);
       return;
     }
 
-    setErrorMessage('');
-    setSuccessMessage('');
+    if (!currentCompanyId) {
+      setErrorMessage(t.noCompanyForPosition);
+      return;
+    }
+
+    clearMessages();
     setIsSubmitting(true);
+
     try {
-      await createPosition({ title: positionTitle.trim() });
+      await createPosition({
+        title: positionTitle.trim(),
+        company_id: Number(currentCompanyId),
+      });
       await reloadPositions();
       setPositionTitle('');
-      setSuccessMessage(t.created);
+      setSuccessMessage(t.positionCreated);
     } catch (error) {
-      setErrorMessage(extractApiErrorMessage(error, null, language));
+      setErrorMessage(normalizeError(error, t.requiredPosition, language));
     } finally {
       setIsSubmitting(false);
     }
   };
 
+  const validateEmployeeForm = () => {
+    if (!employeeForm.full_name.trim()) {
+      setErrorMessage(t.requiredEmployeeName);
+      return false;
+    }
+
+    if (!employeeForm.email.trim()) {
+      setErrorMessage(t.requiredEmployeeEmail);
+      return false;
+    }
+
+    if (!isValidEmail(employeeForm.email.trim())) {
+      setErrorMessage(t.invalidEmployeeEmail);
+      return false;
+    }
+
+    if (!employeeForm.position_id) {
+      setErrorMessage(t.requiredEmployeePosition);
+      return false;
+    }
+
+    return true;
+  };
+
   const handleCreateEmployee = async () => {
-    if (!employeeForm.full_name.trim() || !employeeForm.email.trim() || !employeeForm.position_id) {
-      setErrorMessage(t.createEmployee);
+    if (!validateEmployeeForm()) {
       return;
     }
 
-    setErrorMessage('');
-    setSuccessMessage('');
+    clearMessages();
     setIsSubmitting(true);
+
     try {
       const createdEmployee = await createEmployee({
         full_name: employeeForm.full_name.trim(),
         email: employeeForm.email.trim(),
         position_id: Number(employeeForm.position_id),
       });
-      await reloadEmployees(createdEmployee.id);
+
+      await reloadEmployees(createdEmployee?.id);
       setEmployeeForm({ full_name: '', email: '', position_id: '' });
-      setSuccessMessage(t.created);
+      setSuccessMessage(t.employeeCreated);
     } catch (error) {
-      setErrorMessage(extractApiErrorMessage(error, null, language));
+      setErrorMessage(getFriendlyError(error, t.createEmployee));
     } finally {
       setIsSubmitting(false);
     }
@@ -301,23 +492,26 @@ export default function EmployeesTab({ language, userRole }) {
       return;
     }
 
-    setErrorMessage('');
-    setSuccessMessage('');
+    clearMessages();
     setIsSubmitting(true);
+
     try {
       await updateEmployeeAvailability(selectedEmployeeId, availabilityForm);
+
       const [availabilityData, summaryData] = await Promise.all([
         getEmployeeAvailability(selectedEmployeeId),
         getEmployeeCalendarSummary(selectedEmployeeId),
       ]);
+
       setAvailabilityForm({
-        weekly_availability: availabilityData.weekly_availability,
-        desired_days_off: availabilityData.desired_days_off,
+        weekly_availability: normalizeArray(availabilityData?.weekly_availability),
+        desired_days_off: normalizeArray(availabilityData?.desired_days_off),
       });
+
       setEmployeeSummary(mapEmployeeCalendarSummary(summaryData));
-      setSuccessMessage(t.created);
+      setSuccessMessage(t.availabilitySaved);
     } catch (error) {
-      setErrorMessage(extractApiErrorMessage(error, null, language));
+      setErrorMessage(normalizeError(error, t.availabilitySaved, language));
     } finally {
       setIsSubmitting(false);
     }
@@ -329,21 +523,23 @@ export default function EmployeesTab({ language, userRole }) {
       return;
     }
 
-    setErrorMessage('');
-    setSuccessMessage('');
+    clearMessages();
     setIsSubmitting(true);
+
     try {
       await createEmployeeAbsence(selectedEmployeeId, absenceForm);
+
       const [absencesData, summaryData] = await Promise.all([
         listEmployeeAbsences(selectedEmployeeId),
         getEmployeeCalendarSummary(selectedEmployeeId),
       ]);
-      setEmployeeAbsences(absencesData);
+
+      setEmployeeAbsences(normalizeArray(absencesData));
       setEmployeeSummary(mapEmployeeCalendarSummary(summaryData));
       setAbsenceForm({ absence_type: 'vacation', start_date: '', end_date: '', comment: '' });
-      setSuccessMessage(t.created);
+      setSuccessMessage(t.absenceAdded);
     } catch (error) {
-      setErrorMessage(extractApiErrorMessage(error, null, language));
+      setErrorMessage(normalizeError(error, t.addAbsence, language));
     } finally {
       setIsSubmitting(false);
     }
@@ -354,426 +550,928 @@ export default function EmployeesTab({ language, userRole }) {
       return;
     }
 
-    setErrorMessage('');
-    setSuccessMessage('');
+    clearMessages();
     setIsSubmitting(true);
+
     try {
       await deleteEmployeeAbsence(selectedEmployeeId, absenceId);
+
       const [absencesData, summaryData] = await Promise.all([
         listEmployeeAbsences(selectedEmployeeId),
         getEmployeeCalendarSummary(selectedEmployeeId),
       ]);
-      setEmployeeAbsences(absencesData);
+
+      setEmployeeAbsences(normalizeArray(absencesData));
       setEmployeeSummary(mapEmployeeCalendarSummary(summaryData));
-      setSuccessMessage(t.created);
+      setSuccessMessage(t.absenceDeleted);
     } catch (error) {
-      setErrorMessage(extractApiErrorMessage(error, null, language));
+      setErrorMessage(normalizeError(error, t.delete, language));
     } finally {
       setIsSubmitting(false);
     }
   };
 
   if (isLoading) {
-    return <div style={styles.card}>{t.loading}</div>;
+    return (
+      <section style={styles.page}>
+        <div style={styles.card}>{t.loading}</div>
+      </section>
+    );
   }
 
   return (
-    <div style={styles.wrapper}>
-      <div style={styles.card}>
-        <h2 style={styles.title}>{t.title}</h2>
-        {errorMessage && <div style={styles.error}>{errorMessage}</div>}
-        {successMessage && <div style={styles.success}>{successMessage}</div>}
-
-        <div style={styles.section}>
-          <h3 style={styles.sectionTitle}>{t.createPosition}</h3>
-          <div style={styles.inlineForm}>
-            <input
-              value={positionTitle}
-              onChange={(event) => setPositionTitle(event.target.value)}
-              placeholder={t.position}
-              style={styles.input}
-            />
-            <button onClick={handleCreatePosition} style={styles.primaryButton} disabled={isSubmitting}>
-              {t.save}
-            </button>
+    <section style={styles.page}>
+      <div style={styles.shell}>
+        <header style={styles.header}>
+          <div>
+            <h2 style={styles.title}>{t.title}</h2>
+            <p style={styles.subtitle}>{t.subtitle}</p>
           </div>
-        </div>
 
-        <div style={styles.section}>
-          <h3 style={styles.sectionTitle}>{t.createEmployee}</h3>
-          <div style={styles.formGrid}>
-            <input
-              value={employeeForm.full_name}
-              onChange={(event) => setEmployeeForm((prev) => ({ ...prev, full_name: event.target.value }))}
-              placeholder={t.fullName}
-              style={styles.input}
-            />
-            <input
-              value={employeeForm.email}
-              onChange={(event) => setEmployeeForm((prev) => ({ ...prev, email: event.target.value }))}
-              placeholder={t.email}
-              style={styles.input}
-            />
-            <select
-              value={employeeForm.position_id}
-              onChange={(event) => setEmployeeForm((prev) => ({ ...prev, position_id: event.target.value }))}
-              style={styles.input}
-            >
-              <option value="">{t.selectEmployee}</option>
-              {positions.map((position) => (
-                <option key={position.id} value={position.id}>{position.title}</option>
-              ))}
-            </select>
-            <button onClick={handleCreateEmployee} style={styles.primaryButton} disabled={isSubmitting}>
-              {t.save}
-            </button>
+          <div style={styles.headerStats}>
+            <Metric label={t.employees} value={employees.length} />
+            <Metric label={t.positions} value={visiblePositions.length} />
           </div>
-        </div>
-      </div>
+        </header>
 
-      <div style={styles.card}>
-        <div style={styles.sectionHeader}>
-          <h3 style={styles.sectionTitle}>{t.employees}</h3>
-          <select
-            value={selectedEmployeeId}
-            onChange={(event) => setSelectedEmployeeId(event.target.value)}
-            style={styles.input}
-          >
-            <option value="">{t.selectEmployee}</option>
-            {employees.map((employee) => (
-              <option key={employee.id} value={employee.id}>
-                {employee.full_name} ({employee.position_title})
-              </option>
-            ))}
-          </select>
-        </div>
+        {(errorMessage || successMessage) && (
+          <div style={styles.toastLayer}>
+            <div style={errorMessage ? styles.toastError : styles.toastSuccess}>
+              <span style={errorMessage ? styles.toastIconError : styles.toastIconSuccess}>
+                {errorMessage ? '!' : '✓'}
+              </span>
 
-        {!selectedEmployee ? (
-          <p style={styles.emptyText}>{t.empty}</p>
-        ) : isDetailsLoading ? (
-          <p style={styles.emptyText}>{t.loading}</p>
-        ) : (
-          <div style={styles.detailsGrid}>
-            <div style={styles.infoBox}>
-              <div style={styles.infoLine}><strong>{t.fullName}:</strong> {selectedEmployee.full_name}</div>
-              <div style={styles.infoLine}><strong>{t.email}:</strong> {selectedEmployee.email}</div>
-              <div style={styles.infoLine}><strong>{t.position}:</strong> {selectedEmployee.position_title}</div>
+              <span style={styles.toastText}>{errorMessage || successMessage}</span>
+
+              <button
+                type="button"
+                onClick={() => {
+                  setErrorMessage('');
+                  setSuccessMessage('');
+                }}
+                style={styles.toastClose}
+                aria-label="Close notification"
+              >
+                ×
+              </button>
             </div>
+          </div>
+        )}
 
-            <div style={styles.section}>
-              <h4 style={styles.subTitle}>{t.availability}</h4>
-              {availabilityForm.weekly_availability.map((block, index) => (
-                <div key={`${block.weekday}-${index}`} style={styles.availabilityRow}>
-                  <select
-                    value={block.weekday}
-                    onChange={(event) => handleAvailabilityChange(index, 'weekday', Number(event.target.value))}
-                    style={styles.input}
-                  >
-                    {WEEKDAYS.map((day) => (
-                      <option key={day.value} value={day.value}>{day[language] || day.ru}</option>
-                    ))}
-                  </select>
-                  <input
-                    type="time"
-                    value={String(block.start_time).slice(0, 5)}
-                    onChange={(event) => handleAvailabilityChange(index, 'start_time', `${event.target.value}:00`)}
-                    style={styles.input}
-                  />
-                  <input
-                    type="time"
-                    value={String(block.end_time).slice(0, 5)}
-                    onChange={(event) => handleAvailabilityChange(index, 'end_time', `${event.target.value}:00`)}
-                    style={styles.input}
-                  />
-                  <button
-                    onClick={() => setAvailabilityForm((prev) => ({
-                      ...prev,
-                      weekly_availability: prev.weekly_availability.filter((_, itemIndex) => itemIndex !== index),
-                    }))}
-                    style={styles.secondaryButton}
-                  >
-                    {t.delete}
-                  </button>
-                </div>
-              ))}
-              <div style={styles.buttonRow}>
+        <div style={styles.mainGrid}>
+          <aside style={styles.sidePanel}>
+            <div style={styles.panel}>
+              <h3 style={styles.panelTitle}>{t.createPosition}</h3>
+              {!currentCompanyId && <p style={styles.panelHint}>{t.noCompanyForPosition}</p>}
+
+              <div style={styles.stack}>
+                <input
+                  value={positionTitle}
+                  onChange={(event) => setPositionTitle(event.target.value)}
+                  placeholder={t.position}
+                  style={styles.input}
+                />
+
                 <button
-                  onClick={() => setAvailabilityForm((prev) => ({
-                    ...prev,
-                    weekly_availability: [...prev.weekly_availability, createAvailabilityBlock()],
-                  }))}
-                  style={styles.secondaryButton}
+                  type="button"
+                  onClick={handleCreatePosition}
+                  style={isSubmitting || !currentCompanyId ? styles.primaryButtonDisabled : styles.primaryButton}
+                  disabled={isSubmitting || !currentCompanyId}
                 >
-                  {t.addRow}
-                </button>
-                <button onClick={handleSaveAvailability} style={styles.primaryButton} disabled={isSubmitting}>
                   {t.save}
                 </button>
               </div>
-              <div style={styles.checkboxRow}>
-                {WEEKDAYS.map((day) => (
-                  <label key={day.value} style={styles.checkboxLabel}>
-                    <input
-                      type="checkbox"
-                      checked={availabilityForm.desired_days_off.includes(day.value)}
-                      onChange={() => setAvailabilityForm((prev) => ({
-                        ...prev,
-                        desired_days_off: prev.desired_days_off.includes(day.value)
-                          ? prev.desired_days_off.filter((value) => value !== day.value)
-                          : [...prev.desired_days_off, day.value].sort((a, b) => a - b),
-                      }))}
-                    />
-                    {day[language] || day.ru}
-                  </label>
-                ))}
-              </div>
             </div>
 
-            <div style={styles.section}>
-              <h4 style={styles.subTitle}>{t.absences}</h4>
-              <div style={styles.formGrid}>
+            <div style={styles.panel}>
+              <h3 style={styles.panelTitle}>{t.createEmployee}</h3>
+              <p style={styles.panelHint}>{t.createEmployeeHint}</p>
+
+              <div style={styles.stack}>
+                <input
+                  value={employeeForm.full_name}
+                  onChange={(event) =>
+                    setEmployeeForm((prev) => ({ ...prev, full_name: event.target.value }))
+                  }
+                  placeholder={t.fullName}
+                  style={styles.input}
+                />
+
+                <input
+                  value={employeeForm.email}
+                  onChange={(event) =>
+                    setEmployeeForm((prev) => ({ ...prev, email: event.target.value }))
+                  }
+                  placeholder={t.email}
+                  style={styles.input}
+                />
+
                 <select
-                  value={absenceForm.absence_type}
-                  onChange={(event) => setAbsenceForm((prev) => ({ ...prev, absence_type: event.target.value }))}
+                  value={employeeForm.position_id}
+                  onChange={(event) =>
+                    setEmployeeForm((prev) => ({ ...prev, position_id: event.target.value }))
+                  }
                   style={styles.input}
+                  disabled={visiblePositions.length === 0}
                 >
-                  <option value="vacation">{t.vacation}</option>
-                  <option value="sick_leave">{t.sick_leave}</option>
-                  <option value="other">{t.other}</option>
+                  <option value="">{visiblePositions.length === 0 ? t.noPositionsHint : t.selectPosition}</option>
+                  {visiblePositions.map((position) => (
+                    <option key={position.id} value={position.id}>
+                      {getPositionLabel(position)}
+                    </option>
+                  ))}
                 </select>
-                <input
-                  type="date"
-                  value={absenceForm.start_date}
-                  onChange={(event) => setAbsenceForm((prev) => ({ ...prev, start_date: event.target.value }))}
-                  style={styles.input}
-                />
-                <input
-                  type="date"
-                  value={absenceForm.end_date}
-                  onChange={(event) => setAbsenceForm((prev) => ({ ...prev, end_date: event.target.value }))}
-                  style={styles.input}
-                />
-                <input
-                  value={absenceForm.comment}
-                  onChange={(event) => setAbsenceForm((prev) => ({ ...prev, comment: event.target.value }))}
-                  placeholder={t.comment}
-                  style={styles.input}
-                />
-                <button onClick={handleCreateAbsence} style={styles.primaryButton} disabled={isSubmitting}>
-                  {t.addAbsence}
+
+                <button
+                  type="button"
+                  onClick={handleCreateEmployee}
+                  style={isSubmitting || visiblePositions.length === 0 ? styles.primaryButtonDisabled : styles.primaryButton}
+                  disabled={isSubmitting || visiblePositions.length === 0}
+                >
+                  {t.save}
                 </button>
               </div>
-              {employeeAbsences.length === 0 ? (
-                <p style={styles.emptyText}>{t.empty}</p>
-              ) : (
-                <div style={styles.list}>
-                  {employeeAbsences.map((absence) => (
-                    <div key={absence.id} style={styles.listItem}>
-                      <div>
-                        <div style={styles.itemTitle}>{t[absence.absence_type] || absence.absence_type}</div>
-                        <div style={styles.itemMeta}>{absence.start_date} - {absence.end_date}</div>
-                        {absence.comment && <div style={styles.itemMeta}>{absence.comment}</div>}
-                      </div>
-                      <button onClick={() => handleDeleteAbsence(absence.id)} style={styles.secondaryButton}>
-                        {t.delete}
-                      </button>
-                    </div>
-                  ))}
-                </div>
-              )}
+            </div>
+          </aside>
+
+          <main style={styles.detailsPanel}>
+            <div style={styles.employeePicker}>
+              <div>
+                <h3 style={styles.panelTitle}>{t.employeeDetails}</h3>
+                <p style={styles.panelHint}>{selectedEmployee ? selectedEmployee.full_name : t.noEmployees}</p>
+              </div>
+
+              <select
+                value={selectedEmployeeId}
+                onChange={(event) => setSelectedEmployeeId(event.target.value)}
+                style={styles.select}
+              >
+                <option value="">{t.selectEmployee}</option>
+                {employees.map((employee) => (
+                  <option key={employee.id} value={employee.id}>
+                    {employee.full_name} {getEmployeePosition(employee) ? `(${getEmployeePosition(employee)})` : ''}
+                  </option>
+                ))}
+              </select>
             </div>
 
-            <div style={styles.section}>
-              <h4 style={styles.subTitle}>{t.workload}</h4>
-              {employeeSummary ? (
-                <>
-                  <div style={styles.infoLine}><strong>{t.totalShifts}:</strong> {employeeSummary.workload.total_shifts}</div>
-                  <div style={styles.infoLine}><strong>{t.totalHours}:</strong> {employeeSummary.workload.total_hours}</div>
-                  <h4 style={styles.subTitle}>{t.shifts}</h4>
-                  {employeeSummary.shifts.length === 0 ? (
-                    <p style={styles.emptyText}>{t.empty}</p>
+            {!selectedEmployee ? (
+              <div style={styles.emptyBox}>{t.noEmployees}</div>
+            ) : isDetailsLoading ? (
+              <div style={styles.emptyBox}>{t.loading}</div>
+            ) : (
+              <div style={styles.detailsScroll}>
+                <div style={styles.employeeCard}>
+                  <Info label={t.fullName} value={selectedEmployee.full_name} />
+                  <Info label={t.email} value={selectedEmployee.email} />
+                  <Info label={t.position} value={selectedEmployeePosition || t.empty} />
+                </div>
+
+                <section style={styles.innerSection}>
+                  <div style={styles.innerHeader}>
+                    <h4 style={styles.subTitle}>{t.availability}</h4>
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setAvailabilityForm((prev) => ({
+                          ...prev,
+                          weekly_availability: [...prev.weekly_availability, createAvailabilityBlock()],
+                        }))
+                      }
+                      style={styles.secondaryButton}
+                    >
+                      {t.addRow}
+                    </button>
+                  </div>
+
+                  {availabilityForm.weekly_availability.length === 0 ? (
+                    <p style={styles.emptyText}>{t.noIntervals}</p>
                   ) : (
-                    <div style={styles.list}>
-                      {employeeSummary.shifts.map((shift) => (
-                        <div key={`${shift.schedule_id}-${shift.shift_id}`} style={styles.listItem}>
-                          <div>
-                            <div style={styles.itemTitle}>{shift.date}</div>
-                            <div style={styles.itemMeta}>
-                              {String(shift.start_time).slice(0, 5)} - {String(shift.end_time).slice(0, 5)}
-                            </div>
-                            <div style={styles.itemMeta}>{t[shift.status] || localizeBackendMessage(shift.status, language)}</div>
-                          </div>
+                    <div style={styles.availabilityList}>
+                      {availabilityForm.weekly_availability.map((block, index) => (
+                        <div key={`${block.weekday}-${index}`} style={styles.availabilityRow}>
+                          <select
+                            value={block.weekday}
+                            onChange={(event) =>
+                              handleAvailabilityChange(index, 'weekday', Number(event.target.value))
+                            }
+                            style={styles.input}
+                          >
+                            {WEEKDAYS.map((day) => (
+                              <option key={day.value} value={day.value}>
+                                {day[language] || day.ru}
+                              </option>
+                            ))}
+                          </select>
+
+                          <input
+                            type="time"
+                            value={String(block.start_time).slice(0, 5)}
+                            onChange={(event) =>
+                              handleAvailabilityChange(index, 'start_time', `${event.target.value}:00`)
+                            }
+                            style={styles.input}
+                          />
+
+                          <input
+                            type="time"
+                            value={String(block.end_time).slice(0, 5)}
+                            onChange={(event) =>
+                              handleAvailabilityChange(index, 'end_time', `${event.target.value}:00`)
+                            }
+                            style={styles.input}
+                          />
+
+                          <button
+                            type="button"
+                            onClick={() =>
+                              setAvailabilityForm((prev) => ({
+                                ...prev,
+                                weekly_availability: prev.weekly_availability.filter(
+                                  (_, itemIndex) => itemIndex !== index
+                                ),
+                              }))
+                            }
+                            style={styles.deleteButton}
+                          >
+                            {t.delete}
+                          </button>
                         </div>
                       ))}
                     </div>
                   )}
-                </>
-              ) : (
-                <p style={styles.emptyText}>{t.empty}</p>
-              )}
-            </div>
-          </div>
-        )}
+
+                  <div style={styles.daysOff}>
+                    <span style={styles.cardLabel}>{t.desiredDaysOff}</span>
+                    <div style={styles.dayPills}>
+                      {WEEKDAYS.map((day) => {
+                        const checked = availabilityForm.desired_days_off.includes(day.value);
+
+                        return (
+                          <button
+                            key={day.value}
+                            type="button"
+                            onClick={() =>
+                              setAvailabilityForm((prev) => ({
+                                ...prev,
+                                desired_days_off: checked
+                                  ? prev.desired_days_off.filter((value) => value !== day.value)
+                                  : [...prev.desired_days_off, day.value].sort((a, b) => a - b),
+                              }))
+                            }
+                            style={checked ? styles.dayPillActive : styles.dayPill}
+                          >
+                            {day[language] || day.ru}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={handleSaveAvailability}
+                    style={isSubmitting ? styles.primaryButtonDisabled : styles.primaryButton}
+                    disabled={isSubmitting}
+                  >
+                    {t.save}
+                  </button>
+                </section>
+
+                <section style={styles.innerSection}>
+                  <h4 style={styles.subTitle}>{t.absences}</h4>
+
+                  <div style={styles.absenceForm}>
+                    <select
+                      value={absenceForm.absence_type}
+                      onChange={(event) =>
+                        setAbsenceForm((prev) => ({ ...prev, absence_type: event.target.value }))
+                      }
+                      style={styles.input}
+                    >
+                      <option value="vacation">{t.vacation}</option>
+                      <option value="sick_leave">{t.sick_leave}</option>
+                      <option value="other">{t.other}</option>
+                    </select>
+
+                    <input
+                      type="date"
+                      value={absenceForm.start_date}
+                      onChange={(event) =>
+                        setAbsenceForm((prev) => ({ ...prev, start_date: event.target.value }))
+                      }
+                      style={styles.input}
+                    />
+
+                    <input
+                      type="date"
+                      value={absenceForm.end_date}
+                      onChange={(event) =>
+                        setAbsenceForm((prev) => ({ ...prev, end_date: event.target.value }))
+                      }
+                      style={styles.input}
+                    />
+
+                    <input
+                      value={absenceForm.comment}
+                      onChange={(event) =>
+                        setAbsenceForm((prev) => ({ ...prev, comment: event.target.value }))
+                      }
+                      placeholder={t.comment}
+                      style={styles.input}
+                    />
+
+                    <button
+                      type="button"
+                      onClick={handleCreateAbsence}
+                      style={isSubmitting ? styles.primaryButtonDisabled : styles.primaryButton}
+                      disabled={isSubmitting}
+                    >
+                      {t.addAbsence}
+                    </button>
+                  </div>
+
+                  {employeeAbsences.length === 0 ? (
+                    <p style={styles.emptyText}>{t.noAbsences}</p>
+                  ) : (
+                    <div style={styles.list}>
+                      {employeeAbsences.map((absence) => (
+                        <div key={absence.id} style={styles.listItem}>
+                          <div>
+                            <strong style={styles.itemTitle}>
+                              {t[absence.absence_type] || absence.absence_type}
+                            </strong>
+                            <div style={styles.itemMeta}>
+                              {absence.start_date} — {absence.end_date}
+                            </div>
+                            {absence.comment && <div style={styles.itemMeta}>{absence.comment}</div>}
+                          </div>
+
+                          <button
+                            type="button"
+                            onClick={() => handleDeleteAbsence(absence.id)}
+                            style={styles.deleteButton}
+                          >
+                            {t.delete}
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </section>
+
+                <section style={styles.innerSection}>
+                  <h4 style={styles.subTitle}>{t.workload}</h4>
+
+                  {employeeSummary ? (
+                    <>
+                      <div style={styles.metricGrid}>
+                        <Metric label={t.totalShifts} value={employeeSummary.workload.total_shifts} />
+                        <Metric label={t.totalHours} value={employeeSummary.workload.total_hours} />
+                      </div>
+
+                      <h4 style={styles.subTitle}>{t.shifts}</h4>
+
+                      {employeeSummary.shifts.length === 0 ? (
+                        <p style={styles.emptyText}>{t.noShifts}</p>
+                      ) : (
+                        <div style={styles.list}>
+                          {employeeSummary.shifts.map((shift) => (
+                            <div key={`${shift.schedule_id}-${shift.shift_id}`} style={styles.listItem}>
+                              <div>
+                                <strong style={styles.itemTitle}>{shift.date}</strong>
+                                <div style={styles.itemMeta}>
+                                  {String(shift.start_time).slice(0, 5)} —{' '}
+                                  {String(shift.end_time).slice(0, 5)}
+                                </div>
+                                <div style={styles.itemMeta}>
+                                  {t[shift.status] || localizeBackendMessage(shift.status, language)}
+                                </div>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </>
+                  ) : (
+                    <p style={styles.emptyText}>{t.empty}</p>
+                  )}
+                </section>
+              </div>
+            )}
+          </main>
+        </div>
       </div>
+    </section>
+  );
+}
+
+function Metric({ label, value }) {
+  return (
+    <div style={styles.metric}>
+      <span style={styles.metricLabel}>{label}</span>
+      <strong style={styles.metricValue}>{value}</strong>
+    </div>
+  );
+}
+
+function Info({ label, value }) {
+  return (
+    <div>
+      <span style={styles.cardLabel}>{label}</span>
+      <strong style={styles.cardValue}>{value}</strong>
     </div>
   );
 }
 
 const styles = {
-  wrapper: {
-    display: 'grid',
-    gap: '20px',
-    maxWidth: '1280px',
+  page: {
+    width: '100%',
+    height: '100%',
+    boxSizing: 'border-box',
+    padding: '22px',
+    overflow: 'hidden',
+  },
+
+  shell: {
+    width: 'min(100%, 1380px)',
+    height: '100%',
     margin: '0 auto',
+    boxSizing: 'border-box',
+    padding: '26px',
+    borderRadius: '30px',
+    background: '#f4faff',
+    border: '1px solid rgba(222, 231, 231, 0.95)',
+    boxShadow: '0 22px 58px rgba(0, 38, 66, 0.18)',
+    display: 'flex',
+    flexDirection: 'column',
+    overflow: 'hidden',
+    position: 'relative',
   },
-  card: {
-    background: '#F4FAFF',
-    borderRadius: '24px',
-    padding: '24px',
+
+  header: {
+    flexShrink: 0,
+    display: 'flex',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    gap: '18px',
+    marginBottom: '18px',
   },
+
   title: {
-    fontSize: '24px',
+    margin: 0,
     color: '#002642',
-    margin: '0 0 8px',
+    fontSize: '28px',
+    fontWeight: '900',
+    letterSpacing: '-0.03em',
   },
-  section: {
+
+  subtitle: {
+    margin: '5px 0 0',
+    color: '#4f646f',
+    fontSize: '14px',
+    fontWeight: '600',
+  },
+
+  headerStats: {
+    display: 'flex',
+    gap: '10px',
+  },
+
+  mainGrid: {
+    flex: '1 1 auto',
+    minHeight: 0,
+    display: 'grid',
+    gridTemplateColumns: '340px minmax(0, 1fr)',
+    gap: '18px',
+    overflow: 'hidden',
+  },
+
+  sidePanel: {
+    minHeight: 0,
     display: 'flex',
     flexDirection: 'column',
     gap: '14px',
-    marginTop: '18px',
   },
-  sectionHeader: {
-    display: 'flex',
-    gap: '16px',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    flexWrap: 'wrap',
-    marginBottom: '16px',
+
+  panel: {
+    padding: '18px',
+    borderRadius: '22px',
+    background: '#ffffff',
+    border: '1px solid rgba(79, 100, 111, 0.12)',
   },
-  sectionTitle: {
-    margin: 0,
+
+  panelTitle: {
+    margin: '0 0 12px',
     color: '#002642',
     fontSize: '18px',
+    fontWeight: '850',
   },
+
+  panelHint: {
+    margin: '0 0 10px',
+    color: '#4f646f',
+    fontSize: '13px',
+    lineHeight: 1.35,
+    fontWeight: '600',
+  },
+
+  stack: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '10px',
+  },
+
+  detailsPanel: {
+    minHeight: 0,
+    display: 'flex',
+    flexDirection: 'column',
+    borderRadius: '22px',
+    background: '#ffffff',
+    border: '1px solid rgba(79, 100, 111, 0.12)',
+    overflow: 'hidden',
+  },
+
+  employeePicker: {
+    flexShrink: 0,
+    padding: '18px',
+    display: 'grid',
+    gridTemplateColumns: 'minmax(0, 1fr) minmax(260px, 420px)',
+    gap: '16px',
+    alignItems: 'center',
+    borderBottom: '1px solid #dee7e7',
+  },
+
+  detailsScroll: {
+    flex: '1 1 auto',
+    minHeight: 0,
+    padding: '18px',
+    overflowY: 'auto',
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '16px',
+  },
+
+  employeeCard: {
+    display: 'grid',
+    gridTemplateColumns: 'repeat(3, minmax(0, 1fr))',
+    gap: '12px',
+  },
+
+  cardLabel: {
+    display: 'block',
+    color: '#4f646f',
+    fontSize: '12px',
+    fontWeight: '850',
+    marginBottom: '5px',
+  },
+
+  cardValue: {
+    display: 'block',
+    color: '#002642',
+    fontSize: '16px',
+    fontWeight: '850',
+    overflowWrap: 'anywhere',
+  },
+
+  innerSection: {
+    padding: '16px',
+    borderRadius: '20px',
+    background: '#f4faff',
+    border: '1px solid rgba(79, 100, 111, 0.1)',
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '12px',
+  },
+
+  innerHeader: {
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: '12px',
+  },
+
   subTitle: {
     margin: 0,
     color: '#002642',
-    fontSize: '16px',
+    fontSize: '17px',
+    fontWeight: '850',
   },
-  formGrid: {
-    display: 'grid',
-    gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))',
-    gap: '12px',
+
+  availabilityList: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '10px',
   },
-  inlineForm: {
-    display: 'grid',
-    gridTemplateColumns: '1fr auto',
-    gap: '12px',
-  },
-  input: {
-    width: '100%',
-    boxSizing: 'border-box',
-    borderRadius: '12px',
-    border: '2px solid #DEE7E7',
-    background: '#FFFFFF',
-    padding: '12px 14px',
-    color: '#002642',
-    fontSize: '14px',
-  },
-  primaryButton: {
-    padding: '12px 18px',
-    background: '#002642',
-    border: 'none',
-    borderRadius: '12px',
-    color: '#F4FAFF',
-    fontWeight: '600',
-    cursor: 'pointer',
-  },
-  secondaryButton: {
-    padding: '10px 14px',
-    background: '#DEE7E7',
-    border: 'none',
-    borderRadius: '12px',
-    color: '#002642',
-    fontWeight: '600',
-    cursor: 'pointer',
-  },
-  detailsGrid: {
-    display: 'grid',
-    gap: '18px',
-  },
-  infoBox: {
-    padding: '16px',
-    borderRadius: '16px',
-    background: '#FFFFFF',
-    border: '1px solid #DEE7E7',
-  },
-  infoLine: {
-    color: '#002642',
-    marginBottom: '8px',
-  },
+
   availabilityRow: {
     display: 'grid',
-    gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))',
-    gap: '12px',
-  },
-  checkboxRow: {
-    display: 'flex',
+    gridTemplateColumns: '1.1fr 1fr 1fr auto',
     gap: '10px',
-    flexWrap: 'wrap',
-  },
-  checkboxLabel: {
-    display: 'flex',
     alignItems: 'center',
-    gap: '6px',
+  },
+
+  absenceForm: {
+    display: 'grid',
+    gridTemplateColumns: '1.1fr 1fr 1fr 1.4fr auto',
+    gap: '10px',
+    alignItems: 'center',
+  },
+
+  input: {
+    width: '100%',
+    height: '42px',
+    boxSizing: 'border-box',
+    borderRadius: '13px',
+    border: '2px solid #dee7e7',
+    background: '#ffffff',
+    padding: '0 13px',
+    color: '#002642',
+    fontSize: '14px',
+    outline: 'none',
+  },
+
+  select: {
+    width: '100%',
+    height: '44px',
+    boxSizing: 'border-box',
+    borderRadius: '14px',
+    border: '2px solid #dee7e7',
+    background: '#ffffff',
+    padding: '0 14px',
+    color: '#002642',
+    fontSize: '14px',
+    outline: 'none',
+  },
+
+  primaryButton: {
+    height: '42px',
+    padding: '0 16px',
+    background: '#002642',
+    border: 'none',
+    borderRadius: '13px',
+    color: '#f4faff',
+    fontWeight: '800',
+    cursor: 'pointer',
+    whiteSpace: 'nowrap',
+  },
+
+  primaryButtonDisabled: {
+    height: '42px',
+    padding: '0 16px',
+    background: '#4f646f',
+    border: 'none',
+    borderRadius: '13px',
+    color: '#f4faff',
+    fontWeight: '800',
+    cursor: 'default',
+    whiteSpace: 'nowrap',
+    opacity: 0.65,
+  },
+
+  secondaryButton: {
+    height: '38px',
+    padding: '0 14px',
+    background: '#dee7e7',
+    border: 'none',
+    borderRadius: '12px',
+    color: '#002642',
+    fontWeight: '800',
+    cursor: 'pointer',
+    whiteSpace: 'nowrap',
+  },
+
+  deleteButton: {
+    height: '38px',
+    padding: '0 13px',
+    background: 'rgba(215, 173, 207, 0.42)',
+    border: 'none',
+    borderRadius: '12px',
+    color: '#002642',
+    fontWeight: '800',
+    cursor: 'pointer',
+    whiteSpace: 'nowrap',
+  },
+
+  daysOff: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '8px',
+  },
+
+  dayPills: {
+    display: 'flex',
+    flexWrap: 'wrap',
+    gap: '8px',
+  },
+
+  dayPill: {
+    height: '34px',
+    padding: '0 13px',
+    border: '1px solid #dee7e7',
+    borderRadius: '999px',
+    background: '#ffffff',
+    color: '#4f646f',
+    fontWeight: '800',
+    cursor: 'pointer',
+  },
+
+  dayPillActive: {
+    height: '34px',
+    padding: '0 13px',
+    border: '1px solid rgba(215, 173, 207, 0.8)',
+    borderRadius: '999px',
+    background: '#d7adcf',
+    color: '#002642',
+    fontWeight: '900',
+    cursor: 'pointer',
+  },
+
+  metricGrid: {
+    display: 'grid',
+    gridTemplateColumns: 'repeat(2, minmax(0, 1fr))',
+    gap: '10px',
+  },
+
+  metric: {
+    minWidth: '90px',
+    padding: '11px 14px',
+    borderRadius: '16px',
+    background: '#dee7e7',
+    color: '#002642',
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '3px',
+  },
+
+  metricLabel: {
+    fontSize: '12px',
+    color: '#4f646f',
+    fontWeight: '800',
+  },
+
+  metricValue: {
+    fontSize: '19px',
+    fontWeight: '900',
     color: '#002642',
   },
-  buttonRow: {
-    display: 'flex',
-    gap: '12px',
-    flexWrap: 'wrap',
-  },
+
   list: {
     display: 'flex',
     flexDirection: 'column',
     gap: '10px',
   },
+
   listItem: {
-    padding: '14px 16px',
+    padding: '13px 14px',
     borderRadius: '16px',
-    background: '#FFFFFF',
-    border: '1px solid #DEE7E7',
+    background: '#ffffff',
+    border: '1px solid #dee7e7',
     display: 'flex',
     justifyContent: 'space-between',
     gap: '12px',
     alignItems: 'center',
-    flexWrap: 'wrap',
   },
+
   itemTitle: {
-    fontWeight: '700',
     color: '#002642',
+    fontWeight: '850',
   },
+
   itemMeta: {
-    color: '#4F646F',
+    color: '#4f646f',
     fontSize: '13px',
     marginTop: '4px',
   },
+
   error: {
-    marginBottom: '16px',
-    padding: '12px 14px',
-    borderRadius: '12px',
-    background: '#FDEAEA',
-    color: '#A61B1B',
+    flexShrink: 0,
+    marginBottom: '12px',
+    padding: '11px 13px',
+    borderRadius: '13px',
+    background: 'rgba(215, 173, 207, 0.36)',
+    color: '#8d1d1d',
+    fontSize: '14px',
+    fontWeight: '700',
   },
+
   success: {
-    marginBottom: '16px',
-    padding: '12px 14px',
-    borderRadius: '12px',
-    background: '#E7F6EC',
-    color: '#17663A',
+    flexShrink: 0,
+    marginBottom: '12px',
+    padding: '11px 13px',
+    borderRadius: '13px',
+    background: 'rgba(222, 231, 231, 0.82)',
+    color: '#002642',
+    fontSize: '14px',
+    fontWeight: '700',
   },
+
+  emptyBox: {
+    margin: '18px',
+    padding: '28px',
+    borderRadius: '20px',
+    background: '#f4faff',
+    color: '#4f646f',
+    fontWeight: '800',
+    textAlign: 'center',
+  },
+
   emptyText: {
-    color: '#4F646F',
     margin: 0,
+    color: '#4f646f',
+    fontSize: '14px',
+    fontWeight: '650',
   },
+
+  toastLayer: {
+    position: 'absolute',
+    top: '22px',
+    right: '26px',
+    zIndex: 20,
+    width: 'min(420px, calc(100% - 52px))',
+    pointerEvents: 'none',
+  },
+
+  toastSuccess: {
+    minHeight: '44px',
+    boxSizing: 'border-box',
+    padding: '10px 12px',
+    borderRadius: '16px',
+    background: '#ffffff',
+    color: '#002642',
+    fontSize: '14px',
+    fontWeight: '750',
+    display: 'grid',
+    gridTemplateColumns: '26px minmax(0, 1fr) 28px',
+    alignItems: 'center',
+    gap: '10px',
+    border: '1px solid rgba(79, 100, 111, 0.12)',
+    boxShadow: '0 16px 36px rgba(0, 38, 66, 0.16)',
+    pointerEvents: 'auto',
+  },
+
+  toastError: {
+    minHeight: '44px',
+    boxSizing: 'border-box',
+    padding: '10px 12px',
+    borderRadius: '16px',
+    background: '#ffffff',
+    color: '#8d1d1d',
+    fontSize: '14px',
+    fontWeight: '750',
+    display: 'grid',
+    gridTemplateColumns: '26px minmax(0, 1fr) 28px',
+    alignItems: 'center',
+    gap: '10px',
+    border: '1px solid rgba(215, 173, 207, 0.6)',
+    boxShadow: '0 16px 36px rgba(0, 38, 66, 0.16)',
+    pointerEvents: 'auto',
+  },
+
+  toastIconSuccess: {
+    width: '26px',
+    height: '26px',
+    borderRadius: '999px',
+    background: '#dee7e7',
+    color: '#002642',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    fontSize: '14px',
+    fontWeight: '900',
+  },
+
+  toastIconError: {
+    width: '26px',
+    height: '26px',
+    borderRadius: '999px',
+    background: 'rgba(215, 173, 207, 0.5)',
+    color: '#8d1d1d',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    fontSize: '14px',
+    fontWeight: '900',
+  },
+
+  toastText: {
+    minWidth: 0,
+    overflow: 'hidden',
+    textOverflow: 'ellipsis',
+    whiteSpace: 'nowrap',
+  },
+
+  toastClose: {
+    width: '28px',
+    height: '28px',
+    border: 'none',
+    borderRadius: '999px',
+    background: 'transparent',
+    color: '#4f646f',
+    fontSize: '18px',
+    fontWeight: '900',
+    cursor: 'pointer',
+    lineHeight: 1,
+  },
+
 };

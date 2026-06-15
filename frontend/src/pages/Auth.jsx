@@ -5,8 +5,18 @@ import { getStoredLanguage } from '../services/language';
 
 function EyeIcon() {
   return (
-    <div style={{ width: '20px', height: '20px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ color: '#4F646F', display: 'block' }}>
+    <div style={iconWrapStyle}>
+      <svg
+        width="20"
+        height="20"
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="2"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        style={iconStyle}
+      >
         <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" />
         <circle cx="12" cy="12" r="3" />
       </svg>
@@ -16,8 +26,18 @@ function EyeIcon() {
 
 function EyeOffIcon() {
   return (
-    <div style={{ width: '20px', height: '20px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ color: '#4F646F', display: 'block' }}>
+    <div style={iconWrapStyle}>
+      <svg
+        width="20"
+        height="20"
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="2"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        style={iconStyle}
+      >
         <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24" />
         <line x1="1" y1="1" x2="23" y2="23" />
       </svg>
@@ -28,19 +48,23 @@ function EyeOffIcon() {
 export default function Auth() {
   const [isLogin, setIsLogin] = useState(true);
   const [role, setRole] = useState('employee');
-  const [isMobile, setIsMobile] = useState(false);
+  const [isCompact, setIsCompact] = useState(false);
   const [language, setLanguage] = useState(getStoredLanguage);
   const [showPassword, setShowPassword] = useState(false);
+
   const [formData, setFormData] = useState({
     email: '',
     password: '',
+    confirmPassword: '',
     name: '',
   });
+
   const [errorMessage, setErrorMessage] = useState('');
   const [successMessage, setSuccessMessage] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   const navigate = useNavigate();
+
   const {
     isAuthenticated,
     isLoading,
@@ -53,11 +77,11 @@ export default function Auth() {
   const texts = {
     ru: {
       langBtn: 'RU',
-      welcomeBack: 'Вход в ShiftPlanner',
       createAccount: 'Регистрация аккаунта',
       fullName: 'Имя и фамилия',
       email: 'Email',
       password: 'Пароль',
+      confirmPassword: 'Подтверждение пароля',
       employee: 'Сотрудник',
       manager: 'Менеджер',
       login: 'Войти',
@@ -67,48 +91,54 @@ export default function Auth() {
       namePlaceholder: 'Иван Петров',
       emailPlaceholder: 'ivan@example.com',
       passwordPlaceholder: 'Минимум 8 символов',
-      loginHint: 'Роль определяется сервером после входа.',
-      registerHint: 'Выберите роль только для регистрации.',
+      confirmPasswordPlaceholder: 'Повторите пароль',
       requiredFields: 'Заполните email и пароль.',
       nameRequired: 'Укажите имя и фамилию.',
+      passwordTooShort: 'Пароль должен быть минимум 8 символов.',
+      passwordMismatch: 'Пароли не совпадают.',
       registerSuccess: 'Аккаунт создан. Выполняю вход...',
       authError: 'Не удалось выполнить запрос.',
+      loading: 'Загрузка...',
+      wait: 'Подождите...',
     },
     en: {
       langBtn: 'EN',
-      welcomeBack: 'Sign in to ShiftPlanner',
       createAccount: 'Create an account',
       fullName: 'Full name',
       email: 'Email',
       password: 'Password',
+      confirmPassword: 'Confirm password',
       employee: 'Employee',
       manager: 'Manager',
-      login: 'Login',
+      login: 'Log in',
       register: 'Sign up',
       noAccount: "Don't have an account? Sign up",
-      hasAccount: 'Already have an account? Login',
+      hasAccount: 'Already have an account? Log in',
       namePlaceholder: 'Ivan Petrov',
       emailPlaceholder: 'ivan@example.com',
       passwordPlaceholder: 'At least 8 characters',
-      loginHint: 'The backend decides your role after login.',
-      registerHint: 'Choose a role only for registration.',
+      confirmPasswordPlaceholder: 'Repeat password',
       requiredFields: 'Enter email and password.',
       nameRequired: 'Enter your full name.',
+      passwordTooShort: 'Password must be at least 8 characters.',
+      passwordMismatch: 'Passwords do not match.',
       registerSuccess: 'Account created. Signing in...',
       authError: 'Request failed.',
+      loading: 'Loading...',
+      wait: 'Please wait...',
     },
   };
 
   const t = texts[language];
 
   useEffect(() => {
-    const checkMobile = () => {
-      setIsMobile(window.innerWidth <= 480);
+    const handleResize = () => {
+      setIsCompact(window.innerWidth <= 520 || window.innerHeight <= 760);
     };
 
-    checkMobile();
-    window.addEventListener('resize', checkMobile);
-    return () => window.removeEventListener('resize', checkMobile);
+    handleResize();
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
   }, []);
 
   useEffect(() => {
@@ -119,96 +149,153 @@ export default function Auth() {
 
   useEffect(() => {
     const styleSheet = document.createElement('style');
+
     styleSheet.textContent = `
       @keyframes fadeInUp {
-        from { opacity: 0; transform: translateY(20px); }
-        to { opacity: 1; transform: translateY(0); }
+        from {
+          opacity: 0;
+          transform: translateY(18px);
+        }
+
+        to {
+          opacity: 1;
+          transform: translateY(0);
+        }
       }
-      @keyframes slideUp {
-        from { opacity: 0; transform: translateY(40px); }
-        to { opacity: 1; transform: translateY(0); }
+
+      @keyframes cardIn {
+        from {
+          opacity: 0;
+          transform: translateY(24px) scale(0.98);
+        }
+
+        to {
+          opacity: 1;
+          transform: translateY(0) scale(1);
+        }
       }
-      input, input:focus, input:active {
-        color: #4F646F !important;
-        caret-color: #B7ADCF !important;
-      }
+
       input::placeholder {
-        color: #999 !important;
+        color: rgba(79, 100, 111, 0.58) !important;
         opacity: 1 !important;
       }
+
       input:focus {
-        border-color: #B7ADCF !important;
-        box-shadow: 0 0 0 3px rgba(183,173,207,0.2) !important;
-        outline: none;
+        border-color: #d7adcf !important;
+        box-shadow: 0 0 0 4px rgba(215, 173, 207, 0.26) !important;
+        outline: none !important;
       }
+
       input:-webkit-autofill,
       input:-webkit-autofill:hover,
       input:-webkit-autofill:focus,
       input:-webkit-autofill:active {
-        -webkit-box-shadow: 0 0 0 30px #DEE7E7 inset !important;
-        -webkit-text-fill-color: #4F646F !important;
+        -webkit-box-shadow: 0 0 0 30px #f4faff inset !important;
+        -webkit-text-fill-color: #002642 !important;
       }
-      .role-switch {
-        position: relative;
+
+      .auth-role-switch {
         display: inline-flex;
-        background: #DEE7E7;
-        border-radius: 40px;
+        align-items: center;
+        justify-content: center;
+        gap: 4px;
         padding: 4px;
+        border-radius: 999px;
+        background: rgba(244, 250, 255, 0.72);
+        border: 1px solid rgba(79, 100, 111, 0.12);
       }
-      .role-option {
-        padding: 8px 20px;
-        border-radius: 32px;
-        font-size: 14px;
-        font-weight: 500;
-        transition: all 0.3s ease;
-        z-index: 1;
+
+      .auth-role-option {
+        border: 0;
+        border-radius: 999px;
+        padding: 9px 22px;
         background: transparent;
-        border: none;
+        color: #4f646f;
+        font-size: 14px;
+        font-weight: 700;
         cursor: pointer;
+        transition: background 0.2s ease, color 0.2s ease, box-shadow 0.2s ease;
       }
-      .role-option.active {
-        background: #F4FAFF;
+
+      .auth-role-option.active {
+        background: #f4faff;
         color: #002642;
-        box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+        box-shadow: 0 8px 22px rgba(0, 38, 66, 0.12);
       }
-      .role-option:not(.active) {
-        color: #4F646F;
+
+      .auth-eye-button {
+        transition: transform 0.08s ease, opacity 0.2s ease, background 0.2s ease;
       }
-      .eye-button {
-        transition: transform 0.05s ease !important;
-        will-change: transform !important;
+
+      .auth-eye-button:hover {
+        opacity: 1 !important;
+        background: rgba(215, 173, 207, 0.22) !important;
       }
-      .eye-button:active {
-        transform: scale(0.96) !important;
-        transition: transform 0.02s ease !important;
+
+      .auth-eye-button:active {
+        transform: translateY(-50%) scale(0.94) !important;
       }
-      @media (max-width: 480px) {
-        button:active { transform: scale(0.97) !important; }
-        .role-option {
-          padding: 6px 16px;
-          font-size: 13px;
+
+      .auth-link-button:hover {
+        color: #002642 !important;
+        text-decoration: underline;
+      }
+
+      .auth-submit-button:hover:not(:disabled) {
+        transform: translateY(-1px);
+        box-shadow: 0 16px 34px rgba(0, 38, 66, 0.28);
+      }
+
+      .auth-submit-button:active:not(:disabled) {
+        transform: translateY(0);
+      }
+
+      @media (prefers-reduced-motion: reduce) {
+        * {
+          animation: none !important;
+          transition: none !important;
         }
       }
-      @media (min-width: 481px) {
-        button:hover { transform: translateY(-2px); }
-      }
     `;
+
     document.head.appendChild(styleSheet);
     return () => document.head.removeChild(styleSheet);
   }, []);
 
-  const handleSubmit = async (event) => {
-    event.preventDefault();
+  const resetMessages = () => {
     setErrorMessage('');
     setSuccessMessage('');
+  };
 
+  const validateForm = () => {
     if (!formData.email.trim() || !formData.password) {
       setErrorMessage(t.requiredFields);
-      return;
+      return false;
     }
 
     if (!isLogin && !formData.name.trim()) {
       setErrorMessage(t.nameRequired);
+      return false;
+    }
+
+    if (!isLogin && formData.password.length < 8) {
+      setErrorMessage(t.passwordTooShort);
+      return false;
+    }
+
+    if (!isLogin && formData.password !== formData.confirmPassword) {
+      setErrorMessage(t.passwordMismatch);
+      return false;
+    }
+
+    return true;
+  };
+
+  const handleSubmit = async (event) => {
+    event.preventDefault();
+    resetMessages();
+
+    if (!validateForm()) {
       return;
     }
 
@@ -238,335 +325,436 @@ export default function Auth() {
 
   const toggleMode = () => {
     setIsLogin((prev) => !prev);
-    setFormData({ email: '', password: '', name: '' });
+    setFormData({
+      email: '',
+      password: '',
+      confirmPassword: '',
+      name: '',
+    });
     setErrorMessage('');
     setSuccessMessage('');
     setShowPassword(false);
     setRole('employee');
   };
 
+  const changeLanguage = () => {
+    setLanguage((prev) => {
+      const nextLanguage = prev === 'ru' ? 'en' : 'ru';
+      localStorage.setItem('language', nextLanguage);
+      return nextLanguage;
+    });
+  };
+
   const handleInputChange = (event) => {
     const { name, value } = event.target;
-    setFormData((prev) => ({ ...prev, [name]: value }));
+
+    setFormData((prev) => ({
+      ...prev,
+      [name]: value,
+    }));
   };
 
-  const responsiveStyles = {
-    title: {
-      fontSize: isMobile ? '42px' : '80px',
-      fontWeight: '200',
-      fontStyle: 'italic',
-      background: 'linear-gradient(135deg, #F4FAFF 0%, #DEE7E7 30%, #B7ADCF 70%, #4F646F 100%)',
-      WebkitBackgroundClip: 'text',
-      WebkitTextFillColor: 'transparent',
-      backgroundClip: 'text',
-      margin: '0 0 8px 0',
-      padding: 0,
-      letterSpacing: '-0.5px',
-      fontFamily: "'Poppins', sans-serif",
-      lineHeight: '1.2',
-      display: 'inline-block',
-      maxWidth: '100%',
-    },
-    card: {
-      background: '#DEE7E7',
-      borderRadius: isMobile ? '24px' : '32px',
-      padding: isMobile ? '24px 20px' : '32px 28px',
-      width: '100%',
-      maxWidth: '420px',
-      boxSizing: 'border-box',
-      boxShadow: isMobile ? '0 10px 30px rgba(0,0,0,0.12)' : '0 20px 40px rgba(0,0,0,0.1)',
-      animation: 'slideUp 0.5s ease',
-    },
-    languageButton: {
-      position: 'absolute',
-      top: isMobile ? '12px' : '20px',
-      right: isMobile ? '12px' : '20px',
-      zIndex: 10,
-    },
-    input: {
-      width: '100%',
-      padding: '14px 16px',
-      fontSize: '16px',
-      color: '#4F646F',
-      caretColor: '#B7ADCF',
-      backgroundColor: '#F4FAFF',
-      border: '2px solid #B7ADCF',
-      borderRadius: '14px',
-      outline: 'none',
-      transition: 'all 0.3s ease',
-      boxSizing: 'border-box',
-      fontFamily: 'inherit',
-    },
-    passwordWrapper: {
-      position: 'relative',
-      width: '100%',
-    },
-    passwordInput: {
-      width: '100%',
-      padding: '14px 16px',
-      paddingRight: '48px',
-      fontSize: '16px',
-      color: '#4F646F',
-      caretColor: '#B7ADCF',
-      backgroundColor: '#F4FAFF',
-      border: '2px solid #B7ADCF',
-      borderRadius: '14px',
-      outline: 'none',
-      transition: 'all 0.3s ease',
-      boxSizing: 'border-box',
-      fontFamily: 'inherit',
-    },
-    eyeButton: {
-      position: 'absolute',
-      right: '12px',
-      top: '50%',
-      transform: 'translateY(-50%)',
-      background: 'none',
-      border: 'none',
-      cursor: 'pointer',
-      padding: '8px',
-      display: 'flex',
-      alignItems: 'center',
-      justifyContent: 'center',
-      opacity: 0.6,
-      borderRadius: '8px',
-      color: '#4F646F',
-    },
-    submitBtn: {
-      width: '100%',
-      padding: '14px',
-      fontSize: '16px',
-      fontWeight: '600',
-      color: '#F4FAFF',
-      background: 'linear-gradient(135deg, #002642 0%, #4F646F 100%)',
-      border: 'none',
-      borderRadius: '14px',
-      cursor: isSubmitting ? 'default' : 'pointer',
-      transition: 'transform 0.2s ease, box-shadow 0.2s ease',
-      marginBottom: '20px',
-      opacity: isSubmitting ? 0.8 : 1,
-    },
-  };
+  const titleText = 'ShiftPlanner';
+  const pageTitle = isLogin ? t.welcomeBack : t.createAccount;
+
+  const view = createViewStyles(isCompact, isSubmitting);
 
   if (isLoading) {
-    return <div style={styles.loadingScreen}>{language === 'en' ? 'Loading...' : 'Загрузка...'}</div>;
+    return <div style={styles.loadingScreen}>{t.loading}</div>;
   }
 
   return (
     <div style={styles.container}>
-      <div style={responsiveStyles.languageButton}>
-        <button
-          style={styles.langBtn}
-          onClick={() => setLanguage((prev) => {
-            const nextLanguage = prev === 'ru' ? 'en' : 'ru';
-            localStorage.setItem('language', nextLanguage);
-            return nextLanguage;
-          })}
-        >
-          {t.langBtn}
-        </button>
-      </div>
+      <button type="button" style={view.languageButton} onClick={changeLanguage}>
+        {t.langBtn}
+      </button>
 
-      <div style={styles.content}>
-        <div style={styles.logoSection}>
-          <h1 style={responsiveStyles.title}>ShiftPlanner</h1>
-          <p style={styles.subtitle}>
-            {isLogin ? t.welcomeBack : t.createAccount}
-          </p>
-        </div>
+      <main style={view.content}>
+        <section style={view.brandSection}>
+          <h1 style={view.title}>
+            {titleText.slice(0, 5)}
+            <span style={styles.titleAccent}>{titleText.slice(5)}</span>
+          </h1>
 
-        <div style={responsiveStyles.card}>
-          <form onSubmit={handleSubmit}>
-            {!isLogin && (
-              <div style={styles.roleSwitchWrap}>
-                <div className="role-switch">
-                  <button
-                    type="button"
-                    className={`role-option ${role === 'employee' ? 'active' : ''}`}
-                    onClick={() => setRole('employee')}
-                  >
-                    {t.employee}
-                  </button>
-                  <button
-                    type="button"
-                    className={`role-option ${role === 'manager' ? 'active' : ''}`}
-                    onClick={() => setRole('manager')}
-                  >
-                    {t.manager}
-                  </button>
-                </div>
+          <p style={view.subtitle}>{pageTitle}</p>
+        </section>
+
+        <section style={view.card} aria-label={pageTitle}>
+          {!isLogin && (
+            <div style={styles.roleSwitchWrap}>
+              <div className={`auth-role-switch ${role === 'manager' ? 'is-manager' : 'is-employee'}`}>
+                <button
+                  type="button"
+                  className={`auth-role-option ${role === 'employee' ? 'active' : ''}`}
+                  onClick={() => setRole('employee')}
+                >
+                  {t.employee}
+                </button>
+
+                <button
+                  type="button"
+                  className={`auth-role-option ${role === 'manager' ? 'active' : ''}`}
+                  onClick={() => setRole('manager')}
+                >
+                  {t.manager}
+                </button>
               </div>
-            )}
+            </div>
+          )}
 
-            <p style={styles.hint}>{isLogin ? t.loginHint : t.registerHint}</p>
+          <p style={view.hint}>{isLogin ? t.loginHint : t.registerHint}</p>
 
+          <form onSubmit={handleSubmit} noValidate>
             {!isLogin && (
-              <div style={styles.inputGroup}>
-                <label style={styles.label}>{t.fullName}</label>
+              <div style={view.inputGroup}>
+                <label style={styles.label} htmlFor="auth-name">
+                  {t.fullName}
+                </label>
+
                 <input
+                  id="auth-name"
                   type="text"
                   name="name"
-                  style={responsiveStyles.input}
+                  style={view.input}
                   placeholder={t.namePlaceholder}
                   value={formData.name}
                   onChange={handleInputChange}
-                  required
+                  autoComplete="name"
                 />
               </div>
             )}
 
-            <div style={styles.inputGroup}>
-              <label style={styles.label}>{t.email}</label>
+            <div style={view.inputGroup}>
+              <label style={styles.label} htmlFor="auth-email">
+                {t.email}
+              </label>
+
               <input
+                id="auth-email"
                 type="email"
                 name="email"
-                style={responsiveStyles.input}
+                style={view.input}
                 placeholder={t.emailPlaceholder}
                 value={formData.email}
                 onChange={handleInputChange}
-                required
+                autoComplete="email"
               />
             </div>
 
-            <div style={styles.inputGroup}>
-              <label style={styles.label}>{t.password}</label>
-              <div style={responsiveStyles.passwordWrapper}>
+            <div style={view.inputGroup}>
+              <label style={styles.label} htmlFor="auth-password">
+                {t.password}
+              </label>
+
+              <div style={styles.passwordWrapper}>
                 <input
+                  id="auth-password"
                   type={showPassword ? 'text' : 'password'}
                   name="password"
-                  style={responsiveStyles.passwordInput}
+                  style={view.passwordInput}
                   placeholder={t.passwordPlaceholder}
                   value={formData.password}
                   onChange={handleInputChange}
-                  required
+                  autoComplete={isLogin ? 'current-password' : 'new-password'}
                 />
+
                 <button
                   type="button"
-                  className="eye-button"
+                  className="auth-eye-button"
                   onClick={() => setShowPassword((prev) => !prev)}
-                  style={responsiveStyles.eyeButton}
+                  style={styles.eyeButton}
+                  aria-label={showPassword ? 'Hide password' : 'Show password'}
                 >
                   {showPassword ? <EyeIcon /> : <EyeOffIcon />}
                 </button>
               </div>
             </div>
 
+            {!isLogin && (
+              <div style={view.inputGroup}>
+                <label style={styles.label} htmlFor="auth-confirm-password">
+                  {t.confirmPassword}
+                </label>
+
+                <input
+                  id="auth-confirm-password"
+                  type={showPassword ? 'text' : 'password'}
+                  name="confirmPassword"
+                  style={view.input}
+                  placeholder={t.confirmPasswordPlaceholder}
+                  value={formData.confirmPassword}
+                  onChange={handleInputChange}
+                  autoComplete="new-password"
+                />
+              </div>
+            )}
+
             {errorMessage && <div style={styles.errorBox}>{errorMessage}</div>}
             {successMessage && <div style={styles.successBox}>{successMessage}</div>}
 
-            <button type="submit" style={responsiveStyles.submitBtn} disabled={isSubmitting}>
-              {isSubmitting ? '...' : isLogin ? t.login : t.register}
+            <button
+              type="submit"
+              className="auth-submit-button"
+              style={view.submitButton}
+              disabled={isSubmitting}
+            >
+              {isSubmitting ? t.wait : isLogin ? t.login : t.register}
             </button>
 
             <div style={styles.toggleSection}>
-              <button type="button" onClick={toggleMode} style={styles.toggleBtn}>
+              <button
+                type="button"
+                onClick={toggleMode}
+                className="auth-link-button"
+                style={styles.toggleButton}
+              >
                 {isLogin ? t.noAccount : t.hasAccount}
               </button>
             </div>
           </form>
-        </div>
-      </div>
+        </section>
+      </main>
     </div>
   );
 }
 
+function createViewStyles(isCompact, isSubmitting) {
+  return {
+    languageButton: {
+      position: 'fixed',
+      top: isCompact ? '14px' : '22px',
+      right: isCompact ? '14px' : '28px',
+      zIndex: 10,
+      padding: isCompact ? '7px 13px' : '9px 18px',
+      borderRadius: '999px',
+      border: '1px solid rgba(244, 250, 255, 0.32)',
+      background: 'rgba(244, 250, 255, 0.16)',
+      color: '#f4faff',
+      fontSize: '14px',
+      fontWeight: 700,
+      cursor: 'pointer',
+      backdropFilter: 'blur(10px)',
+    },
+
+    content: {
+      minHeight: '100dvh',
+      width: '100%',
+      boxSizing: 'border-box',
+      padding: isCompact ? '18px 16px' : '24px',
+      display: 'flex',
+      flexDirection: 'column',
+      alignItems: 'center',
+      justifyContent: 'center',
+      position: 'relative',
+      zIndex: 1,
+    },
+
+    brandSection: {
+      textAlign: 'center',
+      marginBottom: isCompact ? '16px' : '22px',
+      animation: 'fadeInUp 0.45s ease',
+    },
+
+    title: {
+      margin: 0,
+      fontSize: isCompact ? '44px' : '76px',
+      lineHeight: 0.95,
+      fontWeight: 500,
+      letterSpacing: isCompact ? '-2px' : '-4px',
+      color: '#f4faff',
+      fontFamily: "'Inter', 'Segoe UI', sans-serif",
+    },
+
+    subtitle: {
+      margin: isCompact ? '10px 0 0' : '14px 0 0',
+      color: 'rgba(244, 250, 255, 0.9)',
+      fontSize: isCompact ? '14px' : '16px',
+      fontWeight: 500,
+    },
+
+    card: {
+      width: 'min(100%, 430px)',
+      boxSizing: 'border-box',
+      padding: isCompact ? '20px 22px' : '26px 30px',
+      borderRadius: isCompact ? '24px' : '30px',
+      background: 'rgba(222, 231, 231, 0.96)',
+      border: '1px solid rgba(244, 250, 255, 0.55)',
+      boxShadow: '0 28px 70px rgba(0, 38, 66, 0.28)',
+      animation: 'cardIn 0.45s ease',
+    },
+
+    hint: {
+      margin: isCompact ? '0 0 14px' : '0 0 18px',
+      fontSize: '13px',
+      color: '#4f646f',
+      textAlign: 'center',
+      lineHeight: 1.4,
+    },
+
+    inputGroup: {
+      marginBottom: isCompact ? '12px' : '15px',
+    },
+
+    input: {
+      width: '100%',
+      height: isCompact ? '44px' : '48px',
+      padding: '0 15px',
+      boxSizing: 'border-box',
+      borderRadius: '16px',
+      border: '2px solid rgba(79, 100, 111, 0.2)',
+      background: '#f4faff',
+      color: '#002642',
+      caretColor: '#d7adcf',
+      fontSize: '16px',
+      fontFamily: 'inherit',
+      outline: 'none',
+      transition: 'border-color 0.2s ease, box-shadow 0.2s ease',
+    },
+
+    passwordInput: {
+      width: '100%',
+      height: isCompact ? '44px' : '48px',
+      padding: '0 48px 0 15px',
+      boxSizing: 'border-box',
+      borderRadius: '16px',
+      border: '2px solid rgba(79, 100, 111, 0.2)',
+      background: '#f4faff',
+      color: '#002642',
+      caretColor: '#d7adcf',
+      fontSize: '16px',
+      fontFamily: 'inherit',
+      outline: 'none',
+      transition: 'border-color 0.2s ease, box-shadow 0.2s ease',
+    },
+
+    submitButton: {
+      width: '100%',
+      height: isCompact ? '46px' : '50px',
+      marginTop: isCompact ? '2px' : '4px',
+      marginBottom: '12px',
+      border: 0,
+      borderRadius: '16px',
+      background: '#002642',
+      color: '#f4faff',
+      fontSize: '16px',
+      fontWeight: 800,
+      cursor: isSubmitting ? 'default' : 'pointer',
+      opacity: isSubmitting ? 0.72 : 1,
+      transition: 'transform 0.2s ease, box-shadow 0.2s ease, opacity 0.2s ease',
+    },
+  };
+}
+
+const iconWrapStyle = {
+  width: '20px',
+  height: '20px',
+  display: 'flex',
+  alignItems: 'center',
+  justifyContent: 'center',
+};
+
+const iconStyle = {
+  color: '#4f646f',
+  display: 'block',
+};
+
 const styles = {
   container: {
-    minHeight: '100vh',
-    background: 'linear-gradient(135deg, #002642 0%, #4F646F 100%)',
+    minHeight: '100dvh',
     position: 'relative',
     overflowX: 'hidden',
+    background:
+      'radial-gradient(circle at 18% 12%, rgba(215, 173, 207, 0.22), transparent 30%), linear-gradient(135deg, #002642 0%, #4f646f 100%)',
   },
+
   loadingScreen: {
-    minHeight: '100vh',
+    minHeight: '100dvh',
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'center',
-    background: 'linear-gradient(135deg, #002642 0%, #4F646F 100%)',
-    color: '#F4FAFF',
+    background: 'linear-gradient(135deg, #002642 0%, #4f646f 100%)',
+    color: '#f4faff',
     fontSize: '18px',
   },
-  langBtn: {
-    background: 'rgba(244,250,255,0.2)',
-    backdropFilter: 'blur(10px)',
-    border: '1px solid rgba(244,250,255,0.3)',
-    padding: '8px 16px',
-    borderRadius: '20px',
-    color: '#F4FAFF',
-    fontSize: '14px',
-    fontWeight: '500',
-    cursor: 'pointer',
-    transition: 'all 0.3s ease',
+
+  titleAccent: {
+    color: '#d7adcf',
   },
-  content: {
-    display: 'flex',
-    flexDirection: 'column',
-    alignItems: 'center',
-    justifyContent: 'flex-start',
-    minHeight: '100vh',
-    padding: '24px',
-    paddingTop: '60px',
-    position: 'relative',
-    zIndex: 1,
-  },
-  logoSection: {
-    textAlign: 'center',
-    marginBottom: '30px',
-    animation: 'fadeInUp 0.6s ease',
-  },
-  subtitle: {
-    fontSize: 'clamp(14px, 4vw, 16px)',
-    color: 'rgba(244,250,255,0.9)',
-    margin: 0,
-  },
+
   roleSwitchWrap: {
     display: 'flex',
     justifyContent: 'center',
     marginBottom: '16px',
   },
-  hint: {
-    margin: '0 0 16px',
-    fontSize: '13px',
-    color: '#4F646F',
-    textAlign: 'center',
-  },
-  inputGroup: {
-    marginBottom: '20px',
-  },
+
   label: {
     display: 'block',
+    marginBottom: '7px',
+    color: '#4f646f',
     fontSize: '14px',
-    fontWeight: '500',
-    color: '#4F646F',
-    marginBottom: '8px',
+    fontWeight: 800,
   },
+
+  passwordWrapper: {
+    position: 'relative',
+    width: '100%',
+  },
+
+  eyeButton: {
+    position: 'absolute',
+    right: '10px',
+    top: '50%',
+    transform: 'translateY(-50%)',
+    width: '34px',
+    height: '34px',
+    border: 0,
+    borderRadius: '10px',
+    background: 'transparent',
+    color: '#4f646f',
+    opacity: 0.72,
+    cursor: 'pointer',
+    padding: 0,
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+
   errorBox: {
-    marginBottom: '16px',
-    padding: '12px 14px',
-    borderRadius: '12px',
-    background: '#FDEAEA',
-    color: '#A61B1B',
+    marginBottom: '12px',
+    padding: '11px 13px',
+    borderRadius: '14px',
+    background: 'rgba(215, 173, 207, 0.34)',
+    border: '1px solid rgba(166, 27, 27, 0.16)',
+    color: '#8d1d1d',
     fontSize: '14px',
+    fontWeight: 700,
+    lineHeight: 1.35,
   },
+
   successBox: {
-    marginBottom: '16px',
-    padding: '12px 14px',
-    borderRadius: '12px',
-    background: '#E7F6EC',
-    color: '#17663A',
+    marginBottom: '12px',
+    padding: '11px 13px',
+    borderRadius: '14px',
+    background: 'rgba(244, 250, 255, 0.78)',
+    border: '1px solid rgba(79, 100, 111, 0.14)',
+    color: '#002642',
     fontSize: '14px',
+    fontWeight: 700,
+    lineHeight: 1.35,
   },
+
   toggleSection: {
     textAlign: 'center',
   },
-  toggleBtn: {
-    background: 'none',
-    border: 'none',
-    color: '#4F646F',
+
+  toggleButton: {
+    border: 0,
+    background: 'transparent',
+    color: '#4f646f',
     fontSize: '14px',
-    fontWeight: '500',
+    fontWeight: 800,
     cursor: 'pointer',
-    padding: '8px',
-    transition: 'color 0.2s ease',
+    padding: '6px 8px',
   },
 };
+

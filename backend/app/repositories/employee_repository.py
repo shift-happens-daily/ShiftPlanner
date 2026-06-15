@@ -6,16 +6,22 @@ from sqlalchemy.orm import Session, joinedload, selectinload
 from app.models import Absence, Employee, EmployeeAvailability, EmployeeDesiredDayOff, User
 
 
+def _employee_options():
+    return (
+        joinedload(Employee.user),
+        joinedload(Employee.company),
+        joinedload(Employee.branch),
+        joinedload(Employee.position),
+        selectinload(Employee.availability_blocks),
+        selectinload(Employee.desired_days_off),
+    )
+
+
 def list_employees(db: Session) -> list[Employee]:
     return list(
         db.scalars(
             select(Employee)
-            .options(
-                joinedload(Employee.user),
-                joinedload(Employee.position),
-                selectinload(Employee.availability_blocks),
-                selectinload(Employee.desired_days_off),
-            )
+            .options(*_employee_options())
             .order_by(Employee.id)
         )
     )
@@ -24,12 +30,7 @@ def list_employees(db: Session) -> list[Employee]:
 def get_employee_by_id(db: Session, employee_id: int) -> Employee | None:
     return db.scalars(
         select(Employee)
-        .options(
-            joinedload(Employee.user),
-            joinedload(Employee.position),
-            selectinload(Employee.availability_blocks),
-            selectinload(Employee.desired_days_off),
-        )
+        .options(*_employee_options())
         .where(Employee.id == employee_id)
     ).first()
 
@@ -38,7 +39,7 @@ def get_employee_by_email(db: Session, email: str) -> Employee | None:
     return db.scalars(
         select(Employee)
         .join(Employee.user)
-        .options(joinedload(Employee.user), joinedload(Employee.position))
+        .options(*_employee_options())
         .where(User.email.ilike(email))
     ).first()
 
@@ -46,12 +47,7 @@ def get_employee_by_email(db: Session, email: str) -> Employee | None:
 def get_employee_by_user_id(db: Session, user_id: int) -> Employee | None:
     return db.scalars(
         select(Employee)
-        .options(
-            joinedload(Employee.user),
-            joinedload(Employee.position),
-            selectinload(Employee.availability_blocks),
-            selectinload(Employee.desired_days_off),
-        )
+        .options(*_employee_options())
         .where(Employee.user_id == user_id)
     ).first()
 
@@ -70,9 +66,11 @@ def create_employee(
         branch_id=branch_id,
         position_id=position_id,
     )
+
     db.add(employee)
     db.commit()
     db.refresh(employee)
+
     return get_employee_by_id(db, employee.id)
 
 
@@ -87,10 +85,25 @@ def update_employee_membership(
     employee.company_id = company_id
     employee.branch_id = branch_id
     employee.position_id = position_id
+
     db.add(employee)
     db.commit()
     db.refresh(employee)
+
     return get_employee_by_id(db, employee.id)
+
+
+def delete_employees_by_company(db: Session, company_id: int) -> None:
+    employees = list(
+        db.scalars(
+            select(Employee).where(Employee.company_id == company_id)
+        )
+    )
+
+    for employee in employees:
+        db.delete(employee)
+
+    db.flush()
 
 
 def replace_availability(
@@ -117,6 +130,7 @@ def replace_availability(
         db.add(EmployeeDesiredDayOff(employee_id=employee_id, weekday=weekday))
 
     db.commit()
+
     return get_employee_by_id(db, employee_id)
 
 
@@ -124,7 +138,7 @@ def list_employees_by_position(db: Session, position_id: int) -> list[Employee]:
     return list(
         db.scalars(
             select(Employee)
-            .options(joinedload(Employee.user), joinedload(Employee.position))
+            .options(*_employee_options())
             .where(Employee.position_id == position_id, Employee.is_active.is_(True))
             .order_by(Employee.id)
         )
@@ -138,11 +152,18 @@ def list_absences(
     start_date: date | None = None,
     end_date: date | None = None,
 ) -> list[Absence]:
-    query = select(Absence).where(Absence.employee_id == employee_id).order_by(Absence.start_date, Absence.id)
+    query = (
+        select(Absence)
+        .where(Absence.employee_id == employee_id)
+        .order_by(Absence.start_date, Absence.id)
+    )
+
     if start_date is not None:
         query = query.where(Absence.end_date >= start_date)
+
     if end_date is not None:
         query = query.where(Absence.start_date <= end_date)
+
     return list(db.scalars(query))
 
 
@@ -162,9 +183,11 @@ def create_absence(
         end_date=end_date,
         comment=comment,
     )
+
     db.add(absence)
     db.commit()
     db.refresh(absence)
+
     return absence
 
 
@@ -175,3 +198,4 @@ def get_absence_by_id(db: Session, absence_id: int) -> Absence | None:
 def delete_absence(db: Session, absence: Absence) -> None:
     db.delete(absence)
     db.commit()
+

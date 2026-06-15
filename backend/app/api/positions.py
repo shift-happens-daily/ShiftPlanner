@@ -35,3 +35,4 @@ def create_position(
     db: Session = Depends(get_db),
 ) -> PositionRead:
     return position_service.create_position(db, payload)
+

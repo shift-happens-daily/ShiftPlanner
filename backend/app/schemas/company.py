@@ -19,6 +19,16 @@ class BranchRead(BaseModel):
     name: str
 
 
+class BranchCreate(BaseModel):
+    name: str = Field(min_length=1)
+
+
+class BranchResponse(BaseModel):
+    id: int
+    name: str
+    company_id: int
+
+
 class PositionOptionRead(BaseModel):
     id: int
     name: str

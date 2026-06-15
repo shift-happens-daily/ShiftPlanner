@@ -1,16 +1,87 @@
+// frontend/src/components/tabs/CompanyTab.jsx
 import { useEffect, useState } from 'react';
 import { useAuth } from '../../context/useAuth';
-import { createCompany, joinCompany, listCompanies, previewInviteCode } from '../../services/companyService';
+import {
+  createBranch,
+  createCompany,
+  joinCompany,
+  listBranches,
+  previewInviteCode,
+} from '../../services/companyService';
 import { extractApiErrorMessage } from '../../services/error';
+
+function normalizeArray(value) {
+  if (Array.isArray(value)) return value;
+  if (Array.isArray(value?.items)) return value.items;
+  if (Array.isArray(value?.data)) return value.data;
+  if (Array.isArray(value?.branches)) return value.branches;
+  if (Array.isArray(value?.positions)) return value.positions;
+  return [];
+}
+
+function getName(item) {
+  return item?.name || item?.title || item?.position_title || item?.full_name || '—';
+}
+
+function getCompanyFromPreview(preview) {
+  if (!preview) return null;
+
+  if (preview.company) return preview.company;
+  if (preview.company_data) return preview.company_data;
+
+  if (preview.company_id || preview.company_name) {
+    return {
+      id: preview.company_id,
+      name: preview.company_name,
+      invite_code: preview.invite_code,
+    };
+  }
+
+  return preview;
+}
+
+function getBranchesFromPreview(preview) {
+  const company = getCompanyFromPreview(preview);
+
+  return normalizeArray(
+    preview?.branches ||
+    preview?.company_branches ||
+    company?.branches ||
+    (preview?.branch ? [preview.branch] : [])
+  ).filter(Boolean);
+}
+
+function getPositionsFromPreview(preview) {
+  const company = getCompanyFromPreview(preview);
+
+  return normalizeArray(
+    preview?.positions ||
+    preview?.company_positions ||
+    company?.positions ||
+    (preview?.position ? [preview.position] : [])
+  ).filter(Boolean);
+}
+
+function getCompanyId(company) {
+  return company?.id || company?.company_id;
+}
+
+function getInviteCode(company) {
+  return company?.invite_code || company?.inviteCode;
+}
 
 export default function CompanyTab({ language, userRole, user }) {
   const { refreshUser } = useAuth();
-  const [companies, setCompanies] = useState([]);
-  const [isLoadingCompanies, setIsLoadingCompanies] = useState(userRole === 'manager');
+
   const [inviteCode, setInviteCode] = useState('');
   const [invitePreview, setInvitePreview] = useState(null);
   const [joinPayload, setJoinPayload] = useState({ branch_id: '', position_id: '' });
+
+  const [branches, setBranches] = useState([]);
+  const [branchName, setBranchName] = useState('');
+
   const [companyName, setCompanyName] = useState('');
+
   const [errorMessage, setErrorMessage] = useState('');
   const [successMessage, setSuccessMessage] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -18,84 +89,134 @@ export default function CompanyTab({ language, userRole, user }) {
   const texts = {
     ru: {
       title: 'Компания',
-      currentCompany: 'Текущая привязка',
+      currentCompany: 'Текущая компания',
       company: 'Компания',
       branch: 'Филиал',
+      branches: 'Филиалы',
       position: 'Позиция',
-      inviteCode: 'Invite-код',
+      positions: 'Позиции',
+      inviteCode: 'Инвайт-код',
       noCompany: 'Аккаунт еще не привязан к компании.',
+      noCompanyManager: 'Создайте компанию, чтобы получить инвайт-код для сотрудников.',
+      noCompanyEmployee: 'Введите инвайт-код, чтобы присоединиться к своей компании.',
       previewInvite: 'Проверить код',
       joinCompany: 'Присоединиться',
-      invitePlaceholder: 'Введите invite-код',
+      invitePlaceholder: 'Введите инвайт-код',
       selectBranch: 'Выберите филиал',
       selectPosition: 'Выберите позицию',
-      companies: 'Список компаний',
       createCompany: 'Создать компанию',
       companyName: 'Название компании',
       saveCompany: 'Создать',
       empty: 'Нет данных',
-      loading: 'Загрузка...',
       companyCreated: 'Компания создана.',
       companyJoined: 'Компания успешно привязана.',
-      previewHint: 'Сначала проверьте invite-код, затем выберите филиал и позицию.',
+      previewHint: 'Сначала проверьте инвайт-код, затем выберите филиал и позицию.',
+      copied: 'Код скопирован.',
+      noBranches: 'В компании пока нет филиалов. Менеджеру нужно создать филиал.',
+      noPositions: 'В компании пока нет позиций. Менеджеру нужно создать позицию во вкладке «Сотрудники».',
+      createBranch: 'Создать филиал',
+      branchName: 'Название филиала',
+      branchPlaceholder: 'Например: Main Branch',
+      branchCreated: 'Филиал создан.',
+      createBranchError: 'Не удалось создать филиал.',
+      createCompanyFirst: 'Сначала создайте компанию.',
+      branchRequired: 'Введите название филиала.',
+      positionsHint: 'Позиции создаются во вкладке «Сотрудники».',
+      employeeHint: 'После присоединения вкладки расписания и отчетов станут доступны.',
+      managerHint: 'Скопируйте инвайт-код и отправьте его сотрудникам.',
+      inviteFound: 'Инвайт-код найден.',
     },
     en: {
       title: 'Company',
-      currentCompany: 'Current binding',
+      currentCompany: 'Current company',
       company: 'Company',
       branch: 'Branch',
+      branches: 'Branches',
       position: 'Position',
+      positions: 'Positions',
       inviteCode: 'Invite code',
       noCompany: 'This account is not linked to a company yet.',
+      noCompanyManager: 'Create a company to get an invite code for employees.',
+      noCompanyEmployee: 'Enter an invite code to join your company.',
       previewInvite: 'Preview invite',
       joinCompany: 'Join company',
       invitePlaceholder: 'Enter invite code',
       selectBranch: 'Select branch',
       selectPosition: 'Select position',
-      companies: 'Companies',
       createCompany: 'Create company',
       companyName: 'Company name',
       saveCompany: 'Create',
       empty: 'No data',
-      loading: 'Loading...',
       companyCreated: 'Company created.',
       companyJoined: 'Company joined successfully.',
       previewHint: 'Preview the invite code first, then choose branch and position.',
+      copied: 'Code copied.',
+      noBranches: 'This company has no branches yet. A manager needs to create a branch.',
+      noPositions: 'This company has no positions yet. A manager needs to create a position in the Employees tab.',
+      createBranch: 'Create branch',
+      branchName: 'Branch name',
+      branchPlaceholder: 'Example: Main Branch',
+      branchCreated: 'Branch created.',
+      createBranchError: 'Failed to create branch.',
+      createCompanyFirst: 'Create a company first.',
+      branchRequired: 'Enter branch name.',
+      positionsHint: 'Positions are created in the Employees tab.',
+      employeeHint: 'After joining, schedule and reports tabs become available.',
+      managerHint: 'Copy the invite code and send it to employees.',
+      inviteFound: 'Invite found.',
     },
   };
 
   const t = texts[language] || texts.ru;
+  const isManager = userRole === 'manager';
+  const isEmployee = userRole === 'employee';
+
+  const currentCompany = user?.company || null;
+  const currentBranch = user?.branch || null;
+  const currentPosition = user?.position || null;
+
+  const currentInviteCode = getInviteCode(currentCompany);
+
+  const previewCompany = getCompanyFromPreview(invitePreview);
+  const previewBranches = getBranchesFromPreview(invitePreview);
+  const previewPositions = getPositionsFromPreview(invitePreview);
+  const previewCompanyName = previewCompany?.name || t.empty;
+
+  const canJoin =
+    Boolean(invitePreview) &&
+    Boolean(joinPayload.branch_id) &&
+    Boolean(joinPayload.position_id) &&
+    !isSubmitting;
+
+  const clearMessages = () => {
+    setErrorMessage('');
+    setSuccessMessage('');
+  };
+
+  const loadBranches = async (companyId) => {
+    if (!companyId) {
+      setBranches([]);
+      return;
+    }
+
+    try {
+      const data = await listBranches(companyId);
+      setBranches(normalizeArray(data));
+    } catch {
+      setBranches([]);
+    }
+  };
+
+  const currentCompanyId = getCompanyId(currentCompany);
 
   useEffect(() => {
-    if (userRole !== 'manager') {
-      return undefined;
+    if (isManager && currentCompanyId) {
+      void loadBranches(currentCompanyId);
+      return;
     }
 
-    let isMounted = true;
-
-    async function loadCompanies() {
-      setIsLoadingCompanies(true);
-      try {
-        const data = await listCompanies();
-        if (isMounted) {
-          setCompanies(data);
-        }
-      } catch (error) {
-        if (isMounted) {
-          setErrorMessage(extractApiErrorMessage(error, null, language));
-        }
-      } finally {
-        if (isMounted) {
-          setIsLoadingCompanies(false);
-        }
-      }
-    }
-
-    loadCompanies();
-    return () => {
-      isMounted = false;
-    };
-  }, [language, userRole]);
+    setBranches([]);
+  }, [isManager, currentCompanyId]);
 
   const handlePreview = async () => {
     if (!inviteCode.trim()) {
@@ -103,18 +224,23 @@ export default function CompanyTab({ language, userRole, user }) {
       return;
     }
 
-    setErrorMessage('');
-    setSuccessMessage('');
+    clearMessages();
     setIsSubmitting(true);
+
     try {
       const preview = await previewInviteCode(inviteCode.trim());
+      const loadedBranches = getBranchesFromPreview(preview);
+      const loadedPositions = getPositionsFromPreview(preview);
+
       setInvitePreview(preview);
       setJoinPayload({
-        branch_id: preview.branches[0]?.id ? String(preview.branches[0].id) : '',
-        position_id: preview.positions[0]?.id ? String(preview.positions[0].id) : '',
+        branch_id: loadedBranches[0]?.id ? String(loadedBranches[0].id) : '',
+        position_id: loadedPositions[0]?.id ? String(loadedPositions[0].id) : '',
       });
+      setSuccessMessage(t.inviteFound);
     } catch (error) {
       setInvitePreview(null);
+      setJoinPayload({ branch_id: '', position_id: '' });
       setErrorMessage(extractApiErrorMessage(error, null, language));
     } finally {
       setIsSubmitting(false);
@@ -122,21 +248,23 @@ export default function CompanyTab({ language, userRole, user }) {
   };
 
   const handleJoin = async () => {
-    if (!invitePreview) {
+    if (!canJoin) {
       setErrorMessage(t.previewHint);
       return;
     }
 
-    setErrorMessage('');
-    setSuccessMessage('');
+    clearMessages();
     setIsSubmitting(true);
+
     try {
       await joinCompany({
         invite_code: inviteCode.trim(),
-        branch_id: joinPayload.branch_id ? Number(joinPayload.branch_id) : null,
-        position_id: joinPayload.position_id ? Number(joinPayload.position_id) : null,
+        branch_id: Number(joinPayload.branch_id),
+        position_id: Number(joinPayload.position_id),
       });
+
       await refreshUser();
+
       setInviteCode('');
       setInvitePreview(null);
       setJoinPayload({ branch_id: '', position_id: '' });
@@ -154,12 +282,13 @@ export default function CompanyTab({ language, userRole, user }) {
       return;
     }
 
-    setErrorMessage('');
-    setSuccessMessage('');
+    clearMessages();
     setIsSubmitting(true);
+
     try {
-      const createdCompany = await createCompany({ name: companyName.trim() });
-      setCompanies((prev) => [createdCompany, ...prev]);
+      await createCompany({ name: companyName.trim() });
+      await refreshUser();
+
       setCompanyName('');
       setSuccessMessage(t.companyCreated);
     } catch (error) {
@@ -169,271 +298,581 @@ export default function CompanyTab({ language, userRole, user }) {
     }
   };
 
-  const accountRows = [
-    { label: t.company, value: user?.company?.name },
-    { label: t.branch, value: user?.branch?.name },
-    { label: t.position, value: user?.position?.name },
-  ];
+  const handleCreateBranch = async () => {
+    if (!currentCompanyId) {
+      setErrorMessage(t.createCompanyFirst);
+      return;
+    }
+
+    if (!branchName.trim()) {
+      setErrorMessage(t.branchRequired);
+      return;
+    }
+
+    clearMessages();
+    setIsSubmitting(true);
+
+    try {
+      const created = await createBranch(currentCompanyId, {
+        name: branchName.trim(),
+      });
+
+      setBranches((prev) => [...prev, created]);
+      setBranchName('');
+      setSuccessMessage(t.branchCreated);
+    } catch (error) {
+      setErrorMessage(extractApiErrorMessage(error, t.createBranchError, language));
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const copyInviteCode = async () => {
+    if (!currentInviteCode) return;
+
+    try {
+      await navigator.clipboard.writeText(currentInviteCode);
+      setSuccessMessage(t.copied);
+    } catch {
+      setSuccessMessage('');
+    }
+  };
 
   return (
-    <div style={styles.layout}>
-      <div style={styles.card}>
-        <h2 style={styles.title}>{t.title}</h2>
-        {errorMessage && <div style={styles.error}>{errorMessage}</div>}
-        {successMessage && <div style={styles.success}>{successMessage}</div>}
+    <section style={styles.page}>
+      <div style={styles.grid}>
+        <div style={styles.card}>
+          <div style={styles.cardHeader}>
+            <h2 style={styles.title}>{t.title}</h2>
+            <span style={styles.rolePill}>{isManager ? 'Manager' : 'Employee'}</span>
+          </div>
 
-        <div style={styles.section}>
-          <h3 style={styles.sectionTitle}>{t.currentCompany}</h3>
-          {user?.company ? (
-            <div style={styles.infoList}>
-              {accountRows.map((row) => (
-                <div key={row.label} style={styles.infoRow}>
-                  <span style={styles.infoLabel}>{row.label}</span>
-                  <span style={styles.infoValue}>{row.value || t.empty}</span>
-                </div>
-              ))}
-            </div>
-          ) : (
-            <p style={styles.emptyText}>{t.noCompany}</p>
-          )}
-        </div>
+          {errorMessage && <div style={styles.error}>{errorMessage}</div>}
+          {successMessage && <div style={styles.success}>{successMessage}</div>}
 
-        {userRole === 'employee' && !user?.company && (
           <div style={styles.section}>
-            <h3 style={styles.sectionTitle}>{t.joinCompany}</h3>
-            <p style={styles.hint}>{t.previewHint}</p>
-            <div style={styles.formGroup}>
-              <input
-                value={inviteCode}
-                onChange={(event) => setInviteCode(event.target.value.toUpperCase())}
-                placeholder={t.invitePlaceholder}
-                style={styles.input}
-              />
-            </div>
-            <div style={styles.buttonRow}>
-              <button onClick={handlePreview} style={styles.primaryButton} disabled={isSubmitting}>
-                {t.previewInvite}
-              </button>
-            </div>
+            <h3 style={styles.sectionTitle}>{t.currentCompany}</h3>
 
-            {invitePreview && (
-              <div style={styles.previewBox}>
-                <div style={styles.previewTitle}>{invitePreview.company_name}</div>
-                <div style={styles.formGroup}>
-                  <label style={styles.label}>{t.branch}</label>
-                  <select
-                    value={joinPayload.branch_id}
-                    onChange={(event) => setJoinPayload((prev) => ({ ...prev, branch_id: event.target.value }))}
-                    style={styles.input}
-                  >
-                    <option value="">{t.selectBranch}</option>
-                    {invitePreview.branches.map((branch) => (
-                      <option key={branch.id} value={branch.id}>{branch.name}</option>
-                    ))}
-                  </select>
-                </div>
-                <div style={styles.formGroup}>
-                  <label style={styles.label}>{t.position}</label>
-                  <select
-                    value={joinPayload.position_id}
-                    onChange={(event) => setJoinPayload((prev) => ({ ...prev, position_id: event.target.value }))}
-                    style={styles.input}
-                  >
-                    <option value="">{t.selectPosition}</option>
-                    {invitePreview.positions.map((position) => (
-                      <option key={position.id} value={position.id}>{position.name}</option>
-                    ))}
-                  </select>
-                </div>
-                <button onClick={handleJoin} style={styles.primaryButton} disabled={isSubmitting}>
-                  {t.joinCompany}
-                </button>
+            {currentCompany ? (
+              <div style={styles.companyPanel}>
+                <span style={styles.panelLabel}>{t.company}</span>
+                <strong style={styles.companyTitle}>{currentCompany.name || t.empty}</strong>
+
+                {isManager && currentInviteCode && (
+                  <>
+                    <button type="button" onClick={copyInviteCode} style={styles.inviteCodeBox}>
+                      <span style={styles.inviteLabel}>{t.inviteCode}</span>
+                      <strong style={styles.inviteValue}>{currentInviteCode}</strong>
+                    </button>
+                    <p style={styles.hint}>{t.managerHint}</p>
+                  </>
+                )}
+
+                {isEmployee && (
+                  <div style={styles.infoGrid}>
+                    <InfoItem label={t.branch} value={getName(currentBranch)} />
+                    <InfoItem label={t.position} value={getName(currentPosition)} />
+                  </div>
+                )}
+              </div>
+            ) : (
+              <div style={styles.emptyState}>
+                <strong style={styles.emptyTitle}>{t.noCompany}</strong>
+                <span style={styles.emptyText}>
+                  {isManager ? t.noCompanyManager : t.noCompanyEmployee}
+                </span>
               </div>
             )}
+          </div>
+        </div>
+
+        {isManager && !currentCompany && (
+          <div style={styles.card}>
+            <div style={styles.section}>
+              <h3 style={styles.sectionTitle}>{t.createCompany}</h3>
+
+              <div style={styles.formStack}>
+                <label style={styles.label}>{t.companyName}</label>
+                <input
+                  value={companyName}
+                  onChange={(event) => setCompanyName(event.target.value)}
+                  placeholder={t.companyName}
+                  style={styles.input}
+                />
+
+                <button
+                  type="button"
+                  onClick={handleCreateCompany}
+                  style={isSubmitting ? styles.primaryButtonDisabled : styles.primaryButton}
+                  disabled={isSubmitting}
+                >
+                  {isSubmitting ? '...' : t.saveCompany}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {isManager && currentCompany && (
+          <div style={styles.card}>
+            <div style={styles.section}>
+              <h3 style={styles.sectionTitle}>{t.branches}</h3>
+              <p style={styles.hint}>{t.positionsHint}</p>
+
+              <div style={styles.formStack}>
+                <label style={styles.label}>{t.branchName}</label>
+                <input
+                  value={branchName}
+                  onChange={(event) => setBranchName(event.target.value)}
+                  placeholder={t.branchPlaceholder}
+                  style={styles.input}
+                />
+
+                <button
+                  type="button"
+                  onClick={handleCreateBranch}
+                  style={isSubmitting ? styles.primaryButtonDisabled : styles.primaryButton}
+                  disabled={isSubmitting}
+                >
+                  {isSubmitting ? '...' : t.createBranch}
+                </button>
+              </div>
+
+              <div style={styles.branchList}>
+                {branches.length === 0 ? (
+                  <p style={styles.emptyText}>{t.noBranches}</p>
+                ) : (
+                  branches.map((branch) => (
+                    <div key={branch.id} style={styles.branchItem}>
+                      {getName(branch)}
+                    </div>
+                  ))
+                )}
+              </div>
+            </div>
+          </div>
+        )}
+
+        {isEmployee && !currentCompany && (
+          <div style={styles.card}>
+            <div style={styles.section}>
+              <h3 style={styles.sectionTitle}>{t.joinCompany}</h3>
+              <p style={styles.hint}>{t.previewHint}</p>
+
+              <div style={styles.formStack}>
+                <label style={styles.label}>{t.inviteCode}</label>
+                <input
+                  value={inviteCode}
+                  onChange={(event) => setInviteCode(event.target.value.toUpperCase())}
+                  placeholder={t.invitePlaceholder}
+                  style={styles.input}
+                />
+
+                <button
+                  type="button"
+                  onClick={handlePreview}
+                  style={isSubmitting ? styles.secondaryButtonDisabled : styles.secondaryButton}
+                  disabled={isSubmitting}
+                >
+                  {isSubmitting ? '...' : t.previewInvite}
+                </button>
+              </div>
+
+              {invitePreview && (
+                <div style={styles.previewBox}>
+                  <strong style={styles.previewTitle}>{previewCompanyName}</strong>
+
+                  {previewBranches.length === 0 ? (
+                    <p style={styles.emptyText}>{t.noBranches}</p>
+                  ) : (
+                    <div style={styles.formStack}>
+                      <label style={styles.label}>{t.branch}</label>
+                      <select
+                        value={joinPayload.branch_id}
+                        onChange={(event) =>
+                          setJoinPayload((prev) => ({ ...prev, branch_id: event.target.value }))
+                        }
+                        style={styles.input}
+                      >
+                        <option value="">{t.selectBranch}</option>
+                        {previewBranches.map((branch) => (
+                          <option key={branch.id} value={branch.id}>
+                            {getName(branch)}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  )}
+
+                  {previewPositions.length === 0 ? (
+                    <p style={styles.emptyText}>{t.noPositions}</p>
+                  ) : (
+                    <div style={styles.formStack}>
+                      <label style={styles.label}>{t.position}</label>
+                      <select
+                        value={joinPayload.position_id}
+                        onChange={(event) =>
+                          setJoinPayload((prev) => ({ ...prev, position_id: event.target.value }))
+                        }
+                        style={styles.input}
+                      >
+                        <option value="">{t.selectPosition}</option>
+                        {previewPositions.map((position) => (
+                          <option key={position.id} value={position.id}>
+                            {getName(position)}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  )}
+
+                  <button
+                    type="button"
+                    onClick={handleJoin}
+                    style={canJoin ? styles.primaryButton : styles.primaryButtonDisabled}
+                    disabled={!canJoin}
+                  >
+                    {t.joinCompany}
+                  </button>
+                </div>
+              )}
+
+              <p style={styles.hint}>{t.employeeHint}</p>
+            </div>
           </div>
         )}
       </div>
+    </section>
+  );
+}
 
-      {userRole === 'manager' && (
-        <div style={styles.card}>
-          <div style={styles.section}>
-            <h3 style={styles.sectionTitle}>{t.createCompany}</h3>
-            <div style={styles.inlineForm}>
-              <input
-                value={companyName}
-                onChange={(event) => setCompanyName(event.target.value)}
-                placeholder={t.companyName}
-                style={styles.input}
-              />
-              <button onClick={handleCreateCompany} style={styles.primaryButton} disabled={isSubmitting}>
-                {t.saveCompany}
-              </button>
-            </div>
-          </div>
-
-          <div style={styles.section}>
-            <h3 style={styles.sectionTitle}>{t.companies}</h3>
-            {isLoadingCompanies ? (
-              <p style={styles.emptyText}>{t.loading}</p>
-            ) : companies.length === 0 ? (
-              <p style={styles.emptyText}>{t.empty}</p>
-            ) : (
-              <div style={styles.companyList}>
-                {companies.map((company) => (
-                  <div key={company.id} style={styles.companyItem}>
-                    <div style={styles.companyName}>{company.name}</div>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-        </div>
-      )}
+function InfoItem({ label, value }) {
+  return (
+    <div style={styles.infoItem}>
+      <span style={styles.infoLabel}>{label}</span>
+      <strong style={styles.infoValue}>{value || '—'}</strong>
     </div>
   );
 }
 
 const styles = {
-  layout: {
-    display: 'grid',
-    gap: '20px',
-    gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))',
-    maxWidth: '1200px',
-    margin: '0 auto',
-  },
-  card: {
-    background: '#F4FAFF',
-    borderRadius: '24px',
+  page: {
+    width: '100%',
+    height: '100%',
+    boxSizing: 'border-box',
     padding: '24px',
+    display: 'flex',
+    justifyContent: 'center',
+    alignItems: 'center',
+    overflow: 'hidden',
   },
+
+  grid: {
+    width: 'min(100%, 1120px)',
+    maxHeight: '100%',
+    display: 'grid',
+    gridTemplateColumns: 'repeat(2, minmax(320px, 1fr))',
+    gap: '24px',
+    alignItems: 'stretch',
+    overflowY: 'auto',
+    padding: '4px',
+  },
+
+  card: {
+    minHeight: '360px',
+    boxSizing: 'border-box',
+    padding: '32px',
+    borderRadius: '28px',
+    background: '#f4faff',
+    border: '1px solid rgba(222, 231, 231, 0.95)',
+    boxShadow: '0 20px 50px rgba(0, 38, 66, 0.16)',
+    display: 'flex',
+    flexDirection: 'column',
+    justifyContent: 'center',
+  },
+
+  cardHeader: {
+    display: 'flex',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    gap: '12px',
+    marginBottom: '18px',
+  },
+
   title: {
-    fontSize: '24px',
-    fontWeight: '600',
+    fontSize: '28px',
+    fontWeight: '850',
     color: '#002642',
-    margin: '0 0 20px',
+    margin: 0,
+    letterSpacing: '-0.03em',
   },
+
+  rolePill: {
+    padding: '7px 12px',
+    borderRadius: '999px',
+    background: 'rgba(215, 173, 207, 0.45)',
+    color: '#002642',
+    fontSize: '13px',
+    fontWeight: '800',
+  },
+
   section: {
     display: 'flex',
     flexDirection: 'column',
-    gap: '14px',
+    gap: '16px',
   },
+
   sectionTitle: {
     margin: 0,
     color: '#002642',
-    fontSize: '18px',
+    fontSize: '22px',
+    fontWeight: '850',
+    letterSpacing: '-0.02em',
+    textAlign: 'center',
   },
+
   hint: {
     margin: 0,
-    color: '#4F646F',
-    fontSize: '13px',
+    color: '#4f646f',
+    fontSize: '14px',
+    lineHeight: 1.4,
+    textAlign: 'center',
   },
+
   error: {
-    marginBottom: '16px',
-    padding: '12px 14px',
-    borderRadius: '12px',
-    background: '#FDEAEA',
-    color: '#A61B1B',
+    marginBottom: '14px',
+    padding: '11px 13px',
+    borderRadius: '14px',
+    background: 'rgba(215, 173, 207, 0.36)',
+    color: '#8d1d1d',
+    fontSize: '14px',
+    fontWeight: '700',
   },
+
   success: {
-    marginBottom: '16px',
-    padding: '12px 14px',
-    borderRadius: '12px',
-    background: '#E7F6EC',
-    color: '#17663A',
+    marginBottom: '14px',
+    padding: '11px 13px',
+    borderRadius: '14px',
+    background: 'rgba(222, 231, 231, 0.82)',
+    color: '#002642',
+    fontSize: '14px',
+    fontWeight: '700',
   },
-  infoList: {
+
+  companyPanel: {
+    minHeight: '160px',
+    padding: '24px',
+    borderRadius: '22px',
+    background: '#ffffff',
+    border: '1px solid rgba(79, 100, 111, 0.12)',
     display: 'flex',
     flexDirection: 'column',
+    alignItems: 'center',
+    justifyContent: 'center',
     gap: '12px',
+    textAlign: 'center',
   },
-  infoRow: {
-    display: 'grid',
-    gridTemplateColumns: '140px 1fr',
-    gap: '10px',
-    paddingBottom: '12px',
-    borderBottom: '1px solid #DEE7E7',
+
+  panelLabel: {
+    color: '#4f646f',
+    fontSize: '13px',
+    fontWeight: '800',
   },
-  infoLabel: {
-    color: '#4F646F',
-    fontWeight: '600',
-  },
-  infoValue: {
+
+  companyTitle: {
     color: '#002642',
+    fontSize: '24px',
+    fontWeight: '900',
   },
+
+  inviteCodeBox: {
+    marginTop: '4px',
+    width: '100%',
+    maxWidth: '320px',
+    padding: '14px 16px',
+    borderRadius: '18px',
+    border: '1px solid rgba(215, 173, 207, 0.8)',
+    background: 'rgba(215, 173, 207, 0.28)',
+    color: '#002642',
+    cursor: 'pointer',
+    display: 'flex',
+    flexDirection: 'column',
+    alignItems: 'center',
+    gap: '4px',
+  },
+
+  inviteLabel: {
+    fontSize: '12px',
+    fontWeight: '800',
+    color: '#4f646f',
+  },
+
+  inviteValue: {
+    fontSize: '24px',
+    fontWeight: '900',
+    letterSpacing: '0.08em',
+  },
+
+  emptyState: {
+    minHeight: '180px',
+    padding: '24px',
+    borderRadius: '22px',
+    background: '#ffffff',
+    border: '1px solid rgba(79, 100, 111, 0.12)',
+    display: 'flex',
+    flexDirection: 'column',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: '8px',
+    textAlign: 'center',
+  },
+
+  emptyTitle: {
+    color: '#002642',
+    fontSize: '20px',
+    fontWeight: '850',
+  },
+
   emptyText: {
     margin: 0,
-    color: '#4F646F',
+    color: '#4f646f',
+    fontSize: '15px',
+    lineHeight: 1.45,
+    textAlign: 'center',
   },
-  formGroup: {
+
+  formStack: {
     display: 'flex',
     flexDirection: 'column',
-    gap: '8px',
+    gap: '9px',
   },
+
   label: {
-    color: '#4F646F',
-    fontWeight: '600',
+    color: '#4f646f',
+    fontWeight: '750',
     fontSize: '14px',
   },
+
   input: {
     width: '100%',
+    height: '48px',
     boxSizing: 'border-box',
-    borderRadius: '12px',
-    border: '2px solid #DEE7E7',
-    background: '#FFFFFF',
-    padding: '12px 14px',
+    borderRadius: '14px',
+    border: '2px solid #dee7e7',
+    background: '#ffffff',
+    padding: '0 15px',
     color: '#002642',
-    fontSize: '14px',
+    fontSize: '15px',
+    outline: 'none',
   },
-  buttonRow: {
-    display: 'flex',
-    gap: '12px',
-  },
-  inlineForm: {
-    display: 'flex',
-    gap: '12px',
-    flexWrap: 'wrap',
-  },
+
   primaryButton: {
-    padding: '12px 18px',
+    height: '48px',
+    padding: '0 20px',
     background: '#002642',
     border: 'none',
-    borderRadius: '12px',
-    color: '#F4FAFF',
-    fontWeight: '600',
+    borderRadius: '14px',
+    color: '#f4faff',
+    fontWeight: '800',
     cursor: 'pointer',
   },
-  previewBox: {
-    marginTop: '8px',
-    padding: '16px',
-    borderRadius: '16px',
-    background: '#FFFFFF',
-    border: '1px solid #DEE7E7',
-    display: 'flex',
-    flexDirection: 'column',
-    gap: '12px',
+
+  primaryButtonDisabled: {
+    height: '48px',
+    padding: '0 20px',
+    background: '#4f646f',
+    border: 'none',
+    borderRadius: '14px',
+    color: '#f4faff',
+    fontWeight: '800',
+    cursor: 'default',
+    opacity: 0.65,
   },
-  previewTitle: {
-    fontWeight: '700',
+
+  secondaryButton: {
+    height: '48px',
+    padding: '0 20px',
+    background: '#d7adcf',
+    border: 'none',
+    borderRadius: '14px',
     color: '#002642',
+    fontWeight: '850',
+    cursor: 'pointer',
   },
-  companyList: {
+
+  secondaryButtonDisabled: {
+    height: '48px',
+    padding: '0 20px',
+    background: '#d7adcf',
+    border: 'none',
+    borderRadius: '14px',
+    color: '#002642',
+    fontWeight: '850',
+    cursor: 'default',
+    opacity: 0.65,
+  },
+
+  previewBox: {
+    marginTop: '4px',
+    padding: '18px',
+    borderRadius: '20px',
+    background: '#ffffff',
+    border: '1px solid #dee7e7',
     display: 'flex',
     flexDirection: 'column',
-    gap: '12px',
+    gap: '13px',
   },
-  companyItem: {
+
+  previewTitle: {
+    fontWeight: '900',
+    color: '#002642',
+    fontSize: '18px',
+    textAlign: 'center',
+  },
+
+  infoGrid: {
+    width: '100%',
+    display: 'grid',
+    gridTemplateColumns: '1fr 1fr',
+    gap: '10px',
+  },
+
+  infoItem: {
+    padding: '12px',
+    borderRadius: '16px',
+    background: '#f4faff',
+    border: '1px solid rgba(79, 100, 111, 0.1)',
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '4px',
+  },
+
+  infoLabel: {
+    color: '#4f646f',
+    fontSize: '12px',
+    fontWeight: '800',
+  },
+
+  infoValue: {
+    color: '#002642',
+    fontSize: '15px',
+    fontWeight: '850',
+    overflowWrap: 'anywhere',
+  },
+
+  branchList: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '10px',
+  },
+
+  branchItem: {
     padding: '14px 16px',
     borderRadius: '16px',
-    background: '#FFFFFF',
-    border: '1px solid #DEE7E7',
-  },
-  companyName: {
+    background: '#ffffff',
+    border: '1px solid #dee7e7',
     color: '#002642',
-    fontWeight: '700',
-    marginBottom: '6px',
-  },
-  companyMeta: {
-    color: '#4F646F',
-    fontSize: '14px',
+    fontWeight: '850',
+    textAlign: 'center',
   },
 };
