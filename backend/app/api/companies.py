@@ -5,7 +5,7 @@ from app.api.dependencies import get_current_user, require_role
 from app.api.responses import BAD_REQUEST_RESPONSE, FORBIDDEN_RESPONSE, NOT_FOUND_RESPONSE, UNAUTHORIZED_RESPONSE, VALIDATION_ERROR_RESPONSE
 from app.database import get_db
 from app.schemas.auth import CurrentUserResponse, UserRead
-from app.schemas.company import CompanyCreate, CompanyInvitePreviewRead, CompanyJoinRequest, CompanyRead
+from app.schemas.company import CompanyCreate, CompanyInvitePreviewRead, CompanyJoinRequest, CompanyRead, CompanySummaryRead
 from app.services import company_service
 
 router = APIRouter()
@@ -13,13 +13,13 @@ router = APIRouter()
 
 @router.get(
     "/",
-    response_model=list[CompanyRead],
+    response_model=list[CompanySummaryRead],
     responses={**UNAUTHORIZED_RESPONSE},
 )
 def get_companies(
     _: UserRead = Depends(get_current_user),
     db: Session = Depends(get_db),
-) -> list[CompanyRead]:
+) -> list[CompanySummaryRead]:
     return company_service.list_companies(db)
 
 

@@ -1,569 +1,779 @@
-// frontend/src/components/tabs/EmployeesTab.jsx
-import { useState, useEffect } from 'react';
+import { useEffect, useMemo, useState } from 'react';
+import {
+  createEmployee,
+  createEmployeeAbsence,
+  deleteEmployeeAbsence,
+  getEmployeeAvailability,
+  getEmployeeCalendarSummary,
+  listEmployeeAbsences,
+  listEmployees,
+  updateEmployeeAvailability,
+} from '../../services/employeeService';
+import { extractApiErrorMessage, localizeBackendMessage } from '../../services/error';
+import { mapEmployeeCalendarSummary } from '../../services/mappers';
+import { createPosition, listPositions } from '../../services/positionService';
 
-export default function EmployeesTab({ language }) {
-  // Список рабочих позиций
-  const [positions, setPositions] = useState([
-    { id: 1, name: 'Бармен' },
-    { id: 2, name: 'Официант' },
-    { id: 3, name: 'Повар' },
-    { id: 4, name: 'Администратор' }
-  ]);
-  
-  // Распределение сотрудников по позициям
-  const [employeeAssignments, setEmployeeAssignments] = useState([
-    { id: 1, name: 'Иван Петров', positionId: 1, positionName: 'Бармен' },
-    { id: 2, name: 'Анна Сидорова', positionId: 2, positionName: 'Официант' },
-    { id: 3, name: 'Петр Иванов', positionId: 3, positionName: 'Повар' },
-    { id: 4, name: 'Мария Кузнецова', positionId: 4, positionName: 'Администратор' },
-    { id: 5, name: 'Дмитрий Соколов', positionId: 1, positionName: 'Бармен' },
-    { id: 6, name: 'Елена Волкова', positionId: 2, positionName: 'Официант' },
-  ]);
-  
-  const [newPosition, setNewPosition] = useState('');
-  const [editingPosition, setEditingPosition] = useState(null);
-  const [editPositionName, setEditPositionName] = useState('');
-  const [showAddEmployee, setShowAddEmployee] = useState(false);
-  const [newEmployee, setNewEmployee] = useState({ name: '', positionId: '' });
+const WEEKDAYS = [
+  { value: 0, ru: 'Пн', en: 'Mon' },
+  { value: 1, ru: 'Вт', en: 'Tue' },
+  { value: 2, ru: 'Ср', en: 'Wed' },
+  { value: 3, ru: 'Чт', en: 'Thu' },
+  { value: 4, ru: 'Пт', en: 'Fri' },
+  { value: 5, ru: 'Сб', en: 'Sat' },
+  { value: 6, ru: 'Вс', en: 'Sun' },
+];
 
-  // Добавляем глобальные стили для адаптива
-  useEffect(() => {
-    const styleSheet = document.createElement('style');
-    styleSheet.textContent = `
-      @media (max-width: 768px) {
-        .employees-main-container {
-          flex-direction: column !important;
-          padding: 8px !important;
-          gap: 8px !important;
-        }
-        .employees-left-panel, .employees-right-panel {
-          min-width: 100% !important;
-          width: 100% !important;
-          max-width: 100% !important;
-          padding: 12px !important;
-          margin: 0 !important;
-          box-sizing: border-box !important;
-        }
-        .employees-panel-header {
-          flex-direction: column !important;
-          align-items: flex-start !important;
-          gap: 8px !important;
-        }
-        .employees-panel-header h3 {
-          font-size: 16px !important;
-        }
-        .employees-table th, .employees-table td {
-          padding: 6px 4px !important;
-          font-size: 10px !important;
-        }
-        .employees-position-item {
-          padding: 6px 8px !important;
-        }
-        .employees-position-name {
-          font-size: 13px !important;
-        }
-        .employees-add-position-row {
-          flex-direction: column !important;
-        }
-        .employees-add-position-row input {
-          width: 100% !important;
-        }
-        .employees-add-position-row button {
-          width: 100% !important;
-        }
-        .employees-edit-row {
-          flex-wrap: wrap !important;
-        }
-        .employees-edit-row input {
-          width: 100% !important;
-        }
-        .employees-edit-row button {
-          flex: 1 !important;
-        }
-        .employees-table {
-          display: block !important;
-          overflow-x: auto !important;
-          white-space: nowrap !important;
-        }
-        .employees-modal-content {
-          width: 95% !important;
-          margin: 10px !important;
-          padding: 16px !important;
-        }
-        .employees-modal-content h3 {
-          font-size: 18px !important;
-        }
-      }
-    `;
-    document.head.appendChild(styleSheet);
-    return () => document.head.removeChild(styleSheet);
-  }, []);
+function createAvailabilityBlock() {
+  return { weekday: 0, start_time: '09:00:00', end_time: '18:00:00' };
+}
+
+export default function EmployeesTab({ language, userRole }) {
+  const [employees, setEmployees] = useState([]);
+  const [positions, setPositions] = useState([]);
+  const [selectedEmployeeId, setSelectedEmployeeId] = useState('');
+  const [availabilityForm, setAvailabilityForm] = useState({
+    weekly_availability: [],
+    desired_days_off: [],
+  });
+  const [employeeAbsences, setEmployeeAbsences] = useState([]);
+  const [employeeSummary, setEmployeeSummary] = useState(null);
+  const [employeeForm, setEmployeeForm] = useState({
+    full_name: '',
+    email: '',
+    position_id: '',
+  });
+  const [positionTitle, setPositionTitle] = useState('');
+  const [absenceForm, setAbsenceForm] = useState({
+    absence_type: 'vacation',
+    start_date: '',
+    end_date: '',
+    comment: '',
+  });
+  const [isLoading, setIsLoading] = useState(true);
+  const [isDetailsLoading, setIsDetailsLoading] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [errorMessage, setErrorMessage] = useState('');
+  const [successMessage, setSuccessMessage] = useState('');
 
   const texts = {
     ru: {
-      workingPositions: 'Рабочие позиции',
-      addPosition: '+ Добавить позицию',
-      save: 'Сохранить',
-      cancel: 'Отмена',
-      employeeDistribution: 'Распределение сотрудников',
-      employee: 'Сотрудник',
+      title: 'Сотрудники и позиции',
+      employees: 'Сотрудники',
+      positions: 'Позиции',
+      availability: 'Доступность',
+      desiredDaysOff: 'Желаемые выходные',
+      absences: 'Отсутствия',
+      workload: 'Нагрузка',
+      shifts: 'Смены',
+      totalHours: 'Часы',
+      totalShifts: 'Смены',
+      createEmployee: 'Создать сотрудника',
+      createPosition: 'Создать позицию',
+      fullName: 'Имя и фамилия',
+      email: 'Email',
       position: 'Позиция',
-      actions: 'Действия',
-      addEmployee: '+ Добавить сотрудника',
-      selectPosition: 'Выберите позицию',
-      namePlaceholder: 'Имя и фамилия сотрудника',
-      confirmDelete: 'Вы уверены, что хотите удалить эту позицию?',
-      confirmDeleteEmployee: 'Вы уверены, что хотите удалить этого сотрудника из распределения?'
+      save: 'Сохранить',
+      addRow: 'Добавить интервал',
+      addAbsence: 'Добавить отсутствие',
+      type: 'Тип',
+      startDate: 'Начало',
+      endDate: 'Окончание',
+      comment: 'Комментарий',
+      empty: 'Нет данных',
+      loading: 'Загрузка...',
+      selectEmployee: 'Выберите сотрудника',
+      vacation: 'Отпуск',
+      sick_leave: 'Больничный',
+      other: 'Другое',
+      created: 'Данные сохранены.',
+      managerOnly: 'Раздел доступен менеджеру.',
+      delete: 'Удалить',
+      draft: 'Черновик',
+      published: 'Опубликовано',
     },
     en: {
-      workingPositions: 'Working Positions',
-      addPosition: '+ Add Position',
-      save: 'Save',
-      cancel: 'Cancel',
-      employeeDistribution: 'Employee Distribution',
-      employee: 'Employee',
+      title: 'Employees and positions',
+      employees: 'Employees',
+      positions: 'Positions',
+      availability: 'Availability',
+      desiredDaysOff: 'Desired days off',
+      absences: 'Absences',
+      workload: 'Workload',
+      shifts: 'Shifts',
+      totalHours: 'Hours',
+      totalShifts: 'Shifts',
+      createEmployee: 'Create employee',
+      createPosition: 'Create position',
+      fullName: 'Full name',
+      email: 'Email',
       position: 'Position',
-      actions: 'Actions',
-      addEmployee: '+ Add Employee',
-      selectPosition: 'Select position',
-      namePlaceholder: 'Employee full name',
-      confirmDelete: 'Are you sure you want to delete this position?',
-      confirmDeleteEmployee: 'Are you sure you want to remove this employee from distribution?'
-    }
+      save: 'Save',
+      addRow: 'Add interval',
+      addAbsence: 'Add absence',
+      type: 'Type',
+      startDate: 'Start date',
+      endDate: 'End date',
+      comment: 'Comment',
+      empty: 'No data',
+      loading: 'Loading...',
+      selectEmployee: 'Select employee',
+      vacation: 'Vacation',
+      sick_leave: 'Sick leave',
+      other: 'Other',
+      created: 'Data saved.',
+      managerOnly: 'Manager access only.',
+      delete: 'Delete',
+      draft: 'Draft',
+      published: 'Published',
+    },
   };
 
   const t = texts[language] || texts.ru;
 
-  const handleAddPosition = () => {
-    if (newPosition.trim()) {
-      const newId = Math.max(...positions.map(p => p.id), 0) + 1;
-      setPositions([...positions, { id: newId, name: newPosition }]);
-      setNewPosition('');
+  const selectedEmployee = useMemo(
+    () => employees.find((employee) => String(employee.id) === String(selectedEmployeeId)),
+    [employees, selectedEmployeeId]
+  );
+
+  useEffect(() => {
+    if (userRole !== 'manager') {
+      return undefined;
     }
-  };
 
-  const handleStartEdit = (position) => {
-    setEditingPosition(position.id);
-    setEditPositionName(position.name);
-  };
+    let isMounted = true;
 
-  const handleSaveEdit = (id) => {
-    if (editPositionName.trim()) {
-      setPositions(positions.map(p => 
-        p.id === id ? { ...p, name: editPositionName } : p
-      ));
-      setEmployeeAssignments(employeeAssignments.map(emp => 
-        emp.positionId === id ? { ...emp, positionName: editPositionName } : emp
-      ));
-      setEditingPosition(null);
-      setEditPositionName('');
-    }
-  };
+    async function bootstrap() {
+      setIsLoading(true);
+      try {
+        const [employeesData, positionsData] = await Promise.all([
+          listEmployees(),
+          listPositions(),
+        ]);
 
-  const handleDeletePosition = (id) => {
-    if (window.confirm(t.confirmDelete)) {
-      const hasEmployees = employeeAssignments.some(emp => emp.positionId === id);
-      if (hasEmployees) {
-        alert('Сначала удалите или переназначьте сотрудников с этой позицией');
-        return;
-      }
-      setPositions(positions.filter(p => p.id !== id));
-    }
-  };
-
-  const handleAddEmployee = () => {
-    if (newEmployee.name && newEmployee.positionId) {
-      const position = positions.find(p => p.id === parseInt(newEmployee.positionId));
-      const newId = Math.max(...employeeAssignments.map(e => e.id), 0) + 1;
-      setEmployeeAssignments([
-        ...employeeAssignments,
-        {
-          id: newId,
-          name: newEmployee.name,
-          positionId: parseInt(newEmployee.positionId),
-          positionName: position?.name || ''
+        if (!isMounted) {
+          return;
         }
+
+        setEmployees(employeesData);
+        setPositions(positionsData);
+        if (employeesData[0]) {
+          setSelectedEmployeeId(String(employeesData[0].id));
+        }
+      } catch (error) {
+        if (isMounted) {
+          setErrorMessage(extractApiErrorMessage(error, null, language));
+        }
+      } finally {
+        if (isMounted) {
+          setIsLoading(false);
+        }
+      }
+    }
+
+    bootstrap();
+    return () => {
+      isMounted = false;
+    };
+  }, [language, userRole]);
+
+  useEffect(() => {
+    if (!selectedEmployeeId || userRole !== 'manager') {
+      return undefined;
+    }
+
+    let isMounted = true;
+
+    async function loadDetails() {
+      setIsDetailsLoading(true);
+      setErrorMessage('');
+      try {
+        const [availabilityData, absencesData, summaryData] = await Promise.all([
+          getEmployeeAvailability(selectedEmployeeId),
+          listEmployeeAbsences(selectedEmployeeId),
+          getEmployeeCalendarSummary(selectedEmployeeId),
+        ]);
+
+        if (!isMounted) {
+          return;
+        }
+
+        setAvailabilityForm({
+          weekly_availability: availabilityData.weekly_availability.length
+            ? availabilityData.weekly_availability
+            : [],
+          desired_days_off: availabilityData.desired_days_off || [],
+        });
+        setEmployeeAbsences(absencesData);
+        setEmployeeSummary(mapEmployeeCalendarSummary(summaryData));
+      } catch (error) {
+        if (isMounted) {
+          setErrorMessage(extractApiErrorMessage(error, null, language));
+        }
+      } finally {
+        if (isMounted) {
+          setIsDetailsLoading(false);
+        }
+      }
+    }
+
+    loadDetails();
+    return () => {
+      isMounted = false;
+    };
+  }, [language, selectedEmployeeId, userRole]);
+
+  if (userRole !== 'manager') {
+    return <div style={styles.card}>{t.managerOnly}</div>;
+  }
+
+  const reloadEmployees = async (preferEmployeeId) => {
+    const employeesData = await listEmployees();
+    setEmployees(employeesData);
+    if (preferEmployeeId) {
+      setSelectedEmployeeId(String(preferEmployeeId));
+    } else if (!employeesData.some((employee) => String(employee.id) === String(selectedEmployeeId))) {
+      setSelectedEmployeeId(employeesData[0] ? String(employeesData[0].id) : '');
+    }
+  };
+
+  const reloadPositions = async () => {
+    const positionsData = await listPositions();
+    setPositions(positionsData);
+  };
+
+  const handleCreatePosition = async () => {
+    if (!positionTitle.trim()) {
+      setErrorMessage(t.position);
+      return;
+    }
+
+    setErrorMessage('');
+    setSuccessMessage('');
+    setIsSubmitting(true);
+    try {
+      await createPosition({ title: positionTitle.trim() });
+      await reloadPositions();
+      setPositionTitle('');
+      setSuccessMessage(t.created);
+    } catch (error) {
+      setErrorMessage(extractApiErrorMessage(error, null, language));
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const handleCreateEmployee = async () => {
+    if (!employeeForm.full_name.trim() || !employeeForm.email.trim() || !employeeForm.position_id) {
+      setErrorMessage(t.createEmployee);
+      return;
+    }
+
+    setErrorMessage('');
+    setSuccessMessage('');
+    setIsSubmitting(true);
+    try {
+      const createdEmployee = await createEmployee({
+        full_name: employeeForm.full_name.trim(),
+        email: employeeForm.email.trim(),
+        position_id: Number(employeeForm.position_id),
+      });
+      await reloadEmployees(createdEmployee.id);
+      setEmployeeForm({ full_name: '', email: '', position_id: '' });
+      setSuccessMessage(t.created);
+    } catch (error) {
+      setErrorMessage(extractApiErrorMessage(error, null, language));
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const handleAvailabilityChange = (index, key, value) => {
+    setAvailabilityForm((prev) => ({
+      ...prev,
+      weekly_availability: prev.weekly_availability.map((item, itemIndex) => (
+        itemIndex === index ? { ...item, [key]: value } : item
+      )),
+    }));
+  };
+
+  const handleSaveAvailability = async () => {
+    if (!selectedEmployeeId) {
+      return;
+    }
+
+    setErrorMessage('');
+    setSuccessMessage('');
+    setIsSubmitting(true);
+    try {
+      await updateEmployeeAvailability(selectedEmployeeId, availabilityForm);
+      const [availabilityData, summaryData] = await Promise.all([
+        getEmployeeAvailability(selectedEmployeeId),
+        getEmployeeCalendarSummary(selectedEmployeeId),
       ]);
-      setNewEmployee({ name: '', positionId: '' });
-      setShowAddEmployee(false);
+      setAvailabilityForm({
+        weekly_availability: availabilityData.weekly_availability,
+        desired_days_off: availabilityData.desired_days_off,
+      });
+      setEmployeeSummary(mapEmployeeCalendarSummary(summaryData));
+      setSuccessMessage(t.created);
+    } catch (error) {
+      setErrorMessage(extractApiErrorMessage(error, null, language));
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
-  const handleDeleteEmployee = (id) => {
-    if (window.confirm(t.confirmDeleteEmployee)) {
-      setEmployeeAssignments(employeeAssignments.filter(emp => emp.id !== id));
+  const handleCreateAbsence = async () => {
+    if (!selectedEmployeeId || !absenceForm.start_date || !absenceForm.end_date) {
+      setErrorMessage(t.addAbsence);
+      return;
+    }
+
+    setErrorMessage('');
+    setSuccessMessage('');
+    setIsSubmitting(true);
+    try {
+      await createEmployeeAbsence(selectedEmployeeId, absenceForm);
+      const [absencesData, summaryData] = await Promise.all([
+        listEmployeeAbsences(selectedEmployeeId),
+        getEmployeeCalendarSummary(selectedEmployeeId),
+      ]);
+      setEmployeeAbsences(absencesData);
+      setEmployeeSummary(mapEmployeeCalendarSummary(summaryData));
+      setAbsenceForm({ absence_type: 'vacation', start_date: '', end_date: '', comment: '' });
+      setSuccessMessage(t.created);
+    } catch (error) {
+      setErrorMessage(extractApiErrorMessage(error, null, language));
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
-  const inputStyle = {
-    padding: '8px 12px',
-    fontSize: '14px',
-    color: '#002642',
-    backgroundColor: '#FFFFFF',
-    border: '2px solid #DEE7E7',
-    borderRadius: '8px',
-    outline: 'none',
-    transition: 'all 0.3s ease',
-    width: '100%',
-    boxSizing: 'border-box'
+  const handleDeleteAbsence = async (absenceId) => {
+    if (!selectedEmployeeId) {
+      return;
+    }
+
+    setErrorMessage('');
+    setSuccessMessage('');
+    setIsSubmitting(true);
+    try {
+      await deleteEmployeeAbsence(selectedEmployeeId, absenceId);
+      const [absencesData, summaryData] = await Promise.all([
+        listEmployeeAbsences(selectedEmployeeId),
+        getEmployeeCalendarSummary(selectedEmployeeId),
+      ]);
+      setEmployeeAbsences(absencesData);
+      setEmployeeSummary(mapEmployeeCalendarSummary(summaryData));
+      setSuccessMessage(t.created);
+    } catch (error) {
+      setErrorMessage(extractApiErrorMessage(error, null, language));
+    } finally {
+      setIsSubmitting(false);
+    }
   };
+
+  if (isLoading) {
+    return <div style={styles.card}>{t.loading}</div>;
+  }
 
   return (
-    <div className="employees-main-container" style={styles.container}>
-      {/* Левый блок: Рабочие позиции */}
-      <div className="employees-left-panel" style={styles.leftPanel}>
-        <div className="employees-panel-header" style={styles.panelHeader}>
-          <h3 style={styles.panelTitle}>{t.workingPositions}</h3>
-        </div>
-        
-        <div style={styles.positionsList}>
-          {positions.map(position => (
-            <div key={position.id} className="employees-position-item" style={styles.positionItem}>
-              {editingPosition === position.id ? (
-                <div className="employees-edit-row" style={styles.editRow}>
-                  <input
-                    type="text"
-                    value={editPositionName}
-                    onChange={(e) => setEditPositionName(e.target.value)}
-                    style={{ ...inputStyle, flex: 1 }}
-                    autoFocus
-                  />
-                  <button onClick={() => handleSaveEdit(position.id)} style={styles.saveSmallBtn}>
-                    {t.save}
-                  </button>
-                  <button onClick={() => setEditingPosition(null)} style={styles.cancelSmallBtn}>
-                    {t.cancel}
-                  </button>
-                </div>
-              ) : (
-                <>
-                  <span className="employees-position-name" style={styles.positionName}>{position.name}</span>
-                  <div style={styles.positionActions}>
-                    <button onClick={() => handleStartEdit(position)} style={styles.editSmallBtn}>
-                      ✏️
-                    </button>
-                    <button onClick={() => handleDeletePosition(position.id)} style={styles.deleteSmallBtn}>
-                      🗑️
-                    </button>
-                  </div>
-                </>
-              )}
-            </div>
-          ))}
-        </div>
-        
-        <div className="employees-add-position-row" style={styles.addPositionRow}>
-          <input
-            type="text"
-            placeholder={t.addPosition}
-            value={newPosition}
-            onChange={(e) => setNewPosition(e.target.value)}
-            style={inputStyle}
-            onKeyPress={(e) => e.key === 'Enter' && handleAddPosition()}
-          />
-          <button onClick={handleAddPosition} style={styles.addBtn}>
-            +
-          </button>
-        </div>
-      </div>
+    <div style={styles.wrapper}>
+      <div style={styles.card}>
+        <h2 style={styles.title}>{t.title}</h2>
+        {errorMessage && <div style={styles.error}>{errorMessage}</div>}
+        {successMessage && <div style={styles.success}>{successMessage}</div>}
 
-      {/* Правый блок: Распределение сотрудников */}
-      <div className="employees-right-panel" style={styles.rightPanel}>
-        <div className="employees-panel-header" style={styles.panelHeader}>
-          <h3 style={styles.panelTitle}>{t.employeeDistribution}</h3>
-          <button onClick={() => setShowAddEmployee(true)} style={styles.addEmployeeBtn}>
-            {t.addEmployee}
-          </button>
-        </div>
-        
-        <div style={styles.tableWrapper}>
-          <table className="employees-table" style={styles.table}>
-            <thead>
-              <tr>
-                <th style={styles.th}>{t.employee}</th>
-                <th style={styles.th}>{t.position}</th>
-                <th style={{ ...styles.th, width: '70px' }}>{t.actions}</th>
-              </tr>
-            </thead>
-            <tbody>
-              {employeeAssignments.length === 0 ? (
-                <tr>
-                  <td colSpan="3" style={styles.emptyCell}>
-                    Нет распределенных сотрудников
-                  </td>
-                </tr>
-              ) : (
-                employeeAssignments.map(emp => (
-                  <tr key={emp.id}>
-                    <td style={styles.td}>{emp.name}</td>
-                    <td style={styles.td}>{emp.positionName}</td>
-                    <td style={styles.td}>
-                      <button onClick={() => handleDeleteEmployee(emp.id)} style={styles.deleteSmallBtn}>
-                        🗑️
-                      </button>
-                    </td>
-                  </tr>
-                ))
-              )}
-            </tbody>
-          </table>
-        </div>
-      </div>
-
-      {/* Модальное окно для добавления сотрудника */}
-      {showAddEmployee && (
-        <div style={styles.modalOverlay} onClick={() => setShowAddEmployee(false)}>
-          <div className="employees-modal-content" style={styles.modal} onClick={(e) => e.stopPropagation()}>
-            <h3 style={styles.modalTitle}>{t.addEmployee}</h3>
-            <div style={styles.modalForm}>
-              <input
-                type="text"
-                placeholder={t.namePlaceholder}
-                value={newEmployee.name}
-                onChange={(e) => setNewEmployee({ ...newEmployee, name: e.target.value })}
-                style={inputStyle}
-              />
-              <select
-                value={newEmployee.positionId}
-                onChange={(e) => setNewEmployee({ ...newEmployee, positionId: e.target.value })}
-                style={inputStyle}
-              >
-                <option value="">{t.selectPosition}</option>
-                {positions.map(pos => (
-                  <option key={pos.id} value={pos.id}>{pos.name}</option>
-                ))}
-              </select>
-              <div style={styles.modalActions}>
-                <button onClick={handleAddEmployee} style={styles.primaryBtn}>{t.save}</button>
-                <button onClick={() => setShowAddEmployee(false)} style={styles.cancelBtn}>{t.cancel}</button>
-              </div>
-            </div>
+        <div style={styles.section}>
+          <h3 style={styles.sectionTitle}>{t.createPosition}</h3>
+          <div style={styles.inlineForm}>
+            <input
+              value={positionTitle}
+              onChange={(event) => setPositionTitle(event.target.value)}
+              placeholder={t.position}
+              style={styles.input}
+            />
+            <button onClick={handleCreatePosition} style={styles.primaryButton} disabled={isSubmitting}>
+              {t.save}
+            </button>
           </div>
         </div>
-      )}
+
+        <div style={styles.section}>
+          <h3 style={styles.sectionTitle}>{t.createEmployee}</h3>
+          <div style={styles.formGrid}>
+            <input
+              value={employeeForm.full_name}
+              onChange={(event) => setEmployeeForm((prev) => ({ ...prev, full_name: event.target.value }))}
+              placeholder={t.fullName}
+              style={styles.input}
+            />
+            <input
+              value={employeeForm.email}
+              onChange={(event) => setEmployeeForm((prev) => ({ ...prev, email: event.target.value }))}
+              placeholder={t.email}
+              style={styles.input}
+            />
+            <select
+              value={employeeForm.position_id}
+              onChange={(event) => setEmployeeForm((prev) => ({ ...prev, position_id: event.target.value }))}
+              style={styles.input}
+            >
+              <option value="">{t.selectEmployee}</option>
+              {positions.map((position) => (
+                <option key={position.id} value={position.id}>{position.title}</option>
+              ))}
+            </select>
+            <button onClick={handleCreateEmployee} style={styles.primaryButton} disabled={isSubmitting}>
+              {t.save}
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <div style={styles.card}>
+        <div style={styles.sectionHeader}>
+          <h3 style={styles.sectionTitle}>{t.employees}</h3>
+          <select
+            value={selectedEmployeeId}
+            onChange={(event) => setSelectedEmployeeId(event.target.value)}
+            style={styles.input}
+          >
+            <option value="">{t.selectEmployee}</option>
+            {employees.map((employee) => (
+              <option key={employee.id} value={employee.id}>
+                {employee.full_name} ({employee.position_title})
+              </option>
+            ))}
+          </select>
+        </div>
+
+        {!selectedEmployee ? (
+          <p style={styles.emptyText}>{t.empty}</p>
+        ) : isDetailsLoading ? (
+          <p style={styles.emptyText}>{t.loading}</p>
+        ) : (
+          <div style={styles.detailsGrid}>
+            <div style={styles.infoBox}>
+              <div style={styles.infoLine}><strong>{t.fullName}:</strong> {selectedEmployee.full_name}</div>
+              <div style={styles.infoLine}><strong>{t.email}:</strong> {selectedEmployee.email}</div>
+              <div style={styles.infoLine}><strong>{t.position}:</strong> {selectedEmployee.position_title}</div>
+            </div>
+
+            <div style={styles.section}>
+              <h4 style={styles.subTitle}>{t.availability}</h4>
+              {availabilityForm.weekly_availability.map((block, index) => (
+                <div key={`${block.weekday}-${index}`} style={styles.availabilityRow}>
+                  <select
+                    value={block.weekday}
+                    onChange={(event) => handleAvailabilityChange(index, 'weekday', Number(event.target.value))}
+                    style={styles.input}
+                  >
+                    {WEEKDAYS.map((day) => (
+                      <option key={day.value} value={day.value}>{day[language] || day.ru}</option>
+                    ))}
+                  </select>
+                  <input
+                    type="time"
+                    value={String(block.start_time).slice(0, 5)}
+                    onChange={(event) => handleAvailabilityChange(index, 'start_time', `${event.target.value}:00`)}
+                    style={styles.input}
+                  />
+                  <input
+                    type="time"
+                    value={String(block.end_time).slice(0, 5)}
+                    onChange={(event) => handleAvailabilityChange(index, 'end_time', `${event.target.value}:00`)}
+                    style={styles.input}
+                  />
+                  <button
+                    onClick={() => setAvailabilityForm((prev) => ({
+                      ...prev,
+                      weekly_availability: prev.weekly_availability.filter((_, itemIndex) => itemIndex !== index),
+                    }))}
+                    style={styles.secondaryButton}
+                  >
+                    {t.delete}
+                  </button>
+                </div>
+              ))}
+              <div style={styles.buttonRow}>
+                <button
+                  onClick={() => setAvailabilityForm((prev) => ({
+                    ...prev,
+                    weekly_availability: [...prev.weekly_availability, createAvailabilityBlock()],
+                  }))}
+                  style={styles.secondaryButton}
+                >
+                  {t.addRow}
+                </button>
+                <button onClick={handleSaveAvailability} style={styles.primaryButton} disabled={isSubmitting}>
+                  {t.save}
+                </button>
+              </div>
+              <div style={styles.checkboxRow}>
+                {WEEKDAYS.map((day) => (
+                  <label key={day.value} style={styles.checkboxLabel}>
+                    <input
+                      type="checkbox"
+                      checked={availabilityForm.desired_days_off.includes(day.value)}
+                      onChange={() => setAvailabilityForm((prev) => ({
+                        ...prev,
+                        desired_days_off: prev.desired_days_off.includes(day.value)
+                          ? prev.desired_days_off.filter((value) => value !== day.value)
+                          : [...prev.desired_days_off, day.value].sort((a, b) => a - b),
+                      }))}
+                    />
+                    {day[language] || day.ru}
+                  </label>
+                ))}
+              </div>
+            </div>
+
+            <div style={styles.section}>
+              <h4 style={styles.subTitle}>{t.absences}</h4>
+              <div style={styles.formGrid}>
+                <select
+                  value={absenceForm.absence_type}
+                  onChange={(event) => setAbsenceForm((prev) => ({ ...prev, absence_type: event.target.value }))}
+                  style={styles.input}
+                >
+                  <option value="vacation">{t.vacation}</option>
+                  <option value="sick_leave">{t.sick_leave}</option>
+                  <option value="other">{t.other}</option>
+                </select>
+                <input
+                  type="date"
+                  value={absenceForm.start_date}
+                  onChange={(event) => setAbsenceForm((prev) => ({ ...prev, start_date: event.target.value }))}
+                  style={styles.input}
+                />
+                <input
+                  type="date"
+                  value={absenceForm.end_date}
+                  onChange={(event) => setAbsenceForm((prev) => ({ ...prev, end_date: event.target.value }))}
+                  style={styles.input}
+                />
+                <input
+                  value={absenceForm.comment}
+                  onChange={(event) => setAbsenceForm((prev) => ({ ...prev, comment: event.target.value }))}
+                  placeholder={t.comment}
+                  style={styles.input}
+                />
+                <button onClick={handleCreateAbsence} style={styles.primaryButton} disabled={isSubmitting}>
+                  {t.addAbsence}
+                </button>
+              </div>
+              {employeeAbsences.length === 0 ? (
+                <p style={styles.emptyText}>{t.empty}</p>
+              ) : (
+                <div style={styles.list}>
+                  {employeeAbsences.map((absence) => (
+                    <div key={absence.id} style={styles.listItem}>
+                      <div>
+                        <div style={styles.itemTitle}>{t[absence.absence_type] || absence.absence_type}</div>
+                        <div style={styles.itemMeta}>{absence.start_date} - {absence.end_date}</div>
+                        {absence.comment && <div style={styles.itemMeta}>{absence.comment}</div>}
+                      </div>
+                      <button onClick={() => handleDeleteAbsence(absence.id)} style={styles.secondaryButton}>
+                        {t.delete}
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            <div style={styles.section}>
+              <h4 style={styles.subTitle}>{t.workload}</h4>
+              {employeeSummary ? (
+                <>
+                  <div style={styles.infoLine}><strong>{t.totalShifts}:</strong> {employeeSummary.workload.total_shifts}</div>
+                  <div style={styles.infoLine}><strong>{t.totalHours}:</strong> {employeeSummary.workload.total_hours}</div>
+                  <h4 style={styles.subTitle}>{t.shifts}</h4>
+                  {employeeSummary.shifts.length === 0 ? (
+                    <p style={styles.emptyText}>{t.empty}</p>
+                  ) : (
+                    <div style={styles.list}>
+                      {employeeSummary.shifts.map((shift) => (
+                        <div key={`${shift.schedule_id}-${shift.shift_id}`} style={styles.listItem}>
+                          <div>
+                            <div style={styles.itemTitle}>{shift.date}</div>
+                            <div style={styles.itemMeta}>
+                              {String(shift.start_time).slice(0, 5)} - {String(shift.end_time).slice(0, 5)}
+                            </div>
+                            <div style={styles.itemMeta}>{t[shift.status] || localizeBackendMessage(shift.status, language)}</div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </>
+              ) : (
+                <p style={styles.emptyText}>{t.empty}</p>
+              )}
+            </div>
+          </div>
+        )}
+      </div>
     </div>
   );
 }
 
 const styles = {
-  container: {
+  wrapper: {
+    display: 'grid',
+    gap: '20px',
+    maxWidth: '1280px',
+    margin: '0 auto',
+  },
+  card: {
+    background: '#F4FAFF',
+    borderRadius: '24px',
+    padding: '24px',
+  },
+  title: {
+    fontSize: '24px',
+    color: '#002642',
+    margin: '0 0 8px',
+  },
+  section: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '14px',
+    marginTop: '18px',
+  },
+  sectionHeader: {
     display: 'flex',
     gap: '16px',
-    flexWrap: 'wrap',
-    background: '#F4FAFF',
-    borderRadius: '20px',
-    padding: '12px',
-    maxWidth: '1200px',
-    margin: '0 auto'
-  },
-  leftPanel: {
-    flex: '1',
-    minWidth: '240px',
-    maxWidth: '100%',
-    background: '#FFFFFF',
-    borderRadius: '14px',
-    padding: '14px',
-    boxShadow: '0 1px 4px rgba(0,0,0,0.05)',
-    boxSizing: 'border-box'
-  },
-  rightPanel: {
-    flex: '2',
-    minWidth: '300px',
-    maxWidth: '100%',
-    background: '#FFFFFF',
-    borderRadius: '14px',
-    padding: '14px',
-    boxShadow: '0 1px 4px rgba(0,0,0,0.05)',
-    boxSizing: 'border-box'
-  },
-  panelHeader: {
-    display: 'flex',
+    alignItems: 'center',
     justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: '14px',
     flexWrap: 'wrap',
-    gap: '10px'
+    marginBottom: '16px',
   },
-  panelTitle: {
-    fontSize: '16px',
-    fontWeight: '600',
+  sectionTitle: {
+    margin: 0,
     color: '#002642',
-    margin: 0
-  },
-  positionsList: {
-    display: 'flex',
-    flexDirection: 'column',
-    gap: '6px',
-    marginBottom: '14px',
-    maxHeight: '400px',
-    overflowY: 'auto'
-  },
-  positionItem: {
-    display: 'flex',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    padding: '8px 10px',
-    backgroundColor: '#F4FAFF',
-    borderRadius: '8px',
-    border: '1px solid #DEE7E7'
-  },
-  positionName: {
-    fontSize: '13px',
-    color: '#002642',
-    fontWeight: '500'
-  },
-  positionActions: {
-    display: 'flex',
-    gap: '6px'
-  },
-  editRow: {
-    display: 'flex',
-    gap: '6px',
-    width: '100%',
-    alignItems: 'center'
-  },
-  addPositionRow: {
-    display: 'flex',
-    gap: '8px',
-    marginTop: '8px'
-  },
-  addBtn: {
-    padding: '8px 14px',
-    backgroundColor: '#B7ADCF',
-    border: 'none',
-    borderRadius: '8px',
-    color: '#002642',
-    fontWeight: '500',
-    cursor: 'pointer',
-    fontSize: '16px'
-  },
-  editSmallBtn: {
-    padding: '4px 8px',
-    backgroundColor: '#DEE7E7',
-    border: 'none',
-    borderRadius: '6px',
-    cursor: 'pointer',
-    fontSize: '12px'
-  },
-  deleteSmallBtn: {
-    padding: '4px 8px',
-    backgroundColor: '#FFEBEE',
-    border: 'none',
-    borderRadius: '6px',
-    cursor: 'pointer',
-    fontSize: '12px'
-  },
-  saveSmallBtn: {
-    padding: '5px 10px',
-    backgroundColor: '#002642',
-    border: 'none',
-    borderRadius: '6px',
-    color: '#F4FAFF',
-    fontSize: '11px',
-    cursor: 'pointer'
-  },
-  cancelSmallBtn: {
-    padding: '5px 10px',
-    backgroundColor: '#DEE7E7',
-    border: 'none',
-    borderRadius: '6px',
-    color: '#4F646F',
-    fontSize: '11px',
-    cursor: 'pointer'
-  },
-  addEmployeeBtn: {
-    padding: '6px 12px',
-    backgroundColor: '#002642',
-    border: 'none',
-    borderRadius: '8px',
-    color: '#F4FAFF',
-    fontWeight: '500',
-    fontSize: '12px',
-    cursor: 'pointer'
-  },
-  tableWrapper: {
-    overflowX: 'auto',
-    marginTop: '12px'
-  },
-  table: {
-    width: '100%',
-    borderCollapse: 'collapse',
-    minWidth: '280px'
-  },
-  th: {
-    padding: '8px 8px',
-    backgroundColor: '#002642',
-    color: '#F4FAFF',
-    fontWeight: '600',
-    fontSize: '12px',
-    textAlign: 'center',
-    borderBottom: '2px solid #B7ADCF'
-  },
-  td: {
-    padding: '8px 8px',
-    fontSize: '12px',
-    color: '#002642',
-    borderBottom: '1px solid #DEE7E7'
-  },
-  emptyCell: {
-    padding: '30px',
-    textAlign: 'center',
-    color: '#4F646F'
-  },
-  modalOverlay: {
-    position: 'fixed',
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
-    backgroundColor: 'rgba(0,0,0,0.5)',
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    zIndex: 1000
-  },
-  modal: {
-    background: '#FFFFFF',
-    borderRadius: '16px',
-    padding: '20px',
-    width: '90%',
-    maxWidth: '380px'
-  },
-  modalTitle: {
     fontSize: '18px',
-    fontWeight: '600',
+  },
+  subTitle: {
+    margin: 0,
     color: '#002642',
-    margin: '0 0 16px 0'
+    fontSize: '16px',
   },
-  modalForm: {
-    display: 'flex',
-    flexDirection: 'column',
-    gap: '14px'
+  formGrid: {
+    display: 'grid',
+    gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))',
+    gap: '12px',
   },
-  modalActions: {
+  inlineForm: {
+    display: 'grid',
+    gridTemplateColumns: '1fr auto',
+    gap: '12px',
+  },
+  input: {
+    width: '100%',
+    boxSizing: 'border-box',
+    borderRadius: '12px',
+    border: '2px solid #DEE7E7',
+    background: '#FFFFFF',
+    padding: '12px 14px',
+    color: '#002642',
+    fontSize: '14px',
+  },
+  primaryButton: {
+    padding: '12px 18px',
+    background: '#002642',
+    border: 'none',
+    borderRadius: '12px',
+    color: '#F4FAFF',
+    fontWeight: '600',
+    cursor: 'pointer',
+  },
+  secondaryButton: {
+    padding: '10px 14px',
+    background: '#DEE7E7',
+    border: 'none',
+    borderRadius: '12px',
+    color: '#002642',
+    fontWeight: '600',
+    cursor: 'pointer',
+  },
+  detailsGrid: {
+    display: 'grid',
+    gap: '18px',
+  },
+  infoBox: {
+    padding: '16px',
+    borderRadius: '16px',
+    background: '#FFFFFF',
+    border: '1px solid #DEE7E7',
+  },
+  infoLine: {
+    color: '#002642',
+    marginBottom: '8px',
+  },
+  availabilityRow: {
+    display: 'grid',
+    gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))',
+    gap: '12px',
+  },
+  checkboxRow: {
     display: 'flex',
     gap: '10px',
-    justifyContent: 'flex-end',
-    marginTop: '6px'
+    flexWrap: 'wrap',
   },
-  primaryBtn: {
-    padding: '8px 16px',
-    backgroundColor: '#002642',
-    border: 'none',
-    borderRadius: '8px',
-    color: '#F4FAFF',
-    fontWeight: '500',
-    cursor: 'pointer',
-    fontSize: '13px'
+  checkboxLabel: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '6px',
+    color: '#002642',
   },
-  cancelBtn: {
-    padding: '8px 16px',
-    backgroundColor: '#DEE7E7',
-    border: 'none',
-    borderRadius: '8px',
+  buttonRow: {
+    display: 'flex',
+    gap: '12px',
+    flexWrap: 'wrap',
+  },
+  list: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '10px',
+  },
+  listItem: {
+    padding: '14px 16px',
+    borderRadius: '16px',
+    background: '#FFFFFF',
+    border: '1px solid #DEE7E7',
+    display: 'flex',
+    justifyContent: 'space-between',
+    gap: '12px',
+    alignItems: 'center',
+    flexWrap: 'wrap',
+  },
+  itemTitle: {
+    fontWeight: '700',
+    color: '#002642',
+  },
+  itemMeta: {
     color: '#4F646F',
-    fontWeight: '500',
-    cursor: 'pointer',
-    fontSize: '13px'
-  }
+    fontSize: '13px',
+    marginTop: '4px',
+  },
+  error: {
+    marginBottom: '16px',
+    padding: '12px 14px',
+    borderRadius: '12px',
+    background: '#FDEAEA',
+    color: '#A61B1B',
+  },
+  success: {
+    marginBottom: '16px',
+    padding: '12px 14px',
+    borderRadius: '12px',
+    background: '#E7F6EC',
+    color: '#17663A',
+  },
+  emptyText: {
+    color: '#4F646F',
+    margin: 0,
+  },
 };

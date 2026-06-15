@@ -2,97 +2,122 @@
 
 ## Overview
 
-This is the React + Vite frontend for the ShiftPlanner application. The current UI implements the login/register flow, role-based dashboards for employee and manager, and mock screens for profile, company info, employees, shifts, schedule, and reports.
+React + Vite client for ShiftPlanner.
 
-The frontend is not yet fully integrated with the backend API. It currently uses mocked auth state and mock data in UI components.
+The frontend is now connected to the real FastAPI backend for:
 
-## Tech stack
+- authentication
+- role-based routing
+- company invite join flow
+- manager employee/position management
+- availability and absences
+- schedule requirements
+- schedule generation and publishing
+- reports
+- XLSX requirement import
+
+## Tech Stack
 
 - React 19
 - Vite
 - React Router DOM
 - Axios
-- date-fns
-- xlsx
+- `xlsx`
 
-## Run locally
+## Environment
 
-From `frontend/`:
+Create `frontend/.env` from `frontend/.env.example`:
+
+```env
+VITE_API_URL=http://localhost:8000
+```
+
+The backend must be reachable from the browser at that URL.
+
+## Language
+
+- UI language is switched between Russian and English in the frontend and persisted in `localStorage` under `language`
+- dashboard pages, auth screens, backend-integration tabs, and common API errors use the same selected language
+
+## Run Locally
+
+1. Start backend on `http://localhost:8000`.
+2. In `frontend/` run:
 
 ```bash
 npm install
 npm run dev
 ```
 
-Open the app at `http://localhost:5173`.
+Frontend URL:
 
-## Environment
-
-Create `frontend/.env` with:
-
-```env
-VITE_API_URL=http://localhost:8000
+```text
+http://localhost:5173
 ```
 
-This value should point to the backend API.
+## Demo Accounts
 
-## Current frontend state
+- `manager@example.com / manager123`
+- `ivan@example.com / employee123`
 
-- `frontend/src/context/AuthContext.jsx` currently mocks `login`, `register`, and `logout`.
-- `frontend/src/services/` is empty and should contain API service wrappers.
-- `Auth` page and the dashboard routes are ready for integration, but they do not call real backend endpoints yet.
-- Several tabs use hard-coded mock data for employees, requirements, shifts, and reports.
+Invite flow demo data:
 
-## Expected backend contract
+- company: `Coffee Bar Barnaul`
+- invite code: `COFFEE123`
 
-The frontend should work with the backend endpoints described below.
+## Integrated Pages
 
-### Authentication
+### Auth
 
 - `POST /auth/login`
-  - accepts `{ email, password }`
-  - returns `{ access_token, token_type, role }`
 - `POST /auth/register`
-  - accepts `{ name, email, password, role }`
-  - returns a token or user info
 - `GET /auth/me`
-  - returns current user profile and context
 - `POST /auth/logout`
-  - invalidates current token
 
-### User profile
+Behavior:
 
-The frontend expects `/auth/me` to return a user object with:
+- bearer token is stored in `localStorage` under `shiftplanner_token`
+- protected requests attach `Authorization: Bearer <token>`
+- app startup restores the session through `GET /auth/me`
+- `401` clears local auth state and sends the user back through login
 
-```json
-{
-  "id": 1,
-  "email": "ivan@example.com",
-  "role": "employee",
-  "employee_id": 5,
-  "company": {
-    "id": 1,
-    "name": "Coffee Bar Barnaul",
-    "invite_code": "COFFEE123"
-  },
-  "branch": { "id": 1, "name": "Main Branch" },
-  "position": { "id": 2, "name": "Barista" }
-}
-```
+### Employee Dashboard
 
-### Company and invite flow
+- `Profile`: current user data from `GET /auth/me`
+- `Company`: joined company, branch, position, invite-code join flow
+- `Shift Setup`: self availability, desired days off, absences, calendar summary
+- `Schedule`: personal published shifts from `GET /schedule/my`, shift exchange request creation
+- `Reports`: self workload from `GET /reports/me`
 
-Expected endpoints:
+### Manager Dashboard
+
+- `Profile`: current user data from `GET /auth/me`
+- `Company`: company list from `GET /companies/`, company creation via `POST /companies/`
+- `Employees`: positions, employee creation, availability, absences, employee summary
+- `Shift Setup`: requirements list, single requirement creation, bulk requirement creation, XLSX import
+- `Schedule`: generate draft schedule, reassign/remove shifts, publish schedule
+- `Reports`: employee workload report for a selected date range
+
+## Backend Endpoints Used
+
+### Company
 
 - `GET /companies/`
 - `POST /companies/`
 - `GET /companies/invite/{invite_code}`
 - `POST /companies/join`
 
-### Employees and positions
+Visibility rules:
 
-Expected endpoints:
+- employee company page uses `GET /auth/me` as the source of truth
+- employees do not load or see the general company list
+- `GET /companies/` is treated as a manager company-management list and no longer exposes `invite_code`
+- invite details are shown only after explicit preview through `GET /companies/invite/{invite_code}`
 
+### Positions and Employees
+
+- `GET /positions/`
+- `POST /positions/`
 - `GET /employees/`
 - `POST /employees/`
 - `GET /employees/{employee_id}/availability`
@@ -102,71 +127,60 @@ Expected endpoints:
 - `DELETE /employees/{employee_id}/absences/{absence_id}`
 - `GET /employees/{employee_id}/calendar-summary`
 - `GET /employees/me/absences`
-- `POST /employees/me/absences`
 - `GET /employees/me/calendar-summary`
-- `GET /employees/me/schedule`
 
-### Scheduling
-
-Expected endpoints:
+### Schedule
 
 - `GET /schedule/requirements`
 - `POST /schedule/requirements`
 - `POST /schedule/requirements/bulk`
 - `POST /schedule/generate`
-- `GET /schedule/{schedule_id}`
 - `PATCH /schedule/{schedule_id}/shifts/{shift_id}`
 - `POST /schedule/{schedule_id}/publish`
 - `GET /schedule/my`
 - `POST /schedule/exchange-requests`
-- `GET /schedule/exchange-requests`
-- `PATCH /schedule/exchange-requests/{exchange_request_id}`
 
-### Reports and imports
-
-Expected endpoints:
+### Reports and Import
 
 - `GET /reports/employees`
 - `GET /reports/me`
 - `POST /imports/requirements/xlsx`
 
-## How frontend expects to use backend data
+## Error Handling
 
-### Auth flow
+- `401`: token is cleared and the app falls back to login
+- `403`: shown as a localized permission error
+- `404`: shown as a localized not-found error, including invalid invite code cases
+- `422`: validation details are normalized into readable text
+- network error: shown as a localized backend unavailable message
+- common backend detail strings are mapped to localized frontend messages instead of being rendered raw
 
-1. User logs in or registers.
-2. Save the returned bearer token in browser storage.
-3. Call `GET /auth/me` and use the returned profile for UI state.
-4. Use `role`, `employee_id`, `company`, `branch`, and `position` for navigation and permissions.
+## Known Limitations
 
-### Role-based UI
+- Manager schedule screen works with the schedule returned by the current generation flow; it does not yet provide a separate UI to load an arbitrary historical schedule by ID.
+- Exchange request approval endpoints exist in the backend, but the manager approval UI is not implemented yet.
+- The manager profile still reflects backend reality: if `/auth/me` has no attached company for a manager, the frontend does not fake one.
 
-- Employee sees: Profile, Company, Shifts, Schedule.
-- Manager sees: Profile, Company, Employees, Shifts, Schedule, Reports.
+## Verification
 
-### Frontend integration points
+Commands run:
 
-- Replace `AuthContext` mock logic with real API calls.
-- Implement `frontend/src/services/api.js` or similar service layer.
-- Use `axios` with `Authorization: Bearer <token>` for protected routes.
-- Load profile and role once after login, then keep it in context.
-- Fetch list data for company, employees, requirements, shifts, and reports from backend endpoints.
+```bash
+cd frontend
+npm install
+npm run lint
+npm run build
+```
 
-## Notes for backend integration
+```bash
+cd backend
+python -m compileall app
+python -m pytest
+```
 
-- The frontend currently uses mock data and local storage in several screens. The backend should provide real data for these views.
-- The app expects `VITE_API_URL` to be available at runtime.
-- UI labels support Russian and English.
-- The current design includes role-based pages at `/employee` and `/manager`.
+Results:
 
-## Development checklist
-
-- [ ] Connect `AuthContext` to actual backend auth endpoints.
-- [ ] Implement token storage and refresh handling if needed.
-- [ ] Load `/auth/me` after login to populate user data.
-- [ ] Replace mock employees and positions with backend responses.
-- [ ] Replace mock schedule and shift data with real schedule endpoints.
-- [ ] Replace reports mock data with `GET /reports/employees` and `GET /reports/me`.
-- [ ] Add error handling for 401/403 responses.
-
-
+- `npm run lint`: passed
+- `npm run build`: passed
+- `python -m compileall app`: passed
+- `python -m pytest`: timed out in the current environment

@@ -5,9 +5,12 @@ class CompanyCreate(BaseModel):
     name: str = Field(min_length=1)
 
 
-class CompanyRead(BaseModel):
+class CompanySummaryRead(BaseModel):
     id: int
     name: str
+
+
+class CompanyRead(CompanySummaryRead):
     invite_code: str
 
 

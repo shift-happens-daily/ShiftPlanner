@@ -1,58 +1,95 @@
-// frontend/src/components/DashboardTabs.jsx
-import { useState } from 'react';
-import { useAuth } from '../context/AuthContext';
-import ProfileTab from './tabs/ProfileTab';
+import { useMemo, useState } from 'react';
+import { useAuth } from '../context/useAuth';
 import CompanyTab from './tabs/CompanyTab';
 import EmployeesTab from './tabs/EmployeesTab';
-import ShiftsTab from './tabs/ShiftsTab';
-import ScheduleTab from './tabs/ScheduleTab';
+import ProfileTab from './tabs/ProfileTab';
 import ReportsTab from './tabs/ReportsTab';
+import ScheduleTab from './tabs/ScheduleTab';
+import ShiftsTab from './tabs/ShiftsTab';
 
 export default function DashboardTabs({ userRole, language }) {
   const [activeTab, setActiveTab] = useState('profile');
-  const { user, updateUser } = useAuth();
+  const { user } = useAuth();
 
   const tabLabels = {
-    ru: { profile: 'Личный кабинет', company: 'Информация о компании', employees: 'Сотрудники и позиции', shifts: 'Настройки смен', schedule: 'Расписание', reports: 'Отчет по сотрудникам' },
-    en: { profile: 'Profile', company: 'Company Info', employees: 'Employees & Positions', shifts: 'Shift Settings', schedule: 'Schedule', reports: 'Employee Reports' }
+    ru: {
+      profile: 'Профиль',
+      company: 'Компания',
+      employees: 'Сотрудники',
+      shifts: 'Настройки смен',
+      schedule: 'Расписание',
+      reports: 'Отчеты',
+    },
+    en: {
+      profile: 'Profile',
+      company: 'Company',
+      employees: 'Employees',
+      shifts: 'Shift setup',
+      schedule: 'Schedule',
+      reports: 'Reports',
+    },
   };
+
   const t = tabLabels[language] || tabLabels.ru;
 
-  const employeeTabs = [
-    { id: 'profile', label: t.profile },
-    { id: 'company', label: t.company },
-    { id: 'shifts', label: t.shifts },
-    { id: 'schedule', label: t.schedule }
-  ];
+  const tabs = useMemo(() => (
+    userRole === 'manager'
+      ? [
+        { id: 'profile', label: t.profile },
+        { id: 'company', label: t.company },
+        { id: 'employees', label: t.employees },
+        { id: 'shifts', label: t.shifts },
+        { id: 'schedule', label: t.schedule },
+        { id: 'reports', label: t.reports },
+      ]
+      : [
+        { id: 'profile', label: t.profile },
+        { id: 'company', label: t.company },
+        { id: 'shifts', label: t.shifts },
+        { id: 'schedule', label: t.schedule },
+        { id: 'reports', label: t.reports },
+      ]
+  ), [t, userRole]);
 
-  const managerTabs = [
-    { id: 'profile', label: t.profile },
-    { id: 'company', label: t.company },
-    { id: 'employees', label: t.employees },
-    { id: 'shifts', label: t.shifts },
-    { id: 'schedule', label: t.schedule },
-    { id: 'reports', label: t.reports }
-  ];
+  const safeActiveTab = tabs.some((tab) => tab.id === activeTab) ? activeTab : 'profile';
 
-  const tabs = userRole === 'manager' ? managerTabs : employeeTabs;
+  const sharedProps = {
+    language,
+    userRole,
+    user,
+  };
 
   const renderContent = () => {
-    switch (activeTab) {
-      case 'profile': return <ProfileTab language={language} user={user} updateUser={updateUser} />;
-      case 'company': return <CompanyTab language={language} />;
-      case 'employees': return <EmployeesTab language={language} />;
-      case 'shifts': return <ShiftsTab language={language} />;
-      case 'schedule': return <ScheduleTab language={language} />;
-      case 'reports': return <ReportsTab language={language} />;
-      default: return <ProfileTab language={language} user={user} updateUser={updateUser} />;
+    switch (safeActiveTab) {
+      case 'profile':
+        return <ProfileTab {...sharedProps} />;
+      case 'company':
+        return <CompanyTab {...sharedProps} />;
+      case 'employees':
+        return <EmployeesTab {...sharedProps} />;
+      case 'shifts':
+        return <ShiftsTab {...sharedProps} />;
+      case 'schedule':
+        return <ScheduleTab {...sharedProps} />;
+      case 'reports':
+        return <ReportsTab {...sharedProps} />;
+      default:
+        return <ProfileTab {...sharedProps} />;
     }
   };
 
   return (
     <div style={styles.container}>
       <div style={styles.tabsContainer}>
-        {tabs.map(tab => (
-          <button key={tab.id} onClick={() => setActiveTab(tab.id)} style={{ ...styles.tab, ...(activeTab === tab.id ? styles.tabActive : {}) }}>
+        {tabs.map((tab) => (
+          <button
+            key={tab.id}
+            onClick={() => setActiveTab(tab.id)}
+            style={{
+              ...styles.tab,
+              ...(safeActiveTab === tab.id ? styles.tabActive : {}),
+            }}
+          >
             {tab.label}
           </button>
         ))}
@@ -63,9 +100,35 @@ export default function DashboardTabs({ userRole, language }) {
 }
 
 const styles = {
-  container: { minHeight: '100vh', background: 'linear-gradient(135deg, #002642 0%, #4F646F 100%)' },
-  tabsContainer: { display: 'flex', flexWrap: 'wrap', gap: '4px', padding: '16px', background: '#DEE7E7', borderBottom: '1px solid #B7ADCF' },
-  tab: { padding: '12px 20px', background: 'transparent', border: 'none', borderRadius: '12px', fontSize: '14px', fontWeight: '500', color: '#4F646F', cursor: 'pointer', transition: 'all 0.2s ease' },
-  tabActive: { background: '#F4FAFF', color: '#002642', boxShadow: '0 2px 8px rgba(0,0,0,0.1)' },
-  content: { padding: '20px' }
+  container: {
+    minHeight: '100vh',
+    background: 'linear-gradient(135deg, #002642 0%, #4F646F 100%)',
+  },
+  tabsContainer: {
+    display: 'flex',
+    flexWrap: 'wrap',
+    gap: '8px',
+    padding: '16px',
+    background: '#DEE7E7',
+    borderBottom: '1px solid #B7ADCF',
+  },
+  tab: {
+    padding: '12px 20px',
+    background: 'transparent',
+    border: 'none',
+    borderRadius: '12px',
+    fontSize: '14px',
+    fontWeight: '500',
+    color: '#4F646F',
+    cursor: 'pointer',
+    transition: 'all 0.2s ease',
+  },
+  tabActive: {
+    background: '#F4FAFF',
+    color: '#002642',
+    boxShadow: '0 2px 8px rgba(0,0,0,0.1)',
+  },
+  content: {
+    padding: '20px',
+  },
 };

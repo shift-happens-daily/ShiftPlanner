@@ -1,154 +1,202 @@
-// frontend/src/components/tabs/ReportsTab.jsx
-import { useState, useEffect } from 'react';
-import { useAuth } from '../../context/AuthContext';
-import * as XLSX from 'xlsx';  // 👈 ДОБАВЬ ЭТОТ ИМПОРТ
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import * as XLSX from 'xlsx';
+import { getEmployeeReports, getMyReport } from '../../services/reportService';
+import { extractApiErrorMessage } from '../../services/error';
 
-export default function ReportsTab({ language }) {
-  const { user } = useAuth();
-  const [employees, setEmployees] = useState([]);
-  const [loading, setLoading] = useState(true);
+function todayRange() {
+  const end = new Date();
+  const start = new Date(end.getFullYear(), end.getMonth(), 1);
+  return {
+    start_date: start.toISOString().slice(0, 10),
+    end_date: end.toISOString().slice(0, 10),
+  };
+}
 
-  // Временные данные (позже заменишь на API)
-  useEffect(() => {
-    const mockEmployees = [
-      { id: 1, firstName: 'Иван', lastName: 'Петров', position: 'Бармен', hours: 96, shifts: 12 },
-      { id: 2, firstName: 'Анна', lastName: 'Сидорова', position: 'Официант', hours: 80, shifts: 10 },
-      { id: 3, firstName: 'Петр', lastName: 'Иванов', position: 'Повар', hours: 72, shifts: 9 },
-      { id: 4, firstName: 'Мария', lastName: 'Кузнецова', position: 'Администратор', hours: 88, shifts: 11 },
-      { id: 5, firstName: 'Дмитрий', lastName: 'Соколов', position: 'Бармен', hours: 64, shifts: 8 },
-      { id: 6, firstName: 'Елена', lastName: 'Волкова', position: 'Официант', hours: 56, shifts: 7 },
-      { id: 7, firstName: 'Алексей', lastName: 'Морозов', position: 'Повар', hours: 48, shifts: 6 },
-    ];
-    setEmployees(mockEmployees);
-    setLoading(false);
-  }, []);
+export default function ReportsTab({ language, userRole }) {
+  const [dateRange, setDateRange] = useState(todayRange);
+  const [managerReport, setManagerReport] = useState([]);
+  const [employeeReport, setEmployeeReport] = useState(null);
+  const [isLoading, setIsLoading] = useState(true);
+  const [errorMessage, setErrorMessage] = useState('');
 
   const texts = {
     ru: {
-      title: 'Отчет по сотрудникам',
+      title: 'Отчеты',
+      selfTitle: 'Мой отчет',
+      startDate: 'Начало периода',
+      endDate: 'Конец периода',
+      apply: 'Обновить',
       employee: 'Сотрудник',
-      position: 'Должность',
-      hours: 'Кол-во часов',
-      shifts: 'Кол-во смен',
-      exportToExcel: 'Экспорт в Excel',
-      totalHours: 'Всего часов',
-      totalShifts: 'Всего смен',
+      position: 'Позиция',
+      hours: 'Часы',
+      shifts: 'Смены',
+      total: 'Итого',
+      export: 'Экспорт XLSX',
       loading: 'Загрузка...',
-      noData: 'Нет данных о сотрудниках'
+      empty: 'Нет данных за выбранный период.',
+      unknownPosition: 'Не указана',
     },
     en: {
-      title: 'Employee Reports',
+      title: 'Reports',
+      selfTitle: 'My report',
+      startDate: 'Start date',
+      endDate: 'End date',
+      apply: 'Refresh',
       employee: 'Employee',
       position: 'Position',
-      hours: 'Total hours',
-      shifts: 'Total shifts',
-      exportToExcel: 'Export to Excel',
-      totalHours: 'Total hours',
-      totalShifts: 'Total shifts',
+      hours: 'Hours',
+      shifts: 'Shifts',
+      total: 'Total',
+      export: 'Export XLSX',
       loading: 'Loading...',
-      noData: 'No employee data available'
-    }
+      empty: 'No data for the selected period.',
+      unknownPosition: 'Not specified',
+    },
   };
 
   const t = texts[language] || texts.ru;
 
-  const totalHours = employees.reduce((sum, emp) => sum + emp.hours, 0);
-  const totalShifts = employees.reduce((sum, emp) => sum + emp.shifts, 0);
+  const totals = useMemo(() => {
+    if (userRole === 'manager') {
+      return managerReport.reduce(
+        (acc, item) => ({
+          total_hours: acc.total_hours + item.total_hours,
+          total_shifts: acc.total_shifts + item.total_shifts,
+        }),
+        { total_hours: 0, total_shifts: 0 }
+      );
+    }
 
-  // Функция экспорта в Excel (XLSX формат)
+    return employeeReport || { total_hours: 0, total_shifts: 0 };
+  }, [employeeReport, managerReport, userRole]);
+
+  const loadReports = useCallback(async () => {
+    setIsLoading(true);
+    setErrorMessage('');
+    try {
+      if (userRole === 'manager') {
+        const data = await getEmployeeReports(dateRange);
+        setManagerReport(data);
+      } else {
+        const data = await getMyReport(dateRange);
+        setEmployeeReport(data);
+      }
+    } catch (error) {
+      setErrorMessage(extractApiErrorMessage(error, null, language));
+    } finally {
+      setIsLoading(false);
+    }
+  }, [dateRange, language, userRole]);
+
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      void loadReports();
+    }, 0);
+    return () => clearTimeout(timer);
+  }, [loadReports]);
+
   const exportToExcel = () => {
-    // Подготовка данных для Excel
-    const excelData = [
-      { [t.employee]: 'Сотрудник', [t.position]: 'Должность', [t.hours]: 'Часы', [t.shifts]: 'Смены' },
-      ...employees.map(emp => ({
-        [t.employee]: `${emp.lastName} ${emp.firstName}`,
-        [t.position]: emp.position,
-        [t.hours]: emp.hours,
-        [t.shifts]: emp.shifts
-      })),
-      {},
-      { [t.totalHours]: totalHours, [t.totalShifts]: totalShifts }
-    ];
+    const rows = userRole === 'manager'
+      ? managerReport.map((item) => ({
+        [t.employee]: item.full_name,
+        [t.position]: item.position,
+        [t.hours]: item.total_hours,
+        [t.shifts]: item.total_shifts,
+      }))
+      : [{
+        [t.employee]: employeeReport?.full_name || '',
+        [t.position]: t.unknownPosition,
+        [t.hours]: employeeReport?.total_hours || 0,
+        [t.shifts]: employeeReport?.total_shifts || 0,
+      }];
 
-    // Создаем workbook и worksheet
-    const worksheet = XLSX.utils.json_to_sheet(excelData, { skipHeader: true });
+    const worksheet = XLSX.utils.json_to_sheet(rows);
     const workbook = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(workbook, worksheet, 'Отчет по сотрудникам');
-
-    // Настройка ширины колонок
-    worksheet['!cols'] = [
-      { wch: 25 }, // Сотрудник
-      { wch: 20 }, // Должность
-      { wch: 12 }, // Часы
-      { wch: 12 }  // Смены
-    ];
-
-    // Сохраняем файл
-    XLSX.writeFile(workbook, `employee_report_${new Date().toISOString().split('T')[0]}.xlsx`);
+    XLSX.utils.book_append_sheet(workbook, worksheet, 'Reports');
+    XLSX.writeFile(workbook, `shiftplanner-report-${dateRange.start_date}-${dateRange.end_date}.xlsx`);
   };
-
-  if (loading) {
-    return (
-      <div style={styles.card}>
-        <h2 style={styles.title}>{t.title}</h2>
-        <p style={styles.loading}>{t.loading}</p>
-      </div>
-    );
-  }
-
-  if (employees.length === 0) {
-    return (
-      <div style={styles.card}>
-        <h2 style={styles.title}>{t.title}</h2>
-        <p style={styles.noData}>{t.noData}</p>
-      </div>
-    );
-  }
 
   return (
     <div style={styles.card}>
-      <h2 style={styles.title}>{t.title}</h2>
-      
-      <div style={styles.tableWrapper}>
-        <table style={styles.table}>
-          <thead>
-            <tr>
-              <th style={styles.th}>{t.employee}</th>
-              <th style={styles.th}>{t.position}</th>
-              <th style={styles.th}>{t.hours}</th>
-              <th style={styles.th}>{t.shifts}</th>
-            </tr>
-          </thead>
-          <tbody>
-            {employees.map((emp) => (
-              <tr key={emp.id}>
-                <td style={styles.td}>{emp.lastName} {emp.firstName}</td>
-                <td style={styles.td}>{emp.position}</td>
-                <td style={{ ...styles.td, ...styles.numberCell }}>{emp.hours}</td>
-                <td style={{ ...styles.td, ...styles.numberCell }}>{emp.shifts}</td>
-              </tr>
-            ))}
-          </tbody>
-          <tfoot>
-            <tr style={styles.totalRow}>
-              <td colSpan="2" style={styles.totalLabel}>{t.totalHours}:</td>
-              <td style={styles.totalValue}>{totalHours}</td>
-              <td style={styles.totalValue}></td>
-            </tr>
-            <tr style={styles.totalRow}>
-              <td colSpan="2" style={styles.totalLabel}>{t.totalShifts}:</td>
-              <td style={styles.totalValue}>{totalShifts}</td>
-              <td style={styles.totalValue}></td>
-            </tr>
-          </tfoot>
-        </table>
-      </div>
-
-      <div style={styles.exportContainer}>
-        <button onClick={exportToExcel} style={styles.exportBtn}>
-          {t.exportToExcel}
+      <div style={styles.header}>
+        <div>
+          <h2 style={styles.title}>{userRole === 'manager' ? t.title : t.selfTitle}</h2>
+        </div>
+        <button onClick={exportToExcel} style={styles.primaryButton} disabled={isLoading}>
+          {t.export}
         </button>
       </div>
+
+      <div style={styles.filters}>
+        <label style={styles.filterLabel}>
+          {t.startDate}
+          <input
+            type="date"
+            value={dateRange.start_date}
+            onChange={(event) => setDateRange((prev) => ({ ...prev, start_date: event.target.value }))}
+            style={styles.input}
+          />
+        </label>
+        <label style={styles.filterLabel}>
+          {t.endDate}
+          <input
+            type="date"
+            value={dateRange.end_date}
+            onChange={(event) => setDateRange((prev) => ({ ...prev, end_date: event.target.value }))}
+            style={styles.input}
+          />
+        </label>
+        <button onClick={loadReports} style={styles.secondaryButton} disabled={isLoading}>
+          {t.apply}
+        </button>
+      </div>
+
+      {errorMessage && <div style={styles.error}>{errorMessage}</div>}
+      {isLoading ? (
+        <p style={styles.emptyText}>{t.loading}</p>
+      ) : userRole === 'manager' ? (
+        managerReport.length === 0 ? (
+          <p style={styles.emptyText}>{t.empty}</p>
+        ) : (
+          <div style={styles.tableWrapper}>
+            <table style={styles.table}>
+              <thead>
+                <tr>
+                  <th style={styles.th}>{t.employee}</th>
+                  <th style={styles.th}>{t.position}</th>
+                  <th style={styles.th}>{t.hours}</th>
+                  <th style={styles.th}>{t.shifts}</th>
+                </tr>
+              </thead>
+              <tbody>
+                {managerReport.map((item) => (
+                  <tr key={item.employee_id}>
+                    <td style={styles.td}>{item.full_name}</td>
+                    <td style={styles.td}>{item.position}</td>
+                    <td style={styles.td}>{item.total_hours}</td>
+                    <td style={styles.td}>{item.total_shifts}</td>
+                  </tr>
+                ))}
+              </tbody>
+              <tfoot>
+                <tr>
+                  <td colSpan="2" style={styles.totalLabel}>{t.total}</td>
+                  <td style={styles.totalValue}>{totals.total_hours}</td>
+                  <td style={styles.totalValue}>{totals.total_shifts}</td>
+                </tr>
+              </tfoot>
+            </table>
+          </div>
+        )
+      ) : employeeReport ? (
+        <div style={styles.reportBox}>
+          <div style={styles.reportName}>{employeeReport.full_name}</div>
+          <div style={styles.reportStat}>{t.hours}: {employeeReport.total_hours}</div>
+          <div style={styles.reportStat}>{t.shifts}: {employeeReport.total_shifts}</div>
+        </div>
+      ) : (
+        <p style={styles.emptyText}>{t.empty}</p>
+      )}
     </div>
   );
 }
@@ -158,108 +206,123 @@ const styles = {
     background: '#F4FAFF',
     borderRadius: '24px',
     padding: '24px',
-    maxWidth: '1000px',
+    maxWidth: '1100px',
     margin: '0 auto',
-    overflowX: 'auto'
+  },
+  header: {
+    display: 'flex',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
+    gap: '16px',
+    flexWrap: 'wrap',
+    marginBottom: '18px',
   },
   title: {
-    fontSize: '24px',
-    fontWeight: '600',
+    margin: 0,
     color: '#002642',
-    margin: '0 0 24px 0'
+    fontSize: '24px',
+  },
+  filters: {
+    display: 'flex',
+    gap: '12px',
+    flexWrap: 'wrap',
+    alignItems: 'flex-end',
+    marginBottom: '18px',
+  },
+  filterLabel: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '8px',
+    color: '#4F646F',
+    fontWeight: '600',
+    fontSize: '14px',
+  },
+  input: {
+    minWidth: '180px',
+    borderRadius: '12px',
+    border: '2px solid #DEE7E7',
+    background: '#FFFFFF',
+    padding: '12px 14px',
+    color: '#002642',
+    fontSize: '14px',
+  },
+  primaryButton: {
+    padding: '12px 18px',
+    background: '#002642',
+    border: 'none',
+    borderRadius: '12px',
+    color: '#F4FAFF',
+    fontWeight: '600',
+    cursor: 'pointer',
+  },
+  secondaryButton: {
+    padding: '12px 18px',
+    background: '#DEE7E7',
+    border: 'none',
+    borderRadius: '12px',
+    color: '#002642',
+    fontWeight: '600',
+    cursor: 'pointer',
+  },
+  error: {
+    marginBottom: '16px',
+    padding: '12px 14px',
+    borderRadius: '12px',
+    background: '#FDEAEA',
+    color: '#A61B1B',
+  },
+  emptyText: {
+    margin: 0,
+    color: '#4F646F',
   },
   tableWrapper: {
     overflowX: 'auto',
-    marginBottom: '24px'
   },
   table: {
     width: '100%',
     borderCollapse: 'collapse',
-    backgroundColor: '#FFFFFF',
+    background: '#FFFFFF',
     borderRadius: '16px',
     overflow: 'hidden',
-    boxShadow: '0 2px 8px rgba(0,0,0,0.05)'
   },
   th: {
-    padding: '14px 16px',
-    backgroundColor: '#002642',
+    padding: '12px 14px',
+    background: '#002642',
     color: '#F4FAFF',
-    fontWeight: '600',
-    fontSize: '14px',
-    textAlign: 'center',
-    borderBottom: '2px solid #B7ADCF'
+    textAlign: 'left',
   },
   td: {
-    padding: '12px 16px',
-    fontSize: '14px',
+    padding: '12px 14px',
     color: '#002642',
-    borderBottom: '1px solid #DEE7E7'
-  },
-  numberCell: {
-    textAlign: 'center',
-    fontWeight: '500'
-  },
-  totalRow: {
-    backgroundColor: '#DEE7E7'
+    borderBottom: '1px solid #DEE7E7',
   },
   totalLabel: {
-    padding: '12px 16px',
-    fontSize: '14px',
-    fontWeight: '600',
+    padding: '12px 14px',
+    background: '#DEE7E7',
     color: '#002642',
-    textAlign: 'right'
+    fontWeight: '700',
+    textAlign: 'right',
   },
   totalValue: {
-    padding: '12px 16px',
-    fontSize: '14px',
+    padding: '12px 14px',
+    background: '#B7ADCF',
+    color: '#002642',
+    fontWeight: '700',
+  },
+  reportBox: {
+    padding: '20px',
+    borderRadius: '18px',
+    background: '#FFFFFF',
+    border: '1px solid #DEE7E7',
+  },
+  reportName: {
+    fontSize: '18px',
     fontWeight: '700',
     color: '#002642',
-    textAlign: 'center',
-    backgroundColor: '#B7ADCF'
+    marginBottom: '12px',
   },
-  exportContainer: {
-    display: 'flex',
-    justifyContent: 'flex-end',
-    marginTop: '16px'
+  reportStat: {
+    color: '#4F646F',
+    marginBottom: '8px',
   },
-  exportBtn: {
-    padding: '12px 24px',
-    backgroundColor: '#002642',
-    border: 'none',
-    borderRadius: '12px',
-    color: '#F4FAFF',
-    fontWeight: '500',
-    fontSize: '14px',
-    cursor: 'pointer',
-    transition: 'all 0.2s ease'
-  },
-  loading: {
-    textAlign: 'center',
-    padding: '40px',
-    color: '#4F646F'
-  },
-  noData: {
-    textAlign: 'center',
-    padding: '40px',
-    color: '#4F646F'
-  }
 };
-
-// Добавляем hover эффект для строк таблицы
-const styleSheet = document.createElement('style');
-styleSheet.textContent = `
-  tr:hover {
-    background-color: #F0EDF5 !important;
-  }
-  button:hover {
-    transform: translateY(-2px);
-    box-shadow: 0 4px 12px rgba(0,38,66,0.2);
-  }
-  button:active {
-    transform: translateY(0);
-  }
-`;
-if (!document.querySelector('#report-styles')) {
-  styleSheet.id = 'report-styles';
-  document.head.appendChild(styleSheet);
-}

@@ -1,335 +1,291 @@
-// frontend/src/components/tabs/CompanyTab.jsx
-import { useState, useEffect } from 'react';
-import { useAuth } from '../../context/AuthContext';
+import { useEffect, useState } from 'react';
+import { useAuth } from '../../context/useAuth';
+import { createCompany, joinCompany, listCompanies, previewInviteCode } from '../../services/companyService';
+import { extractApiErrorMessage } from '../../services/error';
 
-export default function CompanyTab({ language }) {
-  const { user, updateCompany } = useAuth();
-  const [isEditing, setIsEditing] = useState(false);
-  const [showInviteInput, setShowInviteInput] = useState(false);
+export default function CompanyTab({ language, userRole, user }) {
+  const { refreshUser } = useAuth();
+  const [companies, setCompanies] = useState([]);
+  const [isLoadingCompanies, setIsLoadingCompanies] = useState(userRole === 'manager');
   const [inviteCode, setInviteCode] = useState('');
-  const [showCreateForm, setShowCreateForm] = useState(false);
-  const [newCompany, setNewCompany] = useState({
-    name: '',
-    address: '',
-    phone: '',
-    inviteCode: ''
-  });
-
-  // Данные компании (позже будут из API/контекста)
-  const [company, setCompany] = useState(user?.company || null);
-
-  // Принудительные стили для полей ввода
-  useEffect(() => {
-    const styleSheet = document.createElement('style');
-    styleSheet.textContent = `
-      .company-input,
-      .company-input:focus,
-      .company-input:active {
-        color: #002642 !important;
-        background-color: #FFFFFF !important;
-      }
-      .company-input::placeholder {
-        color: #999 !important;
-        opacity: 1 !important;
-      }
-      .company-input:-webkit-autofill,
-      .company-input:-webkit-autofill:hover,
-      .company-input:-webkit-autofill:focus,
-      .company-input:-webkit-autofill:active {
-        -webkit-box-shadow: 0 0 0 30px #FFFFFF inset !important;
-        -webkit-text-fill-color: #002642 !important;
-        color: #002642 !important;
-      }
-    `;
-    document.head.appendChild(styleSheet);
-    return () => document.head.removeChild(styleSheet);
-  }, []);
+  const [invitePreview, setInvitePreview] = useState(null);
+  const [joinPayload, setJoinPayload] = useState({ branch_id: '', position_id: '' });
+  const [companyName, setCompanyName] = useState('');
+  const [errorMessage, setErrorMessage] = useState('');
+  const [successMessage, setSuccessMessage] = useState('');
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   const texts = {
     ru: {
-      title: 'Информация о компании',
-      noCompany: 'Вы еще не присоединились ни к одной компании',
-      enterInviteCode: 'Ввести код-приглашение',
-      inviteCodePlaceholder: 'Введите код-приглашение',
-      join: 'Присоединиться',
+      title: 'Компания',
+      currentCompany: 'Текущая привязка',
+      company: 'Компания',
+      branch: 'Филиал',
+      position: 'Позиция',
+      inviteCode: 'Invite-код',
+      noCompany: 'Аккаунт еще не привязан к компании.',
+      previewInvite: 'Проверить код',
+      joinCompany: 'Присоединиться',
+      invitePlaceholder: 'Введите invite-код',
+      selectBranch: 'Выберите филиал',
+      selectPosition: 'Выберите позицию',
+      companies: 'Список компаний',
       createCompany: 'Создать компанию',
       companyName: 'Название компании',
-      address: 'Адрес',
-      phone: 'Телефон',
-      yourInviteCode: 'Invite код для сотрудников',
-      generate: 'Сгенерировать',
-      save: 'Сохранить',
-      cancel: 'Отмена',
-      edit: 'Редактировать',
-      copy: 'Копировать',
-      copied: 'Скопировано!',
-      name: 'Название',
-      addressLabel: 'Адрес',
-      phoneLabel: 'Телефон'
+      saveCompany: 'Создать',
+      empty: 'Нет данных',
+      loading: 'Загрузка...',
+      companyCreated: 'Компания создана.',
+      companyJoined: 'Компания успешно привязана.',
+      previewHint: 'Сначала проверьте invite-код, затем выберите филиал и позицию.',
     },
     en: {
-      title: 'Company Information',
-      noCompany: 'You are not yet a member of any company',
-      enterInviteCode: 'Enter invite code',
-      inviteCodePlaceholder: 'Enter invite code',
-      join: 'Join',
+      title: 'Company',
+      currentCompany: 'Current binding',
+      company: 'Company',
+      branch: 'Branch',
+      position: 'Position',
+      inviteCode: 'Invite code',
+      noCompany: 'This account is not linked to a company yet.',
+      previewInvite: 'Preview invite',
+      joinCompany: 'Join company',
+      invitePlaceholder: 'Enter invite code',
+      selectBranch: 'Select branch',
+      selectPosition: 'Select position',
+      companies: 'Companies',
       createCompany: 'Create company',
       companyName: 'Company name',
-      address: 'Address',
-      phone: 'Phone',
-      yourInviteCode: 'Invite code for employees',
-      generate: 'Generate',
-      save: 'Save',
-      cancel: 'Cancel',
-      edit: 'Edit',
-      copy: 'Copy',
-      copied: 'Copied!',
-      name: 'Name',
-      addressLabel: 'Address',
-      phoneLabel: 'Phone'
-    }
+      saveCompany: 'Create',
+      empty: 'No data',
+      loading: 'Loading...',
+      companyCreated: 'Company created.',
+      companyJoined: 'Company joined successfully.',
+      previewHint: 'Preview the invite code first, then choose branch and position.',
+    },
   };
 
   const t = texts[language] || texts.ru;
 
-  // Генерация случайного invite кода
-  const generateInviteCode = () => {
-    const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
-    let code = '';
-    for (let i = 0; i < 8; i++) {
-      code += chars[Math.floor(Math.random() * chars.length)];
+  useEffect(() => {
+    if (userRole !== 'manager') {
+      return undefined;
     }
-    setNewCompany({ ...newCompany, inviteCode: code });
+
+    let isMounted = true;
+
+    async function loadCompanies() {
+      setIsLoadingCompanies(true);
+      try {
+        const data = await listCompanies();
+        if (isMounted) {
+          setCompanies(data);
+        }
+      } catch (error) {
+        if (isMounted) {
+          setErrorMessage(extractApiErrorMessage(error, null, language));
+        }
+      } finally {
+        if (isMounted) {
+          setIsLoadingCompanies(false);
+        }
+      }
+    }
+
+    loadCompanies();
+    return () => {
+      isMounted = false;
+    };
+  }, [language, userRole]);
+
+  const handlePreview = async () => {
+    if (!inviteCode.trim()) {
+      setErrorMessage(t.invitePlaceholder);
+      return;
+    }
+
+    setErrorMessage('');
+    setSuccessMessage('');
+    setIsSubmitting(true);
+    try {
+      const preview = await previewInviteCode(inviteCode.trim());
+      setInvitePreview(preview);
+      setJoinPayload({
+        branch_id: preview.branches[0]?.id ? String(preview.branches[0].id) : '',
+        position_id: preview.positions[0]?.id ? String(preview.positions[0].id) : '',
+      });
+    } catch (error) {
+      setInvitePreview(null);
+      setErrorMessage(extractApiErrorMessage(error, null, language));
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
-  // Создание компании
-  const handleCreateCompany = () => {
-    if (newCompany.name && newCompany.inviteCode) {
-      const createdCompany = {
-        id: Date.now(),
-        name: newCompany.name,
-        address: newCompany.address || '',
-        phone: newCompany.phone || '',
-        inviteCode: newCompany.inviteCode
-      };
-      setCompany(createdCompany);
-      if (updateCompany) updateCompany(createdCompany);
-      setShowCreateForm(false);
-      setNewCompany({ name: '', address: '', phone: '', inviteCode: '' });
+  const handleJoin = async () => {
+    if (!invitePreview) {
+      setErrorMessage(t.previewHint);
+      return;
     }
-  };
 
-  // Присоединение по invite коду
-  const handleJoinCompany = () => {
-    if (inviteCode) {
-      const joinedCompany = {
-        id: Date.now(),
-        name: 'Пример компании',
-        address: 'г. Москва, ул. Примерная, д. 123',
-        phone: '+7 (999) 123-45-67',
-        inviteCode: inviteCode
-      };
-      setCompany(joinedCompany);
-      if (updateCompany) updateCompany(joinedCompany);
-      setShowInviteInput(false);
+    setErrorMessage('');
+    setSuccessMessage('');
+    setIsSubmitting(true);
+    try {
+      await joinCompany({
+        invite_code: inviteCode.trim(),
+        branch_id: joinPayload.branch_id ? Number(joinPayload.branch_id) : null,
+        position_id: joinPayload.position_id ? Number(joinPayload.position_id) : null,
+      });
+      await refreshUser();
       setInviteCode('');
+      setInvitePreview(null);
+      setJoinPayload({ branch_id: '', position_id: '' });
+      setSuccessMessage(t.companyJoined);
+    } catch (error) {
+      setErrorMessage(extractApiErrorMessage(error, null, language));
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
-  // Редактирование компании
-  const [editForm, setEditForm] = useState({
-    name: company?.name || '',
-    address: company?.address || '',
-    phone: company?.phone || ''
-  });
+  const handleCreateCompany = async () => {
+    if (!companyName.trim()) {
+      setErrorMessage(t.companyName);
+      return;
+    }
 
-  const handleEditChange = (e) => {
-    setEditForm({ ...editForm, [e.target.name]: e.target.value });
+    setErrorMessage('');
+    setSuccessMessage('');
+    setIsSubmitting(true);
+    try {
+      const createdCompany = await createCompany({ name: companyName.trim() });
+      setCompanies((prev) => [createdCompany, ...prev]);
+      setCompanyName('');
+      setSuccessMessage(t.companyCreated);
+    } catch (error) {
+      setErrorMessage(extractApiErrorMessage(error, null, language));
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
-  const handleSaveEdit = () => {
-    const updatedCompany = { ...company, ...editForm };
-    setCompany(updatedCompany);
-    if (updateCompany) updateCompany(updatedCompany);
-    setIsEditing(false);
-  };
-
-  const handleCopyInviteCode = () => {
-    navigator.clipboard.writeText(company?.inviteCode || '');
-    alert(t.copied);
-  };
-
-  // Если нет компании
-  if (!company) {
-    const isManager = user?.role === 'manager';
-
-    return (
-      <div style={styles.card}>
-        <h2 style={styles.title}>{t.title}</h2>
-        <div style={styles.noCompanyContainer}>
-          <p style={styles.noCompanyText}>{t.noCompany}</p>
-          
-          {!showInviteInput && !showCreateForm && (
-            <div style={styles.buttonGroup}>
-              <button onClick={() => setShowInviteInput(true)} style={styles.primaryBtn}>
-                {t.enterInviteCode}
-              </button>
-              {isManager && (
-                <button onClick={() => setShowCreateForm(true)} style={styles.secondaryBtn}>
-                  {t.createCompany}
-                </button>
-              )}
-            </div>
-          )}
-
-          {/* Форма ввода invite кода */}
-          {showInviteInput && (
-            <div style={styles.form}>
-              <input
-                type="text"
-                className="company-input"
-                placeholder={t.inviteCodePlaceholder}
-                value={inviteCode}
-                onChange={(e) => setInviteCode(e.target.value)}
-                style={styles.input}
-              />
-              <div style={styles.formActions}>
-                <button onClick={handleJoinCompany} style={styles.primaryBtn}>{t.join}</button>
-                <button onClick={() => setShowInviteInput(false)} style={styles.cancelBtn}>{t.cancel}</button>
-              </div>
-            </div>
-          )}
-
-          {/* Форма создания компании (только для менеджера) */}
-          {showCreateForm && isManager && (
-            <div style={styles.form}>
-              <div style={styles.formGroup}>
-                <label style={styles.label}>{t.companyName}</label>
-                <input
-                  type="text"
-                  className="company-input"
-                  value={newCompany.name}
-                  onChange={(e) => setNewCompany({ ...newCompany, name: e.target.value })}
-                  style={styles.input}
-                />
-              </div>
-              <div style={styles.formGroup}>
-                <label style={styles.label}>{t.address}</label>
-                <input
-                  type="text"
-                  className="company-input"
-                  value={newCompany.address}
-                  onChange={(e) => setNewCompany({ ...newCompany, address: e.target.value })}
-                  style={styles.input}
-                />
-              </div>
-              <div style={styles.formGroup}>
-                <label style={styles.label}>{t.phone}</label>
-                <input
-                  type="text"
-                  className="company-input"
-                  value={newCompany.phone}
-                  onChange={(e) => setNewCompany({ ...newCompany, phone: e.target.value })}
-                  style={styles.input}
-                />
-              </div>
-              <div style={styles.formGroup}>
-                <label style={styles.label}>{t.yourInviteCode}</label>
-                <div style={styles.inviteRow}>
-                  <input
-                    type="text"
-                    className="company-input"
-                    value={newCompany.inviteCode}
-                    readOnly
-                    style={{ ...styles.input, flex: 1 }}
-                  />
-                  <button onClick={generateInviteCode} style={styles.generateBtn}>
-                    {t.generate}
-                  </button>
-                </div>
-              </div>
-              <div style={styles.formActions}>
-                <button onClick={handleCreateCompany} style={styles.primaryBtn}>{t.save}</button>
-                <button onClick={() => setShowCreateForm(false)} style={styles.cancelBtn}>{t.cancel}</button>
-              </div>
-            </div>
-          )}
-        </div>
-      </div>
-    );
-  }
-
-  // Если компания есть — показываем информацию
-  const isManager = user?.role === 'manager';
+  const accountRows = [
+    { label: t.company, value: user?.company?.name },
+    { label: t.branch, value: user?.branch?.name },
+    { label: t.position, value: user?.position?.name },
+  ];
 
   return (
-    <div style={styles.card}>
-      <div style={styles.cardHeader}>
+    <div style={styles.layout}>
+      <div style={styles.card}>
         <h2 style={styles.title}>{t.title}</h2>
-        {isManager && !isEditing && (
-          <button onClick={() => {
-            setEditForm({
-              name: company.name,
-              address: company.address || '',
-              phone: company.phone || ''
-            });
-            setIsEditing(true);
-          }} style={styles.editBtn}>
-            {t.edit}
-          </button>
+        {errorMessage && <div style={styles.error}>{errorMessage}</div>}
+        {successMessage && <div style={styles.success}>{successMessage}</div>}
+
+        <div style={styles.section}>
+          <h3 style={styles.sectionTitle}>{t.currentCompany}</h3>
+          {user?.company ? (
+            <div style={styles.infoList}>
+              {accountRows.map((row) => (
+                <div key={row.label} style={styles.infoRow}>
+                  <span style={styles.infoLabel}>{row.label}</span>
+                  <span style={styles.infoValue}>{row.value || t.empty}</span>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <p style={styles.emptyText}>{t.noCompany}</p>
+          )}
+        </div>
+
+        {userRole === 'employee' && !user?.company && (
+          <div style={styles.section}>
+            <h3 style={styles.sectionTitle}>{t.joinCompany}</h3>
+            <p style={styles.hint}>{t.previewHint}</p>
+            <div style={styles.formGroup}>
+              <input
+                value={inviteCode}
+                onChange={(event) => setInviteCode(event.target.value.toUpperCase())}
+                placeholder={t.invitePlaceholder}
+                style={styles.input}
+              />
+            </div>
+            <div style={styles.buttonRow}>
+              <button onClick={handlePreview} style={styles.primaryButton} disabled={isSubmitting}>
+                {t.previewInvite}
+              </button>
+            </div>
+
+            {invitePreview && (
+              <div style={styles.previewBox}>
+                <div style={styles.previewTitle}>{invitePreview.company_name}</div>
+                <div style={styles.formGroup}>
+                  <label style={styles.label}>{t.branch}</label>
+                  <select
+                    value={joinPayload.branch_id}
+                    onChange={(event) => setJoinPayload((prev) => ({ ...prev, branch_id: event.target.value }))}
+                    style={styles.input}
+                  >
+                    <option value="">{t.selectBranch}</option>
+                    {invitePreview.branches.map((branch) => (
+                      <option key={branch.id} value={branch.id}>{branch.name}</option>
+                    ))}
+                  </select>
+                </div>
+                <div style={styles.formGroup}>
+                  <label style={styles.label}>{t.position}</label>
+                  <select
+                    value={joinPayload.position_id}
+                    onChange={(event) => setJoinPayload((prev) => ({ ...prev, position_id: event.target.value }))}
+                    style={styles.input}
+                  >
+                    <option value="">{t.selectPosition}</option>
+                    {invitePreview.positions.map((position) => (
+                      <option key={position.id} value={position.id}>{position.name}</option>
+                    ))}
+                  </select>
+                </div>
+                <button onClick={handleJoin} style={styles.primaryButton} disabled={isSubmitting}>
+                  {t.joinCompany}
+                </button>
+              </div>
+            )}
+          </div>
         )}
       </div>
 
-      {isEditing ? (
-        <div style={styles.form}>
-          <div style={styles.formGroup}>
-            <label style={styles.label}>{t.companyName}</label>
-            <input type="text" className="company-input" name="name" value={editForm.name} onChange={handleEditChange} style={styles.input} />
-          </div>
-          <div style={styles.formGroup}>
-            <label style={styles.label}>{t.addressLabel}</label>
-            <input type="text" className="company-input" name="address" value={editForm.address} onChange={handleEditChange} style={styles.input} />
-          </div>
-          <div style={styles.formGroup}>
-            <label style={styles.label}>{t.phoneLabel}</label>
-            <input type="text" className="company-input" name="phone" value={editForm.phone} onChange={handleEditChange} style={styles.input} />
-          </div>
-          <div style={styles.formGroup}>
-            <label style={styles.label}>{t.yourInviteCode}</label>
-            <div style={styles.inviteRow}>
-              <input type="text" className="company-input" value={company.inviteCode} readOnly style={{ ...styles.input, flex: 1 }} />
-              <button onClick={handleCopyInviteCode} style={styles.generateBtn}>{t.copy}</button>
+      {userRole === 'manager' && (
+        <div style={styles.card}>
+          <div style={styles.section}>
+            <h3 style={styles.sectionTitle}>{t.createCompany}</h3>
+            <div style={styles.inlineForm}>
+              <input
+                value={companyName}
+                onChange={(event) => setCompanyName(event.target.value)}
+                placeholder={t.companyName}
+                style={styles.input}
+              />
+              <button onClick={handleCreateCompany} style={styles.primaryButton} disabled={isSubmitting}>
+                {t.saveCompany}
+              </button>
             </div>
           </div>
-          <div style={styles.formActions}>
-            <button onClick={handleSaveEdit} style={styles.primaryBtn}>{t.save}</button>
-            <button onClick={() => setIsEditing(false)} style={styles.cancelBtn}>{t.cancel}</button>
-          </div>
-        </div>
-      ) : (
-        <div style={styles.infoList}>
-          <div style={styles.infoRow}>
-            <span style={styles.infoLabel}>{t.companyName}:</span>
-            <span style={styles.infoValue}>{company.name}</span>
-          </div>
-          {company.address && (
-            <div style={styles.infoRow}>
-              <span style={styles.infoLabel}>{t.addressLabel}:</span>
-              <span style={styles.infoValue}>{company.address}</span>
-            </div>
-          )}
-          {company.phone && (
-            <div style={styles.infoRow}>
-              <span style={styles.infoLabel}>{t.phoneLabel}:</span>
-              <span style={styles.infoValue}>{company.phone}</span>
-            </div>
-          )}
-          <div style={styles.infoRow}>
-            <span style={styles.infoLabel}>{t.yourInviteCode}:</span>
-            <div style={styles.inviteValue}>
-              <span style={styles.infoValue}>{company.inviteCode}</span>
-              <button onClick={handleCopyInviteCode} style={styles.copySmallBtn}>{t.copy}</button>
-            </div>
+
+          <div style={styles.section}>
+            <h3 style={styles.sectionTitle}>{t.companies}</h3>
+            {isLoadingCompanies ? (
+              <p style={styles.emptyText}>{t.loading}</p>
+            ) : companies.length === 0 ? (
+              <p style={styles.emptyText}>{t.empty}</p>
+            ) : (
+              <div style={styles.companyList}>
+                {companies.map((company) => (
+                  <div key={company.id} style={styles.companyItem}>
+                    <div style={styles.companyName}>{company.name}</div>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
         </div>
       )}
@@ -338,158 +294,146 @@ export default function CompanyTab({ language }) {
 }
 
 const styles = {
+  layout: {
+    display: 'grid',
+    gap: '20px',
+    gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))',
+    maxWidth: '1200px',
+    margin: '0 auto',
+  },
   card: {
     background: '#F4FAFF',
     borderRadius: '24px',
     padding: '24px',
-    maxWidth: '800px',
-    margin: '0 auto'
-  },
-  cardHeader: {
-    display: 'flex',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: '24px',
-    flexWrap: 'wrap',
-    gap: '12px'
   },
   title: {
     fontSize: '24px',
     fontWeight: '600',
     color: '#002642',
-    margin: 0
+    margin: '0 0 20px',
   },
-  editBtn: {
-    padding: '8px 16px',
-    background: '#B7ADCF',
-    border: 'none',
-    borderRadius: '12px',
-    color: '#002642',
-    fontWeight: '500',
-    cursor: 'pointer'
-  },
-  noCompanyContainer: {
-    textAlign: 'center',
-    padding: '40px 20px'
-  },
-  noCompanyText: {
-    fontSize: '16px',
-    color: '#4F646F',
-    marginBottom: '24px'
-  },
-  buttonGroup: {
-    display: 'flex',
-    gap: '16px',
-    justifyContent: 'center',
-    flexWrap: 'wrap'
-  },
-  primaryBtn: {
-    padding: '12px 24px',
-    background: '#002642',
-    border: 'none',
-    borderRadius: '12px',
-    color: '#F4FAFF',
-    fontWeight: '500',
-    cursor: 'pointer'
-  },
-  secondaryBtn: {
-    padding: '12px 24px',
-    background: '#B7ADCF',
-    border: 'none',
-    borderRadius: '12px',
-    color: '#002642',
-    fontWeight: '500',
-    cursor: 'pointer'
-  },
-  cancelBtn: {
-    padding: '12px 24px',
-    background: '#DEE7E7',
-    border: 'none',
-    borderRadius: '12px',
-    color: '#4F646F',
-    fontWeight: '500',
-    cursor: 'pointer'
-  },
-  form: {
+  section: {
     display: 'flex',
     flexDirection: 'column',
-    gap: '20px'
+    gap: '14px',
   },
-  formGroup: {
-    display: 'flex',
-    flexDirection: 'column',
-    gap: '8px'
+  sectionTitle: {
+    margin: 0,
+    color: '#002642',
+    fontSize: '18px',
   },
-  label: {
-    fontSize: '14px',
-    fontWeight: '500',
-    color: '#4F646F'
+  hint: {
+    margin: 0,
+    color: '#4F646F',
+    fontSize: '13px',
   },
-  input: {
+  error: {
+    marginBottom: '16px',
     padding: '12px 14px',
-    fontSize: '16px',
-    color: '#002642',
-    backgroundColor: '#FFFFFF',
-    border: '2px solid #DEE7E7',
     borderRadius: '12px',
-    outline: 'none',
-    transition: 'all 0.3s ease',
-    width: '100%',
-    boxSizing: 'border-box'
+    background: '#FDEAEA',
+    color: '#A61B1B',
   },
-  formActions: {
-    display: 'flex',
-    gap: '12px',
-    justifyContent: 'center',
-    marginTop: '8px'
-  },
-  inviteRow: {
-    display: 'flex',
-    gap: '12px',
-    alignItems: 'center'
-  },
-  generateBtn: {
-    padding: '12px 20px',
-    background: '#B7ADCF',
-    border: 'none',
+  success: {
+    marginBottom: '16px',
+    padding: '12px 14px',
     borderRadius: '12px',
-    color: '#002642',
-    fontWeight: '500',
-    cursor: 'pointer',
-    whiteSpace: 'nowrap'
+    background: '#E7F6EC',
+    color: '#17663A',
   },
   infoList: {
     display: 'flex',
     flexDirection: 'column',
-    gap: '16px'
+    gap: '12px',
   },
   infoRow: {
-    display: 'flex',
-    padding: '12px 0',
-    borderBottom: '1px solid #DEE7E7'
+    display: 'grid',
+    gridTemplateColumns: '140px 1fr',
+    gap: '10px',
+    paddingBottom: '12px',
+    borderBottom: '1px solid #DEE7E7',
   },
   infoLabel: {
-    width: '160px',
+    color: '#4F646F',
     fontWeight: '600',
-    color: '#4F646F'
   },
   infoValue: {
-    flex: 1,
-    color: '#002642'
+    color: '#002642',
   },
-  inviteValue: {
-    flex: 1,
+  emptyText: {
+    margin: 0,
+    color: '#4F646F',
+  },
+  formGroup: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '8px',
+  },
+  label: {
+    color: '#4F646F',
+    fontWeight: '600',
+    fontSize: '14px',
+  },
+  input: {
+    width: '100%',
+    boxSizing: 'border-box',
+    borderRadius: '12px',
+    border: '2px solid #DEE7E7',
+    background: '#FFFFFF',
+    padding: '12px 14px',
+    color: '#002642',
+    fontSize: '14px',
+  },
+  buttonRow: {
     display: 'flex',
     gap: '12px',
-    alignItems: 'center'
   },
-  copySmallBtn: {
-    padding: '4px 12px',
-    background: '#DEE7E7',
+  inlineForm: {
+    display: 'flex',
+    gap: '12px',
+    flexWrap: 'wrap',
+  },
+  primaryButton: {
+    padding: '12px 18px',
+    background: '#002642',
     border: 'none',
-    borderRadius: '8px',
+    borderRadius: '12px',
+    color: '#F4FAFF',
+    fontWeight: '600',
+    cursor: 'pointer',
+  },
+  previewBox: {
+    marginTop: '8px',
+    padding: '16px',
+    borderRadius: '16px',
+    background: '#FFFFFF',
+    border: '1px solid #DEE7E7',
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '12px',
+  },
+  previewTitle: {
+    fontWeight: '700',
+    color: '#002642',
+  },
+  companyList: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '12px',
+  },
+  companyItem: {
+    padding: '14px 16px',
+    borderRadius: '16px',
+    background: '#FFFFFF',
+    border: '1px solid #DEE7E7',
+  },
+  companyName: {
+    color: '#002642',
+    fontWeight: '700',
+    marginBottom: '6px',
+  },
+  companyMeta: {
     color: '#4F646F',
-    fontSize: '12px',
-    cursor: 'pointer'
-  }
+    fontSize: '14px',
+  },
 };

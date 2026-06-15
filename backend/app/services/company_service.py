@@ -3,12 +3,12 @@ from fastapi import HTTPException, status
 
 from app.repositories import company_repository, employee_repository, position_repository
 from app.schemas.auth import CurrentUserResponse, UserRead
-from app.schemas.company import BranchRead, CompanyCreate, CompanyInvitePreviewRead, CompanyJoinRequest, CompanyRead, PositionOptionRead
+from app.schemas.company import BranchRead, CompanyCreate, CompanyInvitePreviewRead, CompanyJoinRequest, CompanyRead, CompanySummaryRead, PositionOptionRead
 
 
-def list_companies(db: Session) -> list[CompanyRead]:
+def list_companies(db: Session) -> list[CompanySummaryRead]:
     return [
-        CompanyRead(id=company.id, name=company.name, invite_code=company.invite_code or "")
+        CompanySummaryRead(id=company.id, name=company.name)
         for company in company_repository.list_companies(db)
     ]
 

@@ -1,29 +1,60 @@
-// src/pages/Auth.jsx
-import { useState, useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { useAuth } from '../context/AuthContext';
+import { useAuth } from '../context/useAuth';
+import { getStoredLanguage } from '../services/language';
+
+function EyeIcon() {
+  return (
+    <div style={{ width: '20px', height: '20px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ color: '#4F646F', display: 'block' }}>
+        <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" />
+        <circle cx="12" cy="12" r="3" />
+      </svg>
+    </div>
+  );
+}
+
+function EyeOffIcon() {
+  return (
+    <div style={{ width: '20px', height: '20px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ color: '#4F646F', display: 'block' }}>
+        <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24" />
+        <line x1="1" y1="1" x2="23" y2="23" />
+      </svg>
+    </div>
+  );
+}
 
 export default function Auth() {
   const [isLogin, setIsLogin] = useState(true);
   const [role, setRole] = useState('employee');
   const [isMobile, setIsMobile] = useState(false);
-  const [language, setLanguage] = useState('ru');
+  const [language, setLanguage] = useState(getStoredLanguage);
   const [showPassword, setShowPassword] = useState(false);
   const [formData, setFormData] = useState({
     email: '',
     password: '',
-    name: ''
+    name: '',
   });
+  const [errorMessage, setErrorMessage] = useState('');
+  const [successMessage, setSuccessMessage] = useState('');
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   const navigate = useNavigate();
-  const { login, register } = useAuth();
+  const {
+    isAuthenticated,
+    isLoading,
+    login,
+    register,
+    user,
+    extractErrorMessage,
+  } = useAuth();
 
-  // Тексты на разных языках
   const texts = {
     ru: {
       langBtn: 'RU',
-      welcomeBack: 'Рады видеть вас снова',
-      createAccount: 'Создайте аккаунт',
+      welcomeBack: 'Вход в ShiftPlanner',
+      createAccount: 'Регистрация аккаунта',
       fullName: 'Имя и фамилия',
       email: 'Email',
       password: 'Пароль',
@@ -35,11 +66,17 @@ export default function Auth() {
       hasAccount: 'Уже есть аккаунт? Войти',
       namePlaceholder: 'Иван Петров',
       emailPlaceholder: 'ivan@example.com',
-      passwordPlaceholder: '••••••••'
+      passwordPlaceholder: 'Минимум 8 символов',
+      loginHint: 'Роль определяется сервером после входа.',
+      registerHint: 'Выберите роль только для регистрации.',
+      requiredFields: 'Заполните email и пароль.',
+      nameRequired: 'Укажите имя и фамилию.',
+      registerSuccess: 'Аккаунт создан. Выполняю вход...',
+      authError: 'Не удалось выполнить запрос.',
     },
     en: {
       langBtn: 'EN',
-      welcomeBack: 'Welcome back',
+      welcomeBack: 'Sign in to ShiftPlanner',
       createAccount: 'Create an account',
       fullName: 'Full name',
       email: 'Email',
@@ -52,24 +89,33 @@ export default function Auth() {
       hasAccount: 'Already have an account? Login',
       namePlaceholder: 'Ivan Petrov',
       emailPlaceholder: 'ivan@example.com',
-      passwordPlaceholder: '••••••••'
-    }
+      passwordPlaceholder: 'At least 8 characters',
+      loginHint: 'The backend decides your role after login.',
+      registerHint: 'Choose a role only for registration.',
+      requiredFields: 'Enter email and password.',
+      nameRequired: 'Enter your full name.',
+      registerSuccess: 'Account created. Signing in...',
+      authError: 'Request failed.',
+    },
   };
 
   const t = texts[language];
-
-  const toggleLanguage = () => {
-    setLanguage(language === 'ru' ? 'en' : 'ru');
-  };
 
   useEffect(() => {
     const checkMobile = () => {
       setIsMobile(window.innerWidth <= 480);
     };
+
     checkMobile();
     window.addEventListener('resize', checkMobile);
     return () => window.removeEventListener('resize', checkMobile);
   }, []);
+
+  useEffect(() => {
+    if (!isLoading && isAuthenticated && user?.role) {
+      navigate(user.role === 'manager' ? '/manager' : '/employee', { replace: true });
+    }
+  }, [isAuthenticated, isLoading, navigate, user?.role]);
 
   useEffect(() => {
     const styleSheet = document.createElement('style');
@@ -82,41 +128,33 @@ export default function Auth() {
         from { opacity: 0; transform: translateY(40px); }
         to { opacity: 1; transform: translateY(0); }
       }
-      
       input, input:focus, input:active {
         color: #4F646F !important;
         caret-color: #B7ADCF !important;
       }
-      
       input::placeholder {
         color: #999 !important;
         opacity: 1 !important;
       }
-      
       input:focus {
         border-color: #B7ADCF !important;
         box-shadow: 0 0 0 3px rgba(183,173,207,0.2) !important;
         outline: none;
       }
-      
       input:-webkit-autofill,
       input:-webkit-autofill:hover,
       input:-webkit-autofill:focus,
       input:-webkit-autofill:active {
         -webkit-box-shadow: 0 0 0 30px #DEE7E7 inset !important;
         -webkit-text-fill-color: #4F646F !important;
-        color: #4F646F !important;
       }
-      
       .role-switch {
         position: relative;
         display: inline-flex;
         background: #DEE7E7;
         border-radius: 40px;
         padding: 4px;
-        cursor: pointer;
       }
-      
       .role-option {
         padding: 8px 20px;
         border-radius: 32px;
@@ -128,36 +166,27 @@ export default function Auth() {
         border: none;
         cursor: pointer;
       }
-      
       .role-option.active {
         background: #F4FAFF;
         color: #002642;
         box-shadow: 0 2px 8px rgba(0,0,0,0.1);
       }
-      
       .role-option:not(.active) {
         color: #4F646F;
       }
-      
-      /* Плавная анимация для кнопки-глазика */
       .eye-button {
         transition: transform 0.05s ease !important;
         will-change: transform !important;
       }
-      
       .eye-button:active {
         transform: scale(0.96) !important;
         transition: transform 0.02s ease !important;
       }
-      
       @media (max-width: 480px) {
         button:active { transform: scale(0.97) !important; }
         .role-option {
           padding: 6px 16px;
           font-size: 13px;
-        }
-        .eye-button:active {
-          transform: scale(0.96) !important;
         }
       }
       @media (min-width: 481px) {
@@ -168,48 +197,59 @@ export default function Auth() {
     return () => document.head.removeChild(styleSheet);
   }, []);
 
-  const handleSubmit = async (e) => {
-    e.preventDefault();
-    const selectedRole = role;
-    
-    if (isLogin) {
-      try {
-        await login(formData.email, formData.password, selectedRole);
-        if (selectedRole === 'manager') {
-          navigate('/manager');
-        } else {
-          navigate('/employee');
-        }
-      } catch (error) {
-        alert('Ошибка входа');
+  const handleSubmit = async (event) => {
+    event.preventDefault();
+    setErrorMessage('');
+    setSuccessMessage('');
+
+    if (!formData.email.trim() || !formData.password) {
+      setErrorMessage(t.requiredFields);
+      return;
+    }
+
+    if (!isLogin && !formData.name.trim()) {
+      setErrorMessage(t.nameRequired);
+      return;
+    }
+
+    setIsSubmitting(true);
+
+    try {
+      const profile = isLogin
+        ? await login(formData.email.trim(), formData.password)
+        : await register({
+          name: formData.name.trim(),
+          email: formData.email.trim(),
+          password: formData.password,
+          role,
+        });
+
+      if (!isLogin) {
+        setSuccessMessage(t.registerSuccess);
       }
-    } else {
-      try {
-        await register(formData.name, formData.email, formData.password, selectedRole);
-        if (selectedRole === 'manager') {
-          navigate('/manager');
-        } else {
-          navigate('/employee');
-        }
-      } catch (error) {
-        alert('Ошибка регистрации');
-      }
+
+      navigate(profile.role === 'manager' ? '/manager' : '/employee', { replace: true });
+    } catch (error) {
+      setErrorMessage(extractErrorMessage(error, t.authError));
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
   const toggleMode = () => {
-    setIsLogin(!isLogin);
-    setRole('employee');
+    setIsLogin((prev) => !prev);
     setFormData({ email: '', password: '', name: '' });
+    setErrorMessage('');
+    setSuccessMessage('');
     setShowPassword(false);
-  };
-  
-  const handleInputChange = (e) => {
-    const { name, value } = e.target;
-    setFormData(prev => ({ ...prev, [name]: value }));
+    setRole('employee');
   };
 
-  // Адаптивные стили
+  const handleInputChange = (event) => {
+    const { name, value } = event.target;
+    setFormData((prev) => ({ ...prev, [name]: value }));
+  };
+
   const responsiveStyles = {
     title: {
       fontSize: isMobile ? '42px' : '80px',
@@ -225,7 +265,7 @@ export default function Auth() {
       fontFamily: "'Poppins', sans-serif",
       lineHeight: '1.2',
       display: 'inline-block',
-      maxWidth: '100%'
+      maxWidth: '100%',
     },
     card: {
       background: '#DEE7E7',
@@ -235,13 +275,13 @@ export default function Auth() {
       maxWidth: '420px',
       boxSizing: 'border-box',
       boxShadow: isMobile ? '0 10px 30px rgba(0,0,0,0.12)' : '0 20px 40px rgba(0,0,0,0.1)',
-      animation: 'slideUp 0.5s ease'
+      animation: 'slideUp 0.5s ease',
     },
     languageButton: {
       position: 'absolute',
       top: isMobile ? '12px' : '20px',
       right: isMobile ? '12px' : '20px',
-      zIndex: 10
+      zIndex: 10,
     },
     input: {
       width: '100%',
@@ -255,11 +295,11 @@ export default function Auth() {
       outline: 'none',
       transition: 'all 0.3s ease',
       boxSizing: 'border-box',
-      fontFamily: 'inherit'
+      fontFamily: 'inherit',
     },
     passwordWrapper: {
       position: 'relative',
-      width: '100%'
+      width: '100%',
     },
     passwordInput: {
       width: '100%',
@@ -274,7 +314,7 @@ export default function Auth() {
       outline: 'none',
       transition: 'all 0.3s ease',
       boxSizing: 'border-box',
-      fontFamily: 'inherit'
+      fontFamily: 'inherit',
     },
     eyeButton: {
       position: 'absolute',
@@ -290,12 +330,7 @@ export default function Auth() {
       justifyContent: 'center',
       opacity: 0.6,
       borderRadius: '8px',
-      color: '#4F646F'
-    },
-    roleSwitch: {
-      display: 'flex',
-      justifyContent: 'center',
-      marginBottom: '24px'
+      color: '#4F646F',
     },
     submitBtn: {
       width: '100%',
@@ -306,36 +341,29 @@ export default function Auth() {
       background: 'linear-gradient(135deg, #002642 0%, #4F646F 100%)',
       border: 'none',
       borderRadius: '14px',
-      cursor: 'pointer',
+      cursor: isSubmitting ? 'default' : 'pointer',
       transition: 'transform 0.2s ease, box-shadow 0.2s ease',
-      marginBottom: '20px'
-    }
+      marginBottom: '20px',
+      opacity: isSubmitting ? 0.8 : 1,
+    },
   };
 
-  // Иконки для глаз (SVG) с фиксированной обёрткой
-  const EyeIcon = () => (
-    <div style={{ width: '20px', height: '20px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ color: '#4F646F', display: 'block' }}>
-        <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" />
-        <circle cx="12" cy="12" r="3" />
-      </svg>
-    </div>
-  );
-
-  const EyeOffIcon = () => (
-    <div style={{ width: '20px', height: '20px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ color: '#4F646F', display: 'block' }}>
-        <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24" />
-        <line x1="1" y1="1" x2="23" y2="23" />
-      </svg>
-    </div>
-  );
+  if (isLoading) {
+    return <div style={styles.loadingScreen}>{language === 'en' ? 'Loading...' : 'Загрузка...'}</div>;
+  }
 
   return (
     <div style={styles.container}>
       <div style={responsiveStyles.languageButton}>
-        <button style={styles.langBtn} onClick={toggleLanguage}>
-          🌐 {t.langBtn}
+        <button
+          style={styles.langBtn}
+          onClick={() => setLanguage((prev) => {
+            const nextLanguage = prev === 'ru' ? 'en' : 'ru';
+            localStorage.setItem('language', nextLanguage);
+            return nextLanguage;
+          })}
+        >
+          {t.langBtn}
         </button>
       </div>
 
@@ -349,24 +377,28 @@ export default function Auth() {
 
         <div style={responsiveStyles.card}>
           <form onSubmit={handleSubmit}>
-            <div style={responsiveStyles.roleSwitch}>
-              <div className="role-switch">
-                <button
-                  type="button"
-                  className={`role-option ${role === 'employee' ? 'active' : ''}`}
-                  onClick={() => setRole('employee')}
-                >
-                  {t.employee}
-                </button>
-                <button
-                  type="button"
-                  className={`role-option ${role === 'manager' ? 'active' : ''}`}
-                  onClick={() => setRole('manager')}
-                >
-                  {t.manager}
-                </button>
+            {!isLogin && (
+              <div style={styles.roleSwitchWrap}>
+                <div className="role-switch">
+                  <button
+                    type="button"
+                    className={`role-option ${role === 'employee' ? 'active' : ''}`}
+                    onClick={() => setRole('employee')}
+                  >
+                    {t.employee}
+                  </button>
+                  <button
+                    type="button"
+                    className={`role-option ${role === 'manager' ? 'active' : ''}`}
+                    onClick={() => setRole('manager')}
+                  >
+                    {t.manager}
+                  </button>
+                </div>
               </div>
-            </div>
+            )}
+
+            <p style={styles.hint}>{isLogin ? t.loginHint : t.registerHint}</p>
 
             {!isLogin && (
               <div style={styles.inputGroup}>
@@ -396,7 +428,6 @@ export default function Auth() {
               />
             </div>
 
-            {/* Пароль с глазиком */}
             <div style={styles.inputGroup}>
               <label style={styles.label}>{t.password}</label>
               <div style={responsiveStyles.passwordWrapper}>
@@ -412,16 +443,19 @@ export default function Auth() {
                 <button
                   type="button"
                   className="eye-button"
-                  onClick={() => setShowPassword(!showPassword)}
-                  style={{ ...responsiveStyles.eyeButton, userSelect: 'none' }}
+                  onClick={() => setShowPassword((prev) => !prev)}
+                  style={responsiveStyles.eyeButton}
                 >
                   {showPassword ? <EyeIcon /> : <EyeOffIcon />}
                 </button>
               </div>
             </div>
 
-            <button type="submit" style={responsiveStyles.submitBtn}>
-              {isLogin ? t.login : t.register}
+            {errorMessage && <div style={styles.errorBox}>{errorMessage}</div>}
+            {successMessage && <div style={styles.successBox}>{successMessage}</div>}
+
+            <button type="submit" style={responsiveStyles.submitBtn} disabled={isSubmitting}>
+              {isSubmitting ? '...' : isLogin ? t.login : t.register}
             </button>
 
             <div style={styles.toggleSection}>
@@ -441,7 +475,16 @@ const styles = {
     minHeight: '100vh',
     background: 'linear-gradient(135deg, #002642 0%, #4F646F 100%)',
     position: 'relative',
-    overflowX: 'hidden'
+    overflowX: 'hidden',
+  },
+  loadingScreen: {
+    minHeight: '100vh',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    background: 'linear-gradient(135deg, #002642 0%, #4F646F 100%)',
+    color: '#F4FAFF',
+    fontSize: '18px',
   },
   langBtn: {
     background: 'rgba(244,250,255,0.2)',
@@ -453,7 +496,7 @@ const styles = {
     fontSize: '14px',
     fontWeight: '500',
     cursor: 'pointer',
-    transition: 'all 0.3s ease'
+    transition: 'all 0.3s ease',
   },
   content: {
     display: 'flex',
@@ -464,39 +507,66 @@ const styles = {
     padding: '24px',
     paddingTop: '60px',
     position: 'relative',
-    zIndex: 1
+    zIndex: 1,
   },
   logoSection: {
     textAlign: 'center',
     marginBottom: '30px',
-    animation: 'fadeInUp 0.6s ease'
+    animation: 'fadeInUp 0.6s ease',
   },
   subtitle: {
     fontSize: 'clamp(14px, 4vw, 16px)',
     color: 'rgba(244,250,255,0.9)',
-    margin: 0
+    margin: 0,
+  },
+  roleSwitchWrap: {
+    display: 'flex',
+    justifyContent: 'center',
+    marginBottom: '16px',
+  },
+  hint: {
+    margin: '0 0 16px',
+    fontSize: '13px',
+    color: '#4F646F',
+    textAlign: 'center',
   },
   inputGroup: {
-    marginBottom: '20px'
+    marginBottom: '20px',
   },
   label: {
     display: 'block',
     fontSize: '14px',
     fontWeight: '500',
     color: '#4F646F',
-    marginBottom: '8px'
+    marginBottom: '8px',
+  },
+  errorBox: {
+    marginBottom: '16px',
+    padding: '12px 14px',
+    borderRadius: '12px',
+    background: '#FDEAEA',
+    color: '#A61B1B',
+    fontSize: '14px',
+  },
+  successBox: {
+    marginBottom: '16px',
+    padding: '12px 14px',
+    borderRadius: '12px',
+    background: '#E7F6EC',
+    color: '#17663A',
+    fontSize: '14px',
   },
   toggleSection: {
-    textAlign: 'center'
+    textAlign: 'center',
   },
   toggleBtn: {
     background: 'none',
     border: 'none',
-    color: '#B7ADCF',
+    color: '#4F646F',
     fontSize: '14px',
     fontWeight: '500',
     cursor: 'pointer',
     padding: '8px',
-    transition: 'color 0.2s ease'
-  }
+    transition: 'color 0.2s ease',
+  },
 };

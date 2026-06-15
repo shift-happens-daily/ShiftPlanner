@@ -1,16 +1,13 @@
 // frontend/src/components/LanguageSwitcher.jsx
-import { useState, useEffect } from 'react';
+import { useEffect, useState } from 'react';
+import { getStoredLanguage } from '../services/language';
 
 export default function LanguageSwitcher({ onLanguageChange, variant = 'light' }) {
-  const [language, setLanguage] = useState('ru');
+  const [language, setLanguage] = useState(getStoredLanguage);
 
   useEffect(() => {
-    const savedLang = localStorage.getItem('language');
-    if (savedLang) {
-      setLanguage(savedLang);
-      if (onLanguageChange) onLanguageChange(savedLang);
-    }
-  }, []);
+    if (onLanguageChange) onLanguageChange(language);
+  }, [language, onLanguageChange]);
 
   const toggleLanguage = () => {
     const newLang = language === 'ru' ? 'en' : 'ru';

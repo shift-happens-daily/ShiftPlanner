@@ -1,14 +1,15 @@
 // frontend/src/pages/ManagerDashboard.jsx
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { useAuth } from '../context/AuthContext';
+import { useAuth } from '../context/useAuth';
 import DashboardTabs from '../components/DashboardTabs';
 import LanguageSwitcher from '../components/LanguageSwitcher';
+import { getStoredLanguage } from '../services/language';
 
 export default function ManagerDashboard() {
   const { user, logout } = useAuth();
   const navigate = useNavigate();
-  const [language, setLanguage] = useState('ru');
+  const [language, setLanguage] = useState(getStoredLanguage);
 
   const handleLogout = () => {
     logout();

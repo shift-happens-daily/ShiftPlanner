@@ -1,1049 +1,879 @@
-// frontend/src/components/tabs/ShiftsTab.jsx
-import { useState, useEffect } from 'react';
-import { useAuth } from '../../context/AuthContext';
+import { useCallback, useEffect, useState } from 'react';
+import {
+  createEmployeeAbsence,
+  deleteEmployeeAbsence,
+  getEmployeeAvailability,
+  getMyAbsences,
+  getMyCalendarSummary,
+  updateEmployeeAvailability,
+} from '../../services/employeeService';
+import { extractApiErrorMessage, localizeBackendMessage } from '../../services/error';
+import { importRequirementsXlsx } from '../../services/importService';
+import { mapEmployeeCalendarSummary } from '../../services/mappers';
+import { listPositions } from '../../services/positionService';
+import {
+  createBulkRequirements,
+  createRequirement,
+  listRequirements,
+} from '../../services/scheduleService';
 
-export default function ShiftsTab({ language }) {
-  const { user } = useAuth();
-  const isManager = user?.role === 'manager';
-  
-  // Состояния
-  const [selectedDate, setSelectedDate] = useState(new Date());
-  const [currentMonth, setCurrentMonth] = useState(new Date());
+const WEEKDAYS = [
+  { value: 0, ru: 'Пн', en: 'Mon' },
+  { value: 1, ru: 'Вт', en: 'Tue' },
+  { value: 2, ru: 'Ср', en: 'Wed' },
+  { value: 3, ru: 'Чт', en: 'Thu' },
+  { value: 4, ru: 'Пт', en: 'Fri' },
+  { value: 5, ru: 'Сб', en: 'Sat' },
+  { value: 6, ru: 'Вс', en: 'Sun' },
+];
+
+function createAvailabilityBlock() {
+  return { weekday: 0, start_time: '09:00:00', end_time: '18:00:00' };
+}
+
+function defaultSingleRequirement() {
+  const today = new Date().toISOString().slice(0, 10);
+  return {
+    position_id: '',
+    date: today,
+    min_staff: 1,
+    start_time: '09:00:00',
+    end_time: '18:00:00',
+  };
+}
+
+function defaultBulkRequirement() {
+  const today = new Date();
+  const start = new Date(today.getFullYear(), today.getMonth(), 1).toISOString().slice(0, 10);
+  const end = new Date(today.getFullYear(), today.getMonth() + 1, 0).toISOString().slice(0, 10);
+  return {
+    start_date: start,
+    end_date: end,
+    weekdays: [0, 1, 2, 3, 4],
+    requirements: [{ position_id: '', min_staff: 1, start_time: '09:00:00', end_time: '18:00:00' }],
+  };
+}
+
+export default function ShiftsTab({ language, userRole, user }) {
+  const isManager = userRole === 'manager';
+  const [positions, setPositions] = useState([]);
   const [requirements, setRequirements] = useState([]);
-  const [generalSettings, setGeneralSettings] = useState({
-    maxShiftsPerWeek: 5,
-    minBreakHours: 12,
-    shiftDuration: 8
+  const [singleRequirement, setSingleRequirement] = useState(defaultSingleRequirement);
+  const [bulkRequirement, setBulkRequirement] = useState(defaultBulkRequirement);
+  const [filters, setFilters] = useState({
+    start_date: new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString().slice(0, 10),
+    end_date: new Date(new Date().getFullYear(), new Date().getMonth() + 1, 0).toISOString().slice(0, 10),
   });
-  const [isEditingSettings, setIsEditingSettings] = useState(false);
-  
-  // Доступность сотрудника (по часам)
-  const [hourlyAvailability, setHourlyAvailability] = useState({});
-  
-  // Запросы на выходной (общие для всех)
-  const [dayOffRequests, setDayOffRequests] = useState([]);
-  const [showDayOffModal, setShowDayOffModal] = useState(false);
-  const [newDayOff, setNewDayOff] = useState({ date: '', reason: '' });
-
-  // Предпочтения сотрудника
-  const [preferences, setPreferences] = useState({
-    morning: false,
-    afternoon: false,
-    evening: false
+  const [availabilityForm, setAvailabilityForm] = useState({
+    weekly_availability: [],
+    desired_days_off: [],
   });
-
-  // Часы для выбора доступности (09:00 - 22:00)
-  const hours = Array.from({ length: 14 }, (_, i) => i + 9); // 9,10,11...22
-
-  // Моковые данные для требований (менеджер)
-  useEffect(() => {
-    const mockRequirements = [
-      { id: 1, date: '2026-06-15', position: 'Бармен', minCount: 2, currentCount: 1, isMet: false },
-      { id: 2, date: '2026-06-15', position: 'Официант', minCount: 3, currentCount: 2, isMet: false },
-      { id: 3, date: '2026-06-15', position: 'Повар', minCount: 2, currentCount: 2, isMet: true },
-      { id: 4, date: '2026-06-16', position: 'Бармен', minCount: 2, currentCount: 2, isMet: true },
-      { id: 5, date: '2026-06-16', position: 'Официант', minCount: 3, currentCount: 3, isMet: true },
-      { id: 6, date: '2026-06-17', position: 'Бармен', minCount: 2, currentCount: 0, isMet: false },
-    ];
-    setRequirements(mockRequirements);
-  }, []);
-
-  // Загрузка запросов на выходной из localStorage
-  useEffect(() => {
-    const savedRequests = localStorage.getItem('dayOffRequests');
-    if (savedRequests) {
-      setDayOffRequests(JSON.parse(savedRequests));
-    } else {
-      // Моковые данные для примера
-      const mockRequests = [
-        { id: 1, userId: 2, userName: 'Анна Сидорова', date: '2026-06-20', reason: 'Семейные обстоятельства', status: 'pending', createdAt: '2026-06-10' },
-        { id: 2, userId: 3, userName: 'Петр Иванов', date: '2026-06-21', reason: 'Болезнь', status: 'approved', createdAt: '2026-06-09' },
-      ];
-      setDayOffRequests(mockRequests);
-      localStorage.setItem('dayOffRequests', JSON.stringify(mockRequests));
-    }
-  }, []);
-
-  // Загрузка доступности сотрудника из localStorage
-  useEffect(() => {
-    if (!isManager) {
-      const savedAvailability = localStorage.getItem(`availability_${user?.id}`);
-      if (savedAvailability) {
-        setHourlyAvailability(JSON.parse(savedAvailability));
-      }
-    }
-  }, [isManager, user?.id]);
-
-  // Добавляем глобальные стили для адаптива
-  useEffect(() => {
-    const styleSheet = document.createElement('style');
-    styleSheet.textContent = `
-      @media (max-width: 768px) {
-        .shifts-main-container {
-          flex-direction: column !important;
-          padding: 8px !important;
-          gap: 12px !important;
-        }
-        .shifts-calendar-section, .shifts-right-panel {
-          min-width: 100% !important;
-          width: 100% !important;
-          max-width: 100% !important;
-          padding: 12px !important;
-          margin: 0 !important;
-          box-sizing: border-box !important;
-        }
-        .shifts-calendar-days {
-          gap: 2px !important;
-        }
-        .shifts-calendar-day {
-          padding: 6px 0 !important;
-          font-size: 12px !important;
-        }
-        .shifts-week-day {
-          font-size: 10px !important;
-          padding: 4px 0 !important;
-        }
-        .shifts-hours-grid {
-          grid-template-columns: repeat(4, 1fr) !important;
-        }
-        .shifts-hour-btn {
-          padding: 6px 4px !important;
-          font-size: 10px !important;
-        }
-      }
-    `;
-    document.head.appendChild(styleSheet);
-    return () => document.head.removeChild(styleSheet);
-  }, []);
+  const [absenceForm, setAbsenceForm] = useState({
+    absence_type: 'vacation',
+    start_date: '',
+    end_date: '',
+    comment: '',
+  });
+  const [absences, setAbsences] = useState([]);
+  const [summary, setSummary] = useState(null);
+  const [selectedFile, setSelectedFile] = useState(null);
+  const [importResult, setImportResult] = useState(null);
+  const [isLoading, setIsLoading] = useState(true);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [errorMessage, setErrorMessage] = useState('');
+  const [successMessage, setSuccessMessage] = useState('');
 
   const texts = {
     ru: {
-      title: 'Настройки смен',
+      titleManager: 'Настройки смен и требования',
+      titleEmployee: 'Доступность и отсутствия',
       requirements: 'Требования к сменам',
+      bulk: 'Массовое создание требований',
+      import: 'Импорт требований из XLSX',
       position: 'Позиция',
-      required: 'Требуется',
-      current: 'Назначено',
-      status: 'Статус',
-      completed: '✓ Выполнено',
-      notCompleted: '✗ Не выполнено',
-      generalSettings: 'Общие настройки',
-      maxShiftsPerWeek: 'Максимум смен в неделю',
-      minBreakHours: 'Минимальный перерыв (часы)',
-      shiftDuration: 'Длительность смены (часы)',
-      save: 'Сохранить',
-      edit: 'Редактировать',
-      cancel: 'Отмена',
-      myAvailability: 'Моя доступность',
-      selectHours: 'Выберите часы, когда вы можете работать',
-      available: 'Доступен',
-      notAvailable: 'Недоступен',
-      dayOffRequests: 'Запросы на выходной',
-      requestDayOff: '+ Запросить выходной',
       date: 'Дата',
-      reason: 'Причина',
-      statusLabel: 'Статус',
-      pending: 'На рассмотрении',
-      approved: 'Одобрено',
-      rejected: 'Отклонено',
-      sendRequest: 'Отправить запрос',
-      myPreferences: 'Мои предпочтения',
-      preferredTime: 'Предпочтительное время',
-      morningPreferred: 'Предпочитаю утро (09:00-13:00)',
-      afternoonPreferred: 'Предпочитаю день (13:00-17:00)',
-      eveningPreferred: 'Предпочитаю вечер (17:00-22:00)',
-      savePreferences: 'Сохранить предпочтения',
-      noRequirements: 'Нет требований на выбранную дату',
-      noRequests: 'Нет запросов',
-      employeeRequests: 'Запросы сотрудников',
-      employee: 'Сотрудник',
-      actions: 'Действия',
-      approve: 'Одобрить',
-      reject: 'Отклонить',
-      allDayOff: 'Целый день'
+      startDate: 'Начало периода',
+      endDate: 'Конец периода',
+      startTime: 'Начало',
+      endTime: 'Окончание',
+      minStaff: 'Минимум сотрудников',
+      weekdays: 'Дни недели',
+      upload: 'Загрузить файл',
+      create: 'Создать',
+      refresh: 'Обновить',
+      save: 'Сохранить',
+      availability: 'Моя доступность',
+      desiredDaysOff: 'Желаемые выходные',
+      absences: 'Мои отсутствия',
+      addRow: 'Добавить интервал',
+      addAbsence: 'Добавить отсутствие',
+      empty: 'Нет данных',
+      loading: 'Загрузка...',
+      fileHint: 'Поддерживается только .xlsx. Загрузка идет напрямую в backend.',
+      created: 'Операция выполнена.',
+      importDone: 'Импорт завершен.',
+      vacation: 'Отпуск',
+      sick_leave: 'Больничный',
+      other: 'Другое',
+      delete: 'Удалить',
+      shifts: 'Смены из календарной сводки',
+      hours: 'Часы',
+      totalShifts: 'Смены',
+      importErrors: 'Ошибки импорта',
+      xlsxOnly: 'Поддерживается только .xlsx.',
+      row: 'Строка',
+      draft: 'Черновик',
+      published: 'Опубликовано',
     },
     en: {
-      title: 'Shift Settings',
-      requirements: 'Shift Requirements',
+      titleManager: 'Shift setup and requirements',
+      titleEmployee: 'Availability and absences',
+      requirements: 'Shift requirements',
+      bulk: 'Bulk requirements',
+      import: 'Import requirements from XLSX',
       position: 'Position',
-      required: 'Required',
-      current: 'Current',
-      status: 'Status',
-      completed: '✓ Completed',
-      notCompleted: '✗ Not completed',
-      generalSettings: 'General Settings',
-      maxShiftsPerWeek: 'Max shifts per week',
-      minBreakHours: 'Minimum break (hours)',
-      shiftDuration: 'Shift duration (hours)',
-      save: 'Save',
-      edit: 'Edit',
-      cancel: 'Cancel',
-      myAvailability: 'My Availability',
-      selectHours: 'Select hours when you can work',
-      available: 'Available',
-      notAvailable: 'Not available',
-      dayOffRequests: 'Day off requests',
-      requestDayOff: '+ Request day off',
       date: 'Date',
-      reason: 'Reason',
-      statusLabel: 'Status',
-      pending: 'Pending',
-      approved: 'Approved',
-      rejected: 'Rejected',
-      sendRequest: 'Send request',
-      myPreferences: 'My Preferences',
-      preferredTime: 'Preferred time',
-      morningPreferred: 'Prefer morning (09:00-13:00)',
-      afternoonPreferred: 'Prefer afternoon (13:00-17:00)',
-      eveningPreferred: 'Prefer evening (17:00-22:00)',
-      savePreferences: 'Save preferences',
-      noRequirements: 'No requirements for selected date',
-      noRequests: 'No requests',
-      employeeRequests: 'Employee requests',
-      employee: 'Employee',
-      actions: 'Actions',
-      approve: 'Approve',
-      reject: 'Reject',
-      allDayOff: 'All day'
-    }
+      startDate: 'Start date',
+      endDate: 'End date',
+      startTime: 'Start time',
+      endTime: 'End time',
+      minStaff: 'Minimum staff',
+      weekdays: 'Weekdays',
+      upload: 'Upload file',
+      create: 'Create',
+      refresh: 'Refresh',
+      save: 'Save',
+      availability: 'My availability',
+      desiredDaysOff: 'Desired days off',
+      absences: 'My absences',
+      addRow: 'Add interval',
+      addAbsence: 'Add absence',
+      empty: 'No data',
+      loading: 'Loading...',
+      fileHint: 'Only .xlsx is supported. The file is sent directly to the backend.',
+      created: 'Operation completed.',
+      importDone: 'Import completed.',
+      vacation: 'Vacation',
+      sick_leave: 'Sick leave',
+      other: 'Other',
+      delete: 'Delete',
+      shifts: 'Shifts from calendar summary',
+      hours: 'Hours',
+      totalShifts: 'Shifts',
+      importErrors: 'Import errors',
+      xlsxOnly: 'Only .xlsx is supported.',
+      row: 'Row',
+      draft: 'Draft',
+      published: 'Published',
+    },
   };
 
   const t = texts[language] || texts.ru;
 
-  // Форматирование даты
-  const formatDate = (date) => {
-    return date.toISOString().split('T')[0];
-  };
+  const loadManagerData = useCallback(async () => {
+    const [positionsData, requirementsData] = await Promise.all([
+      listPositions(),
+      listRequirements(filters),
+    ]);
+    setPositions(positionsData);
+    setRequirements(requirementsData);
+    setSingleRequirement((prev) => ({
+      ...prev,
+      position_id: prev.position_id || String(positionsData[0]?.id || ''),
+    }));
+    setBulkRequirement((prev) => ({
+      ...prev,
+      requirements: prev.requirements.map((item) => ({
+        ...item,
+        position_id: item.position_id || String(positionsData[0]?.id || ''),
+      })),
+    }));
+  }, [filters]);
 
-  // Получение дней в месяце
-  const getDaysInMonth = (date) => {
-    const year = date.getFullYear();
-    const month = date.getMonth();
-    const lastDay = new Date(year, month + 1, 0);
-    const days = [];
-    for (let i = 1; i <= lastDay.getDate(); i++) {
-      days.push(new Date(year, month, i));
+  const loadEmployeeData = useCallback(async () => {
+    if (!user?.employeeId) {
+      setAvailabilityForm({ weekly_availability: [], desired_days_off: [] });
+      setAbsences([]);
+      setSummary(null);
+      return;
     }
-    return days;
-  };
 
-  const days = getDaysInMonth(currentMonth);
-  const weekDays = ['Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Вс'];
+    const [availabilityData, absencesData, summaryData] = await Promise.all([
+      getEmployeeAvailability(user.employeeId),
+      getMyAbsences(),
+      getMyCalendarSummary(),
+    ]);
 
-  const prevMonth = () => {
-    setCurrentMonth(new Date(currentMonth.getFullYear(), currentMonth.getMonth() - 1, 1));
-  };
-
-  const nextMonth = () => {
-    setCurrentMonth(new Date(currentMonth.getFullYear(), currentMonth.getMonth() + 1, 1));
-  };
-
-  // Проверка, есть ли требования на день (для менеджера)
-  const hasRequirements = (day) => {
-    const dateStr = formatDate(day);
-    return requirements.some(r => r.date === dateStr);
-  };
-
-  // Получение требований для выбранной даты
-  const getRequirementsForDate = () => {
-    const dateStr = formatDate(selectedDate);
-    return requirements.filter(r => r.date === dateStr);
-  };
-
-  // Обновление требований (чеклист для менеджера)
-  const toggleCheckbox = (reqId, index, currentCount, minCount) => {
-    let newCount;
-    if (index < currentCount) {
-      newCount = currentCount - 1;
-    } else {
-      newCount = currentCount + 1;
-    }
-    
-    setRequirements(requirements.map(req => 
-      req.id === reqId 
-        ? { ...req, currentCount: newCount, isMet: newCount >= minCount }
-        : req
-    ));
-  };
-
-  // Сохранение общих настроек
-  const saveGeneralSettings = () => {
-    setIsEditingSettings(false);
-    alert(t.save);
-  };
-
-  // Отправка запроса на выходной (СОХРАНЯЕТСЯ И ПОЯВЛЯЕТСЯ СРАЗУ)
-  const sendDayOffRequest = () => {
-    if (newDayOff.date) {
-      const newRequest = {
-        id: Date.now(),
-        userId: user?.id,
-        userName: `${user?.firstName} ${user?.lastName}`,
-        date: newDayOff.date,
-        reason: newDayOff.reason || 'Не указана',
-        status: 'pending',
-        createdAt: formatDate(new Date())
-      };
-      const updatedRequests = [...dayOffRequests, newRequest];
-      setDayOffRequests(updatedRequests);
-      localStorage.setItem('dayOffRequests', JSON.stringify(updatedRequests));
-      setShowDayOffModal(false);
-      setNewDayOff({ date: '', reason: '' });
-      alert('Запрос на выходной отправлен!');
-    }
-  };
-
-  // Одобрение запроса (для менеджера)
-  const approveRequest = (id) => {
-    const updatedRequests = dayOffRequests.map(req =>
-      req.id === id ? { ...req, status: 'approved' } : req
-    );
-    setDayOffRequests(updatedRequests);
-    localStorage.setItem('dayOffRequests', JSON.stringify(updatedRequests));
-  };
-
-  // Отклонение запроса (для менеджера)
-  const rejectRequest = (id) => {
-    const updatedRequests = dayOffRequests.map(req =>
-      req.id === id ? { ...req, status: 'rejected' } : req
-    );
-    setDayOffRequests(updatedRequests);
-    localStorage.setItem('dayOffRequests', JSON.stringify(updatedRequests));
-  };
-
-  // Переключение доступности по часам (для сотрудника)
-  const toggleHourAvailability = (hour) => {
-    const dateStr = formatDate(selectedDate);
-    const key = `${dateStr}_${hour}`;
-    const newAvailability = {
-      ...hourlyAvailability,
-      [key]: !hourlyAvailability[key]
-    };
-    setHourlyAvailability(newAvailability);
-    localStorage.setItem(`availability_${user?.id}`, JSON.stringify(newAvailability));
-  };
-
-  // Проверка доступности часа
-  const isHourAvailable = (hour) => {
-    const dateStr = formatDate(selectedDate);
-    const key = `${dateStr}_${hour}`;
-    return hourlyAvailability[key] || false;
-  };
-
-  // Обновление предпочтений
-  const togglePreference = (slot) => {
-    setPreferences({
-      ...preferences,
-      [slot]: !preferences[slot]
+    setAvailabilityForm({
+      weekly_availability: availabilityData.weekly_availability,
+      desired_days_off: availabilityData.desired_days_off,
     });
+    setAbsences(absencesData);
+    setSummary(mapEmployeeCalendarSummary(summaryData));
+  }, [user]);
+
+  const loadData = useCallback(async () => {
+    setIsLoading(true);
+    setErrorMessage('');
+    try {
+      if (isManager) {
+        await loadManagerData();
+      } else {
+        await loadEmployeeData();
+      }
+    } catch (error) {
+      setErrorMessage(extractApiErrorMessage(error, null, language));
+    } finally {
+      setIsLoading(false);
+    }
+  }, [isManager, language, loadEmployeeData, loadManagerData]);
+
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      void loadData();
+    }, 0);
+    return () => clearTimeout(timer);
+  }, [loadData]);
+
+  const submitManagerRequirement = async () => {
+    if (!singleRequirement.position_id || !singleRequirement.date) {
+      setErrorMessage(t.requirements);
+      return;
+    }
+
+    setErrorMessage('');
+    setSuccessMessage('');
+    setIsSubmitting(true);
+    try {
+      await createRequirement({
+        ...singleRequirement,
+        position_id: Number(singleRequirement.position_id),
+        min_staff: Number(singleRequirement.min_staff),
+      });
+      await loadManagerData();
+      setSuccessMessage(t.created);
+    } catch (error) {
+      setErrorMessage(extractApiErrorMessage(error, null, language));
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
-  const savePreferences = () => {
-    localStorage.setItem(`preferences_${user?.id}`, JSON.stringify(preferences));
-    alert(t.savePreferences);
+  const submitBulkRequirements = async () => {
+    if (!bulkRequirement.requirements[0]?.position_id) {
+      setErrorMessage(t.bulk);
+      return;
+    }
+
+    setErrorMessage('');
+    setSuccessMessage('');
+    setIsSubmitting(true);
+    try {
+      await createBulkRequirements({
+        ...bulkRequirement,
+        requirements: bulkRequirement.requirements.map((item) => ({
+          ...item,
+          position_id: Number(item.position_id),
+          min_staff: Number(item.min_staff),
+        })),
+      });
+      await loadManagerData();
+      setSuccessMessage(t.created);
+    } catch (error) {
+      setErrorMessage(extractApiErrorMessage(error, null, language));
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
-  const currentRequirements = getRequirementsForDate();
-  const dateStr = formatDate(selectedDate);
+  const submitImport = async () => {
+    if (!selectedFile) {
+      setErrorMessage(t.import);
+      return;
+    }
 
-  const inputStyle = {
-    padding: '8px 12px',
-    fontSize: '14px',
-    color: '#002642',
-    backgroundColor: '#FFFFFF',
-    border: '2px solid #DEE7E7',
-    borderRadius: '8px',
-    outline: 'none',
-    width: '100%',
-    boxSizing: 'border-box'
+    if (!selectedFile.name.toLowerCase().endsWith('.xlsx')) {
+      setErrorMessage(t.xlsxOnly);
+      return;
+    }
+
+    setErrorMessage('');
+    setSuccessMessage('');
+    setImportResult(null);
+    setIsSubmitting(true);
+    try {
+      const result = await importRequirementsXlsx(selectedFile);
+      setImportResult(result);
+      await loadManagerData();
+      setSuccessMessage(t.importDone);
+    } catch (error) {
+      setErrorMessage(extractApiErrorMessage(error, null, language));
+    } finally {
+      setIsSubmitting(false);
+    }
   };
+
+  const submitAvailability = async () => {
+    if (!user?.employeeId) {
+      return;
+    }
+
+    setErrorMessage('');
+    setSuccessMessage('');
+    setIsSubmitting(true);
+    try {
+      await updateEmployeeAvailability(user.employeeId, availabilityForm);
+      await loadEmployeeData();
+      setSuccessMessage(t.created);
+    } catch (error) {
+      setErrorMessage(extractApiErrorMessage(error, null, language));
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const submitAbsence = async () => {
+    if (!user?.employeeId || !absenceForm.start_date || !absenceForm.end_date) {
+      setErrorMessage(t.addAbsence);
+      return;
+    }
+
+    setErrorMessage('');
+    setSuccessMessage('');
+    setIsSubmitting(true);
+    try {
+      await createEmployeeAbsence(user.employeeId, absenceForm);
+      setAbsenceForm({ absence_type: 'vacation', start_date: '', end_date: '', comment: '' });
+      await loadEmployeeData();
+      setSuccessMessage(t.created);
+    } catch (error) {
+      setErrorMessage(extractApiErrorMessage(error, null, language));
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const removeAbsence = async (absenceId) => {
+    if (!user?.employeeId) {
+      return;
+    }
+
+    setErrorMessage('');
+    setSuccessMessage('');
+    setIsSubmitting(true);
+    try {
+      await deleteEmployeeAbsence(user.employeeId, absenceId);
+      await loadEmployeeData();
+      setSuccessMessage(t.created);
+    } catch (error) {
+      setErrorMessage(extractApiErrorMessage(error, null, language));
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  if (isLoading) {
+    return <div style={styles.card}>{t.loading}</div>;
+  }
 
   return (
-    <div className="shifts-main-container" style={styles.container}>
-      {/* Календарь */}
-      <div className="shifts-calendar-section" style={styles.calendarSection}>
-        <div style={styles.calendarHeader}>
-          <button onClick={prevMonth} style={styles.monthNavBtn}>←</button>
-          <h3 style={styles.calendarTitle}>
-            {currentMonth.toLocaleDateString(language === 'ru' ? 'ru-RU' : 'en-US', { month: 'long', year: 'numeric' })}
-          </h3>
-          <button onClick={nextMonth} style={styles.monthNavBtn}>→</button>
-        </div>
-        <div className="shifts-week-days" style={styles.weekDays}>
-          {weekDays.map(day => (
-            <div key={day} className="shifts-week-day" style={styles.weekDay}>{day}</div>
-          ))}
-        </div>
-        <div className="shifts-calendar-days" style={styles.calendarDays}>
-          {days.map((day, index) => {
-            const hasReqs = hasRequirements(day);
-            const isSelected = formatDate(day) === dateStr;
-            return (
-              <div
-                key={index}
-                onClick={() => setSelectedDate(day)}
-                className="shifts-calendar-day"
-                style={{
-                  ...styles.calendarDay,
-                  ...(isSelected && styles.calendarDaySelected),
-                  ...(hasReqs && !isSelected && styles.calendarDayHasReqs)
-                }}
-              >
-                {day.getDate()}
-              </div>
-            );
-          })}
-        </div>
-      </div>
+    <div style={styles.wrapper}>
+      <div style={styles.card}>
+        <h2 style={styles.title}>{isManager ? t.titleManager : t.titleEmployee}</h2>
+        {errorMessage && <div style={styles.error}>{errorMessage}</div>}
+        {successMessage && <div style={styles.success}>{successMessage}</div>}
 
-      {/* Правая панель */}
-      <div className="shifts-right-panel" style={styles.rightPanel}>
         {isManager ? (
-          // Режим менеджера
           <>
-            {/* Требования к сменам */}
             <div style={styles.section}>
-              <h3 style={styles.sectionTitle}>
-                {t.requirements} — {selectedDate.toLocaleDateString(language === 'ru' ? 'ru-RU' : 'en-US')}
-              </h3>
-              {currentRequirements.length === 0 ? (
-                <p style={styles.emptyText}>{t.noRequirements}</p>
-              ) : (
-                <div style={styles.requirementsList}>
-                  {currentRequirements.map(req => (
-                    <div key={req.id} style={styles.requirementItem}>
-                      <div className="shifts-requirement-info" style={styles.requirementInfo}>
-                        <span style={styles.positionName}>{req.position}</span>
-                        <span style={styles.countInfo}>
-                          {req.currentCount} / {req.minCount}
-                        </span>
-                        <span style={{
-                          ...styles.statusBadge,
-                          ...(req.isMet ? styles.statusMet : styles.statusNotMet)
-                        }}>
-                          {req.isMet ? t.completed : t.notCompleted}
-                        </span>
-                      </div>
-                      <div className="shifts-checklist" style={styles.checklist}>
-                        {[...Array(req.minCount)].map((_, i) => (
-                          <div
-                            key={i}
-                            onClick={() => toggleCheckbox(req.id, i, req.currentCount, req.minCount)}
-                            style={{
-                              ...styles.checkbox,
-                              ...(i < req.currentCount ? styles.checkboxChecked : {})
-                            }}
-                          >
-                            {i < req.currentCount && '✓'}
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-
-            {/* Запросы сотрудников на выходной */}
-            <div style={styles.section}>
-              <h3 style={styles.sectionTitle}>{t.employeeRequests}</h3>
-              {dayOffRequests.length === 0 ? (
-                <p style={styles.emptyText}>{t.noRequests}</p>
-              ) : (
-                <div style={styles.requestsList}>
-                  {dayOffRequests.map(req => (
-                    <div key={req.id} className="shifts-request-item" style={styles.requestItem}>
-                      <div style={styles.requestInfo}>
-                        <span style={styles.requestEmployee}>{req.userName}</span>
-                        <span style={styles.requestDate}>{new Date(req.date).toLocaleDateString()}</span>
-                        <span style={styles.requestReason}>{req.reason}</span>
-                      </div>
-                      <div style={styles.requestActions}>
-                        {req.status === 'pending' ? (
-                          <>
-                            <button onClick={() => approveRequest(req.id)} style={styles.approveBtn}>
-                              {t.approve}
-                            </button>
-                            <button onClick={() => rejectRequest(req.id)} style={styles.rejectBtn}>
-                              {t.reject}
-                            </button>
-                          </>
-                        ) : (
-                          <span style={{
-                            ...styles.requestStatus,
-                            ...(req.status === 'approved' && styles.statusApproved),
-                            ...(req.status === 'rejected' && styles.statusRejected)
-                          }}>
-                            {t[req.status]}
-                          </span>
-                        )}
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-
-            {/* Общие настройки */}
-            <div style={styles.section}>
-              <div style={styles.sectionHeader}>
-                <h3 style={styles.sectionTitle}>{t.generalSettings}</h3>
-                {!isEditingSettings && (
-                  <button onClick={() => setIsEditingSettings(true)} style={styles.editBtn}>
-                    {t.edit}
-                  </button>
-                )}
+              <h3 style={styles.sectionTitle}>{t.requirements}</h3>
+              <div style={styles.formGrid}>
+                <input
+                  type="date"
+                  value={filters.start_date}
+                  onChange={(event) => setFilters((prev) => ({ ...prev, start_date: event.target.value }))}
+                  style={styles.input}
+                />
+                <input
+                  type="date"
+                  value={filters.end_date}
+                  onChange={(event) => setFilters((prev) => ({ ...prev, end_date: event.target.value }))}
+                  style={styles.input}
+                />
+                <button onClick={loadData} style={styles.secondaryButton}>{t.refresh}</button>
               </div>
-              {isEditingSettings ? (
-                <div style={styles.settingsForm}>
-                  <div className="shifts-setting-row" style={styles.settingRow}>
-                    <label>{t.maxShiftsPerWeek}</label>
-                    <input
-                      type="number"
-                      value={generalSettings.maxShiftsPerWeek}
-                      onChange={(e) => setGeneralSettings({ ...generalSettings, maxShiftsPerWeek: parseInt(e.target.value) })}
-                      style={{ ...inputStyle, width: '100px' }}
-                    />
-                  </div>
-                  <div className="shifts-setting-row" style={styles.settingRow}>
-                    <label>{t.minBreakHours}</label>
-                    <input
-                      type="number"
-                      value={generalSettings.minBreakHours}
-                      onChange={(e) => setGeneralSettings({ ...generalSettings, minBreakHours: parseInt(e.target.value) })}
-                      style={{ ...inputStyle, width: '100px' }}
-                    />
-                  </div>
-                  <div className="shifts-setting-row" style={styles.settingRow}>
-                    <label>{t.shiftDuration}</label>
-                    <input
-                      type="number"
-                      value={generalSettings.shiftDuration}
-                      onChange={(e) => setGeneralSettings({ ...generalSettings, shiftDuration: parseInt(e.target.value) })}
-                      style={{ ...inputStyle, width: '100px' }}
-                    />
-                  </div>
-                  <div style={styles.formActions}>
-                    <button onClick={saveGeneralSettings} style={styles.saveBtn}>{t.save}</button>
-                    <button onClick={() => setIsEditingSettings(false)} style={styles.cancelBtn}>{t.cancel}</button>
-                  </div>
-                </div>
+
+              <div style={styles.formGrid}>
+                <select
+                  value={singleRequirement.position_id}
+                  onChange={(event) => setSingleRequirement((prev) => ({ ...prev, position_id: event.target.value }))}
+                  style={styles.input}
+                >
+                  <option value="">{t.position}</option>
+                  {positions.map((position) => (
+                    <option key={position.id} value={position.id}>{position.title}</option>
+                  ))}
+                </select>
+                <input
+                  type="date"
+                  value={singleRequirement.date}
+                  onChange={(event) => setSingleRequirement((prev) => ({ ...prev, date: event.target.value }))}
+                  style={styles.input}
+                />
+                <input
+                  type="number"
+                  min="1"
+                  value={singleRequirement.min_staff}
+                  onChange={(event) => setSingleRequirement((prev) => ({ ...prev, min_staff: event.target.value }))}
+                  style={styles.input}
+                />
+                <input
+                  type="time"
+                  value={singleRequirement.start_time.slice(0, 5)}
+                  onChange={(event) => setSingleRequirement((prev) => ({ ...prev, start_time: `${event.target.value}:00` }))}
+                  style={styles.input}
+                />
+                <input
+                  type="time"
+                  value={singleRequirement.end_time.slice(0, 5)}
+                  onChange={(event) => setSingleRequirement((prev) => ({ ...prev, end_time: `${event.target.value}:00` }))}
+                  style={styles.input}
+                />
+                <button onClick={submitManagerRequirement} style={styles.primaryButton} disabled={isSubmitting}>
+                  {t.create}
+                </button>
+              </div>
+
+              {requirements.length === 0 ? (
+                <p style={styles.emptyText}>{t.empty}</p>
               ) : (
-                <div style={styles.settingsDisplay}>
-                  <div><strong>{t.maxShiftsPerWeek}:</strong> {generalSettings.maxShiftsPerWeek}</div>
-                  <div><strong>{t.minBreakHours}:</strong> {generalSettings.minBreakHours} ч.</div>
-                  <div><strong>{t.shiftDuration}:</strong> {generalSettings.shiftDuration} ч.</div>
+                <div style={styles.list}>
+                  {requirements.map((requirement) => (
+                    <div key={requirement.id} style={styles.listItem}>
+                      <div style={styles.itemTitle}>{requirement.position_title}</div>
+                      <div style={styles.itemMeta}>{requirement.date}</div>
+                      <div style={styles.itemMeta}>
+                        {String(requirement.start_time).slice(0, 5)} - {String(requirement.end_time).slice(0, 5)}
+                      </div>
+                      <div style={styles.itemMeta}>{t.minStaff}: {requirement.min_staff}</div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            <div style={styles.section}>
+              <h3 style={styles.sectionTitle}>{t.bulk}</h3>
+              <div style={styles.formGrid}>
+                <input
+                  type="date"
+                  value={bulkRequirement.start_date}
+                  onChange={(event) => setBulkRequirement((prev) => ({ ...prev, start_date: event.target.value }))}
+                  style={styles.input}
+                />
+                <input
+                  type="date"
+                  value={bulkRequirement.end_date}
+                  onChange={(event) => setBulkRequirement((prev) => ({ ...prev, end_date: event.target.value }))}
+                  style={styles.input}
+                />
+                <select
+                  value={bulkRequirement.requirements[0].position_id}
+                  onChange={(event) => setBulkRequirement((prev) => ({
+                    ...prev,
+                    requirements: [{ ...prev.requirements[0], position_id: event.target.value }],
+                  }))}
+                  style={styles.input}
+                >
+                  <option value="">{t.position}</option>
+                  {positions.map((position) => (
+                    <option key={position.id} value={position.id}>{position.title}</option>
+                  ))}
+                </select>
+                <input
+                  type="number"
+                  min="1"
+                  value={bulkRequirement.requirements[0].min_staff}
+                  onChange={(event) => setBulkRequirement((prev) => ({
+                    ...prev,
+                    requirements: [{ ...prev.requirements[0], min_staff: event.target.value }],
+                  }))}
+                  style={styles.input}
+                />
+                <input
+                  type="time"
+                  value={bulkRequirement.requirements[0].start_time.slice(0, 5)}
+                  onChange={(event) => setBulkRequirement((prev) => ({
+                    ...prev,
+                    requirements: [{ ...prev.requirements[0], start_time: `${event.target.value}:00` }],
+                  }))}
+                  style={styles.input}
+                />
+                <input
+                  type="time"
+                  value={bulkRequirement.requirements[0].end_time.slice(0, 5)}
+                  onChange={(event) => setBulkRequirement((prev) => ({
+                    ...prev,
+                    requirements: [{ ...prev.requirements[0], end_time: `${event.target.value}:00` }],
+                  }))}
+                  style={styles.input}
+                />
+              </div>
+              <div style={styles.checkboxRow}>
+                {WEEKDAYS.map((day) => (
+                  <label key={day.value} style={styles.checkboxLabel}>
+                    <input
+                      type="checkbox"
+                      checked={bulkRequirement.weekdays.includes(day.value)}
+                      onChange={() => setBulkRequirement((prev) => ({
+                        ...prev,
+                        weekdays: prev.weekdays.includes(day.value)
+                          ? prev.weekdays.filter((value) => value !== day.value)
+                          : [...prev.weekdays, day.value].sort((a, b) => a - b),
+                      }))}
+                    />
+                    {day[language] || day.ru}
+                  </label>
+                ))}
+              </div>
+              <button onClick={submitBulkRequirements} style={styles.primaryButton} disabled={isSubmitting}>
+                {t.create}
+              </button>
+            </div>
+
+            <div style={styles.section}>
+              <h3 style={styles.sectionTitle}>{t.import}</h3>
+              <p style={styles.hint}>{t.fileHint}</p>
+              <div style={styles.formGrid}>
+                <input type="file" accept=".xlsx" onChange={(event) => setSelectedFile(event.target.files?.[0] || null)} />
+                <button onClick={submitImport} style={styles.primaryButton} disabled={isSubmitting}>
+                  {t.upload}
+                </button>
+              </div>
+              {importResult && (
+                <div style={styles.importBox}>
+                  <div>{t.create}: {importResult.created_count}</div>
+                  {importResult.errors.length > 0 && (
+                    <div style={styles.importErrors}>
+                      <div style={styles.itemTitle}>{t.importErrors}</div>
+                      {importResult.errors.map((item, index) => (
+                        <div key={`${item.row}-${index}`} style={styles.itemMeta}>
+                          {t.row} {item.row}: {localizeBackendMessage(item.message, language)}
+                        </div>
+                      ))}
+                    </div>
+                  )}
                 </div>
               )}
             </div>
           </>
         ) : (
-          // Режим сотрудника
           <>
-            {/* Моя доступность по часам */}
             <div style={styles.section}>
-              <h3 style={styles.sectionTitle}>
-                {t.myAvailability} — {selectedDate.toLocaleDateString(language === 'ru' ? 'ru-RU' : 'en-US')}
-              </h3>
-              <p style={styles.hintText}>{t.selectHours}</p>
-              <div className="shifts-hours-grid" style={styles.hoursGrid}>
-                {hours.map(hour => {
-                  const isAvailable = isHourAvailable(hour);
-                  return (
-                    <button
-                      key={hour}
-                      onClick={() => toggleHourAvailability(hour)}
-                      className="shifts-hour-btn"
-                      style={{
-                        ...styles.hourBtn,
-                        ...(isAvailable ? styles.hourAvailable : styles.hourNotAvailable)
-                      }}
-                    >
-                      {hour}:00
-                    </button>
-                  );
-                })}
+              <h3 style={styles.sectionTitle}>{t.availability}</h3>
+              {availabilityForm.weekly_availability.map((block, index) => (
+                <div key={`${block.weekday}-${index}`} style={styles.formGrid}>
+                  <select
+                    value={block.weekday}
+                    onChange={(event) => setAvailabilityForm((prev) => ({
+                      ...prev,
+                      weekly_availability: prev.weekly_availability.map((item, itemIndex) => (
+                        itemIndex === index ? { ...item, weekday: Number(event.target.value) } : item
+                      )),
+                    }))}
+                    style={styles.input}
+                  >
+                    {WEEKDAYS.map((day) => (
+                      <option key={day.value} value={day.value}>{day[language] || day.ru}</option>
+                    ))}
+                  </select>
+                  <input
+                    type="time"
+                    value={String(block.start_time).slice(0, 5)}
+                    onChange={(event) => setAvailabilityForm((prev) => ({
+                      ...prev,
+                      weekly_availability: prev.weekly_availability.map((item, itemIndex) => (
+                        itemIndex === index ? { ...item, start_time: `${event.target.value}:00` } : item
+                      )),
+                    }))}
+                    style={styles.input}
+                  />
+                  <input
+                    type="time"
+                    value={String(block.end_time).slice(0, 5)}
+                    onChange={(event) => setAvailabilityForm((prev) => ({
+                      ...prev,
+                      weekly_availability: prev.weekly_availability.map((item, itemIndex) => (
+                        itemIndex === index ? { ...item, end_time: `${event.target.value}:00` } : item
+                      )),
+                    }))}
+                    style={styles.input}
+                  />
+                  <button
+                    onClick={() => setAvailabilityForm((prev) => ({
+                      ...prev,
+                      weekly_availability: prev.weekly_availability.filter((_, itemIndex) => itemIndex !== index),
+                    }))}
+                    style={styles.secondaryButton}
+                  >
+                    {t.delete}
+                  </button>
+                </div>
+              ))}
+
+              <div style={styles.checkboxRow}>
+                {WEEKDAYS.map((day) => (
+                  <label key={day.value} style={styles.checkboxLabel}>
+                    <input
+                      type="checkbox"
+                      checked={availabilityForm.desired_days_off.includes(day.value)}
+                      onChange={() => setAvailabilityForm((prev) => ({
+                        ...prev,
+                        desired_days_off: prev.desired_days_off.includes(day.value)
+                          ? prev.desired_days_off.filter((value) => value !== day.value)
+                          : [...prev.desired_days_off, day.value].sort((a, b) => a - b),
+                      }))}
+                    />
+                    {day[language] || day.ru}
+                  </label>
+                ))}
+              </div>
+
+              <div style={styles.buttonRow}>
+                <button
+                  onClick={() => setAvailabilityForm((prev) => ({
+                    ...prev,
+                    weekly_availability: [...prev.weekly_availability, createAvailabilityBlock()],
+                  }))}
+                  style={styles.secondaryButton}
+                >
+                  {t.addRow}
+                </button>
+                <button onClick={submitAvailability} style={styles.primaryButton} disabled={isSubmitting}>
+                  {t.save}
+                </button>
               </div>
             </div>
 
-            {/* Запросы на выходной (история) */}
             <div style={styles.section}>
-              <div style={styles.sectionHeader}>
-                <h3 style={styles.sectionTitle}>{t.dayOffRequests}</h3>
-                <button onClick={() => setShowDayOffModal(true)} style={styles.addBtn}>
-                  {t.requestDayOff}
+              <h3 style={styles.sectionTitle}>{t.absences}</h3>
+              <div style={styles.formGrid}>
+                <select
+                  value={absenceForm.absence_type}
+                  onChange={(event) => setAbsenceForm((prev) => ({ ...prev, absence_type: event.target.value }))}
+                  style={styles.input}
+                >
+                  <option value="vacation">{t.vacation}</option>
+                  <option value="sick_leave">{t.sick_leave}</option>
+                  <option value="other">{t.other}</option>
+                </select>
+                <input
+                  type="date"
+                  value={absenceForm.start_date}
+                  onChange={(event) => setAbsenceForm((prev) => ({ ...prev, start_date: event.target.value }))}
+                  style={styles.input}
+                />
+                <input
+                  type="date"
+                  value={absenceForm.end_date}
+                  onChange={(event) => setAbsenceForm((prev) => ({ ...prev, end_date: event.target.value }))}
+                  style={styles.input}
+                />
+                <input
+                  value={absenceForm.comment}
+                  onChange={(event) => setAbsenceForm((prev) => ({ ...prev, comment: event.target.value }))}
+                  placeholder={t.other}
+                  style={styles.input}
+                />
+                <button onClick={submitAbsence} style={styles.primaryButton} disabled={isSubmitting}>
+                  {t.addAbsence}
                 </button>
               </div>
-              {dayOffRequests.filter(req => req.userId === user?.id).length === 0 ? (
-                <p style={styles.emptyText}>{t.noRequests}</p>
+
+              {absences.length === 0 ? (
+                <p style={styles.emptyText}>{t.empty}</p>
               ) : (
-                <div style={styles.requestsList}>
-                  {dayOffRequests.filter(req => req.userId === user?.id).map(req => (
-                    <div key={req.id} className="shifts-request-item" style={styles.requestItem}>
-                      <span>{new Date(req.date).toLocaleDateString()}</span>
-                      <span style={styles.requestReason}>{req.reason}</span>
-                      <span style={{
-                        ...styles.requestStatus,
-                        ...(req.status === 'pending' && styles.statusPending),
-                        ...(req.status === 'approved' && styles.statusApproved),
-                        ...(req.status === 'rejected' && styles.statusRejected)
-                      }}>
-                        {t[req.status]}
-                      </span>
+                <div style={styles.list}>
+                  {absences.map((absence) => (
+                    <div key={absence.id} style={styles.listItem}>
+                      <div>
+                        <div style={styles.itemTitle}>{t[absence.absence_type] || absence.absence_type}</div>
+                        <div style={styles.itemMeta}>{absence.start_date} - {absence.end_date}</div>
+                        {absence.comment && <div style={styles.itemMeta}>{absence.comment}</div>}
+                      </div>
+                      <button onClick={() => removeAbsence(absence.id)} style={styles.secondaryButton}>
+                        {t.delete}
+                      </button>
                     </div>
                   ))}
                 </div>
               )}
             </div>
 
-            {/* Мои предпочтения */}
             <div style={styles.section}>
-              <h3 style={styles.sectionTitle}>{t.myPreferences}</h3>
-              <div style={styles.preferencesList}>
-                {['morning', 'afternoon', 'evening'].map(slot => (
-                  <label key={slot} style={styles.preferenceItem}>
-                    <input 
-                      type="checkbox" 
-                      checked={preferences[slot]}
-                      onChange={() => togglePreference(slot)}
-                    /> 
-                    {t[`${slot}Preferred`]}
-                  </label>
-                ))}
-              </div>
-              <button onClick={savePreferences} style={styles.savePreferencesBtn}>{t.savePreferences}</button>
+              <h3 style={styles.sectionTitle}>{t.shifts}</h3>
+              {summary ? (
+                <>
+                  <div style={styles.itemMeta}>{t.totalShifts}: {summary.workload.total_shifts}</div>
+                  <div style={styles.itemMeta}>{t.hours}: {summary.workload.total_hours}</div>
+                  {summary.shifts.length === 0 ? (
+                    <p style={styles.emptyText}>{t.empty}</p>
+                  ) : (
+                    <div style={styles.list}>
+                      {summary.shifts.map((shift) => (
+                        <div key={`${shift.schedule_id}-${shift.shift_id}`} style={styles.listItem}>
+                          <div>
+                            <div style={styles.itemTitle}>{shift.date}</div>
+                            <div style={styles.itemMeta}>
+                              {String(shift.start_time).slice(0, 5)} - {String(shift.end_time).slice(0, 5)}
+                            </div>
+                            <div style={styles.itemMeta}>{t[shift.status] || localizeBackendMessage(shift.status, language)}</div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </>
+              ) : (
+                <p style={styles.emptyText}>{t.empty}</p>
+              )}
             </div>
           </>
         )}
       </div>
-
-      {/* Модальное окно для запроса выходного */}
-      {showDayOffModal && (
-        <div className="shifts-modal-overlay" style={styles.modalOverlay} onClick={() => setShowDayOffModal(false)}>
-          <div className="shifts-modal" style={styles.modal} onClick={(e) => e.stopPropagation()}>
-            <h3 style={styles.modalTitle}>{t.requestDayOff}</h3>
-            <div style={styles.modalForm}>
-              <input
-                type="date"
-                value={newDayOff.date}
-                min={formatDate(new Date())}
-                onChange={(e) => setNewDayOff({ ...newDayOff, date: e.target.value })}
-                style={inputStyle}
-              />
-              <input
-                type="text"
-                placeholder={t.reason}
-                value={newDayOff.reason}
-                onChange={(e) => setNewDayOff({ ...newDayOff, reason: e.target.value })}
-                style={inputStyle}
-              />
-              <div style={styles.modalActions}>
-                <button onClick={sendDayOffRequest} style={styles.primaryBtn}>{t.sendRequest}</button>
-                <button onClick={() => setShowDayOffModal(false)} style={styles.cancelBtn}>{t.cancel}</button>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   );
 }
 
 const styles = {
-  container: {
-    display: 'flex',
-    gap: '24px',
-    flexWrap: 'wrap',
+  wrapper: {
+    maxWidth: '1200px',
+    margin: '0 auto',
+  },
+  card: {
     background: '#F4FAFF',
     borderRadius: '24px',
-    padding: '20px',
-    maxWidth: '1400px',
-    margin: '0 auto'
+    padding: '24px',
   },
-  calendarSection: {
-    flex: '1',
-    minWidth: '280px',
-    maxWidth: '100%',
-    background: '#FFFFFF',
-    borderRadius: '16px',
-    padding: '16px',
-    boxShadow: '0 2px 8px rgba(0,0,0,0.05)',
-    boxSizing: 'border-box'
-  },
-  calendarHeader: {
-    display: 'flex',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: '16px'
-  },
-  monthNavBtn: {
-    padding: '8px 12px',
-    backgroundColor: '#DEE7E7',
-    border: 'none',
-    borderRadius: '8px',
-    cursor: 'pointer',
-    fontSize: '16px'
-  },
-  calendarTitle: {
-    fontSize: '16px',
-    fontWeight: '600',
+  title: {
+    margin: '0 0 8px',
     color: '#002642',
-    margin: 0
-  },
-  weekDays: {
-    display: 'grid',
-    gridTemplateColumns: 'repeat(7, 1fr)',
-    gap: '4px',
-    marginBottom: '8px'
-  },
-  weekDay: {
-    textAlign: 'center',
-    fontSize: '12px',
-    fontWeight: '600',
-    color: '#4F646F',
-    padding: '8px 0'
-  },
-  calendarDays: {
-    display: 'grid',
-    gridTemplateColumns: 'repeat(7, 1fr)',
-    gap: '4px'
-  },
-  calendarDay: {
-    textAlign: 'center',
-    padding: '10px 0',
-    fontSize: '14px',
-    borderRadius: '8px',
-    cursor: 'pointer',
-    transition: 'all 0.2s ease',
-    backgroundColor: '#F4FAFF'
-  },
-  calendarDaySelected: {
-    backgroundColor: '#002642',
-    color: '#F4FAFF'
-  },
-  calendarDayHasReqs: {
-    backgroundColor: '#B7ADCF',
-    color: '#002642'
-  },
-  rightPanel: {
-    flex: '2',
-    minWidth: '400px',
-    maxWidth: '100%',
-    display: 'flex',
-    flexDirection: 'column',
-    gap: '20px'
+    fontSize: '24px',
   },
   section: {
-    background: '#FFFFFF',
-    borderRadius: '16px',
-    padding: '16px',
-    boxShadow: '0 2px 8px rgba(0,0,0,0.05)',
-    boxSizing: 'border-box'
-  },
-  sectionHeader: {
     display: 'flex',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: '16px',
-    flexWrap: 'wrap',
-    gap: '12px'
+    flexDirection: 'column',
+    gap: '14px',
+    marginTop: '20px',
   },
   sectionTitle: {
-    fontSize: '18px',
-    fontWeight: '600',
+    margin: 0,
     color: '#002642',
-    margin: 0
-  },
-  requirementsList: {
-    display: 'flex',
-    flexDirection: 'column',
-    gap: '16px'
-  },
-  requirementItem: {
-    borderBottom: '1px solid #DEE7E7',
-    paddingBottom: '12px'
-  },
-  requirementInfo: {
-    display: 'flex',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: '12px',
-    flexWrap: 'wrap',
-    gap: '8px'
-  },
-  positionName: {
-    fontWeight: '600',
-    color: '#002642'
-  },
-  countInfo: {
-    fontSize: '14px',
-    color: '#4F646F'
-  },
-  statusBadge: {
-    padding: '4px 8px',
-    borderRadius: '12px',
-    fontSize: '12px',
-    fontWeight: '500'
-  },
-  statusMet: {
-    backgroundColor: '#E8F5E9',
-    color: '#2E7D32'
-  },
-  statusNotMet: {
-    backgroundColor: '#FFEBEE',
-    color: '#D32F2F'
-  },
-  checklist: {
-    display: 'flex',
-    gap: '8px',
-    flexWrap: 'wrap'
-  },
-  checkbox: {
-    width: '36px',
-    height: '36px',
-    borderRadius: '10px',
-    border: '2px solid #B7ADCF',
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    cursor: 'pointer',
     fontSize: '18px',
-    fontWeight: 'bold',
-    color: '#FFFFFF',
-    backgroundColor: '#F4FAFF',
-    transition: 'all 0.2s ease'
   },
-  checkboxChecked: {
-    backgroundColor: '#002642',
-    borderColor: '#002642',
-    color: '#F4FAFF'
-  },
-  editBtn: {
-    padding: '6px 12px',
-    backgroundColor: '#DEE7E7',
-    border: 'none',
-    borderRadius: '8px',
-    cursor: 'pointer',
-    fontSize: '12px'
-  },
-  settingsForm: {
-    display: 'flex',
-    flexDirection: 'column',
-    gap: '12px'
-  },
-  settingRow: {
-    display: 'flex',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    gap: '16px',
-    flexWrap: 'wrap'
-  },
-  settingsDisplay: {
-    display: 'flex',
-    flexDirection: 'column',
-    gap: '8px'
-  },
-  formActions: {
-    display: 'flex',
-    gap: '12px',
-    marginTop: '12px'
-  },
-  saveBtn: {
-    padding: '8px 16px',
-    backgroundColor: '#002642',
-    border: 'none',
-    borderRadius: '8px',
-    color: '#F4FAFF',
-    cursor: 'pointer'
-  },
-  cancelBtn: {
-    padding: '8px 16px',
-    backgroundColor: '#DEE7E7',
-    border: 'none',
-    borderRadius: '8px',
-    cursor: 'pointer'
-  },
-  addBtn: {
-    padding: '6px 12px',
-    backgroundColor: '#002642',
-    border: 'none',
-    borderRadius: '8px',
-    color: '#F4FAFF',
-    cursor: 'pointer',
-    fontSize: '12px'
-  },
-  hoursGrid: {
+  formGrid: {
     display: 'grid',
-    gridTemplateColumns: 'repeat(7, 1fr)',
-    gap: '8px',
-    marginTop: '12px'
+    gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))',
+    gap: '12px',
   },
-  hourBtn: {
-    padding: '8px 6px',
-    fontSize: '12px',
-    borderRadius: '8px',
+  input: {
+    width: '100%',
+    boxSizing: 'border-box',
+    borderRadius: '12px',
+    border: '2px solid #DEE7E7',
+    background: '#FFFFFF',
+    padding: '12px 14px',
+    color: '#002642',
+    fontSize: '14px',
+  },
+  primaryButton: {
+    padding: '12px 18px',
+    background: '#002642',
     border: 'none',
+    borderRadius: '12px',
+    color: '#F4FAFF',
+    fontWeight: '600',
     cursor: 'pointer',
-    transition: 'all 0.2s ease',
-    fontWeight: '500'
   },
-  hourAvailable: {
-    backgroundColor: '#E8F5E9',
-    color: '#2E7D32',
-    border: '1px solid #A5D6A7'
+  secondaryButton: {
+    padding: '10px 14px',
+    background: '#DEE7E7',
+    border: 'none',
+    borderRadius: '12px',
+    color: '#002642',
+    fontWeight: '600',
+    cursor: 'pointer',
   },
-  hourNotAvailable: {
-    backgroundColor: '#FFEBEE',
-    color: '#D32F2F',
-    border: '1px solid #FFCDD2'
-  },
-  hintText: {
-    fontSize: '13px',
-    color: '#4F646F',
-    marginBottom: '8px'
-  },
-  requestsList: {
+  checkboxRow: {
     display: 'flex',
-    flexDirection: 'column',
-    gap: '12px'
+    flexWrap: 'wrap',
+    gap: '10px',
   },
-  requestItem: {
+  checkboxLabel: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '6px',
+    color: '#002642',
+  },
+  buttonRow: {
+    display: 'flex',
+    flexWrap: 'wrap',
+    gap: '12px',
+  },
+  list: {
+    display: 'grid',
+    gap: '10px',
+  },
+  listItem: {
+    padding: '14px 16px',
+    borderRadius: '16px',
+    background: '#FFFFFF',
+    border: '1px solid #DEE7E7',
     display: 'flex',
     justifyContent: 'space-between',
-    alignItems: 'center',
-    padding: '10px 0',
-    borderBottom: '1px solid #DEE7E7',
+    gap: '12px',
     flexWrap: 'wrap',
-    gap: '10px'
-  },
-  requestInfo: {
-    display: 'flex',
-    flexDirection: 'column',
-    gap: '4px',
-    flex: '2'
-  },
-  requestEmployee: {
-    fontWeight: '600',
-    color: '#002642'
-  },
-  requestDate: {
-    fontSize: '12px',
-    color: '#4F646F'
-  },
-  requestReason: {
-    fontSize: '12px',
-    color: '#4F646F'
-  },
-  requestActions: {
-    display: 'flex',
-    gap: '8px'
-  },
-  approveBtn: {
-    padding: '4px 12px',
-    backgroundColor: '#E8F5E9',
-    border: 'none',
-    borderRadius: '6px',
-    color: '#2E7D32',
-    cursor: 'pointer',
-    fontSize: '12px'
-  },
-  rejectBtn: {
-    padding: '4px 12px',
-    backgroundColor: '#FFEBEE',
-    border: 'none',
-    borderRadius: '6px',
-    color: '#D32F2F',
-    cursor: 'pointer',
-    fontSize: '12px'
-  },
-  requestStatus: {
-    padding: '2px 10px',
-    borderRadius: '12px',
-    fontSize: '11px',
-    fontWeight: '500'
-  },
-  statusPending: {
-    backgroundColor: '#FFF3E0',
-    color: '#E65100'
-  },
-  statusApproved: {
-    backgroundColor: '#E8F5E9',
-    color: '#2E7D32'
-  },
-  statusRejected: {
-    backgroundColor: '#FFEBEE',
-    color: '#D32F2F'
-  },
-  preferencesList: {
-    display: 'flex',
-    flexDirection: 'column',
-    gap: '8px',
-    marginBottom: '16px'
-  },
-  preferenceItem: {
-    display: 'flex',
     alignItems: 'center',
-    gap: '8px',
-    fontSize: '14px',
-    cursor: 'pointer',
-    padding: '6px 0'
   },
-  savePreferencesBtn: {
-    padding: '10px 16px',
-    backgroundColor: '#B7ADCF',
-    border: 'none',
-    borderRadius: '10px',
+  itemTitle: {
+    fontWeight: '700',
     color: '#002642',
-    fontWeight: '500',
-    cursor: 'pointer',
-    width: '100%'
+  },
+  itemMeta: {
+    color: '#4F646F',
+    fontSize: '13px',
+    marginTop: '4px',
+  },
+  importBox: {
+    padding: '16px',
+    borderRadius: '16px',
+    background: '#FFFFFF',
+    border: '1px solid #DEE7E7',
+  },
+  importErrors: {
+    marginTop: '12px',
+  },
+  hint: {
+    margin: 0,
+    color: '#4F646F',
+    fontSize: '14px',
+  },
+  error: {
+    marginBottom: '16px',
+    padding: '12px 14px',
+    borderRadius: '12px',
+    background: '#FDEAEA',
+    color: '#A61B1B',
+  },
+  success: {
+    marginBottom: '16px',
+    padding: '12px 14px',
+    borderRadius: '12px',
+    background: '#E7F6EC',
+    color: '#17663A',
   },
   emptyText: {
-    textAlign: 'center',
-    padding: '20px',
-    color: '#4F646F'
+    margin: 0,
+    color: '#4F646F',
   },
-  modalOverlay: {
-    position: 'fixed',
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
-    backgroundColor: 'rgba(0,0,0,0.5)',
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    zIndex: 1000
-  },
-  modal: {
-    background: '#FFFFFF',
-    borderRadius: '16px',
-    padding: '24px',
-    width: '90%',
-    maxWidth: '400px'
-  },
-  modalTitle: {
-    fontSize: '18px',
-    fontWeight: '600',
-    color: '#002642',
-    margin: '0 0 20px 0'
-  },
-  modalForm: {
-    display: 'flex',
-    flexDirection: 'column',
-    gap: '16px'
-  },
-  modalActions: {
-    display: 'flex',
-    gap: '12px',
-    justifyContent: 'flex-end',
-    marginTop: '8px'
-  },
-  primaryBtn: {
-    padding: '8px 16px',
-    backgroundColor: '#002642',
-    border: 'none',
-    borderRadius: '8px',
-    color: '#F4FAFF',
-    cursor: 'pointer'
-  }
 };
