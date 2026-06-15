@@ -258,7 +258,6 @@ final class AvailabilityViewModel: ObservableObject {
 
     private func applyAvailabilityResponse(_ response: EmployeeAvailabilityResponseDTO) {
         var restoredWeek = Self.makeDefaultWeek(slotCount: timeSlots.count)
-        let desiredDaysOff = Set(response.desiredDaysOff)
 
         for block in response.weeklyAvailability {
             let startMinutes = minutes(from: block.startTime)
@@ -271,9 +270,8 @@ final class AvailabilityViewModel: ObservableObject {
                 continue
             }
 
-            let state: AvailabilityState = desiredDaysOff.contains(block.weekday) ? .preferNotToWork : .canWork
             for slotIndex in startSlot..<endSlot {
-                restoredWeek[slotIndex][block.weekday] = state
+                restoredWeek[slotIndex][block.weekday] = .canWork
             }
         }
 
@@ -283,14 +281,9 @@ final class AvailabilityViewModel: ObservableObject {
 
     private func buildUpsertPayload() -> EmployeeAvailabilityUpsertDTO {
         var blocks: [EmployeeAvailabilityBlockDTO] = []
-        var desiredDaysOff = Set<Int>()
 
         for dayIndex in 0..<7 {
             let dayStates = weeklyStates.map { $0[dayIndex] }
-
-            if dayStates.contains(.preferNotToWork) {
-                desiredDaysOff.insert(dayIndex)
-            }
 
             var activeStartSlot: Int?
 
@@ -317,7 +310,7 @@ final class AvailabilityViewModel: ObservableObject {
 
         return EmployeeAvailabilityUpsertDTO(
             weeklyAvailability: blocks,
-            desiredDaysOff: desiredDaysOff.sorted()
+            desiredDaysOff: []
         )
     }
 
