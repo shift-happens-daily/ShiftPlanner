@@ -5,7 +5,18 @@ from jose import JWTError
 from sqlalchemy.orm import Session
 
 from app.repositories import company_repository, employee_repository, position_repository, user_repository
-from app.schemas.auth import LoginRequest, LoginResponse, LogoutResponse, RegisterRequest, RegisterResponse, UserRead
+from app.schemas.auth import (
+    CurrentUserBranchRead,
+    CurrentUserCompanyRead,
+    CurrentUserPositionRead,
+    CurrentUserResponse,
+    LoginRequest,
+    LoginResponse,
+    LogoutResponse,
+    RegisterRequest,
+    RegisterResponse,
+    UserRead,
+)
 from app.services.security import create_access_token, get_password_hash, verify_password
 
 _active_tokens: set[str] = set()
@@ -48,25 +59,6 @@ def register(db: Session, payload: RegisterRequest) -> RegisterResponse:
         role=payload.role,
         is_registration_complete=True,
     )
-
-    if payload.role == "employee":
-        default_company = company_repository.get_default_company(db)
-        branch = company_repository.get_default_branch_for_company(db, default_company.id)
-        employee = employee_repository.create_employee(
-            db,
-            user_id=user.id,
-            company_id=default_company.id,
-            branch_id=branch.id if branch else None,
-            position_id=_get_default_position_id(db, default_company.id),
-        )
-        user = user_repository.get_user_by_id(db, user.id)
-        return RegisterResponse(
-            id=user.id,
-            full_name=user.full_name,
-            email=user.email,
-            role=user.role,
-            employee_id=employee.id,
-        )
 
     db.commit()
     db.refresh(user)
@@ -114,6 +106,16 @@ def get_current_user(db: Session, token: str) -> UserRead:
     return _build_user_read(db, user)
 
 
+def get_current_user_profile(db: Session, current_user: UserRead) -> CurrentUserResponse:
+    user = user_repository.get_user_by_id(db, current_user.id)
+    if user is None:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Could not validate credentials.",
+        )
+    return _build_current_user_response(db, user)
+
+
 def create_placeholder_employee_password() -> str:
     return get_password_hash(secrets.token_urlsafe(24))
 
@@ -129,14 +131,38 @@ def _build_user_read(db: Session, user) -> RegisterResponse:
     )
 
 
-def _get_default_position_id(db: Session, company_id: int) -> int:
-    position = next((item for item in position_repository.list_positions(db) if item.company_id == company_id), None)
-    if position is None:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="No position exists for the default company. Create a position first.",
-        )
-    return position.id
+def _build_current_user_response(db: Session, user) -> CurrentUserResponse:
+    employee = employee_repository.get_employee_by_user_id(db, user.id)
+    company = None
+    branch = None
+    position = None
+
+    if employee is not None:
+        company_model = company_repository.get_company_by_id(db, employee.company_id)
+        branch_model = company_repository.get_branch_by_id(db, employee.branch_id) if employee.branch_id else None
+        position_model = position_repository.get_position_by_id(db, employee.position_id) if employee.position_id else None
+
+        if company_model is not None:
+            company = CurrentUserCompanyRead(
+                id=company_model.id,
+                name=company_model.name,
+                invite_code=company_model.invite_code or "",
+            )
+        if branch_model is not None:
+            branch = CurrentUserBranchRead(id=branch_model.id, name=branch_model.name)
+        if position_model is not None:
+            position = CurrentUserPositionRead(id=position_model.id, name=position_model.name)
+
+    return CurrentUserResponse(
+        id=user.id,
+        full_name=user.full_name,
+        email=user.email,
+        role=user.role,
+        employee_id=employee.id if employee else None,
+        company=company,
+        branch=branch,
+        position=position,
+    )
 
 
 def create_payload_from_token(token: str) -> dict:
