@@ -42,6 +42,7 @@ struct EmployeeProfileView: View {
             }
             .padding()
             .navigationTitle("Profile")
+            .navigationBarTitleDisplayMode(.inline)
         }
     }
 }

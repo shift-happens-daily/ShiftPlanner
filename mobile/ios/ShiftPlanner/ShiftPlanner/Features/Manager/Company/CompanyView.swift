@@ -105,6 +105,7 @@ struct CompanyView: View {
                 .padding()
             }
             .navigationTitle("Company")
+            .navigationBarTitleDisplayMode(.inline)
             .onChange(of: user.company?.inviteCode) { _, _ in
                 if let company = user.company?.asAppCompany() {
                     companyOverride = company

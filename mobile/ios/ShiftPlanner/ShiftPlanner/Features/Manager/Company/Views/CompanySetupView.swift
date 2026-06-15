@@ -92,5 +92,6 @@ struct CompanySetupView: View {
             }
         }
         .navigationTitle("Create Company")
+        .navigationBarTitleDisplayMode(.inline)
     }
 }

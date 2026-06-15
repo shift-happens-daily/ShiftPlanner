@@ -42,6 +42,7 @@ struct ManagerProfileView: View {
             }
             .padding()
             .navigationTitle("Profile")
+            .navigationBarTitleDisplayMode(.inline)
         }
     }
 }

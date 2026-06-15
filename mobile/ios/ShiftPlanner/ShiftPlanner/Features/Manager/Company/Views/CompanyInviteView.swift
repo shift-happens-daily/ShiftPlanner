@@ -105,6 +105,7 @@ struct CompanyInviteView: View {
                 }
             }
             .navigationTitle(mode == .employeeJoin ? "Join Company" : "Invite Code")
+            .navigationBarTitleDisplayMode(.inline)
         }
     }
 }
