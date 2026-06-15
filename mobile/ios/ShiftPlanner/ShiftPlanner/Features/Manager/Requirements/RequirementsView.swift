@@ -5,7 +5,7 @@ struct RequirementsView: View {
         NavigationStack {
             Text("Shift requirements")
                 .navigationTitle("Requirements")
+                .navigationBarTitleDisplayMode(.inline)
         }
     }
 }
-

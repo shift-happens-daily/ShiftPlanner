@@ -2,6 +2,7 @@ import SwiftUI
 
 struct SignUpView: View {
     @ObservedObject var viewModel: AuthViewModel
+    @EnvironmentObject private var themeManager: ThemeManager
     let onShowLogin: () -> Void
     
     var body: some View {
@@ -12,8 +13,9 @@ struct SignUpView: View {
                 Text("ShiftPlanner")
                     .font(.largeTitle)
                     .bold()
+                    .foregroundStyle(themeManager.selectedTheme.primaryTextColor)
                 Text("Create account")
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(themeManager.selectedTheme.secondaryTextColor)
             }
             
             VStack(spacing: 12) {
@@ -23,26 +25,27 @@ struct SignUpView: View {
                     }
                 }
                 .pickerStyle(.segmented)
+
                 TextField("Name", text: $viewModel.name)
-                    .textFieldStyle(.roundedBorder)
+                    .themeInputField()
                 
                 TextField("Email", text: $viewModel.email)
-                    .textFieldStyle(.roundedBorder)
                     .autocapitalization(.none)
                     .autocorrectionDisabled(true)
                     .keyboardType(.emailAddress)
+                    .themeInputField()
                 
                 SecureField("Password", text: $viewModel.password)
-                    .textFieldStyle(.roundedBorder)
+                    .themeInputField()
                 
                 SecureField("Repeat password", text: $viewModel.confirmPassword)
-                    .textFieldStyle(.roundedBorder)
+                    .themeInputField()
             }
             
             if let errorMessage = viewModel.errorMessage {
                 Text(errorMessage)
                     .font(.footnote)
-                    .foregroundColor(.red)
+                    .foregroundStyle(themeManager.selectedTheme.destructiveColor)
             }
             
             Button {
@@ -52,22 +55,26 @@ struct SignUpView: View {
             } label: {
                 if viewModel.isLoading {
                     ProgressView()
+                        .tint(themeManager.selectedTheme.primaryActionTextColor)
                 } else {
                     Text("Sign up")
-                        .frame(maxWidth: .infinity)
                 }
             }
-            .buttonStyle(.borderedProminent)
+            .buttonStyle(.plain)
+            .themePrimaryAction(isEnabled: !viewModel.isLoading && viewModel.passwordsMatch)
             .disabled(viewModel.isLoading || !viewModel.passwordsMatch)
             
             Button("Already have an account?") {
                 onShowLogin()
             }
+            .buttonStyle(.plain)
+            .themeSecondaryAction()
             .disabled(viewModel.isLoading)
             
             Spacer()
         }
         .padding()
+        .background(themeManager.selectedTheme.screenBackground.ignoresSafeArea())
     }
 }
 
@@ -79,4 +86,5 @@ struct SignUpView: View {
         ),
         onShowLogin: {}
     )
+    .environmentObject(ThemeManager())
 }

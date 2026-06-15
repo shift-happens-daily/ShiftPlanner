@@ -6,6 +6,7 @@ struct EmployeeListView: View {
         NavigationStack {
             Text("Employee List")
                 .navigationTitle("EmployeeList")
+                .navigationBarTitleDisplayMode(.inline)
         }
     }
 }
