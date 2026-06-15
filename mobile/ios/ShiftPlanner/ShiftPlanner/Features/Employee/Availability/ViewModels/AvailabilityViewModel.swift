@@ -65,23 +65,40 @@ final class AvailabilityViewModel: ObservableObject {
     @Published private(set) var weeklyStates: [[AvailabilityState]]
     @Published private(set) var weekDates: [Date]
     @Published var selectedState: AvailabilityState = .canWork
+    @Published var isLoading = false
+    @Published var isSaving = false
+    @Published var errorMessage: String?
+    @Published var statusMessage: String?
 
     let timeSlots = Array(stride(from: 8 * 60, to: 22 * 60, by: 30))
 
     private var calendar: Calendar
     private var weekStorage: [Date: [[AvailabilityState]]] = [:]
     private var lastPaintedCell: AvailabilityGridCell?
+    private let employeeId: Int?
+    private let repository: AvailabilityRepository
+    private var hasLoadedRemoteAvailability = false
 
-    init(referenceDate: Date = Date()) {
+    init(
+        referenceDate: Date = Date(),
+        employeeId: Int?,
+        repository: AvailabilityRepository
+    ) {
         var calendar = Calendar(identifier: .gregorian)
         calendar.firstWeekday = 2
         self.calendar = calendar
+        self.employeeId = employeeId
+        self.repository = repository
 
         let weekStart = Self.startOfWeek(for: referenceDate, calendar: calendar)
         self.currentWeekStart = weekStart
         self.weekDates = Self.buildWeekDates(from: weekStart, calendar: calendar)
         self.weeklyStates = Self.makeDefaultWeek(slotCount: timeSlots.count)
         self.weekStorage[weekStart] = weeklyStates
+    }
+
+    var canSave: Bool {
+        employeeId != nil && !isSaving && !isLoading
     }
 
     var weekTitle: String {
@@ -165,6 +182,51 @@ final class AvailabilityViewModel: ObservableObject {
         lastPaintedCell = nil
     }
 
+    func loadAvailability() async {
+        guard !hasLoadedRemoteAvailability else { return }
+        hasLoadedRemoteAvailability = true
+
+        guard let employeeId else {
+            statusMessage = "Availability can be saved after joining a company."
+            return
+        }
+
+        isLoading = true
+        errorMessage = nil
+        statusMessage = nil
+
+        do {
+            let response = try await repository.fetchAvailability(employeeId: employeeId)
+            applyAvailabilityResponse(response)
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+
+        isLoading = false
+    }
+
+    func saveAvailability() async {
+        guard let employeeId else {
+            errorMessage = "Availability can be saved after joining a company."
+            return
+        }
+
+        isSaving = true
+        errorMessage = nil
+        statusMessage = nil
+
+        do {
+            let payload = buildUpsertPayload()
+            _ = try await repository.saveAvailability(employeeId: employeeId, payload: payload)
+            weekStorage[currentWeekStart] = weeklyStates
+            statusMessage = "Availability saved."
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+
+        isSaving = false
+    }
+
     func copyPreviousWeek() {
         guard let previousWeekStart = calendar.date(byAdding: .day, value: -7, to: currentWeekStart) else {
             return
@@ -192,6 +254,101 @@ final class AvailabilityViewModel: ObservableObject {
         weekDates = Self.buildWeekDates(from: newWeekStart, calendar: calendar)
         weeklyStates = weekStorage[newWeekStart] ?? Self.makeDefaultWeek(slotCount: timeSlots.count)
         weekStorage[newWeekStart] = weeklyStates
+    }
+
+    private func applyAvailabilityResponse(_ response: EmployeeAvailabilityResponseDTO) {
+        var restoredWeek = Self.makeDefaultWeek(slotCount: timeSlots.count)
+        let desiredDaysOff = Set(response.desiredDaysOff)
+
+        for block in response.weeklyAvailability {
+            let startMinutes = minutes(from: block.startTime)
+            let endMinutes = minutes(from: block.endTime)
+
+            guard let startSlot = slotIndex(for: startMinutes),
+                  let endSlot = slotBoundaryIndex(for: endMinutes),
+                  (0..<7).contains(block.weekday),
+                  startSlot < endSlot else {
+                continue
+            }
+
+            let state: AvailabilityState = desiredDaysOff.contains(block.weekday) ? .preferNotToWork : .canWork
+            for slotIndex in startSlot..<endSlot {
+                restoredWeek[slotIndex][block.weekday] = state
+            }
+        }
+
+        weeklyStates = restoredWeek
+        weekStorage[currentWeekStart] = restoredWeek
+    }
+
+    private func buildUpsertPayload() -> EmployeeAvailabilityUpsertDTO {
+        var blocks: [EmployeeAvailabilityBlockDTO] = []
+        var desiredDaysOff = Set<Int>()
+
+        for dayIndex in 0..<7 {
+            let dayStates = weeklyStates.map { $0[dayIndex] }
+
+            if dayStates.contains(.preferNotToWork) {
+                desiredDaysOff.insert(dayIndex)
+            }
+
+            var activeStartSlot: Int?
+
+            for slotIndex in 0...dayStates.count {
+                let state: AvailabilityState? = slotIndex < dayStates.count ? dayStates[slotIndex] : nil
+                let isAvailable = state == .canWork || state == .preferNotToWork
+
+                if isAvailable {
+                    if activeStartSlot == nil {
+                        activeStartSlot = slotIndex
+                    }
+                } else if let startSlot = activeStartSlot {
+                    blocks.append(
+                        EmployeeAvailabilityBlockDTO(
+                            weekday: dayIndex,
+                            startTime: timeString(forSlotBoundary: startSlot),
+                            endTime: timeString(forSlotBoundary: slotIndex)
+                        )
+                    )
+                    activeStartSlot = nil
+                }
+            }
+        }
+
+        return EmployeeAvailabilityUpsertDTO(
+            weeklyAvailability: blocks,
+            desiredDaysOff: desiredDaysOff.sorted()
+        )
+    }
+
+    private func minutes(from timeString: String) -> Int {
+        let parts = timeString.split(separator: ":").compactMap { Int($0) }
+        guard parts.count >= 2 else { return 0 }
+        return (parts[0] * 60) + parts[1]
+    }
+
+    private func slotIndex(for minutes: Int) -> Int? {
+        let baseMinutes = timeSlots.first ?? 0
+        let offset = minutes - baseMinutes
+        guard offset >= 0, offset % 30 == 0 else { return nil }
+        let index = offset / 30
+        return timeSlots.indices.contains(index) ? index : nil
+    }
+
+    private func slotBoundaryIndex(for minutes: Int) -> Int? {
+        let baseMinutes = timeSlots.first ?? 0
+        let offset = minutes - baseMinutes
+        guard offset >= 0, offset % 30 == 0 else { return nil }
+        let index = offset / 30
+        return (0...timeSlots.count).contains(index) ? index : nil
+    }
+
+    private func timeString(forSlotBoundary slotBoundary: Int) -> String {
+        let baseMinutes = timeSlots.first ?? 0
+        let minutes = baseMinutes + slotBoundary * 30
+        let hour = minutes / 60
+        let minute = minutes % 60
+        return String(format: "%02d:%02d:00", hour, minute)
     }
 
     private static func startOfWeek(for date: Date, calendar: Calendar) -> Date {

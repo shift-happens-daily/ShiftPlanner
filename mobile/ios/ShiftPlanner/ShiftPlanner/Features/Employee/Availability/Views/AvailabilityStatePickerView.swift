@@ -5,6 +5,7 @@ struct AvailabilityStatePickerView: View {
     let onSelectState: (AvailabilityState) -> Void
     let onCopyPreviousWeek: () -> Void
     let onResetWeek: () -> Void
+    let isSaving: Bool
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
@@ -45,11 +46,13 @@ struct AvailabilityStatePickerView: View {
                     .buttonStyle(.plain)
                     .font(.footnote)
                     .foregroundStyle(.blue)
+                    .disabled(isSaving)
 
                 Button("Reset week", action: onResetWeek)
                     .buttonStyle(.plain)
                     .font(.footnote)
                     .foregroundStyle(.red)
+                    .disabled(isSaving)
 
                 Spacer()
             }

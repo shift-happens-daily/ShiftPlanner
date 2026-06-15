@@ -9,7 +9,7 @@ struct EmployeeMainView: View {
 
     var body: some View {
         TabView {
-            AvailabilityView()
+            AvailabilityView(user: user)
                 .tabItem {
                     Label("Availability", systemImage: "clock.badge.checkmark")
                 }
