@@ -82,5 +82,8 @@ final class AuthViewModel: ObservableObject {
         errorMessage = nil
         
     }
-}
 
+    func loadCurrentUser() async {
+        currentUser = await repository.getCurrentUser()
+    }
+}
