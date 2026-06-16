@@ -306,6 +306,21 @@ export default function ShiftsTab({ language, userRole, user }) {
 
   const [availabilityMatrix, setAvailabilityMatrix] = useState(() => createEmptyAvailabilityMatrix());
 
+  const [selectedDate, setSelectedDate] = useState(() => new Date().toISOString().slice(0, 10));
+
+  const weekDates = useMemo(() => {
+    const current = new Date(selectedDate);
+    const day = current.getDay();
+    const diff = current.getDate() - day + (day === 0 ? -6 : 1); // Пн
+    const monday = new Date(current.setDate(diff));
+
+    return Array.from({ length: 7 }, (_, i) => {
+      const d = new Date(monday);
+      d.setDate(monday.getDate() + i);
+      return d;
+    });
+  }, [selectedDate]);
+
   const [absenceForm, setAbsenceForm] = useState({
     absence_type: 'vacation',
     start_date: '',
@@ -448,6 +463,20 @@ export default function ShiftsTab({ language, userRole, user }) {
   };
 
   const t = texts[language] || texts.ru;
+
+  const todayStr = useMemo(() => new Date().toLocaleDateString(language === 'ru' ? 'ru-RU' : 'en-US', {
+    day: 'numeric',
+    month: 'long',
+    year: 'numeric',
+    weekday: 'long'
+  }), [language]);
+
+  const isToday = (date) => {
+    const today = new Date();
+    return date.getDate() === today.getDate() &&
+      date.getMonth() === today.getMonth() &&
+      date.getFullYear() === today.getFullYear();
+  };
 
   const visibleRequirements = useMemo(() => {
     const server = requirements
@@ -870,12 +899,17 @@ export default function ShiftsTab({ language, userRole, user }) {
         {renderToast()}
 
         <header style={styles.header}>
-          <div>
-            <h2 style={styles.title}>{isManager ? t.titleManager : t.titleEmployee}</h2>
-            <p style={styles.subtitle}>{isManager ? t.subtitleManager : t.subtitleEmployee}</p>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', width: '100%' }}>
+            <div>
+              <h2 style={styles.title}>{isManager ? t.titleManager : t.titleEmployee}</h2>
+              <p style={styles.subtitle}>{isManager ? t.subtitleManager : t.subtitleEmployee}</p>
+            </div>
+            <div style={styles.todayBadge}>
+              <span style={styles.todayLabel}>{language === 'ru' ? 'Сегодня' : 'Today'}</span>
+              <span style={styles.todayDate}>{todayStr}</span>
+            </div>
           </div>
         </header>
-
         {isManager ? (
           <div style={styles.managerLayout}>
             <aside style={styles.sidebar}>
@@ -1231,22 +1265,44 @@ export default function ShiftsTab({ language, userRole, user }) {
         ) : (
           <div style={styles.employeeGrid}>
             <section style={styles.panel}>
-              <div style={styles.panelHeader}>
-                <div>
-                  <h3 style={styles.panelTitle}>{t.availability}</h3>
+                <div style={styles.panelHeader}>
+                  <div>
+                    <h3 style={styles.panelTitle}>{t.availability}</h3>
+                  </div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                    <input
+                      type="date"
+                      value={selectedDate}
+                      onChange={(e) => setSelectedDate(e.target.value)}
+                      style={{ ...styles.input, width: 'auto' }}
+                    />
+                  </div>
                 </div>
-              </div>
-
               <div style={styles.availabilityGridWrapper}>
                 <div style={styles.availabilityGridHeader}>
                   <div style={styles.gridCorner} />
-                  {WEEKDAYS.map((day) => (
-                    <div key={day.value} style={styles.gridHeaderCell}>
-                      {day[language] || day.ru}
-                    </div>
-                  ))}
-                </div>
-
+                  {WEEKDAYS.map((day, index) => {
+                    const itIsToday = isToday(weekDates[index]);
+                    return (
+                      <div 
+                        key={day.value} 
+                        style={{ 
+                          ...styles.gridHeaderCell, 
+                          flexDirection: 'column', 
+                          height: 'auto', 
+                          padding: '8px 4px',
+                          background: itIsToday ? '#002642' : '#dee7e7',
+                          color: itIsToday ? '#ffffff' : '#002642',
+                          border: itIsToday ? 'none' : styles.gridHeaderCell.border
+                        }}
+                      >
+                        <span style={{ fontSize: '11px', opacity: itIsToday ? 0.9 : 0.8 }}>{day[language] || day.ru}</span>
+                        <span style={{ fontSize: '13px', fontWeight: '900', whiteSpace: 'nowrap' }}>
+                          {weekDates[index].toLocaleDateString(language === 'ru' ? 'ru-RU' : 'en-US', { day: 'numeric', month: 'short' })}
+                        </span>
+                      </div>
+                    );
+                  })}                </div>
                 <div style={styles.availabilityGridBody}>
                   {TIME_SLOTS.map((time) => (
                     <div key={time} style={styles.gridRow}>
@@ -1497,12 +1553,37 @@ const styles = {
   },
 
   subtitle: {
-    maxWidth: '780px',
     margin: '6px 0 0',
     color: '#4f646f',
     fontSize: '14px',
     fontWeight: '600',
     lineHeight: 1.45,
+  },
+
+  todayBadge: {
+    background: '#ffffff',
+    padding: '10px 16px',
+    borderRadius: '16px',
+    border: '1px solid rgba(79, 100, 111, 0.15)',
+    display: 'flex',
+    flexDirection: 'column',
+    alignItems: 'flex-end',
+    boxShadow: '0 4px 12px rgba(0, 38, 66, 0.05)',
+  },
+
+  todayLabel: {
+    fontSize: '11px',
+    fontWeight: '800',
+    color: '#4f646f',
+    textTransform: 'uppercase',
+    letterSpacing: '0.05em',
+    marginBottom: '2px',
+  },
+
+  todayDate: {
+    fontSize: '14px',
+    fontWeight: '900',
+    color: '#002642',
   },
 
   managerLayout: {
@@ -1848,11 +1929,10 @@ const styles = {
 
   availabilityGridHeader: {
     display: 'grid',
-    gridTemplateColumns: '72px repeat(7, 54px)',
+    gridTemplateColumns: '72px repeat(7, 80px)',
     gap: '6px',
     alignItems: 'center',
   },
-
   availabilityGridBody: {
     display: 'grid',
     gap: '6px',
@@ -1881,11 +1961,10 @@ const styles = {
 
   gridRow: {
     display: 'grid',
-    gridTemplateColumns: '72px repeat(7, 54px)',
+    gridTemplateColumns: '72px repeat(7, 80px)',
     gap: '6px',
     alignItems: 'center',
   },
-
   gridTimeCell: {
     height: '34px',
     borderRadius: '12px',
