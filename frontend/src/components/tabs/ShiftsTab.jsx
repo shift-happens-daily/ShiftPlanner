@@ -27,8 +27,80 @@ const WEEKDAYS = [
   { value: 6, ru: 'Вс', en: 'Sun' },
 ];
 
-function createAvailabilityBlock() {
-  return { weekday: 0, start_time: '09:00:00', end_time: '18:00:00' };
+const TIME_SLOTS = Array.from({ length: 17 }, (_, index) => `${String(6 + index).padStart(2, '0')}:00`);
+
+function createEmptyAvailabilityMatrix() {
+  const matrix = {};
+
+  WEEKDAYS.forEach((day) => {
+    matrix[day.value] = new Set();
+  });
+
+  return matrix;
+}
+
+function buildAvailabilityMatrix(availability = []) {
+  const matrix = createEmptyAvailabilityMatrix();
+
+  availability.forEach((block) => {
+    const weekday = Number(block.weekday);
+    const startHour = Number(String(block.start_time || '').slice(0, 2));
+    const endHour = Number(String(block.end_time || '').slice(0, 2));
+
+    if (!Number.isFinite(weekday) || !Number.isFinite(startHour) || !Number.isFinite(endHour)) {
+      return;
+    }
+
+    for (let hour = startHour; hour < endHour; hour += 1) {
+      if (matrix[weekday]) {
+        matrix[weekday].add(hour);
+      }
+    }
+  });
+
+  return matrix;
+}
+
+function convertMatrixToIntervals(matrix) {
+  const intervals = [];
+
+  Object.entries(matrix).forEach(([weekday, hourSet]) => {
+    const hours = Array.from(hourSet).sort((a, b) => a - b);
+    let startHour = null;
+    let previousHour = null;
+
+    hours.forEach((hour) => {
+      if (startHour === null) {
+        startHour = hour;
+        previousHour = hour;
+        return;
+      }
+
+      if (hour === previousHour + 1) {
+        previousHour = hour;
+        return;
+      }
+
+      intervals.push({
+        weekday: Number(weekday),
+        start_time: `${String(startHour).padStart(2, '0')}:00:00`,
+        end_time: `${String(previousHour + 1).padStart(2, '0')}:00:00`,
+      });
+
+      startHour = hour;
+      previousHour = hour;
+    });
+
+    if (startHour !== null) {
+      intervals.push({
+        weekday: Number(weekday),
+        start_time: `${String(startHour).padStart(2, '0')}:00:00`,
+        end_time: `${String(previousHour + 1).padStart(2, '0')}:00:00`,
+      });
+    }
+  });
+
+  return intervals;
 }
 
 function defaultSingleRequirement() {
@@ -231,6 +303,8 @@ export default function ShiftsTab({ language, userRole, user }) {
     weekly_availability: [],
     desired_days_off: [],
   });
+
+  const [availabilityMatrix, setAvailabilityMatrix] = useState(() => createEmptyAvailabilityMatrix());
 
   const [absenceForm, setAbsenceForm] = useState({
     absence_type: 'vacation',
@@ -449,6 +523,7 @@ export default function ShiftsTab({ language, userRole, user }) {
   const loadEmployeeData = useCallback(async () => {
     if (!employeeId) {
       setAvailabilityForm({ weekly_availability: [], desired_days_off: [] });
+      setAvailabilityMatrix(createEmptyAvailabilityMatrix());
       setAbsences([]);
       setSummary(null);
       return;
@@ -460,10 +535,13 @@ export default function ShiftsTab({ language, userRole, user }) {
       getMyCalendarSummary(),
     ]);
 
+    const normalizedAvailability = normalizeArray(availabilityData?.weekly_availability);
+
     setAvailabilityForm({
-      weekly_availability: normalizeArray(availabilityData?.weekly_availability),
+      weekly_availability: normalizedAvailability,
       desired_days_off: normalizeArray(availabilityData?.desired_days_off),
     });
+    setAvailabilityMatrix(buildAvailabilityMatrix(normalizedAvailability));
 
     setAbsences(normalizeArray(absencesData));
     setSummary(mapEmployeeCalendarSummary(summaryData));
@@ -690,7 +768,10 @@ export default function ShiftsTab({ language, userRole, user }) {
     setIsSubmitting(true);
 
     try {
-      await updateEmployeeAvailability(employeeId, availabilityForm);
+      await updateEmployeeAvailability(employeeId, {
+        ...availabilityForm,
+        weekly_availability: convertMatrixToIntervals(availabilityMatrix),
+      });
       await loadEmployeeData();
       setSuccessMessage(t.availabilitySaved);
     } catch (error) {
@@ -1153,123 +1234,81 @@ export default function ShiftsTab({ language, userRole, user }) {
               <div style={styles.panelHeader}>
                 <div>
                   <h3 style={styles.panelTitle}>{t.availability}</h3>
-                  <p style={styles.panelHint}>{t.desiredDaysOff}</p>
                 </div>
-
-                <button
-                  type="button"
-                  onClick={() =>
-                    setAvailabilityForm((prev) => ({
-                      ...prev,
-                      weekly_availability: [...prev.weekly_availability, createAvailabilityBlock()],
-                    }))
-                  }
-                  style={styles.secondaryButton}
-                >
-                  {t.addRow}
-                </button>
               </div>
 
-              {availabilityForm.weekly_availability.length === 0 ? (
-                <p style={styles.emptyText}>{t.empty}</p>
-              ) : (
-                <div style={styles.availabilityList}>
-                  {availabilityForm.weekly_availability.map((block, index) => (
-                    <div key={`${block.weekday}-${index}`} style={styles.availabilityRow}>
-                      <select
-                        value={block.weekday}
-                        onChange={(event) =>
-                          setAvailabilityForm((prev) => ({
-                            ...prev,
-                            weekly_availability: prev.weekly_availability.map((item, itemIndex) => (
-                              itemIndex === index
-                                ? { ...item, weekday: Number(event.target.value) }
-                                : item
-                            )),
-                          }))
-                        }
-                        style={styles.input}
-                      >
-                        {WEEKDAYS.map((day) => (
-                          <option key={day.value} value={day.value}>
-                            {day[language] || day.ru}
-                          </option>
-                        ))}
-                      </select>
+              <div style={styles.availabilityGridWrapper}>
+                <div style={styles.availabilityGridHeader}>
+                  <div style={styles.gridCorner} />
+                  {WEEKDAYS.map((day) => (
+                    <div key={day.value} style={styles.gridHeaderCell}>
+                      {day[language] || day.ru}
+                    </div>
+                  ))}
+                </div>
 
-                      <input
-                        type="time"
-                        value={formatTime(block.start_time)}
-                        onChange={(event) =>
-                          setAvailabilityForm((prev) => ({
-                            ...prev,
-                            weekly_availability: prev.weekly_availability.map((item, itemIndex) => (
-                              itemIndex === index
-                                ? { ...item, start_time: `${event.target.value}:00` }
-                                : item
-                            )),
-                          }))
-                        }
-                        style={styles.input}
-                      />
+                <div style={styles.availabilityGridBody}>
+                  {TIME_SLOTS.map((time) => (
+                    <div key={time} style={styles.gridRow}>
+                      <div style={styles.gridTimeCell}>{time}</div>
+                      {WEEKDAYS.map((day) => {
+                        const hour = Number(time.slice(0, 2));
+                        const isAvailable = availabilityMatrix[day.value]?.has(hour);
 
-                      <input
-                        type="time"
-                        value={formatTime(block.end_time)}
-                        onChange={(event) =>
-                          setAvailabilityForm((prev) => ({
-                            ...prev,
-                            weekly_availability: prev.weekly_availability.map((item, itemIndex) => (
-                              itemIndex === index
-                                ? { ...item, end_time: `${event.target.value}:00` }
-                                : item
-                            )),
-                          }))
-                        }
-                        style={styles.input}
-                      />
+                        return (
+                          <button
+                            key={`${day.value}-${time}`}
+                            type="button"
+                            onClick={() =>
+                              setAvailabilityMatrix((prev) => {
+                                const next = { ...prev };
+                                const daySet = new Set(next[day.value]);
 
+                                if (daySet.has(hour)) {
+                                  daySet.delete(hour);
+                                } else {
+                                  daySet.add(hour);
+                                }
+
+                                next[day.value] = daySet;
+                                return next;
+                              })
+                            }
+                            style={isAvailable ? styles.gridCellActive : styles.gridCell}
+                            aria-pressed={isAvailable}
+                          />
+                        );
+                      })}
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              <div style={styles.desiredDaysOffSection}>
+                <span style={styles.desiredDaysOffLabel}>{t.desiredDaysOff}</span>
+                <div style={styles.dayPills}>
+                  {WEEKDAYS.map((day) => {
+                    const checked = availabilityForm.desired_days_off.includes(day.value);
+
+                    return (
                       <button
+                        key={day.value}
                         type="button"
                         onClick={() =>
                           setAvailabilityForm((prev) => ({
                             ...prev,
-                            weekly_availability: prev.weekly_availability.filter(
-                              (_, itemIndex) => itemIndex !== index
-                            ),
+                            desired_days_off: checked
+                              ? prev.desired_days_off.filter((value) => value !== day.value)
+                              : [...prev.desired_days_off, day.value].sort((a, b) => a - b),
                           }))
                         }
-                        style={styles.deleteButton}
+                        style={checked ? styles.dayPillActive : styles.dayPill}
                       >
-                        {t.delete}
+                        {day[language] || day.ru}
                       </button>
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
-              )}
-
-              <div style={styles.dayPills}>
-                {WEEKDAYS.map((day) => {
-                  const checked = availabilityForm.desired_days_off.includes(day.value);
-
-                  return (
-                    <button
-                      key={day.value}
-                      type="button"
-                      onClick={() =>
-                        setAvailabilityForm((prev) => ({
-                          ...prev,
-                          desired_days_off: checked
-                            ? prev.desired_days_off.filter((value) => value !== day.value)
-                            : [...prev.desired_days_off, day.value].sort((a, b) => a - b),
-                        }))
-                      }
-                      style={checked ? styles.dayPillActive : styles.dayPill}
-                    >
-                      {day[language] || day.ru}
-                    </button>
-                  );
-                })}
               </div>
 
               <button
@@ -1796,6 +1835,100 @@ const styles = {
     flexDirection: 'column',
     gap: '10px',
     marginBottom: '12px',
+  },
+
+  availabilityGridWrapper: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '10px',
+    marginBottom: '16px',
+    overflowX: 'auto',
+    paddingBottom: '8px',
+  },
+
+  availabilityGridHeader: {
+    display: 'grid',
+    gridTemplateColumns: '72px repeat(7, 54px)',
+    gap: '6px',
+    alignItems: 'center',
+  },
+
+  availabilityGridBody: {
+    display: 'grid',
+    gap: '6px',
+  },
+
+  gridCorner: {
+    height: '34px',
+    borderRadius: '12px',
+    background: 'transparent',
+  },
+
+  gridHeaderCell: {
+    minHeight: '34px',
+    borderRadius: '12px',
+    background: '#dee7e7',
+    color: '#002642',
+    fontSize: '13px',
+    fontWeight: '800',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: '0 6px',
+    textAlign: 'center',
+    whiteSpace: 'nowrap',
+  },
+
+  gridRow: {
+    display: 'grid',
+    gridTemplateColumns: '72px repeat(7, 54px)',
+    gap: '6px',
+    alignItems: 'center',
+  },
+
+  gridTimeCell: {
+    height: '34px',
+    borderRadius: '12px',
+    background: '#f4faff',
+    color: '#4f646f',
+    fontSize: '13px',
+    fontWeight: '700',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: '0 8px',
+    whiteSpace: 'nowrap',
+  },
+
+  gridCell: {
+    width: '100%',
+    minHeight: '34px',
+    borderRadius: '12px',
+    background: '#eef3f6',
+    border: '1px solid transparent',
+    cursor: 'pointer',
+  },
+
+  gridCellActive: {
+    width: '100%',
+    minHeight: '34px',
+    borderRadius: '12px',
+    background: '#83b8f4',
+    border: '1px solid #5b8fd5',
+    cursor: 'pointer',
+  },
+
+  desiredDaysOffSection: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '10px',
+    marginBottom: '14px',
+  },
+
+  desiredDaysOffLabel: {
+    color: '#4f646f',
+    fontSize: '14px',
+    fontWeight: '800',
   },
 
   availabilityRow: {
