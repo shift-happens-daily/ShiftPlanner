@@ -165,7 +165,7 @@ const styles = {
     display: 'flex',
     justifyContent: 'center',
     alignItems: 'flex-start',
-    overflow: 'hidden',
+    overflow: 'auto',
   },
 
   card: {
@@ -245,8 +245,10 @@ const styles = {
     display: 'grid',
     gridTemplateColumns: 'repeat(2, minmax(320px, 1fr))',
     gap: '34px 42px',
-    alignContent: 'center',
+    alignContent: 'flex-start',
     justifyContent: 'center',
+    overflow: 'auto',
+    minHeight: 0,
   },
 
   row: {

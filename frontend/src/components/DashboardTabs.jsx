@@ -208,6 +208,6 @@ const styles = {
   content: {
     flex: '1 1 auto',
     minHeight: 0,
-    overflow: 'hidden',
+    overflow: 'auto',
   },
 };
