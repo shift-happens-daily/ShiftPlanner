@@ -25,6 +25,12 @@ def require_role(role: Role):
     return dependency
 
 
+def require_manager(current_user: UserRead = Depends(get_current_user)) -> UserRead:
+    if current_user.role != "manager":
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Manager access required")
+    return current_user
+
+
 def ensure_manager_or_employee_self(employee_id: int, current_user: UserRead) -> None:
     if current_user.role == "manager":
         return

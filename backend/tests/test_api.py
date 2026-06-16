@@ -148,6 +148,14 @@ def test_invite_preview_and_join_flow(client: TestClient) -> None:
     assert joined_json["branch"]["id"] == 1
     assert joined_json["position"]["id"] == 2
 
+    reloaded_profile = client.get("/auth/me", headers=employee_headers)
+    assert reloaded_profile.status_code == 200, reloaded_profile.text
+    reloaded_json = reloaded_profile.json()
+    assert reloaded_json["employee_id"] == joined_json["employee_id"]
+    assert reloaded_json["company"]["invite_code"] == "COFFEE123"
+    assert reloaded_json["branch"]["id"] == 1
+    assert reloaded_json["position"]["id"] == 2
+
     manager_join = client.post("/companies/join", headers=manager_headers, json={"invite_code": "COFFEE123"})
     assert manager_join.status_code == 403
 

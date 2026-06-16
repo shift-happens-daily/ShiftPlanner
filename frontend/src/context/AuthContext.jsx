@@ -1,83 +1,125 @@
-// frontend/src/context/AuthContext.jsx
-import { createContext, useContext, useState, useEffect } from 'react';
-
-const AuthContext = createContext();
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import {
+  clearStoredToken,
+  getCurrentUserRequest,
+  loginRequest,
+  logoutRequest,
+  persistToken,
+  readStoredToken,
+  registerRequest,
+} from '../services/authService';
+import { extractApiErrorMessage } from '../services/error';
+import { mapCurrentUser } from '../services/mappers';
+import { AuthContext } from './auth-context';
+import { getStoredLanguage } from '../services/language';
 
 export function AuthProvider({ children }) {
   const [user, setUser] = useState(null);
-  const [loading, setLoading] = useState(true);
+  const [token, setToken] = useState(readStoredToken());
+  const [isLoading, setIsLoading] = useState(true);
 
-  useEffect(() => {
-    const storedUser = localStorage.getItem('user');
-    if (storedUser) {
-      setUser(JSON.parse(storedUser));
-    }
-    setLoading(false);
+  const clearAuth = useCallback(() => {
+    clearStoredToken();
+    setToken(null);
+    setUser(null);
   }, []);
 
-  const login = (email, password, role) => {
-    const mockUser = {
-      id: 1,
-      firstName: 'Иван',
-      lastName: 'Петров',
-      email: email,
-      role: role,
-      position: 'Бармен',
-      company: null,
-      telegram: '@ivan_petrov'
+  const refreshUser = useCallback(async () => {
+    const profile = await getCurrentUserRequest();
+    const mappedUser = mapCurrentUser(profile);
+    setUser(mappedUser);
+    return mappedUser;
+  }, []);
+
+  const login = useCallback(async (email, password) => {
+    const response = await loginRequest(email, password);
+    persistToken(response.access_token);
+    setToken(response.access_token);
+    return refreshUser();
+  }, [refreshUser]);
+
+  const register = useCallback(async (payload) => {
+    await registerRequest({
+      full_name: payload.name.trim(),
+      email: payload.email.trim(),
+      password: payload.password,
+      role: payload.role,
+    });
+    return login(payload.email, payload.password);
+  }, [login]);
+
+  const logout = useCallback(async () => {
+    try {
+      if (readStoredToken()) {
+        await logoutRequest();
+      }
+    } catch {
+      // Local cleanup is the source of truth for logout UX.
+    } finally {
+      clearAuth();
+    }
+  }, [clearAuth]);
+
+  useEffect(() => {
+    let isMounted = true;
+
+    async function bootstrap() {
+      const storedToken = readStoredToken();
+      if (!storedToken) {
+        if (isMounted) {
+          setIsLoading(false);
+        }
+        return;
+      }
+
+      try {
+        const profile = await getCurrentUserRequest();
+        if (!isMounted) {
+          return;
+        }
+        setToken(storedToken);
+        setUser(mapCurrentUser(profile));
+      } catch {
+        if (isMounted) {
+          clearAuth();
+        }
+      } finally {
+        if (isMounted) {
+          setIsLoading(false);
+        }
+      }
+    }
+
+    bootstrap();
+
+    function handleUnauthorized() {
+      clearAuth();
+    }
+
+    window.addEventListener('auth:unauthorized', handleUnauthorized);
+    return () => {
+      isMounted = false;
+      window.removeEventListener('auth:unauthorized', handleUnauthorized);
     };
-    setUser(mockUser);
-    localStorage.setItem('user', JSON.stringify(mockUser));
-    return mockUser;
-  };
+  }, [clearAuth]);
 
-  const register = (name, email, password, role) => {
-    const nameParts = name.split(' ');
-    const mockUser = {
-      id: 1,
-      firstName: nameParts[0] || 'Иван',
-      lastName: nameParts[1] || 'Петров',
-      email: email,
-      role: role,
-      position: 'Бармен',
-      company: null,
-      telegram: '@username'
-    };
-    setUser(mockUser);
-    localStorage.setItem('user', JSON.stringify(mockUser));
-    return mockUser;
-  };
+  const value = useMemo(() => ({
+    user,
+    token,
+    role: user?.role ?? null,
+    employeeId: user?.employeeId ?? null,
+    isAuthenticated: Boolean(user && token),
+    isLoading,
+    loading: isLoading,
+    login,
+    register,
+    logout,
+    refreshUser,
+    clearAuth,
+    extractErrorMessage: (error, fallbackMessage, language = getStoredLanguage()) => (
+      extractApiErrorMessage(error, fallbackMessage, language)
+    ),
+  }), [clearAuth, isLoading, login, logout, refreshUser, register, token, user]);
 
-  const updateUser = (updatedData) => {
-    const updatedUser = { ...user, ...updatedData };
-    setUser(updatedUser);
-    localStorage.setItem('user', JSON.stringify(updatedUser));
-    return updatedUser;
-  };
-
-  const updateCompany = (companyData) => {
-    const updatedUser = { ...user, company: companyData };
-    setUser(updatedUser);
-    localStorage.setItem('user', JSON.stringify(updatedUser));
-    return updatedUser;
-  };
-
-  const logout = () => {
-    setUser(null);
-    localStorage.removeItem('user');
-  };
-
-  return (
-    <AuthContext.Provider value={{ user, loading, login, register, updateUser, updateCompany, logout }}>
-      {children}
-    </AuthContext.Provider>
-  );
-}
-
-export function useAuth() {
-  const context = useContext(AuthContext);
-  if (!context) {
-    throw new Error('useAuth must be used within AuthProvider');
-  }
-  return context;
+  return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }

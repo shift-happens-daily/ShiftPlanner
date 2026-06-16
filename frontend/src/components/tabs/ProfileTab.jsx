@@ -1,257 +1,288 @@
-// frontend/src/components/tabs/ProfileTab.jsx
 import { useState } from 'react';
+import { useAuth } from '../../context/useAuth';
+import { extractApiErrorMessage } from '../../services/error';
 
-export default function ProfileTab({ language, user, updateUser }) {
-  const [isEditing, setIsEditing] = useState(false);
-  const [formData, setFormData] = useState({
-    firstName: user?.firstName || 'Иван',
-    lastName: user?.lastName || 'Петров',
-    company: user?.company || 'ShiftPlanner Inc.',
-    telegram: user?.telegram || '@ivan_petrov',
-    email: user?.email || 'ivan@example.com',
-    position: user?.position || 'Бармен'
-  });
+export default function ProfileTab({ language, user }) {
+  const { refreshUser } = useAuth();
+  const [isRefreshing, setIsRefreshing] = useState(false);
+  const [errorMessage, setErrorMessage] = useState('');
 
   const texts = {
     ru: {
-      title: 'Личный кабинет',
-      firstName: 'Имя',
-      lastName: 'Фамилия',
-      company: 'Компания',
-      telegram: 'Telegram (алиас)',
+      title: 'Профиль',
+      fullName: 'Полное имя',
       email: 'Email',
-      position: 'Должность',
-      edit: 'Редактировать',
-      save: 'Сохранить',
-      cancel: 'Отмена'
+      role: 'Роль',
+      employeeId: 'ID сотрудника',
+      company: 'Компания',
+      branch: 'Филиал',
+      position: 'Позиция',
+      refresh: 'Обновить',
+      empty: 'Нет данных',
+      noCompany: 'Не привязана',
+      manager: 'Менеджер',
+      employee: 'Сотрудник',
+      refreshError: 'Не удалось обновить профиль.',
     },
     en: {
       title: 'Profile',
-      firstName: 'First Name',
-      lastName: 'Last Name',
-      company: 'Company',
-      telegram: 'Telegram (alias)',
+      fullName: 'Full name',
       email: 'Email',
+      role: 'Role',
+      employeeId: 'Employee ID',
+      company: 'Company',
+      branch: 'Branch',
       position: 'Position',
-      edit: 'Edit',
-      save: 'Save',
-      cancel: 'Cancel'
-    }
+      refresh: 'Refresh',
+      empty: 'No data',
+      noCompany: 'Not linked',
+      manager: 'Manager',
+      employee: 'Employee',
+      refreshError: 'Failed to refresh profile.',
+    },
   };
 
   const t = texts[language] || texts.ru;
 
-  const handleChange = (e) => {
-    setFormData({ ...formData, [e.target.name]: e.target.value });
-  };
+  const role = user?.role;
+  const isManager = role === 'manager';
+  const isEmployee = role === 'employee';
 
-  const handleSave = () => {
-    if (updateUser) updateUser(formData);
-    setIsEditing(false);
-  };
+  const fullName = user?.fullName || user?.full_name || user?.name || t.empty;
+  const email = user?.email || t.empty;
+  const employeeId = user?.employeeId || user?.employee_id;
+  const managerCompanyStorageKey = `shiftplanner_manager_company_${user?.email || 'current'}`;
 
-  const handleCancel = () => {
-    setFormData({
-      firstName: user?.firstName || 'Иван',
-      lastName: user?.lastName || 'Петров',
-      company: user?.company || 'ShiftPlanner Inc.',
-      telegram: user?.telegram || '@ivan_petrov',
-      email: user?.email || 'ivan@example.com',
-      position: user?.position || 'Бармен'
-    });
-    setIsEditing(false);
-  };
+  let savedManagerCompany = null;
 
-  const inputStyle = {
-    padding: '12px 14px',
-    fontSize: '16px',
-    color: '#002642',
-    backgroundColor: '#FFFFFF',
-    border: '2px solid #DEE7E7',
-    borderRadius: '12px',
-    outline: 'none',
-    transition: 'all 0.3s ease',
-    width: '100%',
-    boxSizing: 'border-box'
+  try {
+    const rawCompany = localStorage.getItem(managerCompanyStorageKey);
+    savedManagerCompany = rawCompany ? JSON.parse(rawCompany) : null;
+  } catch {
+    savedManagerCompany = null;
+  }
+
+const fallbackCompany = user?.role === 'manager' ? savedManagerCompany : null;
+const companyName = user?.company?.name || fallbackCompany?.name;
+  const branchName = user?.branch?.name;
+  const positionName = user?.position?.name;
+
+  const rows = [
+    {
+      label: t.fullName,
+      value: fullName,
+    },
+    {
+      label: t.email,
+      value: email,
+    },
+    {
+      label: t.role,
+      value: isManager ? t.manager : isEmployee ? t.employee : t.empty,
+    },
+    {
+      label: t.company,
+      value: companyName || t.noCompany,
+      muted: !companyName,
+    },
+  ];
+
+  if (isEmployee) {
+    rows.push(
+      {
+        label: t.employeeId,
+        value: employeeId || t.empty,
+        muted: !employeeId,
+      },
+      {
+        label: t.branch,
+        value: branchName || t.empty,
+        muted: !branchName,
+      },
+      {
+        label: t.position,
+        value: positionName || t.empty,
+        muted: !positionName,
+      },
+    );
+  }
+
+  const handleRefresh = async () => {
+    setIsRefreshing(true);
+    setErrorMessage('');
+
+    try {
+      await refreshUser();
+    } catch (error) {
+      setErrorMessage(extractApiErrorMessage(error, t.refreshError, language));
+    } finally {
+      setIsRefreshing(false);
+    }
   };
 
   return (
-    <div style={styles.card}>
-      <div style={styles.cardHeader}>
-        <h2 style={styles.cardTitle}>{t.title}</h2>
-        {!isEditing && (
-          <button onClick={() => setIsEditing(true)} style={styles.editBtn}>
-            {t.edit}
+    <section style={styles.page}>
+      <div style={styles.card}>
+        <div style={styles.header}>
+          <div>
+            <h2 style={styles.title}>{t.title}</h2>
+            <p style={styles.subtitle}>{t.subtitle}</p>
+          </div>
+
+          <button
+            type="button"
+            onClick={handleRefresh}
+            style={isRefreshing ? styles.refreshButtonDisabled : styles.refreshButton}
+            disabled={isRefreshing}
+          >
+            {isRefreshing ? '...' : t.refresh}
           </button>
-        )}
+        </div>
+
+        {errorMessage && <div style={styles.error}>{errorMessage}</div>}
+
+        <div style={styles.rows}>
+          {rows.map((row) => (
+            <div key={row.label} style={styles.row}>
+              <span style={styles.label}>{row.label}</span>
+              <span style={row.muted ? styles.valueMuted : styles.value}>
+                {row.value || t.empty}
+              </span>
+            </div>
+          ))}
+        </div>
       </div>
-
-      {isEditing ? (
-        <div style={styles.form}>
-          <div style={styles.formRow}>
-            <div style={styles.formGroup}>
-              <label style={styles.label}>{t.firstName}</label>
-              <input type="text" name="firstName" value={formData.firstName} onChange={handleChange} style={inputStyle} />
-            </div>
-            <div style={styles.formGroup}>
-              <label style={styles.label}>{t.lastName}</label>
-              <input type="text" name="lastName" value={formData.lastName} onChange={handleChange} style={inputStyle} />
-            </div>
-          </div>
-
-          <div style={styles.formGroup}>
-            <label style={styles.label}>{t.company}</label>
-            <input type="text" name="company" value={formData.company} onChange={handleChange} style={inputStyle} />
-          </div>
-
-          <div style={styles.formGroup}>
-            <label style={styles.label}>{t.telegram}</label>
-            <input type="text" name="telegram" value={formData.telegram} onChange={handleChange} style={inputStyle} />
-          </div>
-
-          <div style={styles.formGroup}>
-            <label style={styles.label}>{t.email}</label>
-            <input type="email" name="email" value={formData.email} onChange={handleChange} style={inputStyle} />
-          </div>
-
-          <div style={styles.formGroup}>
-            <label style={styles.label}>{t.position}</label>
-            <input type="text" name="position" value={formData.position} onChange={handleChange} style={inputStyle} />
-          </div>
-
-          <div style={styles.formActions}>
-            <button onClick={handleSave} style={styles.saveBtn}>{t.save}</button>
-            <button onClick={handleCancel} style={styles.cancelBtn}>{t.cancel}</button>
-          </div>
-        </div>
-      ) : (
-        <div style={styles.infoList}>
-          <div style={styles.infoRow}>
-            <span style={styles.infoLabel}>{t.firstName}:</span>
-            <span style={styles.infoValue}>{formData.firstName}</span>
-          </div>
-          <div style={styles.infoRow}>
-            <span style={styles.infoLabel}>{t.lastName}:</span>
-            <span style={styles.infoValue}>{formData.lastName}</span>
-          </div>
-          <div style={styles.infoRow}>
-            <span style={styles.infoLabel}>{t.company}:</span>
-            <span style={styles.infoValue}>{formData.company}</span>
-          </div>
-          <div style={styles.infoRow}>
-            <span style={styles.infoLabel}>{t.telegram}:</span>
-            <span style={styles.infoValue}>{formData.telegram}</span>
-          </div>
-          <div style={styles.infoRow}>
-            <span style={styles.infoLabel}>{t.email}:</span>
-            <span style={styles.infoValue}>{formData.email}</span>
-          </div>
-          <div style={styles.infoRow}>
-            <span style={styles.infoLabel}>{t.position}:</span>
-            <span style={styles.infoValue}>{formData.position}</span>
-          </div>
-        </div>
-      )}
-    </div>
+    </section>
   );
 }
 
 const styles = {
-  card: {
-    background: '#F4FAFF',
-    borderRadius: '24px',
-    padding: '24px',
-    maxWidth: '800px',
-    margin: '0 auto'
+    page: {
+    width: '100%',
+    height: '100%',
+    boxSizing: 'border-box',
+    padding: '56px 24px',
+    display: 'flex',
+    justifyContent: 'center',
+    alignItems: 'flex-start',
+    overflow: 'hidden',
   },
-  cardHeader: {
+
+  card: {
+    width: 'min(100%, 1040px)',
+    minHeight: '520px',
+    maxHeight: '100%',
+    boxSizing: 'border-box',
+    padding: '36px 44px',
+    borderRadius: '28px',
+    background: '#f4faff',
+    border: '1px solid rgba(222, 231, 231, 0.95)',
+    boxShadow: '0 24px 60px rgba(0, 38, 66, 0.18)',
+    overflow: 'hidden',
+
+    display: 'flex',
+    flexDirection: 'column',
+  },
+
+  header: {
     display: 'flex',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: '24px',
-    flexWrap: 'wrap',
-    gap: '12px'
+    gap: '16px',
+    marginBottom: '20px',
   },
-  cardTitle: {
-    fontSize: '24px',
-    fontWeight: '600',
+
+  title: {
+    margin: 0,
     color: '#002642',
-    margin: 0
+    fontSize: '26px',
+    fontWeight: '800',
+    letterSpacing: '-0.02em',
   },
-  editBtn: {
-    padding: '8px 16px',
-    background: '#B7ADCF',
-    border: 'none',
-    borderRadius: '12px',
-    color: '#002642',
-    fontWeight: '500',
-    cursor: 'pointer',
-    display: 'flex',
-    alignItems: 'center',
-    gap: '6px'
-  },
-  infoList: {
-    display: 'flex',
-    flexDirection: 'column',
-    gap: '16px'
-  },
-  infoRow: {
-    display: 'flex',
-    padding: '12px 0',
-    borderBottom: '1px solid #DEE7E7'
-  },
-  infoLabel: {
-    width: '140px',
-    fontWeight: '600',
-    color: '#4F646F'
-  },
-  infoValue: {
-    flex: 1,
-    color: '#002642'
-  },
-  form: {
-    display: 'flex',
-    flexDirection: 'column',
-    gap: '20px'
-  },
-  formRow: {
-    display: 'flex',
-    gap: '20px',
-    flexWrap: 'wrap'
-  },
-  formGroup: {
-    flex: 1,
-    display: 'flex',
-    flexDirection: 'column',
-    gap: '8px',
-    minWidth: '200px'
-  },
-  label: {
+
+  subtitle: {
+    margin: '4px 0 0',
+    color: '#4f646f',
     fontSize: '14px',
     fontWeight: '500',
-    color: '#4F646F'
   },
-  formActions: {
-    display: 'flex',
-    gap: '12px',
-    marginTop: '8px'
-  },
-  saveBtn: {
-    padding: '10px 20px',
+
+  refreshButton: {
+    padding: '9px 16px',
+    border: 'none',
+    borderRadius: '12px',
     background: '#002642',
-    border: 'none',
-    borderRadius: '12px',
-    color: '#F4FAFF',
-    fontWeight: '500',
-    cursor: 'pointer'
+    color: '#f4faff',
+    fontSize: '14px',
+    fontWeight: '700',
+    cursor: 'pointer',
   },
-  cancelBtn: {
-    padding: '10px 20px',
-    background: '#DEE7E7',
+
+  refreshButtonDisabled: {
+    padding: '9px 16px',
     border: 'none',
     borderRadius: '12px',
-    color: '#4F646F',
-    fontWeight: '500',
-    cursor: 'pointer'
-  }
+    background: '#4f646f',
+    color: '#f4faff',
+    fontSize: '14px',
+    fontWeight: '700',
+    cursor: 'default',
+    opacity: 0.7,
+  },
+
+  error: {
+    marginBottom: '14px',
+    padding: '10px 12px',
+    borderRadius: '12px',
+    background: 'rgba(215, 173, 207, 0.35)',
+    color: '#8d1d1d',
+    fontSize: '14px',
+    fontWeight: '600',
+  },
+
+  rows: {
+    flex: 1,
+    display: 'grid',
+    gridTemplateColumns: 'repeat(2, minmax(320px, 1fr))',
+    gap: '34px 42px',
+    alignContent: 'center',
+    justifyContent: 'center',
+  },
+
+  row: {
+    minHeight: '115px',
+    boxSizing: 'border-box',
+    padding: '22px 24px',
+    borderRadius: '20px',
+    background: '#ffffff',
+    border: '1px solid rgba(79, 100, 111, 0.12)',
+
+    display: 'flex',
+    flexDirection: 'column',
+    justifyContent: 'center',
+    alignItems: 'center',
+    textAlign: 'center',
+
+    gap: '8px',
+  },
+
+  label: {
+    color: '#4f646f',
+    fontSize: '14px',
+    fontWeight: '700',
+  },
+
+  value: {
+    color: '#002642',
+    fontSize: '20px',
+    fontWeight: '800',
+    overflowWrap: 'anywhere',
+  },
+
+  valueMuted: {
+    color: 'rgba(79, 100, 111, 0.7)',
+    fontSize: '20px',
+    fontWeight: '700',
+    overflowWrap: 'anywhere',
+  },
 };
