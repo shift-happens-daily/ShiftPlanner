@@ -1,5 +1,10 @@
 import Foundation
 
+struct DayWorkingHours: Equatable {
+    var startSlot: Int
+    var endSlot: Int
+}
+
 struct StaffingRequirement: Identifiable, Equatable {
     let id: Int
     var weekday: Int

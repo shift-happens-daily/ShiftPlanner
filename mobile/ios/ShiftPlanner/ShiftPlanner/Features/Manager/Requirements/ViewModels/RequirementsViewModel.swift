@@ -6,6 +6,7 @@ final class RequirementsViewModel: ObservableObject {
     @Published private(set) var selectedWeekday = 0
     @Published private(set) var availablePositions: [RequirementPositionOption] = []
     @Published private(set) var requirements: [StaffingRequirement] = []
+    @Published private(set) var workingHoursByWeekday: [Int: DayWorkingHours] = [:]
     @Published var activeDraft: StaffingRequirementDraft?
     @Published var isLoading = false
     @Published var isSaving = false
@@ -54,6 +55,10 @@ final class RequirementsViewModel: ObservableObject {
         weekdayLabels[selectedWeekday]
     }
 
+    var selectedDayWorkingHours: DayWorkingHours {
+        workingHours(for: selectedWeekday)
+    }
+
     var requirementsForSelectedDay: [StaffingRequirement] {
         requirements
             .filter { $0.weekday == selectedWeekday }
@@ -100,8 +105,8 @@ final class RequirementsViewModel: ObservableObject {
             weekdays: [selectedWeekday],
             positionId: firstPosition.id,
             quantity: 1,
-            startSlot: 17,
-            endSlot: 36
+            startSlot: selectedDayWorkingHours.startSlot,
+            endSlot: selectedDayWorkingHours.endSlot
         )
     }
 
@@ -198,6 +203,13 @@ final class RequirementsViewModel: ObservableObject {
         errorMessage = nil
     }
 
+    func clearAllDays() {
+        requirements.removeAll()
+        workingHoursByWeekday = [:]
+        statusMessage = "All weekdays cleared locally."
+        errorMessage = nil
+    }
+
     func copySelectedDay(to targetWeekdays: Set<Int>) {
         let validTargets = targetWeekdays.filter { $0 != selectedWeekday }
         let source = requirementsForSelectedDay
@@ -222,8 +234,54 @@ final class RequirementsViewModel: ObservableObject {
         }
 
         requirements.append(contentsOf: clones)
+        for weekday in validTargets {
+            workingHoursByWeekday[weekday] = selectedDayWorkingHours
+        }
         statusMessage = "Templates copied locally."
         errorMessage = nil
+    }
+
+    func updateWorkingHours(startSlot: Int, endSlot: Int) {
+        let normalizedStart = min(max(startSlot, 0), 43)
+        let normalizedEnd = min(max(endSlot, normalizedStart + 1), 44)
+
+        workingHoursByWeekday[selectedWeekday] = DayWorkingHours(
+            startSlot: normalizedStart,
+            endSlot: normalizedEnd
+        )
+
+        requirements = requirements.compactMap { requirement in
+            guard requirement.weekday == selectedWeekday else { return requirement }
+
+            let clampedStart = max(requirement.startSlot, normalizedStart)
+            let clampedEnd = min(requirement.endSlot, normalizedEnd)
+
+            guard clampedEnd > clampedStart else { return nil }
+
+            var updatedRequirement = requirement
+            updatedRequirement.startSlot = clampedStart
+            updatedRequirement.endSlot = clampedEnd
+            return updatedRequirement
+        }
+
+        statusMessage = "Working hours updated locally."
+        errorMessage = nil
+    }
+
+    func workingHours(for weekday: Int) -> DayWorkingHours {
+        if let storedHours = workingHoursByWeekday[weekday] {
+            return storedHours
+        }
+
+        let dayRequirements = requirements.filter { $0.weekday == weekday }
+        guard !dayRequirements.isEmpty else {
+            return defaultWorkingHours
+        }
+
+        return DayWorkingHours(
+            startSlot: dayRequirements.map(\.startSlot).min() ?? defaultWorkingHours.startSlot,
+            endSlot: dayRequirements.map(\.endSlot).max() ?? defaultWorkingHours.endSlot
+        )
     }
 
     func saveChanges() async {
@@ -321,6 +379,7 @@ final class RequirementsViewModel: ObservableObject {
             let collapsed = collapseMonthlyOccurrences(remote)
             baselineRequirements = collapsed
             requirements = collapsed
+            synchronizeWorkingHours(with: collapsed)
         } catch {
             errorMessage = error.localizedDescription
         }
@@ -375,6 +434,30 @@ final class RequirementsViewModel: ObservableObject {
             startSlot: startSlot,
             endSlot: endSlot
         )
+    }
+
+    private var defaultWorkingHours: DayWorkingHours {
+        DayWorkingHours(startSlot: 16, endSlot: 36)
+    }
+
+    private func synchronizeWorkingHours(with requirements: [StaffingRequirement]) {
+        var updated: [Int: DayWorkingHours] = [:]
+
+        for weekday in 0..<weekdayLabels.count {
+            let dayRequirements = requirements.filter { $0.weekday == weekday }
+
+            if dayRequirements.isEmpty {
+                updated[weekday] = workingHoursByWeekday[weekday] ?? defaultWorkingHours
+                continue
+            }
+
+            updated[weekday] = DayWorkingHours(
+                startSlot: dayRequirements.map(\.startSlot).min() ?? defaultWorkingHours.startSlot,
+                endSlot: dayRequirements.map(\.endSlot).max() ?? defaultWorkingHours.endSlot
+            )
+        }
+
+        workingHoursByWeekday = updated
     }
 
     private func requirementsSignature(for items: [StaffingRequirement]) -> [String] {

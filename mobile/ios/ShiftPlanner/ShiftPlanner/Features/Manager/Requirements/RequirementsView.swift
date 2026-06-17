@@ -5,6 +5,7 @@ struct RequirementsView: View {
     @EnvironmentObject private var themeManager: ThemeManager
     @StateObject private var viewModel: RequirementsViewModel
     @State private var isShowingClearConfirmation = false
+    @State private var isShowingClearAllConfirmation = false
     @State private var isShowingCopySheet = false
     private let user: AppUser
     private let onUserUpdated: (AppUser) -> Void
@@ -54,6 +55,13 @@ struct RequirementsView: View {
                             .buttonStyle(.plain)
                             .themeSecondaryAction()
                             .disabled(viewModel.requirementsForSelectedDay.isEmpty || !viewModel.canManageRequirements)
+
+                            Button("Clear all days") {
+                                isShowingClearAllConfirmation = true
+                            }
+                            .buttonStyle(.plain)
+                            .themeSecondaryAction()
+                            .disabled(viewModel.requirements.isEmpty || !viewModel.canManageRequirements)
                         }
 
                         Button {
@@ -70,6 +78,13 @@ struct RequirementsView: View {
                         }
                         .buttonStyle(.plain)
                         .themePrimaryAction(isEnabled: viewModel.canManageRequirements)
+                        .disabled(!viewModel.canManageRequirements)
+
+                        RequirementsWorkingHoursRowView(
+                            weekdayLabel: viewModel.selectedWeekdaySummary,
+                            workingHours: viewModel.selectedDayWorkingHours,
+                            onUpdate: viewModel.updateWorkingHours(startSlot:endSlot:)
+                        )
                         .disabled(!viewModel.canManageRequirements)
 
                         if let statusMessage = viewModel.statusMessage {
@@ -138,6 +153,7 @@ struct RequirementsView: View {
                 RequirementFormView(
                     draft: draft,
                     availablePositions: viewModel.availablePositions,
+                    workingHoursByWeekday: viewModel.workingHoursByWeekday,
                     onCancel: viewModel.cancelEditing,
                     onSave: viewModel.saveDraft
                 )
@@ -156,6 +172,14 @@ struct RequirementsView: View {
                 }
             } message: {
                 Text("This will remove all requirements for \(viewModel.selectedWeekdaySummary).")
+            }
+            .alert("Clear all days?", isPresented: $isShowingClearAllConfirmation) {
+                Button("Cancel", role: .cancel) {}
+                Button("Clear all", role: .destructive) {
+                    viewModel.clearAllDays()
+                }
+            } message: {
+                Text("This will remove all requirement templates for the whole week.")
             }
             .task {
                 if user.hasCompany {

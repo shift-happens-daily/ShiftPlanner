@@ -6,17 +6,20 @@ struct RequirementFormView: View {
     @State private var draft: StaffingRequirementDraft
 
     let availablePositions: [RequirementPositionOption]
+    let workingHoursByWeekday: [Int: DayWorkingHours]
     let onCancel: () -> Void
     let onSave: (StaffingRequirementDraft) -> Bool
 
     init(
         draft: StaffingRequirementDraft,
         availablePositions: [RequirementPositionOption],
+        workingHoursByWeekday: [Int: DayWorkingHours],
         onCancel: @escaping () -> Void,
         onSave: @escaping (StaffingRequirementDraft) -> Bool
     ) {
         _draft = State(initialValue: draft)
         self.availablePositions = availablePositions
+        self.workingHoursByWeekday = workingHoursByWeekday
         self.onCancel = onCancel
         self.onSave = onSave
     }
@@ -40,9 +43,11 @@ struct RequirementFormView: View {
                                 if isSelected {
                                     if draft.weekdays.count > 1 {
                                         draft.weekdays.remove(weekday)
+                                        clampDraftToAllowedRange()
                                     }
                                 } else {
                                     draft.weekdays.insert(weekday)
+                                    clampDraftToAllowedRange()
                                 }
                             } label: {
                                 HStack {
@@ -69,13 +74,13 @@ struct RequirementFormView: View {
                     TimeSlotWheelPicker(
                         selection: startSlotBinding,
                         title: "From",
-                        allowedRange: 16...43
+                        allowedRange: startAllowedRange
                     )
 
                     TimeSlotWheelPicker(
                         selection: endSlotBinding,
                         title: "To",
-                        allowedRange: min(44, draft.startSlot + 1)...44
+                        allowedRange: endAllowedRange
                     )
                 }
 
@@ -97,7 +102,7 @@ struct RequirementFormView: View {
                 ToolbarItem(placement: .topBarTrailing) {
                     Button {
                         if draft.endSlot <= draft.startSlot {
-                            draft.endSlot = min(44, draft.startSlot + 1)
+                            draft.endSlot = min(timeRange.endSlot, draft.startSlot + 1)
                         }
 
                         let didSave = onSave(draft)
@@ -111,6 +116,9 @@ struct RequirementFormView: View {
                     .disabled(draft.positionId == nil || draft.weekdays.isEmpty)
                 }
             }
+            .onAppear {
+                clampDraftToAllowedRange()
+            }
         }
     }
 
@@ -120,13 +128,40 @@ struct RequirementFormView: View {
         return "\(draft.quantity) \(positionName) needed on \(days) from \(slotToTime(draft.startSlot)) to \(slotToTime(max(draft.endSlot, draft.startSlot + 1)))."
     }
 
+    private var timeRange: DayWorkingHours {
+        let days = draft.weekdays.isEmpty ? [0] : draft.weekdays.sorted()
+        let ranges = days.map { workingHoursByWeekday[$0] ?? DayWorkingHours(startSlot: 16, endSlot: 36) }
+
+        let overlappingStart = ranges.map(\.startSlot).max() ?? 16
+        let overlappingEnd = ranges.map(\.endSlot).min() ?? 36
+
+        if overlappingEnd > overlappingStart {
+            return DayWorkingHours(startSlot: overlappingStart, endSlot: overlappingEnd)
+        }
+
+        let fallbackStart = ranges.first?.startSlot ?? 16
+        let fallbackEnd = min(44, max(ranges.first?.endSlot ?? 36, fallbackStart + 1))
+        return DayWorkingHours(startSlot: fallbackStart, endSlot: fallbackEnd)
+    }
+
+    private var startAllowedRange: ClosedRange<Int> {
+        timeRange.startSlot...max(timeRange.startSlot, timeRange.endSlot - 1)
+    }
+
+    private var endAllowedRange: ClosedRange<Int> {
+        min(timeRange.endSlot, draft.startSlot + 1)...timeRange.endSlot
+    }
+
     private var startSlotBinding: Binding<Int> {
         Binding(
             get: { draft.startSlot },
             set: { newStartSlot in
-                draft.startSlot = min(max(newStartSlot, 16), 43)
+                draft.startSlot = min(
+                    max(newStartSlot, timeRange.startSlot),
+                    max(timeRange.startSlot, timeRange.endSlot - 1)
+                )
                 if draft.endSlot <= draft.startSlot {
-                    draft.endSlot = min(44, draft.startSlot + 1)
+                    draft.endSlot = min(timeRange.endSlot, draft.startSlot + 1)
                 }
             }
         )
@@ -136,8 +171,8 @@ struct RequirementFormView: View {
         Binding(
             get: { max(draft.endSlot, draft.startSlot + 1) },
             set: { newEndSlot in
-                let minimumEndSlot = min(44, draft.startSlot + 1)
-                draft.endSlot = min(max(newEndSlot, minimumEndSlot), 44)
+                let minimumEndSlot = min(timeRange.endSlot, draft.startSlot + 1)
+                draft.endSlot = min(max(newEndSlot, minimumEndSlot), timeRange.endSlot)
             }
         )
     }
@@ -152,89 +187,15 @@ struct RequirementFormView: View {
     private func weekdayLabel(for weekday: Int) -> String {
         ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"][weekday]
     }
-}
 
-private struct TimeSlotWheelPicker: View {
-    @Binding var selection: Int
-    let title: String
-    let allowedRange: ClosedRange<Int>
-
-    var body: some View {
-        HStack {
-            Text(title)
-
-            Spacer()
-
-            HStack(spacing: 0) {
-                Picker(title, selection: hourBinding) {
-                    ForEach(availableHours, id: \.self) { hour in
-                        Text(String(format: "%02d", hour)).tag(hour)
-                    }
-                }
-                .pickerStyle(.wheel)
-                .frame(width: 72, height: 110)
-                .clipped()
-
-                Text(":")
-                    .font(.title3.monospaced())
-                    .fontWeight(.semibold)
-
-                Picker(title, selection: minuteBinding) {
-                    ForEach(availableMinutes, id: \.self) { minute in
-                        Text(String(format: "%02d", minute)).tag(minute)
-                    }
-                }
-                .pickerStyle(.wheel)
-                .frame(width: 72, height: 110)
-                .clipped()
-            }
-        }
-    }
-
-    private var availableHours: [Int] {
-        Array(Set((allowedRange.lowerBound...allowedRange.upperBound).map { $0 / 2 })).sorted()
-    }
-
-    private var currentHour: Int {
-        selection / 2
-    }
-
-    private var availableMinutes: [Int] {
-        availableMinutes(for: currentHour)
-    }
-
-    private var hourBinding: Binding<Int> {
-        Binding(
-            get: { currentHour },
-            set: { newHour in
-                let preferredMinute = (selection % 2) * 30
-                let minutes = availableMinutes(for: newHour)
-                let chosenMinute = minutes.contains(preferredMinute) ? preferredMinute : (minutes.first ?? 0)
-                selection = clampedSlot(hour: newHour, minute: chosenMinute)
-            }
+    private func clampDraftToAllowedRange() {
+        draft.startSlot = min(
+            max(draft.startSlot, timeRange.startSlot),
+            max(timeRange.startSlot, timeRange.endSlot - 1)
         )
-    }
-
-    private var minuteBinding: Binding<Int> {
-        Binding(
-            get: {
-                let minute = (selection % 2) * 30
-                return availableMinutes.contains(minute) ? minute : (availableMinutes.first ?? 0)
-            },
-            set: { newMinute in
-                selection = clampedSlot(hour: currentHour, minute: newMinute)
-            }
+        draft.endSlot = min(
+            max(draft.endSlot, draft.startSlot + 1),
+            timeRange.endSlot
         )
-    }
-
-    private func availableMinutes(for hour: Int) -> [Int] {
-        (allowedRange.lowerBound...allowedRange.upperBound)
-            .filter { ($0 / 2) == hour }
-            .map { ($0 % 2) * 30 }
-    }
-
-    private func clampedSlot(hour: Int, minute: Int) -> Int {
-        let slot = (hour * 60 + minute) / 30
-        return min(max(slot, allowedRange.lowerBound), allowedRange.upperBound)
     }
 }
