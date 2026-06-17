@@ -1,10 +1,3 @@
-CREATE TABLE companies (
-    id SERIAL PRIMARY KEY,
-    name VARCHAR(255) NOT NULL,
-    invite_code VARCHAR(50) UNIQUE,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-);
-
 CREATE TABLE users (
     id SERIAL PRIMARY KEY,
     full_name VARCHAR(255) NOT NULL,
@@ -12,6 +5,14 @@ CREATE TABLE users (
     password_hash TEXT NOT NULL,
     role VARCHAR(50) NOT NULL CHECK (role IN ('manager', 'employee')),
     is_registration_complete BOOLEAN NOT NULL DEFAULT TRUE,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE companies (
+    id SERIAL PRIMARY KEY,
+    name VARCHAR(255) NOT NULL,
+    invite_code VARCHAR(50) UNIQUE,
+    manager_user_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
@@ -32,8 +33,8 @@ CREATE TABLE employees (
     id SERIAL PRIMARY KEY,
     user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     company_id INTEGER NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
-    branch_id INTEGER REFERENCES branches(id),
-    position_id INTEGER REFERENCES positions(id),
+    branch_id INTEGER REFERENCES branches(id) ON DELETE SET NULL,
+    position_id INTEGER REFERENCES positions(id) ON DELETE SET NULL,
     max_hours_per_week INTEGER DEFAULT 40,
     is_active BOOLEAN DEFAULT TRUE
 );
@@ -113,3 +114,4 @@ CREATE TABLE shift_exchange_requests (
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
+

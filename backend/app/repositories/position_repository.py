@@ -21,3 +21,7 @@ def create_position(db: Session, title: str, company_id: int) -> Position:
 
 def get_position_by_id(db: Session, position_id: int) -> Position | None:
     return db.get(Position, position_id)
+
+
+def list_positions_by_company(db, company_id: int):
+    return db.query(Position).filter(Position.company_id == company_id).all()

@@ -343,3 +343,14 @@ def list_published_shift_rows(db: Session, start_date: date | None = None, end_d
     if end_date is not None:
         query = query.where(Shift.shift_date <= end_date)
     return list(db.execute(query).mappings())
+
+
+def get_requirement_by_id(db: Session, requirement_id: int):
+    return db.query(ShiftRequirement).filter(
+        ShiftRequirement.id == requirement_id
+    ).first()
+
+
+def delete_requirement(db: Session, requirement):
+    db.delete(requirement)
+    db.commit()

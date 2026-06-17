@@ -28,6 +28,9 @@ from app.schemas.schedule import (
 )
 from app.services import schedule_service
 
+from app.api.dependencies import require_manager
+from app.models.user import User
+
 router = APIRouter()
 
 
@@ -198,3 +201,12 @@ def publish_schedule(
     db: Session = Depends(get_db),
 ) -> ScheduleRead:
     return schedule_service.publish_schedule(db, schedule_id)
+
+
+@router.delete("/requirements/{requirement_id}", status_code=204)
+def delete_requirement(
+    requirement_id: int,
+    _current_user: User = Depends(require_manager),
+    db: Session = Depends(get_db),
+):
+    schedule_service.delete_requirement(db, requirement_id)

@@ -1,0 +1,58 @@
+services:
+  postgres:
+    image: postgres:16
+    container_name: shiftplanner_postgres
+    environment:
+      POSTGRES_DB: shiftplanner
+      POSTGRES_USER: shiftplanner_user
+      POSTGRES_PASSWORD: shiftplanner_password
+    ports:
+      - "5432:5432"
+    volumes:
+      - shiftplanner_postgres_data:/var/lib/postgresql/data
+      - ./backend/db/schema.sql:/docker-entrypoint-initdb.d/01_schema.sql
+      - ./backend/db/seed.sql:/docker-entrypoint-initdb.d/02_seed.sql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U shiftplanner_user -d shiftplanner"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: shiftplanner_backend
+    environment:
+      DATABASE_URL: postgresql+psycopg://shiftplanner_user:shiftplanner_password@postgres:5432/shiftplanner
+      FRONTEND_ORIGINS: http://localhost:5173
+      JWT_SECRET_KEY: change-me-in-production
+      JWT_ALGORITHM: HS256
+      ACCESS_TOKEN_EXPIRE_MINUTES: 60
+    ports:
+      - "8000:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    volumes:
+      - ./backend:/app
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: shiftplanner_frontend
+    environment:
+      VITE_API_URL: http://localhost:8000
+    ports:
+      - "5173:5173"
+    depends_on:
+      - backend
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
+    command: npm run dev -- --host 0.0.0.0
+
+volumes:
+  shiftplanner_postgres_data:

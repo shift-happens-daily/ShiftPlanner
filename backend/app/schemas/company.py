@@ -5,15 +5,28 @@ class CompanyCreate(BaseModel):
     name: str = Field(min_length=1)
 
 
-class CompanyRead(BaseModel):
+class CompanySummaryRead(BaseModel):
     id: int
     name: str
+
+
+class CompanyRead(CompanySummaryRead):
     invite_code: str
 
 
 class BranchRead(BaseModel):
     id: int
     name: str
+
+
+class BranchCreate(BaseModel):
+    name: str = Field(min_length=1)
+
+
+class BranchResponse(BaseModel):
+    id: int
+    name: str
+    company_id: int
 
 
 class PositionOptionRead(BaseModel):
