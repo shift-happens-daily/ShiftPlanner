@@ -13,6 +13,19 @@ struct AppUser: Identifiable, Codable {
     }
 }
 
+extension AppUser {
+    func withCompany(_ company: AppCompany) -> AppUser {
+        AppUser(
+            id: id,
+            email: email,
+            name: name,
+            role: role,
+            employeeId: employeeId,
+            company: company.asSummary()
+        )
+    }
+}
+
 enum UserRole: String, Codable, CaseIterable, Identifiable {
     case manager
     case employee

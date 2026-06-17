@@ -12,17 +12,17 @@ struct ManagerMainView: View {
                     Label("Company", systemImage: "building.2")
                 }
             
-            EmployeeListView()
+            EmployeeListView(user: user, onUserUpdated: onUserUpdated)
                 .tabItem {
                     Label("Employees", systemImage: "person.3")
                 }
             
-            RequirementsView()
+            RequirementsView(user: user, onUserUpdated: onUserUpdated)
                 .tabItem {
                     Label("Rules", systemImage: "slider.horizontal.3")
                 }
             
-            ManagerScheduleView()
+            ManagerScheduleView(user: user, onUserUpdated: onUserUpdated)
                 .tabItem {
                     Label("Schedule", systemImage: "calendar")
                 }

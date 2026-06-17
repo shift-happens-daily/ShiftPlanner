@@ -7,13 +7,13 @@ struct RequirementFormView: View {
 
     let availablePositions: [RequirementPositionOption]
     let onCancel: () -> Void
-    let onSave: (StaffingRequirementDraft) -> Void
+    let onSave: (StaffingRequirementDraft) -> Bool
 
     init(
         draft: StaffingRequirementDraft,
         availablePositions: [RequirementPositionOption],
         onCancel: @escaping () -> Void,
-        onSave: @escaping (StaffingRequirementDraft) -> Void
+        onSave: @escaping (StaffingRequirementDraft) -> Bool
     ) {
         _draft = State(initialValue: draft)
         self.availablePositions = availablePositions
@@ -95,12 +95,18 @@ struct RequirementFormView: View {
                 }
 
                 ToolbarItem(placement: .topBarTrailing) {
-                    Button("Save") {
+                    Button {
                         if draft.endSlot <= draft.startSlot {
                             draft.endSlot = min(44, draft.startSlot + 1)
                         }
-                        onSave(draft)
-                        dismiss()
+
+                        let didSave = onSave(draft)
+
+                        if didSave {
+                            dismiss()
+                        }
+                    } label: {
+                        Text("Save")
                     }
                     .disabled(draft.positionId == nil || draft.weekdays.isEmpty)
                 }

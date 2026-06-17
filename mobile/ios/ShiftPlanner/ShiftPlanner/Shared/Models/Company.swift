@@ -47,3 +47,9 @@ extension AppCompanySummary {
         AppCompany(id: id, name: name, inviteCode: inviteCode)
     }
 }
+
+extension AppCompany {
+    func asSummary() -> AppCompanySummary {
+        AppCompanySummary(id: id, name: name, inviteCode: inviteCode)
+    }
+}

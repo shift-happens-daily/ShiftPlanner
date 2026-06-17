@@ -1,76 +1,135 @@
 import SwiftUI
 
 struct RequirementsView: View {
+    @Environment(\.scenePhase) private var scenePhase
     @EnvironmentObject private var themeManager: ThemeManager
-    @StateObject private var viewModel = RequirementsViewModel()
+    @StateObject private var viewModel: RequirementsViewModel
     @State private var isShowingClearConfirmation = false
     @State private var isShowingCopySheet = false
+    private let user: AppUser
+    private let onUserUpdated: (AppUser) -> Void
+
+    init(
+        user: AppUser,
+        onUserUpdated: @escaping (AppUser) -> Void,
+        repository: RequirementsRepository = APIRequirementsRepository()
+    ) {
+        self.user = user
+        self.onUserUpdated = onUserUpdated
+        _viewModel = StateObject(
+            wrappedValue: RequirementsViewModel(
+                user: user,
+                repository: repository
+            )
+        )
+    }
 
     var body: some View {
         NavigationStack {
             ScrollView(showsIndicators: false) {
-                VStack(alignment: .leading, spacing: 18) {
-                    RequirementsDayPickerView(
-                        selectedWeekday: viewModel.selectedWeekday,
-                        onSelectWeekday: viewModel.selectWeekday(_:),
-                        labels: viewModel.weekdayLabels
-                    )
+                if user.hasCompany {
+                    VStack(alignment: .leading, spacing: 18) {
+                        Text("Templates for \(viewModel.monthTitle)")
+                            .font(.subheadline)
+                            .fontWeight(.semibold)
+                            .foregroundStyle(themeManager.selectedTheme.secondaryTextColor)
 
-                    HStack(spacing: 12) {
-                        Button("Copy to") {
-                            isShowingCopySheet = true
+                        RequirementsDayPickerView(
+                            selectedWeekday: viewModel.selectedWeekday,
+                            onSelectWeekday: viewModel.selectWeekday(_:),
+                            labels: viewModel.weekdayLabels
+                        )
+
+                        HStack(spacing: 12) {
+                            Button("Copy to") {
+                                isShowingCopySheet = true
+                            }
+                            .buttonStyle(.plain)
+                            .themeSecondaryAction()
+                            .disabled(viewModel.requirementsForSelectedDay.isEmpty || !viewModel.canManageRequirements)
+
+                            Button("Clear day") {
+                                isShowingClearConfirmation = true
+                            }
+                            .buttonStyle(.plain)
+                            .themeSecondaryAction()
+                            .disabled(viewModel.requirementsForSelectedDay.isEmpty || !viewModel.canManageRequirements)
+                        }
+
+                        Button {
+                            viewModel.startCreating()
+                        } label: {
+                            HStack(spacing: 10) {
+                                if viewModel.isSaving {
+                                    ProgressView()
+                                        .tint(themeManager.selectedTheme.primaryActionTextColor)
+                                }
+
+                                Label("Add requirement", systemImage: "plus")
+                            }
                         }
                         .buttonStyle(.plain)
-                        .themeSecondaryAction()
-                        .disabled(viewModel.requirementsForSelectedDay.isEmpty)
+                        .themePrimaryAction(isEnabled: viewModel.canManageRequirements)
+                        .disabled(!viewModel.canManageRequirements)
 
-                        Button("Clear day") {
-                            isShowingClearConfirmation = true
-                        }
-                        .buttonStyle(.plain)
-                        .themeSecondaryAction()
-                    }
-
-                    Button {
-                        viewModel.startCreating()
-                    } label: {
-                        Label("Add requirement", systemImage: "plus")
-                    }
-                    .buttonStyle(.plain)
-                    .themePrimaryAction()
-
-                    if viewModel.requirementsForSelectedDay.isEmpty {
-                        VStack(spacing: 12) {
-                            Image(systemName: "calendar.badge.plus")
-                                .font(.system(size: 42))
-                                .foregroundStyle(themeManager.selectedTheme.accentColor)
-
-                            Text("No requirements yet")
-                                .font(.title3)
-                                .fontWeight(.bold)
-                                .foregroundStyle(themeManager.selectedTheme.primaryTextColor)
-
-                            Text("Add staffing intervals for the selected day, or create one rule and apply it to several days at once in the form.")
-                                .multilineTextAlignment(.center)
+                        if let statusMessage = viewModel.statusMessage {
+                            Text(statusMessage)
+                                .font(.footnote)
                                 .foregroundStyle(themeManager.selectedTheme.secondaryTextColor)
                         }
-                        .frame(maxWidth: .infinity)
-                        .padding(28)
-                        .themeCard()
-                    } else {
-                        VStack(spacing: 12) {
-                            ForEach(viewModel.requirementsForSelectedDay) { requirement in
-                                RequirementCardView(
-                                    requirement: requirement,
-                                    onEdit: { viewModel.startEditing(requirement) },
-                                    onDuplicate: { viewModel.duplicate(requirement) },
-                                    onDelete: { viewModel.delete(requirement) }
-                                )
+
+                        if let errorMessage = viewModel.errorMessage {
+                            Text(errorMessage)
+                                .font(.footnote)
+                                .foregroundStyle(themeManager.selectedTheme.destructiveColor)
+                        }
+
+                        if viewModel.isLoading {
+                            HStack {
+                                Spacer()
+                                ProgressView("Loading requirements...")
+                                Spacer()
+                            }
+                            .padding(.vertical, 28)
+                        } else if viewModel.requirementsForSelectedDay.isEmpty {
+                            VStack(spacing: 12) {
+                                Image(systemName: "calendar.badge.plus")
+                                    .font(.system(size: 42))
+                                    .foregroundStyle(themeManager.selectedTheme.accentColor)
+
+                                Text("No requirements yet")
+                                    .font(.title3)
+                                    .fontWeight(.bold)
+                                    .foregroundStyle(themeManager.selectedTheme.primaryTextColor)
+
+                                Text("Add staffing intervals for the selected day, or create one rule and apply it to several days at once in the form.")
+                                    .multilineTextAlignment(.center)
+                                    .foregroundStyle(themeManager.selectedTheme.secondaryTextColor)
+                            }
+                            .frame(maxWidth: .infinity)
+                            .padding(28)
+                            .themeCard()
+                        } else {
+                            VStack(spacing: 12) {
+                                ForEach(viewModel.requirementsForSelectedDay) { requirement in
+                                    RequirementCardView(
+                                        requirement: requirement,
+                                        onEdit: { viewModel.startEditing(requirement) },
+                                        onDuplicate: { viewModel.duplicate(requirement) },
+                                        onDelete: { viewModel.delete(requirement) }
+                                    )
+                                }
                             }
                         }
                     }
+                    .padding()
+                } else {
+                    ManagerCompanyAccessContentView(
+                        user: user,
+                        onUserUpdated: onUserUpdated
+                    )
+                    .padding()
                 }
-                .padding()
             }
             .background(themeManager.selectedTheme.screenBackground)
             .navigationTitle("Requirements")
@@ -97,6 +156,24 @@ struct RequirementsView: View {
                 }
             } message: {
                 Text("This will remove all requirements for \(viewModel.selectedWeekdaySummary).")
+            }
+            .task {
+                if user.hasCompany {
+                    await viewModel.loadInitialData()
+                }
+            }
+            .onDisappear {
+                if user.hasCompany {
+                    Task {
+                        await viewModel.autoSaveIfNeeded()
+                    }
+                }
+            }
+            .onChange(of: scenePhase) { _, newPhase in
+                guard user.hasCompany, newPhase == .background else { return }
+                Task {
+                    await viewModel.autoSaveIfNeeded()
+                }
             }
         }
     }
