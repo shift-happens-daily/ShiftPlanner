@@ -64,19 +64,47 @@ def list_requirements(
     ]
 
 
-def create_requirement(db: Session, payload: ScheduleRequirementCreate) -> ScheduleRequirementRead:
+def create_requirement(db: Session, payload: ScheduleRequirementCreate, current_user: UserRead) -> ScheduleRequirementRead:
+    if current_user.company_id is None:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Manager is not linked to a company.",
+        )
+
+    branch = None
+    if payload.branch_id is None:
+        branch = company_repository.get_default_branch_for_company(db, current_user.company_id)
+        if branch is None:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Manager's company does not have a branch.",
+            )
+    else:
+        branch = company_repository.get_branch_by_id(db, payload.branch_id)
+        if branch is None or branch.company_id != current_user.company_id:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Branch does not belong to the authenticated user's company.",
+            )
+
     position = position_repository.get_position_by_id(db, payload.position_id)
     if position is None:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Position {payload.position_id} was not found.")
+    if position.company_id != current_user.company_id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Position does not belong to the authenticated user's company.",
+        )
+
     requirement = schedule_repository.create_requirement(
         db,
-        company_id=position.company_id,
-        branch_id=payload.branch_id,
+        company_id=current_user.company_id,
+        branch_id=branch.id,
         position_id=payload.position_id,
         shift_date=payload.date,
         start_time=payload.start_time,
         end_time=payload.end_time,
-        required_employees=payload.min_staff,
+        required_employees=payload.required_count,
     )
     return _build_requirement_read(db, requirement)
 

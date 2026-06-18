@@ -42,10 +42,10 @@ router = APIRouter()
 )
 def create_requirement(
     payload: ScheduleRequirementCreate,
-    _: UserRead = Depends(require_role("manager")),
+    current_user: UserRead = Depends(require_role("manager")),
     db: Session = Depends(get_db),
 ) -> ScheduleRequirementRead:
-    return schedule_service.create_requirement(db, payload)
+    return schedule_service.create_requirement(db, payload, current_user)
 
 
 @router.get(
