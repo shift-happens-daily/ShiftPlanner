@@ -1,13 +1,13 @@
-INSERT INTO companies (name, invite_code)
-VALUES ('Coffee Bar Barnaul', 'COFFEE123');
-
-INSERT INTO branches (company_id, name, address)
-VALUES (1, 'Main Branch', 'Barnaul, Lenin Street');
-
 INSERT INTO users (full_name, email, password_hash, role)
 VALUES
 ('Maria Manager', 'manager@example.com', '$2b$12$oo5ryRPAlz/TOfenPoE3JuFYJsdljzAhv.FLXcvx6vrvCPcCA1kTm', 'manager'),
 ('Ivan Barista', 'ivan@example.com', '$2b$12$uSYcqEdeSEBbX1C4vnns9.33t2QvChgi0eQ5RxJBGg8jCHGqu3w8a', 'employee');
+
+INSERT INTO companies (name, address, invite_code, manager_user_id)
+VALUES ('Coffee Bar Barnaul', 'Barnaul, Lenin Street', 'COFFEE123', 1);
+
+INSERT INTO branches (company_id, name, address)
+VALUES (1, 'Main Branch', 'Barnaul, Lenin Street');
 
 INSERT INTO positions (company_id, name)
 VALUES

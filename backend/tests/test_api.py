@@ -138,7 +138,7 @@ def test_auth_token_and_profile_endpoints(client: TestClient) -> None:
     manager_json = manager_profile.json()
     assert manager_json["role"] == "manager"
     assert manager_json["employee_id"] is None
-    assert manager_json["company"] is None
+    assert manager_json["company"]["invite_code"] == "COFFEE123"
 
     employee_profile = client.get("/auth/me", headers=employee_headers)
     assert employee_profile.status_code == 200, employee_profile.text
@@ -151,6 +151,68 @@ def test_auth_token_and_profile_endpoints(client: TestClient) -> None:
 
     unauthorized = client.get("/auth/me")
     assert unauthorized.status_code == 401
+
+
+def test_manager_can_update_own_company(client: TestClient) -> None:
+    manager_headers = login_json(client, "manager@example.com", "manager123")
+
+    updated = client.patch(
+        "/companies/me",
+        headers=manager_headers,
+        json={
+            "company_id": 999,
+            "name": "Updated Coffee Bar",
+            "address": "Updated Address 42",
+        },
+    )
+    assert updated.status_code == 200, updated.text
+    updated_json = updated.json()
+    assert updated_json["id"] == 1
+    assert updated_json["name"] == "Updated Coffee Bar"
+    assert updated_json["address"] == "Updated Address 42"
+    assert updated_json["invite_code"] == "COFFEE123"
+
+    profile = client.get("/auth/me", headers=manager_headers)
+    assert profile.status_code == 200, profile.text
+    assert profile.json()["company"]["name"] == "Updated Coffee Bar"
+
+
+def test_employee_and_unauthenticated_users_cannot_update_company(client: TestClient) -> None:
+    employee_headers = login_json(client, "ivan@example.com", "employee123")
+
+    employee_update = client.patch(
+        "/companies/me",
+        headers=employee_headers,
+        json={"name": "Employee Edit", "address": "Forbidden Address"},
+    )
+    assert employee_update.status_code == 403
+
+    unauthorized = client.patch(
+        "/companies/me",
+        json={"name": "Anonymous Edit", "address": "No Token"},
+    )
+    assert unauthorized.status_code == 401
+
+
+def test_manager_without_company_cannot_update_company(client: TestClient) -> None:
+    registered = client.post(
+        "/auth/register",
+        json={
+            "full_name": "No Company Manager",
+            "email": "no-company-manager@example.com",
+            "password": "manager456",
+            "role": "manager",
+        },
+    )
+    assert registered.status_code == 201, registered.text
+
+    manager_headers = login_json(client, "no-company-manager@example.com", "manager456")
+    update = client.patch(
+        "/companies/me",
+        headers=manager_headers,
+        json={"name": "Should Not Update", "address": "No Company"},
+    )
+    assert update.status_code == 403
 
 
 def test_employee_and_position_lists_are_scoped_to_authenticated_company(client: TestClient) -> None:

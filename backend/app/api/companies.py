@@ -18,6 +18,7 @@ from app.schemas.company import (
     CompanyJoinRequest,
     CompanyRead,
     CompanySummaryRead,
+    CompanyUpdate,
 )
 from app.services import company_service
 
@@ -69,6 +70,19 @@ def join_company(
     db: Session = Depends(get_db),
 ) -> CurrentUserResponse:
     return company_service.join_company_by_invite(db, payload, current_user)
+
+
+@router.patch(
+    "/me",
+    response_model=CompanyRead,
+    responses={**UNAUTHORIZED_RESPONSE, **FORBIDDEN_RESPONSE, **VALIDATION_ERROR_RESPONSE},
+)
+def update_my_company(
+    payload: CompanyUpdate,
+    current_user: UserRead = Depends(require_role("manager")),
+    db: Session = Depends(get_db),
+) -> CompanyRead:
+    return company_service.update_my_company(db, payload, current_user)
 
 
 @router.delete(
