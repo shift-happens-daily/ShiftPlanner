@@ -13,8 +13,6 @@ final class RequirementsViewModel: ObservableObject {
     @Published var errorMessage: String?
     @Published var statusMessage: String?
 
-    let weekdayLabels = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
-
     private let repository: RequirementsRepository
     private let hasCompany: Bool
     private var didLoadInitialData = false
@@ -47,8 +45,17 @@ final class RequirementsViewModel: ObservableObject {
 
     var monthTitle: String {
         let formatter = DateFormatter()
+        formatter.locale = LanguageManager.storedLocale
         formatter.dateFormat = "LLLL yyyy"
         return formatter.string(from: .now)
+    }
+
+    var weekdayLabels: [String] {
+        let formatter = DateFormatter()
+        formatter.locale = LanguageManager.storedLocale
+        return formatter.shortWeekdaySymbols
+            .map { $0.capitalized }
+            .reorderedFromSundayToMonday()
     }
 
     var selectedWeekdaySummary: String {
@@ -75,7 +82,7 @@ final class RequirementsViewModel: ObservableObject {
         didLoadInitialData = true
 
         guard hasCompany else {
-            statusMessage = "Create or join a company first to manage staffing requirements."
+            statusMessage = localized("Create or join a company first to manage staffing requirements.", "Сначала создайте компанию или присоединитесь к ней, чтобы управлять требованиями.")
             return
         }
 
@@ -90,12 +97,12 @@ final class RequirementsViewModel: ObservableObject {
 
     func startCreating() {
         guard hasCompany else {
-            errorMessage = "Create or join a company first."
+            errorMessage = localized("Create or join a company first.", "Сначала создайте компанию или присоединитесь к ней.")
             return
         }
 
         guard let firstPosition = availablePositions.first else {
-            errorMessage = "No positions found. Add positions on the backend first."
+            errorMessage = localized("No positions found. Add positions on the backend first.", "Должности не найдены. Сначала добавьте их на бэкенде.")
             return
         }
 
@@ -128,13 +135,13 @@ final class RequirementsViewModel: ObservableObject {
 
     func saveDraft(_ draft: StaffingRequirementDraft) -> Bool {
         guard hasCompany else {
-            errorMessage = "Create or join a company first."
+            errorMessage = localized("Create or join a company first.", "Сначала создайте компанию или присоединитесь к ней.")
             return false
         }
 
         guard let positionId = draft.positionId,
               let position = availablePositions.first(where: { $0.id == positionId }) else {
-            errorMessage = "Position is required."
+            errorMessage = localized("Position is required.", "Выберите должность.")
             return false
         }
 
@@ -154,7 +161,7 @@ final class RequirementsViewModel: ObservableObject {
             requirements[index].startSlot = draft.startSlot
             requirements[index].endSlot = normalizedEndSlot
             selectedWeekday = targetWeekday
-            statusMessage = "Template updated locally."
+            statusMessage = localized("Template updated locally.", "Шаблон обновлен локально.")
         } else {
             let newItems = normalizedWeekdays.sorted().map { weekday in
                 makeLocalRequirement(
@@ -169,7 +176,7 @@ final class RequirementsViewModel: ObservableObject {
 
             requirements.append(contentsOf: newItems)
             selectedWeekday = normalizedWeekdays.sorted().first ?? selectedWeekday
-            statusMessage = "Template added locally."
+            statusMessage = localized("Template added locally.", "Шаблон добавлен локально.")
         }
 
         activeDraft = nil
@@ -178,7 +185,7 @@ final class RequirementsViewModel: ObservableObject {
 
     func delete(_ requirement: StaffingRequirement) {
         requirements.removeAll { $0.id == requirement.id }
-        statusMessage = "Template removed locally."
+        statusMessage = localized("Template removed locally.", "Шаблон удален локально.")
         errorMessage = nil
     }
 
@@ -193,20 +200,20 @@ final class RequirementsViewModel: ObservableObject {
         )
 
         requirements.append(duplicated)
-        statusMessage = "Template duplicated locally."
+        statusMessage = localized("Template duplicated locally.", "Шаблон продублирован локально.")
         errorMessage = nil
     }
 
     func clearSelectedDay() {
         requirements.removeAll { $0.weekday == selectedWeekday }
-        statusMessage = "Selected weekday cleared locally."
+        statusMessage = localized("Selected weekday cleared locally.", "Выбранный день очищен локально.")
         errorMessage = nil
     }
 
     func clearAllDays() {
         requirements.removeAll()
         workingHoursByWeekday = [:]
-        statusMessage = "All weekdays cleared locally."
+        statusMessage = localized("All weekdays cleared locally.", "Все дни недели очищены локально.")
         errorMessage = nil
     }
 
@@ -237,7 +244,7 @@ final class RequirementsViewModel: ObservableObject {
         for weekday in validTargets {
             workingHoursByWeekday[weekday] = selectedDayWorkingHours
         }
-        statusMessage = "Templates copied locally."
+        statusMessage = localized("Templates copied locally.", "Шаблоны скопированы локально.")
         errorMessage = nil
     }
 
@@ -264,7 +271,7 @@ final class RequirementsViewModel: ObservableObject {
             return updatedRequirement
         }
 
-        statusMessage = "Working hours updated locally."
+        statusMessage = localized("Working hours updated locally.", "Рабочие часы обновлены локально.")
         errorMessage = nil
     }
 
@@ -286,12 +293,12 @@ final class RequirementsViewModel: ObservableObject {
 
     func saveChanges() async {
         guard hasCompany else {
-            errorMessage = "Create or join a company first."
+            errorMessage = localized("Create or join a company first.", "Сначала создайте компанию или присоединитесь к ней.")
             return
         }
 
         guard hasUnsavedChanges else {
-            statusMessage = "No unsaved changes."
+            statusMessage = localized("No unsaved changes.", "Несохраненных изменений нет.")
             return
         }
 
@@ -325,7 +332,7 @@ final class RequirementsViewModel: ObservableObject {
             }
 
             await loadCurrentMonth(forceRemote: true)
-            statusMessage = "Monthly requirements synced from weekday templates."
+            statusMessage = localized("Monthly requirements synced from weekday templates.", "Требования на месяц синхронизированы из шаблонов по дням недели.")
         } catch {
             errorMessage = error.localizedDescription
         }

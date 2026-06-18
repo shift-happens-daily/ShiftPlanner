@@ -3,6 +3,7 @@ import SwiftUI
 struct RequirementsView: View {
     @Environment(\.scenePhase) private var scenePhase
     @EnvironmentObject private var themeManager: ThemeManager
+    @EnvironmentObject private var languageManager: LanguageManager
     @StateObject private var viewModel: RequirementsViewModel
     @State private var isShowingClearConfirmation = false
     @State private var isShowingClearAllConfirmation = false
@@ -31,7 +32,7 @@ struct RequirementsView: View {
             ScrollView(showsIndicators: false) {
                 if user.hasCompany {
                     VStack(alignment: .leading, spacing: 18) {
-                        Text("Templates for \(viewModel.monthTitle)")
+                        Text(languageManager.text("Templates for", "Шаблоны на") + " \(viewModel.monthTitle)")
                             .font(.subheadline)
                             .fontWeight(.semibold)
                             .foregroundStyle(themeManager.selectedTheme.secondaryTextColor)
@@ -43,25 +44,25 @@ struct RequirementsView: View {
                         )
 
                         HStack(spacing: 12) {
-                            Button("Copy to") {
+                            Button(languageManager.text("Copy to", "Копировать в")) {
                                 isShowingCopySheet = true
                             }
                             .buttonStyle(.plain)
-                            .themeSecondaryAction()
+                            .themeCompactSecondaryAction()
                             .disabled(viewModel.requirementsForSelectedDay.isEmpty || !viewModel.canManageRequirements)
 
-                            Button("Clear day") {
+                            Button(languageManager.text("Clear day", "Очистить день")) {
                                 isShowingClearConfirmation = true
                             }
                             .buttonStyle(.plain)
-                            .themeSecondaryAction()
+                            .themeCompactSecondaryAction()
                             .disabled(viewModel.requirementsForSelectedDay.isEmpty || !viewModel.canManageRequirements)
 
-                            Button("Clear all days") {
+                            Button(languageManager.text("Clear all days", "Очистить всё")) {
                                 isShowingClearAllConfirmation = true
                             }
                             .buttonStyle(.plain)
-                            .themeSecondaryAction()
+                            .themeCompactSecondaryAction()
                             .disabled(viewModel.requirements.isEmpty || !viewModel.canManageRequirements)
                         }
 
@@ -74,7 +75,7 @@ struct RequirementsView: View {
                                         .tint(themeManager.selectedTheme.primaryActionTextColor)
                                 }
 
-                                Label("Add requirement", systemImage: "plus")
+                                Label(languageManager.text("Add requirement", "Добавить требование"), systemImage: "plus")
                             }
                         }
                         .buttonStyle(.plain)
@@ -102,23 +103,23 @@ struct RequirementsView: View {
 
                         if viewModel.isLoading {
                             HStack {
-                                Spacer()
-                                ProgressView("Loading requirements...")
-                                Spacer()
-                            }
-                            .padding(.vertical, 28)
+                                    Spacer()
+                                    ProgressView(languageManager.text("Loading requirements...", "Загрузка требований..."))
+                                    Spacer()
+                                }
+                                .padding(.vertical, 28)
                         } else if viewModel.requirementsForSelectedDay.isEmpty {
                             VStack(spacing: 12) {
                                 Image(systemName: "calendar.badge.plus")
                                     .font(.system(size: 42))
                                     .foregroundStyle(themeManager.selectedTheme.accentColor)
 
-                                Text("No requirements yet")
+                                Text(languageManager.text("No requirements yet", "Требований пока нет"))
                                     .font(.title3)
                                     .fontWeight(.bold)
                                     .foregroundStyle(themeManager.selectedTheme.primaryTextColor)
 
-                                Text("Add staffing intervals for the selected day, or create one rule and apply it to several days at once in the form.")
+                                Text(languageManager.text("Add staffing intervals for the selected day, or create one rule and apply it to several days at once in the form.", "Добавьте интервалы для выбранного дня или создайте одно правило и примените его сразу к нескольким дням в форме."))
                                     .multilineTextAlignment(.center)
                                     .foregroundStyle(themeManager.selectedTheme.secondaryTextColor)
                             }
@@ -148,7 +149,7 @@ struct RequirementsView: View {
                 }
             }
             .background(themeManager.selectedTheme.screenBackground)
-            .navigationTitle("Requirements")
+            .navigationTitle(languageManager.text("Requirements", "Требования"))
             .navigationBarTitleDisplayMode(.inline)
             .sheet(item: $viewModel.activeDraft) { draft in
                 RequirementFormView(
@@ -166,21 +167,21 @@ struct RequirementsView: View {
                     onCopy: viewModel.copySelectedDay(to:)
                 )
             }
-            .alert("Clear selected day?", isPresented: $isShowingClearConfirmation) {
-                Button("Cancel", role: .cancel) {}
-                Button("Clear", role: .destructive) {
+            .alert(languageManager.text("Clear selected day?", "Очистить выбранный день?"), isPresented: $isShowingClearConfirmation) {
+                Button(languageManager.text("Cancel", "Отмена"), role: .cancel) {}
+                Button(languageManager.text("Clear", "Очистить"), role: .destructive) {
                     viewModel.clearSelectedDay()
                 }
             } message: {
-                Text("This will remove all requirements for \(viewModel.selectedWeekdaySummary).")
+                Text(languageManager.text("This will remove all requirements for", "Это удалит все требования для") + " \(viewModel.selectedWeekdaySummary).")
             }
-            .alert("Clear all days?", isPresented: $isShowingClearAllConfirmation) {
-                Button("Cancel", role: .cancel) {}
-                Button("Clear all", role: .destructive) {
+            .alert(languageManager.text("Clear all days?", "Очистить все дни?"), isPresented: $isShowingClearAllConfirmation) {
+                Button(languageManager.text("Cancel", "Отмена"), role: .cancel) {}
+                Button(languageManager.text("Clear all", "Очистить всё"), role: .destructive) {
                     viewModel.clearAllDays()
                 }
             } message: {
-                Text("This will remove all requirement templates for the whole week.")
+                Text(languageManager.text("This will remove all requirement templates for the whole week.", "Это удалит все шаблоны требований на всю неделю."))
             }
             .task {
                 if user.hasCompany {

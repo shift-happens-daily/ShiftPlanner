@@ -3,6 +3,7 @@ import SwiftUI
 struct RequirementsCopyTargetsView: View {
     @Environment(\.dismiss) private var dismiss
     @EnvironmentObject private var themeManager: ThemeManager
+    @EnvironmentObject private var languageManager: LanguageManager
     @State private var selectedTargets: Set<Int>
 
     let sourceWeekday: Int
@@ -23,12 +24,12 @@ struct RequirementsCopyTargetsView: View {
     var body: some View {
         NavigationStack {
             List {
-                Section("Copy from") {
+                Section(languageManager.text("Copy from", "Копировать из")) {
                     Text(labels[sourceWeekday])
                         .foregroundStyle(themeManager.selectedTheme.secondaryTextColor)
                 }
 
-                Section("Copy to") {
+                Section(languageManager.text("Copy to", "Копировать в")) {
                     ForEach(Array(labels.enumerated()), id: \.offset) { index, label in
                         if index != sourceWeekday {
                             Button {
@@ -53,22 +54,22 @@ struct RequirementsCopyTargetsView: View {
                 }
 
                 Section {
-                    Text("Existing requirements on selected target days will be replaced with the copied ones.")
+                    Text(languageManager.text("Existing requirements on selected target days will be replaced with the copied ones.", "Существующие требования в выбранных днях будут заменены скопированными."))
                         .font(.footnote)
                         .foregroundStyle(themeManager.selectedTheme.secondaryTextColor)
                 }
             }
-            .navigationTitle("Copy To")
+            .navigationTitle(languageManager.text("Copy To", "Копировать в"))
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
-                    Button("Cancel") {
+                    Button(languageManager.text("Cancel", "Отмена")) {
                         dismiss()
                     }
                 }
 
                 ToolbarItem(placement: .topBarTrailing) {
-                    Button("Copy") {
+                    Button(languageManager.text("Copy", "Копировать")) {
                         onCopy(selectedTargets)
                         dismiss()
                     }

@@ -37,7 +37,7 @@ final class CompanySetupViewModel: ObservableObject {
     func createCompany() async {
         let trimmedName = companyName.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmedName.isEmpty else {
-            errorMessage = "Company name is required."
+            errorMessage = localized("Company name is required.", "Введите название компании.")
             return
         }
 

@@ -18,7 +18,7 @@ final class CompanyInviteViewModel: ObservableObject {
     func previewCompany() async {
         let code = normalizedInviteCode
         guard !code.isEmpty else {
-            errorMessage = "Invite code is required."
+            errorMessage = localized("Invite code is required.", "Введите инвайт-код.")
             return
         }
 
@@ -38,7 +38,7 @@ final class CompanyInviteViewModel: ObservableObject {
     func joinCompany() async {
         let code = normalizedInviteCode
         guard !code.isEmpty else {
-            errorMessage = "Invite code is required."
+            errorMessage = localized("Invite code is required.", "Введите инвайт-код.")
             return
         }
 

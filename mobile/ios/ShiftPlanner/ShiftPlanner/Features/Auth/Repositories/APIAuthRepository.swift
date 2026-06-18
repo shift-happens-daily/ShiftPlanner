@@ -6,7 +6,10 @@ enum AuthRepositoryError: LocalizedError {
     var errorDescription: String? {
         switch self {
         case .accountCreatedButLoginFailed:
-            return "Account was created, but automatic sign-in failed. Try logging in from the login screen."
+            return localized(
+                "Account was created, but automatic sign-in failed. Try logging in from the login screen.",
+                "Аккаунт создан, но автоматический вход не сработал. Попробуйте войти с экрана логина."
+            )
         }
     }
 }

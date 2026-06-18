@@ -3,6 +3,7 @@ import SwiftUI
 struct SignUpView: View {
     @ObservedObject var viewModel: AuthViewModel
     @EnvironmentObject private var themeManager: ThemeManager
+    @EnvironmentObject private var languageManager: LanguageManager
     let onShowLogin: () -> Void
     
     var body: some View {
@@ -14,31 +15,38 @@ struct SignUpView: View {
                     .font(.largeTitle)
                     .bold()
                     .foregroundStyle(themeManager.selectedTheme.primaryTextColor)
-                Text("Create account")
+                Text(languageManager.text("Create account", "Создать аккаунт"))
                     .foregroundStyle(themeManager.selectedTheme.secondaryTextColor)
             }
+
+            Picker(languageManager.text("Language", "Язык"), selection: $languageManager.selectedLanguage) {
+                ForEach(AppLanguage.allCases) { language in
+                    Text(language.title).tag(language)
+                }
+            }
+            .pickerStyle(.segmented)
             
             VStack(spacing: 12) {
-                Picker("Role", selection: $viewModel.selectedRole) {
+                Picker(languageManager.text("Role", "Роль"), selection: $viewModel.selectedRole) {
                     ForEach(UserRole.allCases) { role in
                         Text(role.title).tag(role)
                     }
                 }
                 .pickerStyle(.segmented)
 
-                TextField("Name", text: $viewModel.name)
+                TextField(languageManager.text("Name", "Имя"), text: $viewModel.name)
                     .themeInputField()
                 
-                TextField("Email", text: $viewModel.email)
+                TextField(languageManager.text("Email", "Почта"), text: $viewModel.email)
                     .autocapitalization(.none)
                     .autocorrectionDisabled(true)
                     .keyboardType(.emailAddress)
                     .themeInputField()
                 
-                SecureField("Password", text: $viewModel.password)
+                SecureField(languageManager.text("Password", "Пароль"), text: $viewModel.password)
                     .themeInputField()
                 
-                SecureField("Repeat password", text: $viewModel.confirmPassword)
+                SecureField(languageManager.text("Repeat password", "Повторите пароль"), text: $viewModel.confirmPassword)
                     .themeInputField()
             }
             
@@ -57,14 +65,14 @@ struct SignUpView: View {
                     ProgressView()
                         .tint(themeManager.selectedTheme.primaryActionTextColor)
                 } else {
-                    Text("Sign up")
+                    Text(languageManager.text("Sign up", "Зарегистрироваться"))
                 }
             }
             .buttonStyle(.plain)
             .themePrimaryAction(isEnabled: !viewModel.isLoading && viewModel.passwordsMatch)
             .disabled(viewModel.isLoading || !viewModel.passwordsMatch)
             
-            Button("Already have an account?") {
+            Button(languageManager.text("Already have an account?", "Уже есть аккаунт?")) {
                 onShowLogin()
             }
             .buttonStyle(.plain)
@@ -87,4 +95,5 @@ struct SignUpView: View {
         onShowLogin: {}
     )
     .environmentObject(ThemeManager())
+    .environmentObject(LanguageManager.shared)
 }

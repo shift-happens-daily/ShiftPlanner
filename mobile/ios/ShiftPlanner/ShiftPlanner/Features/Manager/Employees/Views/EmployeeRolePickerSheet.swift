@@ -3,6 +3,7 @@ import SwiftUI
 struct EmployeeRolePickerSheet: View {
     @Environment(\.dismiss) private var dismiss
     @EnvironmentObject private var themeManager: ThemeManager
+    @EnvironmentObject private var languageManager: LanguageManager
 
     let employee: ManagedEmployee
     let positions: [ManagedPosition]
@@ -16,15 +17,15 @@ struct EmployeeRolePickerSheet: View {
     var body: some View {
         NavigationStack {
             VStack(alignment: .leading, spacing: 14) {
-                TextField("Select an option or create one", text: $searchText)
+                TextField(languageManager.text("Select an option or create one", "Выберите вариант или создайте новый"), text: $searchText)
                     .themeInputField()
 
                 ScrollView(showsIndicators: false) {
                     VStack(alignment: .leading, spacing: 10) {
                         if searchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                             pickerRow(
-                                title: "No role",
-                                subtitle: currentPositionTitle == "No role assigned" ? "Currently selected" : nil
+                                title: languageManager.text("No role", "Без должности"),
+                                subtitle: currentPositionTitle == localized("No role assigned", "Без должности") ? languageManager.text("Currently selected", "Выбрано сейчас") : nil
                             ) {
                                 onAssignPosition(nil)
                                 dismiss()
@@ -33,7 +34,7 @@ struct EmployeeRolePickerSheet: View {
                             ForEach(positions) { position in
                                 pickerRow(
                                     title: position.title,
-                                    subtitle: position.title == currentPositionTitle ? "Currently selected" : nil,
+                                    subtitle: position.title == currentPositionTitle ? languageManager.text("Currently selected", "Выбрано сейчас") : nil,
                                     trailingAction: {
                                         onDeletePosition(position)
                                         dismiss()
@@ -48,7 +49,7 @@ struct EmployeeRolePickerSheet: View {
                                 ForEach(matchingPositions) { position in
                                     pickerRow(
                                         title: position.title,
-                                        subtitle: position.title == currentPositionTitle ? "Currently selected" : nil,
+                                        subtitle: position.title == currentPositionTitle ? languageManager.text("Currently selected", "Выбрано сейчас") : nil,
                                         trailingAction: {
                                             onDeletePosition(position)
                                             dismiss()
@@ -66,7 +67,7 @@ struct EmployeeRolePickerSheet: View {
                                     dismiss()
                                 } label: {
                                     HStack(spacing: 10) {
-                                        Text("Create")
+                                        Text(languageManager.text("Create", "Создать"))
                                             .fontWeight(.semibold)
                                         Text(normalizedSearchText)
                                             .padding(.horizontal, 10)
@@ -98,7 +99,7 @@ struct EmployeeRolePickerSheet: View {
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
-                    Button("Done") {
+                    Button(languageManager.text("Done", "Готово")) {
                         dismiss()
                     }
                 }

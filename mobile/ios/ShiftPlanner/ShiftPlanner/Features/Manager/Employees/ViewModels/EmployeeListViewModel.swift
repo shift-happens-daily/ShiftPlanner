@@ -47,13 +47,13 @@ final class EmployeeListViewModel: ObservableObject {
         let trimmedTitle = title.trimmingCharacters(in: .whitespacesAndNewlines)
 
         guard !trimmedTitle.isEmpty else {
-            errorMessage = "Position title cannot be empty."
+            errorMessage = localized("Position title cannot be empty.", "Название должности не может быть пустым.")
             statusMessage = nil
             return
         }
 
         guard positions.contains(where: { $0.title.caseInsensitiveCompare(trimmedTitle) == .orderedSame }) == false else {
-            errorMessage = "This position already exists."
+            errorMessage = localized("This position already exists.", "Такая должность уже существует.")
             statusMessage = nil
             return
         }
@@ -63,9 +63,9 @@ final class EmployeeListViewModel: ObservableObject {
             if let employee,
                let newPosition = positions.first(where: { $0.title.caseInsensitiveCompare(trimmedTitle) == .orderedSame }) {
                 employees = try await repository.assignPosition(newPosition.id, to: employee, in: employees)
-                statusMessage = "Position added and assigned locally."
+                statusMessage = localized("Position added and assigned locally.", "Должность добавлена и назначена локально.")
             } else {
-                statusMessage = "Position added locally."
+                statusMessage = localized("Position added locally.", "Должность добавлена локально.")
             }
             errorMessage = nil
         } catch {
@@ -84,7 +84,7 @@ final class EmployeeListViewModel: ObservableObject {
             employees = snapshot.employees
             positions = snapshot.positions
             errorMessage = nil
-            statusMessage = "Position removed locally."
+            statusMessage = localized("Position removed locally.", "Должность удалена локально.")
         } catch {
             errorMessage = error.localizedDescription
             statusMessage = nil
@@ -95,7 +95,7 @@ final class EmployeeListViewModel: ObservableObject {
         do {
             employees = try await repository.assignPosition(positionId, to: employee, in: employees)
             errorMessage = nil
-            statusMessage = "Employee role updated locally."
+            statusMessage = localized("Employee role updated locally.", "Роль сотрудника обновлена локально.")
         } catch {
             errorMessage = error.localizedDescription
             statusMessage = nil
@@ -106,7 +106,7 @@ final class EmployeeListViewModel: ObservableObject {
         do {
             employees = try await repository.removeEmployee(employee, from: employees)
             errorMessage = nil
-            statusMessage = "Employee removed locally."
+            statusMessage = localized("Employee removed locally.", "Сотрудник удален локально.")
         } catch {
             errorMessage = error.localizedDescription
             statusMessage = nil
@@ -116,7 +116,7 @@ final class EmployeeListViewModel: ObservableObject {
     func positionTitle(for employee: ManagedEmployee) -> String {
         guard let positionId = employee.positionId,
               let position = positions.first(where: { $0.id == positionId }) else {
-            return "No role assigned"
+            return localized("No role assigned", "Без должности")
         }
 
         return position.title

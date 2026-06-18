@@ -3,6 +3,7 @@ import SwiftUI
 struct CompanySetupView: View {
     @Environment(\.dismiss) private var dismiss
     @EnvironmentObject private var themeManager: ThemeManager
+    @EnvironmentObject private var languageManager: LanguageManager
     @StateObject private var viewModel: CompanySetupViewModel
     let onCompanyCreated: ((AppCompany) -> Void)?
 
@@ -16,11 +17,11 @@ struct CompanySetupView: View {
 
     var body: some View {
         Form {
-            Section("Company") {
-                TextField("Company name", text: $viewModel.companyName)
+            Section(languageManager.text("Company", "Компания")) {
+                TextField(languageManager.text("Company name", "Название компании"), text: $viewModel.companyName)
                     .themeInputField()
 
-                Toggle("Does the company have branches?", isOn: $viewModel.hasBranches)
+                Toggle(languageManager.text("Does the company have branches?", "Есть ли у компании филиалы?"), isOn: $viewModel.hasBranches)
                     .onChange(of: viewModel.hasBranches) { _, hasBranches in
                         if !hasBranches {
                             viewModel.allowsRotationBetweenBranches = false
@@ -29,17 +30,17 @@ struct CompanySetupView: View {
             }
 
             if viewModel.hasBranches {
-                Section("Branches") {
+                Section(languageManager.text("Branches", "Филиалы")) {
                     ForEach($viewModel.branches) { $branch in
                         VStack(alignment: .leading, spacing: 12) {
-                            TextField("Branch name", text: $branch.name)
+                            TextField(languageManager.text("Branch name", "Название филиала"), text: $branch.name)
                                 .themeInputField()
-                            TextField("Branch address", text: $branch.address, axis: .vertical)
+                            TextField(languageManager.text("Branch address", "Адрес филиала"), text: $branch.address, axis: .vertical)
                                 .lineLimit(2...4)
                                 .themeInputField()
 
                             if viewModel.branches.count > 1 {
-                                Button("Remove branch", role: .destructive) {
+                                Button(languageManager.text("Remove branch", "Удалить филиал"), role: .destructive) {
                                     viewModel.removeBranch(id: branch.id)
                                 }
                             }
@@ -47,20 +48,20 @@ struct CompanySetupView: View {
                         .padding(.vertical, 4)
                     }
 
-                    Button("Add branch") {
+                    Button(languageManager.text("Add branch", "Добавить филиал")) {
                         viewModel.addBranch()
                     }
                 }
 
-                Section("Policies") {
+                Section(languageManager.text("Policies", "Политики")) {
                     Toggle(
-                        "Is employee rotation between branches allowed?",
+                        languageManager.text("Is employee rotation between branches allowed?", "Возможна ли ротация сотрудников между филиалами?"),
                         isOn: $viewModel.allowsRotationBetweenBranches
                     )
                 }
             } else {
-                Section("Address") {
-                    TextField("Company address", text: $viewModel.companyAddress, axis: .vertical)
+                Section(languageManager.text("Address", "Адрес")) {
+                    TextField(languageManager.text("Company address", "Адрес компании"), text: $viewModel.companyAddress, axis: .vertical)
                         .lineLimit(2...4)
                         .themeInputField()
                 }
@@ -80,14 +81,14 @@ struct CompanySetupView: View {
                         ProgressView()
                             .tint(themeManager.selectedTheme.primaryActionTextColor)
                     } else {
-                        Text("Create company")
+                        Text(languageManager.text("Create company", "Создать компанию"))
                     }
                 }
                 .buttonStyle(.plain)
                 .themePrimaryAction(isEnabled: !viewModel.isSaving && viewModel.canCreateCompany)
                 .disabled(viewModel.isSaving || !viewModel.canCreateCompany)
             } footer: {
-                Text("For now the backend accepts only the company name. The rest of the form is collected for the upcoming expansion.")
+                Text(languageManager.text("For now the backend accepts only the company name. The rest of the form is collected for the upcoming expansion.", "Пока бэкенд принимает только название компании. Остальные поля собираются под будущее расширение."))
             }
 
             if let errorMessage = viewModel.errorMessage {
@@ -97,7 +98,7 @@ struct CompanySetupView: View {
                 }
             }
         }
-        .navigationTitle("Create Company")
+        .navigationTitle(languageManager.text("Create Company", "Создать компанию"))
         .navigationBarTitleDisplayMode(.inline)
         .scrollContentBackground(.hidden)
         .background(themeManager.selectedTheme.screenBackground)

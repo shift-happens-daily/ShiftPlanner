@@ -12,22 +12,22 @@ enum AvailabilityState: String, CaseIterable, Identifiable, Codable {
     var title: String {
         switch self {
         case .canWork:
-            return "Can work"
+            return localized("Can work", "Могу")
         case .preferNotToWork:
-            return "Prefer not"
+            return localized("Prefer not", "Нежелательно")
         case .unavailable:
-            return "Unavailable"
+            return localized("Unavailable", "Не могу")
         }
     }
 
     var shortTitle: String {
         switch self {
         case .canWork:
-            return "Can"
+            return localized("Can", "Да")
         case .preferNotToWork:
-            return "Maybe"
+            return localized("Maybe", "Можно")
         case .unavailable:
-            return "Off"
+            return localized("Off", "Нет")
         }
     }
 
@@ -104,8 +104,10 @@ final class AvailabilityViewModel: ObservableObject {
     var weekTitle: String {
         guard let lastDay = weekDates.last else { return "" }
         let startFormatter = DateFormatter()
+        startFormatter.locale = LanguageManager.storedLocale
         startFormatter.dateFormat = "MMM d"
         let endFormatter = DateFormatter()
+        endFormatter.locale = LanguageManager.storedLocale
         endFormatter.dateFormat = calendar.isDate(currentWeekStart, equalTo: lastDay, toGranularity: .month) ? "d" : "MMM d"
         return "\(startFormatter.string(from: currentWeekStart)) - \(endFormatter.string(from: lastDay))"
     }
@@ -113,6 +115,7 @@ final class AvailabilityViewModel: ObservableObject {
     func shortDayLabel(for dayIndex: Int) -> String {
         guard weekDates.indices.contains(dayIndex) else { return "" }
         let formatter = DateFormatter()
+        formatter.locale = LanguageManager.storedLocale
         formatter.dateFormat = "EEE"
         return formatter.string(from: weekDates[dayIndex]).uppercased()
     }
@@ -187,7 +190,7 @@ final class AvailabilityViewModel: ObservableObject {
         hasLoadedRemoteAvailability = true
 
         guard let employeeId else {
-            statusMessage = "Availability can be saved after joining a company."
+            statusMessage = localized("Availability can be saved after joining a company.", "Сохранение доступности появится после присоединения к компании.")
             return
         }
 
@@ -207,7 +210,7 @@ final class AvailabilityViewModel: ObservableObject {
 
     func saveAvailability() async {
         guard let employeeId else {
-            errorMessage = "Availability can be saved after joining a company."
+            errorMessage = localized("Availability can be saved after joining a company.", "Сохранение доступности появится после присоединения к компании.")
             return
         }
 
@@ -219,7 +222,7 @@ final class AvailabilityViewModel: ObservableObject {
             let payload = buildUpsertPayload()
             _ = try await repository.saveAvailability(employeeId: employeeId, payload: payload)
             weekStorage[currentWeekStart] = weeklyStates
-            statusMessage = "Availability saved."
+            statusMessage = localized("Availability saved.", "Доступность сохранена.")
         } catch {
             errorMessage = error.localizedDescription
         }

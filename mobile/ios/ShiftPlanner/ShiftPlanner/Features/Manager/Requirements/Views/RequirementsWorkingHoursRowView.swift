@@ -2,6 +2,7 @@ import SwiftUI
 
 struct RequirementsWorkingHoursRowView: View {
     @EnvironmentObject private var themeManager: ThemeManager
+    @EnvironmentObject private var languageManager: LanguageManager
     @State private var isEditing = false
 
     let weekdayLabel: String
@@ -14,12 +15,12 @@ struct RequirementsWorkingHoursRowView: View {
         } label: {
             HStack(spacing: 12) {
                 VStack(alignment: .leading, spacing: 2) {
-                    Text("\(weekdayLabel) working hours")
+                    Text("\(weekdayLabel) " + languageManager.text("working hours", "часы работы"))
                         .font(.subheadline)
                         .fontWeight(.semibold)
                         .foregroundStyle(themeManager.selectedTheme.primaryTextColor)
 
-                    Text("Used for new requirements")
+                    Text(languageManager.text("Used for new requirements", "Используется для новых требований"))
                         .font(.caption)
                         .foregroundStyle(themeManager.selectedTheme.secondaryTextColor)
                 }
@@ -59,6 +60,7 @@ struct RequirementsWorkingHoursRowView: View {
 
 private struct WorkingHoursPickerSheet: View {
     @Environment(\.dismiss) private var dismiss
+    @EnvironmentObject private var languageManager: LanguageManager
     @State private var startSlot: Int
     @State private var endSlot: Int
 
@@ -79,31 +81,31 @@ private struct WorkingHoursPickerSheet: View {
     var body: some View {
         NavigationStack {
             Form {
-                Section("\(weekdayLabel) shift range") {
+                Section("\(weekdayLabel) " + languageManager.text("shift range", "рабочий диапазон")) {
                     TimeSlotWheelPicker(
                         selection: startSlotBinding,
-                        title: "From",
+                        title: languageManager.text("From", "С"),
                         allowedRange: 0...43
                     )
 
                     TimeSlotWheelPicker(
                         selection: endSlotBinding,
-                        title: "To",
+                        title: languageManager.text("To", "До"),
                         allowedRange: min(44, startSlot + 1)...44
                     )
                 }
             }
-            .navigationTitle("Working Hours")
+            .navigationTitle(languageManager.text("Working Hours", "Рабочие часы"))
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
-                    Button("Cancel") {
+                    Button(languageManager.text("Cancel", "Отмена")) {
                         dismiss()
                     }
                 }
 
                 ToolbarItem(placement: .topBarTrailing) {
-                    Button("Apply") {
+                    Button(languageManager.text("Apply", "Применить")) {
                         onApply(startSlot, max(endSlot, startSlot + 1))
                         dismiss()
                     }

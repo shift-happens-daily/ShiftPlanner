@@ -1,6 +1,7 @@
 import SwiftUI
 
 struct ManagerScheduleView: View {
+    @EnvironmentObject private var languageManager: LanguageManager
     let user: AppUser
     let onUserUpdated: (AppUser) -> Void
 
@@ -8,7 +9,7 @@ struct ManagerScheduleView: View {
         NavigationStack {
             ScrollView {
                 if user.hasCompany {
-                    Text("Manager schedule info")
+                    Text(languageManager.text("Manager schedule info", "Информация о графике менеджера"))
                         .frame(maxWidth: .infinity, minHeight: 240)
                 } else {
                     ManagerCompanyAccessContentView(
@@ -18,7 +19,7 @@ struct ManagerScheduleView: View {
                     .padding()
                 }
             }
-            .navigationTitle("Schedule")
+            .navigationTitle(languageManager.text("Schedule", "График"))
             .navigationBarTitleDisplayMode(.inline)
         }
     }

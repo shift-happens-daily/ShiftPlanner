@@ -1,6 +1,7 @@
 import SwiftUI
 
 struct EmployeeMainView: View {
+    @EnvironmentObject private var languageManager: LanguageManager
     let user: AppUser
     let onLogout: () async -> Void
     let onUserUpdated: (AppUser) -> Void
@@ -20,17 +21,17 @@ struct EmployeeMainView: View {
                 }
             }
                 .tabItem {
-                    Label("Availability", systemImage: "clock.badge.checkmark")
+                    Label(languageManager.text("Availability", "Доступность"), systemImage: "clock.badge.checkmark")
                 }
             
             EmployeeScheduleView()
                 .tabItem {
-                    Label("Schedule", systemImage: "calendar")
+                    Label(languageManager.text("Schedule", "График"), systemImage: "calendar")
                 }
 
             EmployeeProfileView(user: user, onLogout: onLogout)
                 .tabItem {
-                    Label("Profile", systemImage: "person.crop.circle")
+                    Label(languageManager.text("Profile", "Профиль"), systemImage: "person.crop.circle")
                 }
         }
         .sheet(isPresented: $isShowingInviteSheet) {

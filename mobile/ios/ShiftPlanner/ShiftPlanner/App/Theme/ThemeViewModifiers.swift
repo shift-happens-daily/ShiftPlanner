@@ -69,6 +69,30 @@ struct ThemeSecondaryActionModifier: ViewModifier {
     }
 }
 
+struct ThemeCompactSecondaryActionModifier: ViewModifier {
+    @EnvironmentObject private var themeManager: ThemeManager
+
+    func body(content: Content) -> some View {
+        content
+            .font(.subheadline)
+            .fontWeight(.semibold)
+            .lineLimit(1)
+            .minimumScaleFactor(0.8)
+            .frame(maxWidth: .infinity)
+            .frame(minHeight: 40)
+            .padding(.horizontal, 12)
+            .foregroundStyle(themeManager.selectedTheme.accentColor)
+            .background(
+                RoundedRectangle(cornerRadius: 14, style: .continuous)
+                    .fill(themeManager.selectedTheme.cardTint)
+            )
+            .overlay {
+                RoundedRectangle(cornerRadius: 14, style: .continuous)
+                    .stroke(themeManager.selectedTheme.accentColor.opacity(0.22), lineWidth: 1)
+            }
+    }
+}
+
 extension View {
     func themeCard() -> some View {
         modifier(ThemeCardModifier())
@@ -84,5 +108,9 @@ extension View {
 
     func themeSecondaryAction() -> some View {
         modifier(ThemeSecondaryActionModifier())
+    }
+
+    func themeCompactSecondaryAction() -> some View {
+        modifier(ThemeCompactSecondaryActionModifier())
     }
 }

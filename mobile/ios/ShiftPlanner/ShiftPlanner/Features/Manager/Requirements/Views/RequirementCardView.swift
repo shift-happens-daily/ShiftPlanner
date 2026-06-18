@@ -2,6 +2,7 @@ import SwiftUI
 
 struct RequirementCardView: View {
     @EnvironmentObject private var themeManager: ThemeManager
+    @EnvironmentObject private var languageManager: LanguageManager
     let requirement: StaffingRequirement
     let onEdit: () -> Void
     let onDuplicate: () -> Void
@@ -15,7 +16,7 @@ struct RequirementCardView: View {
                         .font(.headline)
                         .foregroundStyle(themeManager.selectedTheme.primaryTextColor)
 
-                    Text("\(requirement.quantity) required")
+                    Text("\(requirement.quantity) " + languageManager.text("required", "нужно"))
                         .font(.subheadline)
                         .foregroundStyle(themeManager.selectedTheme.secondaryTextColor)
                 }
@@ -32,17 +33,17 @@ struct RequirementCardView: View {
             }
 
             HStack(spacing: 10) {
-                Button("Edit", action: onEdit)
+                Button(languageManager.text("Edit", "Изменить"), action: onEdit)
                     .buttonStyle(.plain)
-                    .themeSecondaryAction()
+                    .themeCompactSecondaryAction()
 
-                Button("Duplicate", action: onDuplicate)
+                Button(languageManager.text("Duplicate", "Дублировать"), action: onDuplicate)
                     .buttonStyle(.plain)
-                    .themeSecondaryAction()
+                    .themeCompactSecondaryAction()
 
-                Button("Delete", role: .destructive, action: onDelete)
+                Button(languageManager.text("Delete", "Удалить"), role: .destructive, action: onDelete)
                     .buttonStyle(.plain)
-                    .themeSecondaryAction()
+                    .themeCompactSecondaryAction()
             }
         }
         .padding(18)

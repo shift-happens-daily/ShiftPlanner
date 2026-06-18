@@ -5,10 +5,11 @@ final class APIClient {
 
     private init() {}
 
-    let baseURL = URL(string: "http://10.91.61.1:8000")!
+    let baseURL = APIClient.makeBaseURL()
 
     private let session = URLSession.shared
     private let accessTokenKey = "shiftplanner.accessToken"
+    private static let apiBaseURLKey = "shiftplanner.apiBaseURL"
 
     var accessToken: String? {
         get { UserDefaults.standard.string(forKey: accessTokenKey) }
@@ -39,7 +40,13 @@ final class APIClient {
     }
 
     func send<T: Decodable>(_ request: URLRequest, as type: T.Type) async throws -> T {
-        let (data, response) = try await session.data(for: request)
+        let (data, response): (Data, URLResponse)
+
+        do {
+            (data, response) = try await session.data(for: request)
+        } catch {
+            throw mapTransportError(error)
+        }
 
         guard let httpResponse = response as? HTTPURLResponse else {
             throw APIClientError.invalidResponse
@@ -57,14 +64,26 @@ final class APIClient {
     }
 
     func sendWithoutResponseBody(_ request: URLRequest) async throws {
-        let (_, response) = try await session.data(for: request)
+        let response: URLResponse
+
+        do {
+            (_, response) = try await session.data(for: request)
+        } catch {
+            throw mapTransportError(error)
+        }
 
         guard let httpResponse = response as? HTTPURLResponse else {
             throw APIClientError.invalidResponse
         }
 
         guard (200...299).contains(httpResponse.statusCode) else {
-            throw APIClientError.requestFailed(message: "Request failed with status code \(httpResponse.statusCode).")
+            throw APIClientError.requestFailed(
+                message: LanguageManager.localizedFormat(
+                    "Request failed with status code %d.",
+                    "Запрос завершился с кодом %d.",
+                    httpResponse.statusCode
+                )
+            )
         }
     }
 
@@ -86,7 +105,52 @@ final class APIClient {
             return .requestFailed(message: rawMessage)
         }
 
-        return .requestFailed(message: "Request failed with status code \(statusCode).")
+        return .requestFailed(
+            message: LanguageManager.localizedFormat(
+                "Request failed with status code %d.",
+                "Запрос завершился с кодом %d.",
+                statusCode
+            )
+        )
+    }
+
+    private func mapTransportError(_ error: Error) -> APIClientError {
+        guard let urlError = error as? URLError else {
+            return .requestFailed(message: error.localizedDescription)
+        }
+
+        switch urlError.code {
+        case .timedOut, .cannotConnectToHost, .cannotFindHost, .networkConnectionLost, .notConnectedToInternet:
+            return .requestFailed(
+                message: LanguageManager.localized(
+                    "Cannot reach the server at \(baseURL.absoluteString). Start the backend and, for iPhone Simulator, use http://127.0.0.1:8000.",
+                    "Не удается подключиться к серверу \(baseURL.absoluteString). Запустите бэкенд и, если это симулятор iPhone, используйте http://127.0.0.1:8000."
+                )
+            )
+        default:
+            return .requestFailed(message: urlError.localizedDescription)
+        }
+    }
+
+    private static func makeBaseURL() -> URL {
+        let candidate =
+            ProcessInfo.processInfo.environment["API_BASE_URL"] ??
+            UserDefaults.standard.string(forKey: apiBaseURLKey) ??
+            defaultBaseURLString
+
+        guard let url = URL(string: candidate) else {
+            fatalError("Invalid API base URL: \(candidate)")
+        }
+
+        return url
+    }
+
+    private static var defaultBaseURLString: String {
+        #if targetEnvironment(simulator)
+        return "http://127.0.0.1:8000"
+        #else
+        return "http://10.91.61.1:8000"
+        #endif
     }
 
     private func humanReadableValidationMessage(from error: APIValidationErrorItem) -> String {
@@ -96,11 +160,11 @@ final class APIClient {
 
         switch field {
         case "password" where error.msg.contains("at least 8 characters"):
-            return "Password must be at least 8 characters."
+            return localized("Password must be at least 8 characters.", "Пароль должен содержать минимум 8 символов.")
         case "email":
-            return "Please enter a valid email."
+            return localized("Please enter a valid email.", "Введите корректную почту.")
         case "full_name":
-            return "Name is required."
+            return localized("Name is required.", "Имя обязательно.")
         default:
             return error.msg.prefix(1).uppercased() + error.msg.dropFirst() + "."
         }
@@ -115,9 +179,9 @@ enum APIClientError: LocalizedError {
     var errorDescription: String? {
         switch self {
         case .invalidResponse:
-            return "Server returned an invalid response."
+            return localized("Server returned an invalid response.", "Сервер вернул некорректный ответ.")
         case .decodingFailed:
-            return "Failed to decode server response."
+            return localized("Failed to decode server response.", "Не удалось декодировать ответ сервера.")
         case let .requestFailed(message):
             return message
         }

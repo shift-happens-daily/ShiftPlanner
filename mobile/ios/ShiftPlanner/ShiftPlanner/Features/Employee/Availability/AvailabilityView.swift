@@ -2,6 +2,7 @@ import SwiftUI
 
 struct AvailabilityView: View {
     @EnvironmentObject private var themeManager: ThemeManager
+    @EnvironmentObject private var languageManager: LanguageManager
     @StateObject private var viewModel: AvailabilityViewModel
 
     init(
@@ -45,7 +46,7 @@ struct AvailabilityView: View {
                                     .tint(themeManager.selectedTheme.primaryActionTextColor)
                             }
 
-                            Text(viewModel.isSaving ? "Saving..." : "Save availability")
+                            Text(viewModel.isSaving ? languageManager.text("Saving...", "Сохранение...") : languageManager.text("Save availability", "Сохранить доступность"))
                                 .font(.headline)
                                 .fontWeight(.semibold)
                         }
@@ -79,7 +80,7 @@ struct AvailabilityView: View {
                 .padding()
             }
             .background(themeManager.selectedTheme.screenBackground)
-            .navigationTitle("Availability")
+            .navigationTitle(languageManager.text("Availability", "Доступность"))
             .navigationBarTitleDisplayMode(.inline)
             .task {
                 await viewModel.loadAvailability()

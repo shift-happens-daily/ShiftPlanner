@@ -2,6 +2,7 @@ import SwiftUI
 
 struct ManagedPositionRowView: View {
     @EnvironmentObject private var themeManager: ThemeManager
+    @EnvironmentObject private var languageManager: LanguageManager
 
     let position: ManagedPosition
     let onDelete: () -> Void
@@ -15,7 +16,7 @@ struct ManagedPositionRowView: View {
 
             Spacer()
 
-            Button("Delete") {
+            Button(languageManager.text("Delete", "Удалить")) {
                 onDelete()
             }
             .buttonStyle(.plain)

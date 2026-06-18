@@ -3,6 +3,7 @@ import UIKit
 
 struct CompanyView: View {
     @EnvironmentObject private var themeManager: ThemeManager
+    @EnvironmentObject private var languageManager: LanguageManager
     let user: AppUser
     let onUserUpdated: (AppUser) -> Void
 
@@ -24,7 +25,7 @@ struct CompanyView: View {
                                 .bold()
 
                             VStack(alignment: .leading, spacing: 8) {
-                                Text("Invite code")
+                                Text(languageManager.text("Invite code", "Инвайт-код"))
                                     .font(.subheadline)
                                     .foregroundStyle(.secondary)
 
@@ -34,7 +35,7 @@ struct CompanyView: View {
                             }
 
                             HStack(spacing: 12) {
-                                Button(didCopyInviteCode ? "Copied" : "Copy code") {
+                                Button(didCopyInviteCode ? languageManager.text("Copied", "Скопировано") : languageManager.text("Copy code", "Скопировать")) {
                                     UIPasteboard.general.string = company.inviteCode
                                     didCopyInviteCode = true
                                 }
@@ -42,16 +43,19 @@ struct CompanyView: View {
                                 .themeSecondaryAction()
 
                                 ShareLink(
-                                    item: "Join \(company.name) in ShiftPlanner with invite code: \(company.inviteCode)",
-                                    subject: Text("ShiftPlanner invite")
+                                    item: languageManager.text(
+                                        "Join \(company.name) in ShiftPlanner with invite code: \(company.inviteCode)",
+                                        "Присоединяйтесь к \(company.name) в ShiftPlanner по коду: \(company.inviteCode)"
+                                    ),
+                                    subject: Text(languageManager.text("ShiftPlanner invite", "Инвайт ShiftPlanner"))
                                 ) {
-                                    Label("Share", systemImage: "square.and.arrow.up")
+                                    Label(languageManager.text("Share", "Поделиться"), systemImage: "square.and.arrow.up")
                                 }
                                 .buttonStyle(.borderedProminent)
                                 .tint(themeManager.selectedTheme.primaryActionFillColor)
                             }
 
-                            Text("Share this code with employees so they can join the company.")
+                            Text(languageManager.text("Share this code with employees so they can join the company.", "Поделитесь этим кодом с сотрудниками, чтобы они могли присоединиться к компании."))
                                 .font(.footnote)
                                 .foregroundStyle(themeManager.selectedTheme.secondaryTextColor)
                         }
@@ -71,7 +75,7 @@ struct CompanyView: View {
                 .padding()
             }
             .background(themeManager.selectedTheme.screenBackground)
-            .navigationTitle("Company")
+            .navigationTitle(languageManager.text("Company", "Компания"))
             .navigationBarTitleDisplayMode(.inline)
             .onChange(of: user.company?.inviteCode) { _, _ in
                 if let company = user.company?.asAppCompany() {

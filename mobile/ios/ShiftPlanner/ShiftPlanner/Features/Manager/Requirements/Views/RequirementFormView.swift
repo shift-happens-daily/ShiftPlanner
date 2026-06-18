@@ -3,6 +3,7 @@ import SwiftUI
 struct RequirementFormView: View {
     @Environment(\.dismiss) private var dismiss
     @EnvironmentObject private var themeManager: ThemeManager
+    @EnvironmentObject private var languageManager: LanguageManager
     @State private var draft: StaffingRequirementDraft
 
     let availablePositions: [RequirementPositionOption]
@@ -27,8 +28,8 @@ struct RequirementFormView: View {
     var body: some View {
         NavigationStack {
             Form {
-                Section("Position") {
-                    Picker("Role", selection: $draft.positionId) {
+                Section(languageManager.text("Position", "Должность")) {
+                    Picker(languageManager.text("Role", "Роль"), selection: $draft.positionId) {
                         ForEach(availablePositions) { position in
                             Text(position.name).tag(Optional(position.id))
                         }
@@ -36,7 +37,7 @@ struct RequirementFormView: View {
                 }
 
                 if draft.editingRequirementId == nil {
-                    Section("Days") {
+                    Section(languageManager.text("Days", "Дни")) {
                         ForEach(0..<7, id: \.self) { weekday in
                             let isSelected = draft.weekdays.contains(weekday)
                             Button {
@@ -64,36 +65,36 @@ struct RequirementFormView: View {
                     }
                 }
 
-                Section("Demand") {
+                Section(languageManager.text("Demand", "Потребность")) {
                     Stepper(value: $draft.quantity, in: 1...20) {
-                        Text("Quantity: \(draft.quantity)")
+                        Text(languageManager.text("Quantity", "Количество") + ": \(draft.quantity)")
                     }
                 }
 
-                Section("Time") {
+                Section(languageManager.text("Time", "Время")) {
                     TimeSlotWheelPicker(
                         selection: startSlotBinding,
-                        title: "From",
+                        title: languageManager.text("From", "С"),
                         allowedRange: startAllowedRange
                     )
 
                     TimeSlotWheelPicker(
                         selection: endSlotBinding,
-                        title: "To",
+                        title: languageManager.text("To", "До"),
                         allowedRange: endAllowedRange
                     )
                 }
 
-                Section("Preview") {
+                Section(languageManager.text("Preview", "Предпросмотр")) {
                     Text(previewText)
                         .foregroundStyle(themeManager.selectedTheme.secondaryTextColor)
                 }
             }
-            .navigationTitle(draft.editingRequirementId == nil ? "Add Requirement" : "Edit Requirement")
+            .navigationTitle(draft.editingRequirementId == nil ? languageManager.text("Add Requirement", "Добавить требование") : languageManager.text("Edit Requirement", "Изменить требование"))
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
-                    Button("Cancel") {
+                    Button(languageManager.text("Cancel", "Отмена")) {
                         onCancel()
                         dismiss()
                     }
@@ -111,7 +112,7 @@ struct RequirementFormView: View {
                             dismiss()
                         }
                     } label: {
-                        Text("Save")
+                        Text(languageManager.text("Save", "Сохранить"))
                     }
                     .disabled(draft.positionId == nil || draft.weekdays.isEmpty)
                 }
@@ -123,9 +124,12 @@ struct RequirementFormView: View {
     }
 
     private var previewText: String {
-        let positionName = availablePositions.first(where: { $0.id == draft.positionId })?.name ?? "Role"
+        let positionName = availablePositions.first(where: { $0.id == draft.positionId })?.name ?? languageManager.text("Role", "Роль")
         let days = draft.weekdays.sorted().map(weekdayLabel(for:)).joined(separator: ", ")
-        return "\(draft.quantity) \(positionName) needed on \(days) from \(slotToTime(draft.startSlot)) to \(slotToTime(max(draft.endSlot, draft.startSlot + 1)))."
+        return languageManager.text(
+            "\(draft.quantity) \(positionName) needed on \(days) from \(slotToTime(draft.startSlot)) to \(slotToTime(max(draft.endSlot, draft.startSlot + 1))).",
+            "\(draft.quantity) \(positionName) нужно в \(days) с \(slotToTime(draft.startSlot)) до \(slotToTime(max(draft.endSlot, draft.startSlot + 1)))."
+        )
     }
 
     private var timeRange: DayWorkingHours {
@@ -185,7 +189,11 @@ struct RequirementFormView: View {
     }
 
     private func weekdayLabel(for weekday: Int) -> String {
-        ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"][weekday]
+        let formatter = DateFormatter()
+        formatter.locale = languageManager.locale
+        return formatter.shortWeekdaySymbols
+            .reorderedFromSundayToMonday()[weekday]
+            .capitalized
     }
 
     private func clampDraftToAllowedRange() {

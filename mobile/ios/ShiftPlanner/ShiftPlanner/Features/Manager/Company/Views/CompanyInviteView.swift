@@ -8,6 +8,7 @@ enum CompanyInviteMode: Equatable {
 struct CompanyInviteView: View {
     @Environment(\.dismiss) private var dismiss
     @EnvironmentObject private var themeManager: ThemeManager
+    @EnvironmentObject private var languageManager: LanguageManager
     @StateObject private var viewModel: CompanyInviteViewModel
 
     let mode: CompanyInviteMode
@@ -26,8 +27,8 @@ struct CompanyInviteView: View {
     var body: some View {
         NavigationStack {
             Form {
-                Section("Invite code") {
-                    TextField("Enter invite code", text: $viewModel.inviteCode)
+                Section(languageManager.text("Invite code", "Инвайт-код")) {
+                    TextField(languageManager.text("Enter invite code", "Введите код"), text: $viewModel.inviteCode)
                         .textInputAutocapitalization(.characters)
                         .autocorrectionDisabled(true)
                         .themeInputField()
@@ -41,7 +42,7 @@ struct CompanyInviteView: View {
                             ProgressView()
                                 .tint(themeManager.selectedTheme.primaryActionTextColor)
                         } else {
-                            Text("Preview company")
+                            Text(languageManager.text("Preview company", "Показать компанию"))
                         }
                     }
                     .buttonStyle(.plain)
@@ -50,21 +51,21 @@ struct CompanyInviteView: View {
                 }
 
                 if let preview = viewModel.preview {
-                    Section("Preview") {
+                    Section(languageManager.text("Preview", "Предпросмотр")) {
                         VStack(alignment: .leading, spacing: 8) {
                             Text(preview.name)
                                 .font(.headline)
                                 .foregroundStyle(themeManager.selectedTheme.primaryTextColor)
-                            Text("Invite code: \(preview.inviteCode)")
+                            Text("\(languageManager.text("Invite code", "Инвайт-код")): \(preview.inviteCode)")
                                 .foregroundStyle(themeManager.selectedTheme.secondaryTextColor)
 
                             if !preview.branches.isEmpty {
-                                Text("Branches: \(preview.branches.map(\.name).joined(separator: ", "))")
+                                Text("\(languageManager.text("Branches", "Филиалы")): \(preview.branches.map(\.name).joined(separator: ", "))")
                                     .font(.footnote)
                             }
 
                             if !preview.positions.isEmpty {
-                                Text("Positions: \(preview.positions.map(\.name).joined(separator: ", "))")
+                                Text("\(languageManager.text("Positions", "Должности")): \(preview.positions.map(\.name).joined(separator: ", "))")
                                     .font(.footnote)
                             }
                         }
@@ -86,7 +87,7 @@ struct CompanyInviteView: View {
                                     ProgressView()
                                         .tint(themeManager.selectedTheme.primaryActionTextColor)
                                 } else {
-                                    Text("Join company")
+                                    Text(languageManager.text("Join company", "Присоединиться"))
                                 }
                             }
                             .buttonStyle(.plain)
@@ -95,7 +96,7 @@ struct CompanyInviteView: View {
                         }
                     } else {
                         Section {
-                            Text("Manager join by invite code will be enabled once the backend supports multi-manager membership.")
+                            Text(languageManager.text("Manager join by invite code will be enabled once the backend supports multi-manager membership.", "Вход менеджера по инвайт-коду появится, когда бэкенд начнет поддерживать несколько менеджеров в компании."))
                                 .font(.footnote)
                                 .foregroundStyle(.secondary)
                         }
@@ -109,7 +110,7 @@ struct CompanyInviteView: View {
                     }
                 }
             }
-            .navigationTitle(mode == .employeeJoin ? "Join Company" : "Invite Code")
+            .navigationTitle(mode == .employeeJoin ? languageManager.text("Join Company", "Вступить в компанию") : languageManager.text("Invite Code", "Инвайт-код"))
             .navigationBarTitleDisplayMode(.inline)
             .scrollContentBackground(.hidden)
             .background(themeManager.selectedTheme.screenBackground)

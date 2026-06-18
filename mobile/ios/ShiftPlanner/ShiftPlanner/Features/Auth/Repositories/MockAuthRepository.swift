@@ -11,18 +11,18 @@ enum AuthError: LocalizedError {
     var errorDescription: String? {
         switch self {
         case .emptyEmail:
-            return "Email is required"
+            return localized("Email is required.", "Почта обязательна.")
         case .emptyPassword:
-            return "Password is required"
+            return localized("Password is required.", "Пароль обязателен.")
         case .emptyName:
-            return "Name is required"
+            return localized("Name is required.", "Имя обязательно.")
         case .invalidEmail:
-            return "Enter a valid email"
+            return localized("Enter a valid email.", "Введите корректную почту.")
         case .passwordTooShort:
-            return "Password must be at least 8 characters"
+            return localized("Password must be at least 8 characters.", "Пароль должен содержать минимум 8 символов.")
             
         case .passwordsDontMatch:
-            return "Passwords do not match"
+            return localized("Passwords do not match.", "Пароли не совпадают.")
         }
     }
 }

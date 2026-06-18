@@ -1,6 +1,7 @@
 import SwiftUI
 
 struct AvailabilityLegendView: View {
+    @EnvironmentObject private var languageManager: LanguageManager
     let onCopyPreviousWeek: () -> Void
     let onResetWeek: () -> Void
 
@@ -25,19 +26,19 @@ struct AvailabilityLegendView: View {
             }
 
             HStack(spacing: 16) {
-                Button("Copy previous week", action: onCopyPreviousWeek)
+                Button(languageManager.text("Copy previous week", "Копировать прошлую"), action: onCopyPreviousWeek)
                     .buttonStyle(.plain)
                     .font(.footnote)
                     .foregroundStyle(.blue)
 
-                Button("Reset week", action: onResetWeek)
+                Button(languageManager.text("Reset week", "Сбросить неделю"), action: onResetWeek)
                     .buttonStyle(.plain)
                     .font(.footnote)
                     .foregroundStyle(.red)
 
                 Spacer()
 
-                Text("Drag across the grid to paint your week")
+                Text(languageManager.text("Drag across the grid to paint your week", "Проведите по сетке, чтобы закрасить неделю"))
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }

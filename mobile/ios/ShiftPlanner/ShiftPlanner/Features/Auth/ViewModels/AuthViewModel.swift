@@ -47,7 +47,7 @@ final class AuthViewModel: ObservableObject {
     func signUp() async {
         
         if !passwordsMatch {
-            errorMessage = "Passwords do not match"
+            errorMessage = localized("Passwords do not match.", "Пароли не совпадают.")
             return
         }
         

@@ -3,6 +3,7 @@ import SwiftUI
 
 struct EmployeeListView: View {
     @EnvironmentObject private var themeManager: ThemeManager
+    @EnvironmentObject private var languageManager: LanguageManager
     @StateObject private var viewModel: EmployeeListViewModel
     @State private var employeePendingRemoval: ManagedEmployee?
     @State private var positionPendingRemoval: ManagedPosition?
@@ -27,12 +28,12 @@ struct EmployeeListView: View {
             ScrollView(showsIndicators: false) {
                 if user.hasCompany {
                     VStack(alignment: .leading, spacing: 18) {
-                        Text("Local preview mode: employee and role changes are stored only in the app UI for now.")
+                        Text(languageManager.text("Local preview mode: employee and role changes are stored only in the app UI for now.", "Режим локального предпросмотра: изменения сотрудников и ролей пока сохраняются только в интерфейсе приложения."))
                             .font(.footnote)
                             .foregroundStyle(themeManager.selectedTheme.secondaryTextColor)
 
                         VStack(alignment: .leading, spacing: 14) {
-                            Text("Employees")
+                            Text(languageManager.text("Employees", "Сотрудники"))
                                 .font(.title3)
                                 .fontWeight(.bold)
                                 .foregroundStyle(themeManager.selectedTheme.primaryTextColor)
@@ -40,7 +41,7 @@ struct EmployeeListView: View {
                             if viewModel.isLoading {
                                 HStack {
                                     Spacer()
-                                    ProgressView("Loading preview data...")
+                                    ProgressView(languageManager.text("Loading preview data...", "Загрузка предпросмотра..."))
                                     Spacer()
                                 }
                                 .padding(.vertical, 20)
@@ -60,7 +61,7 @@ struct EmployeeListView: View {
                                     }
                                 }
                             } else {
-                                Text("No employees have joined the company yet.")
+                                Text(languageManager.text("No employees have joined the company yet.", "К компании пока не присоединился ни один сотрудник."))
                                     .foregroundStyle(themeManager.selectedTheme.secondaryTextColor)
                                     .padding(18)
                                     .themeCard()
@@ -86,11 +87,11 @@ struct EmployeeListView: View {
                 }
             }
             .background(themeManager.selectedTheme.screenBackground)
-            .navigationTitle("Employees")
+            .navigationTitle(languageManager.text("Employees", "Сотрудники"))
             .navigationBarTitleDisplayMode(.inline)
-            .alert("Remove employee?", isPresented: employeeRemovalBinding) {
-                Button("Cancel", role: .cancel) {}
-                Button("Remove", role: .destructive) {
+            .alert(languageManager.text("Remove employee?", "Удалить сотрудника?"), isPresented: employeeRemovalBinding) {
+                Button(languageManager.text("Cancel", "Отмена"), role: .cancel) {}
+                Button(languageManager.text("Remove", "Удалить"), role: .destructive) {
                     if let employeePendingRemoval {
                         Task {
                             await viewModel.removeEmployee(employeePendingRemoval)
@@ -99,11 +100,11 @@ struct EmployeeListView: View {
                     employeePendingRemoval = nil
                 }
             } message: {
-                Text("This employee will be removed from the local company preview.")
+                Text(languageManager.text("This employee will be removed from the local company preview.", "Этот сотрудник будет удален из локального предпросмотра компании."))
             }
-            .alert("Delete role?", isPresented: positionRemovalBinding) {
-                Button("Cancel", role: .cancel) {}
-                Button("Delete", role: .destructive) {
+            .alert(languageManager.text("Delete role?", "Удалить должность?"), isPresented: positionRemovalBinding) {
+                Button(languageManager.text("Cancel", "Отмена"), role: .cancel) {}
+                Button(languageManager.text("Delete", "Удалить"), role: .destructive) {
                     if let positionPendingRemoval {
                         Task {
                             await viewModel.removePosition(positionPendingRemoval)
@@ -112,7 +113,7 @@ struct EmployeeListView: View {
                     positionPendingRemoval = nil
                 }
             } message: {
-                Text("Employees with this role will become unassigned in the local preview.")
+                Text(languageManager.text("Employees with this role will become unassigned in the local preview.", "Сотрудники с этой должностью станут без роли в локальном предпросмотре."))
             }
             .sheet(item: $employeeRolePickerTarget) { employee in
                 EmployeeRolePickerSheet(

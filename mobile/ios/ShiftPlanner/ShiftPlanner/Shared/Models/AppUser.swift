@@ -34,8 +34,8 @@ enum UserRole: String, Codable, CaseIterable, Identifiable {
     
     var title: String {
         switch self {
-        case .manager: return "Manager"
-        case .employee: return "Employee"
+        case .manager: return localized("Manager", "Менеджер")
+        case .employee: return localized("Employee", "Сотрудник")
         }
     }
 }

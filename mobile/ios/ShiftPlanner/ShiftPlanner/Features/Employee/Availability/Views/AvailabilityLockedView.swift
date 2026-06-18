@@ -1,6 +1,7 @@
 import SwiftUI
 
 struct AvailabilityLockedView: View {
+    @EnvironmentObject private var languageManager: LanguageManager
     let onJoinCompany: () -> Void
 
     var body: some View {
@@ -13,26 +14,26 @@ struct AvailabilityLockedView: View {
                         .font(.system(size: 56))
                         .foregroundStyle(.secondary)
 
-                    Text("Join a company first")
+                    Text(languageManager.text("Join a company first", "Сначала присоединитесь к компании"))
                         .font(.title3)
                         .fontWeight(.bold)
 
-                    Text("Availability becomes available after you join a company with an invite code.")
+                    Text(languageManager.text("Availability becomes available after you join a company with an invite code.", "Настройка доступности откроется после присоединения к компании по инвайт-коду."))
                         .multilineTextAlignment(.center)
                         .foregroundStyle(.secondary)
                 }
                 .padding(.horizontal, 20)
 
                 CompanyMembershipBannerView(
-                    title: "Enter an invite code to unlock availability and schedule preferences.",
-                    buttonTitle: "Enter invite code",
+                    title: languageManager.text("Enter an invite code to unlock availability and schedule preferences.", "Введите инвайт-код, чтобы открыть доступность и предпочтения по графику."),
+                    buttonTitle: languageManager.text("Enter invite code", "Ввести код"),
                     action: onJoinCompany
                 )
 
                 Spacer()
             }
             .padding()
-            .navigationTitle("Availability")
+            .navigationTitle(languageManager.text("Availability", "Доступность"))
             .navigationBarTitleDisplayMode(.inline)
         }
     }
