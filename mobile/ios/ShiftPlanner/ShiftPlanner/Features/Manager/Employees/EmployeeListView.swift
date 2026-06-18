@@ -20,7 +20,11 @@ struct EmployeeListView: View {
     ) {
         self.user = user
         self.onUserUpdated = onUserUpdated
-        _viewModel = StateObject(wrappedValue: EmployeeListViewModel(repository: repository))
+        _viewModel = StateObject(
+            wrappedValue: EmployeeListViewModel(
+                repository: repository ?? APIEmployeeManagementRepository(companyId: user.company?.id)
+            )
+        )
     }
 
     var body: some View {
@@ -28,7 +32,14 @@ struct EmployeeListView: View {
             ScrollView(showsIndicators: false) {
                 if user.hasCompany {
                     VStack(alignment: .leading, spacing: 18) {
-                        Text(languageManager.text("Local preview mode: employee and role changes are stored only in the app UI for now.", "Режим локального предпросмотра: изменения сотрудников и ролей пока сохраняются только в интерфейсе приложения."))
+                        Text(
+                            viewModel.capabilities.canAssignPosition && viewModel.capabilities.canRemoveEmployee && viewModel.capabilities.canRemovePosition
+                            ? languageManager.text("Employee data is synced with the backend.", "Данные сотрудников синхронизируются с бэкендом.")
+                            : languageManager.text(
+                                "Employee and role lists are loaded from the backend. Position creation works via API, while reassignment and deletion are waiting for backend support.",
+                                "Списки сотрудников и должностей загружаются с бэкенда. Создание должности уже работает через API, а переназначение и удаление ждут поддержки на бэкенде."
+                            )
+                        )
                             .font(.footnote)
                             .foregroundStyle(themeManager.selectedTheme.secondaryTextColor)
 
@@ -51,6 +62,7 @@ struct EmployeeListView: View {
                                         ManagedEmployeeCardView(
                                             employee: employee,
                                             positionTitle: viewModel.positionTitle(for: employee),
+                                            canDeleteEmployee: viewModel.capabilities.canRemoveEmployee,
                                             onOpenRolePicker: {
                                                 employeeRolePickerTarget = employee
                                             },
@@ -120,6 +132,8 @@ struct EmployeeListView: View {
                     employee: employee,
                     positions: viewModel.positions,
                     currentPositionTitle: viewModel.positionTitle(for: employee),
+                    canAssignPosition: viewModel.capabilities.canAssignPosition,
+                    canDeletePosition: viewModel.capabilities.canRemovePosition,
                     onAssignPosition: { positionId in
                         Task {
                             await viewModel.assignPosition(positionId, to: employee)

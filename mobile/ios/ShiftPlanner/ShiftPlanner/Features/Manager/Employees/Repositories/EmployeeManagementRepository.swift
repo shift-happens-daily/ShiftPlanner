@@ -1,11 +1,20 @@
 import Foundation
 
+struct EmployeeManagementCapabilities {
+    let canCreatePosition: Bool
+    let canAssignPosition: Bool
+    let canRemovePosition: Bool
+    let canRemoveEmployee: Bool
+}
+
 protocol EmployeeManagementRepository {
-    func fetchEmployees() async throws -> [ManagedEmployee]
+    var capabilities: EmployeeManagementCapabilities { get }
+
+    func fetchEmployees(allowedPositionIDs: Set<Int>) async throws -> [ManagedEmployee]
     func fetchPositions() async throws -> [ManagedPosition]
     func addPosition(title: String, currentPositions: [ManagedPosition]) async throws -> [ManagedPosition]
     func removePosition(_ position: ManagedPosition, from employees: [ManagedEmployee], positions: [ManagedPosition]) async throws -> EmployeeManagementSnapshot
-    func assignPosition(_ positionId: UUID?, to employee: ManagedEmployee, in employees: [ManagedEmployee]) async throws -> [ManagedEmployee]
+    func assignPosition(_ positionId: Int?, to employee: ManagedEmployee, in employees: [ManagedEmployee]) async throws -> [ManagedEmployee]
     func removeEmployee(_ employee: ManagedEmployee, from employees: [ManagedEmployee]) async throws -> [ManagedEmployee]
 }
 

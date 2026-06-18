@@ -19,6 +19,28 @@ final class APICompanyRepository: CompanyRepository {
         return response.asAppCompany()
     }
 
+    func fetchBranches(companyId: Int) async throws -> [AppBranchOption] {
+        let request = apiClient.makeRequest(
+            path: "companies/\(companyId)/branches",
+            method: "GET",
+            requiresAuthorization: true
+        )
+        let response = try await apiClient.send(request, as: [CompanyBranchResponse].self)
+        return response.map { $0.asAppBranchOption() }
+    }
+
+    func createBranch(companyId: Int, name: String) async throws -> AppBranchOption {
+        let body = try JSONEncoder().encode(CompanyBranchCreateRequest(name: name))
+        let request = apiClient.makeRequest(
+            path: "companies/\(companyId)/branches",
+            method: "POST",
+            body: body,
+            requiresAuthorization: true
+        )
+        let response = try await apiClient.send(request, as: CompanyBranchResponse.self)
+        return response.asAppBranchOption()
+    }
+
     func previewInvite(code: String) async throws -> AppCompanyInvitePreview {
         let request = apiClient.makeRequest(
             path: "companies/invite/\(code)",
@@ -29,12 +51,12 @@ final class APICompanyRepository: CompanyRepository {
         return response.asAppCompanyInvitePreview()
     }
 
-    func joinCompany(inviteCode: String) async throws -> AppUser {
+    func joinCompany(inviteCode: String, branchId: Int, positionId: Int) async throws -> AppUser {
         let body = try JSONEncoder().encode(
             CompanyJoinRequest(
                 inviteCode: inviteCode,
-                branchId: nil,
-                positionId: nil
+                branchId: branchId,
+                positionId: positionId
             )
         )
         let request = apiClient.makeRequest(

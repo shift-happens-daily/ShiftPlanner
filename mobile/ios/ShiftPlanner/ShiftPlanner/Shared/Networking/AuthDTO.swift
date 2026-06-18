@@ -67,6 +67,8 @@ struct CurrentUserResponse: Codable {
     let role: UserRole
     let employeeId: Int?
     let company: CurrentUserCompanyResponse?
+    let branch: CurrentUserBranchResponse?
+    let position: CurrentUserPositionResponse?
 
     enum CodingKeys: String, CodingKey {
         case id
@@ -75,6 +77,8 @@ struct CurrentUserResponse: Codable {
         case role
         case employeeId = "employee_id"
         case company
+        case branch
+        case position
     }
 }
 
@@ -90,6 +94,16 @@ struct CurrentUserCompanyResponse: Codable {
     }
 }
 
+struct CurrentUserBranchResponse: Codable {
+    let id: Int
+    let name: String
+}
+
+struct CurrentUserPositionResponse: Codable {
+    let id: Int
+    let name: String
+}
+
 extension CurrentUserResponse {
     func asAppUser() -> AppUser {
         AppUser(
@@ -102,8 +116,15 @@ extension CurrentUserResponse {
                 AppCompanySummary(
                     id: $0.id,
                     name: $0.name,
-                    inviteCode: $0.inviteCode
+                    inviteCode: $0.inviteCode,
+                    branches: []
                 )
+            },
+            branch: branch.map {
+                AppBranchOption(id: $0.id, name: $0.name)
+            },
+            position: position.map {
+                AppPositionOption(id: $0.id, name: $0.name)
             }
         )
     }

@@ -1,21 +1,31 @@
 import Foundation
 
 struct MockEmployeeManagementRepository: EmployeeManagementRepository {
-    func fetchEmployees() async throws -> [ManagedEmployee] {
+    let capabilities = EmployeeManagementCapabilities(
+        canCreatePosition: true,
+        canAssignPosition: true,
+        canRemovePosition: true,
+        canRemoveEmployee: true
+    )
+
+    func fetchEmployees(allowedPositionIDs: Set<Int>) async throws -> [ManagedEmployee] {
         let positions = try await fetchPositions()
 
         return [
             ManagedEmployee(
+                id: 1,
                 fullName: "Anna Petrova",
                 email: "anna@example.com",
                 positionId: positions[safe: 0]?.id
             ),
             ManagedEmployee(
+                id: 2,
                 fullName: "Ivan Smirnov",
                 email: "ivan@example.com",
                 positionId: positions[safe: 1]?.id
             ),
             ManagedEmployee(
+                id: 3,
                 fullName: "Maria Sokolova",
                 email: "maria@example.com",
                 positionId: nil
@@ -25,15 +35,16 @@ struct MockEmployeeManagementRepository: EmployeeManagementRepository {
 
     func fetchPositions() async throws -> [ManagedPosition] {
         [
-            ManagedPosition(title: "Barista"),
-            ManagedPosition(title: "Waiter"),
-            ManagedPosition(title: "Shift Lead")
+            ManagedPosition(id: 1, title: "Barista"),
+            ManagedPosition(id: 2, title: "Waiter"),
+            ManagedPosition(id: 3, title: "Shift Lead")
         ]
     }
 
     func addPosition(title: String, currentPositions: [ManagedPosition]) async throws -> [ManagedPosition] {
         var updatedPositions = currentPositions
-        updatedPositions.append(ManagedPosition(title: title))
+        let nextID = (updatedPositions.map(\.id).max() ?? 0) + 1
+        updatedPositions.append(ManagedPosition(id: nextID, title: title))
         return updatedPositions.sorted { $0.title.localizedCaseInsensitiveCompare($1.title) == .orderedAscending }
     }
 
@@ -58,7 +69,7 @@ struct MockEmployeeManagementRepository: EmployeeManagementRepository {
     }
 
     func assignPosition(
-        _ positionId: UUID?,
+        _ positionId: Int?,
         to employee: ManagedEmployee,
         in employees: [ManagedEmployee]
     ) async throws -> [ManagedEmployee] {

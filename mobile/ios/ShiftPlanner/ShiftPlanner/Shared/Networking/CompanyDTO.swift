@@ -4,6 +4,10 @@ struct CompanyCreateRequest: Codable {
     let name: String
 }
 
+struct CompanyBranchCreateRequest: Codable {
+    let name: String
+}
+
 struct CompanyResponse: Codable {
     let id: Int
     let name: String
@@ -37,6 +41,18 @@ struct BranchOptionResponse: Codable {
     let name: String
 }
 
+struct CompanyBranchResponse: Codable {
+    let id: Int
+    let name: String
+    let companyId: Int
+
+    enum CodingKeys: String, CodingKey {
+        case id
+        case name
+        case companyId = "company_id"
+    }
+}
+
 struct PositionOptionResponse: Codable {
     let id: Int
     let name: String
@@ -56,7 +72,7 @@ struct CompanyJoinRequest: Codable {
 
 extension CompanyResponse {
     func asAppCompany() -> AppCompany {
-        AppCompany(id: id, name: name, inviteCode: inviteCode)
+        AppCompany(id: id, name: name, inviteCode: inviteCode, branches: [])
     }
 }
 
@@ -69,5 +85,11 @@ extension CompanyInvitePreviewResponse {
             branches: branches.map { AppBranchOption(id: $0.id, name: $0.name) },
             positions: positions.map { AppPositionOption(id: $0.id, name: $0.name) }
         )
+    }
+}
+
+extension CompanyBranchResponse {
+    func asAppBranchOption() -> AppBranchOption {
+        AppBranchOption(id: id, name: name)
     }
 }

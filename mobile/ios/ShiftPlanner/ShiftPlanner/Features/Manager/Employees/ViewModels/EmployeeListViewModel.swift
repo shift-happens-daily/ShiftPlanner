@@ -15,6 +15,10 @@ final class EmployeeListViewModel: ObservableObject {
         self.repository = repository ?? MockEmployeeManagementRepository()
     }
 
+    var capabilities: EmployeeManagementCapabilities {
+        repository.capabilities
+    }
+
     var hasEmployees: Bool {
         !employees.isEmpty
     }
@@ -30,11 +34,11 @@ final class EmployeeListViewModel: ObservableObject {
         errorMessage = nil
 
         do {
-            async let loadedEmployees = repository.fetchEmployees()
-            async let loadedPositions = repository.fetchPositions()
-
-            let (employees, positions) = try await (loadedEmployees, loadedPositions)
+            let positions = try await repository.fetchPositions()
             self.positions = positions.sorted { $0.title.localizedCaseInsensitiveCompare($1.title) == .orderedAscending }
+            let employees = try await repository.fetchEmployees(
+                allowedPositionIDs: Set(positions.map(\.id))
+            )
             self.employees = employees
         } catch {
             errorMessage = error.localizedDescription
@@ -61,11 +65,17 @@ final class EmployeeListViewModel: ObservableObject {
         do {
             positions = try await repository.addPosition(title: trimmedTitle, currentPositions: positions)
             if let employee,
+               capabilities.canAssignPosition,
                let newPosition = positions.first(where: { $0.title.caseInsensitiveCompare(trimmedTitle) == .orderedSame }) {
                 employees = try await repository.assignPosition(newPosition.id, to: employee, in: employees)
-                statusMessage = localized("Position added and assigned locally.", "Должность добавлена и назначена локально.")
+                statusMessage = localized("Position added and assigned.", "Должность добавлена и назначена.")
             } else {
-                statusMessage = localized("Position added locally.", "Должность добавлена локально.")
+                statusMessage = capabilities.canAssignPosition
+                    ? localized("Position added.", "Должность добавлена.")
+                    : localized(
+                        "Position added. Backend assignment for employees is not supported yet.",
+                        "Должность добавлена. Бэкенд пока не поддерживает назначение должности сотруднику."
+                    )
             }
             errorMessage = nil
         } catch {
@@ -84,18 +94,18 @@ final class EmployeeListViewModel: ObservableObject {
             employees = snapshot.employees
             positions = snapshot.positions
             errorMessage = nil
-            statusMessage = localized("Position removed locally.", "Должность удалена локально.")
+            statusMessage = localized("Position removed.", "Должность удалена.")
         } catch {
             errorMessage = error.localizedDescription
             statusMessage = nil
         }
     }
 
-    func assignPosition(_ positionId: UUID?, to employee: ManagedEmployee) async {
+    func assignPosition(_ positionId: Int?, to employee: ManagedEmployee) async {
         do {
             employees = try await repository.assignPosition(positionId, to: employee, in: employees)
             errorMessage = nil
-            statusMessage = localized("Employee role updated locally.", "Роль сотрудника обновлена локально.")
+            statusMessage = localized("Employee role updated.", "Роль сотрудника обновлена.")
         } catch {
             errorMessage = error.localizedDescription
             statusMessage = nil
@@ -106,7 +116,7 @@ final class EmployeeListViewModel: ObservableObject {
         do {
             employees = try await repository.removeEmployee(employee, from: employees)
             errorMessage = nil
-            statusMessage = localized("Employee removed locally.", "Сотрудник удален локально.")
+            statusMessage = localized("Employee removed.", "Сотрудник удален.")
         } catch {
             errorMessage = error.localizedDescription
             statusMessage = nil

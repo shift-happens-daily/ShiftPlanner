@@ -5,6 +5,8 @@ import Combine
 final class CompanyInviteViewModel: ObservableObject {
     @Published var inviteCode = ""
     @Published var preview: AppCompanyInvitePreview?
+    @Published var selectedBranchId: Int?
+    @Published var selectedPositionId: Int?
     @Published var joinedUser: AppUser?
     @Published var isLoading = false
     @Published var errorMessage: String?
@@ -13,6 +15,10 @@ final class CompanyInviteViewModel: ObservableObject {
 
     init(repository: CompanyRepository) {
         self.repository = repository
+    }
+
+    var canJoinCompany: Bool {
+        !isLoading && preview != nil && selectedBranchId != nil && selectedPositionId != nil
     }
 
     func previewCompany() async {
@@ -26,9 +32,14 @@ final class CompanyInviteViewModel: ObservableObject {
         errorMessage = nil
 
         do {
-            preview = try await repository.previewInvite(code: code)
+            let loadedPreview = try await repository.previewInvite(code: code)
+            preview = loadedPreview
+            selectedBranchId = loadedPreview.branches.first?.id
+            selectedPositionId = loadedPreview.positions.first?.id
         } catch {
             preview = nil
+            selectedBranchId = nil
+            selectedPositionId = nil
             errorMessage = error.localizedDescription
         }
 
@@ -42,11 +53,25 @@ final class CompanyInviteViewModel: ObservableObject {
             return
         }
 
+        guard let branchId = selectedBranchId else {
+            errorMessage = localized("Please select a branch.", "Выберите филиал.")
+            return
+        }
+
+        guard let positionId = selectedPositionId else {
+            errorMessage = localized("Please select a position.", "Выберите должность.")
+            return
+        }
+
         isLoading = true
         errorMessage = nil
 
         do {
-            joinedUser = try await repository.joinCompany(inviteCode: code)
+            joinedUser = try await repository.joinCompany(
+                inviteCode: code,
+                branchId: branchId,
+                positionId: positionId
+            )
         } catch {
             errorMessage = error.localizedDescription
         }

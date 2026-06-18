@@ -4,12 +4,14 @@ struct AppCompanySummary: Identifiable, Codable {
     let id: Int
     let name: String
     let inviteCode: String
+    let branches: [AppBranchOption]
 }
 
 struct AppCompany: Identifiable, Codable {
     let id: Int
     let name: String
     let inviteCode: String
+    let branches: [AppBranchOption]
 }
 
 struct AppBranchOption: Identifiable, Codable {
@@ -44,12 +46,16 @@ struct CompanyBranchDraft: Identifiable, Codable, Equatable {
 
 extension AppCompanySummary {
     func asAppCompany() -> AppCompany {
-        AppCompany(id: id, name: name, inviteCode: inviteCode)
+        AppCompany(id: id, name: name, inviteCode: inviteCode, branches: branches)
     }
 }
 
 extension AppCompany {
     func asSummary() -> AppCompanySummary {
-        AppCompanySummary(id: id, name: name, inviteCode: inviteCode)
+        AppCompanySummary(id: id, name: name, inviteCode: inviteCode, branches: branches)
+    }
+
+    func withBranches(_ branches: [AppBranchOption]) -> AppCompany {
+        AppCompany(id: id, name: name, inviteCode: inviteCode, branches: branches)
     }
 }

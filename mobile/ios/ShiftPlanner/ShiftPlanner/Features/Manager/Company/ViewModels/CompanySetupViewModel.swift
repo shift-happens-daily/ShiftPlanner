@@ -41,11 +41,36 @@ final class CompanySetupViewModel: ObservableObject {
             return
         }
 
+        let normalizedBranchNames = branches
+            .map { $0.name.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
+
+        if hasBranches && normalizedBranchNames.isEmpty {
+            errorMessage = localized("Add at least one branch.", "Добавьте хотя бы один филиал.")
+            return
+        }
+
         isSaving = true
         errorMessage = nil
 
         do {
-            createdCompany = try await repository.createCompany(name: trimmedName)
+            let company = try await repository.createCompany(name: trimmedName)
+
+            if hasBranches {
+                var createdBranches: [AppBranchOption] = []
+
+                for branchName in normalizedBranchNames {
+                    let createdBranch = try await repository.createBranch(
+                        companyId: company.id,
+                        name: branchName
+                    )
+                    createdBranches.append(createdBranch)
+                }
+
+                createdCompany = company.withBranches(createdBranches)
+            } else {
+                createdCompany = company
+            }
         } catch {
             errorMessage = error.localizedDescription
         }

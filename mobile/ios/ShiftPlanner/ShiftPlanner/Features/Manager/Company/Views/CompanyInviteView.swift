@@ -73,6 +73,26 @@ struct CompanyInviteView: View {
                     }
 
                     if mode == .employeeJoin {
+                        Section(languageManager.text("Work setup", "Настройка работы")) {
+                            Picker(
+                                languageManager.text("Branch", "Филиал"),
+                                selection: $viewModel.selectedBranchId
+                            ) {
+                                ForEach(preview.branches) { branch in
+                                    Text(branch.name).tag(Optional(branch.id))
+                                }
+                            }
+
+                            Picker(
+                                languageManager.text("Position", "Должность"),
+                                selection: $viewModel.selectedPositionId
+                            ) {
+                                ForEach(preview.positions) { position in
+                                    Text(position.name).tag(Optional(position.id))
+                                }
+                            }
+                        }
+
                         Section {
                             Button {
                                 Task {
@@ -91,8 +111,8 @@ struct CompanyInviteView: View {
                                 }
                             }
                             .buttonStyle(.plain)
-                            .themePrimaryAction(isEnabled: !viewModel.isLoading)
-                            .disabled(viewModel.isLoading)
+                            .themePrimaryAction(isEnabled: viewModel.canJoinCompany)
+                            .disabled(!viewModel.canJoinCompany)
                         }
                     } else {
                         Section {

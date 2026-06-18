@@ -7,6 +7,8 @@ struct AppUser: Identifiable, Codable {
     let role: UserRole
     let employeeId: Int?
     let company: AppCompanySummary?
+    let branch: AppBranchOption?
+    let position: AppPositionOption?
 
     var hasCompany: Bool {
         company != nil
@@ -21,7 +23,9 @@ extension AppUser {
             name: name,
             role: role,
             employeeId: employeeId,
-            company: company.asSummary()
+            company: company.asSummary(),
+            branch: branch,
+            position: position
         )
     }
 }

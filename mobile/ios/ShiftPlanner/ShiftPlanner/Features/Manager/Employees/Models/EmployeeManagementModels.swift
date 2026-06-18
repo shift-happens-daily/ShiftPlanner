@@ -1,22 +1,22 @@
 import Foundation
 
 struct ManagedPosition: Identifiable, Equatable {
-    let id: UUID
+    let id: Int
     var title: String
 
-    init(id: UUID = UUID(), title: String) {
+    init(id: Int, title: String) {
         self.id = id
         self.title = title
     }
 }
 
 struct ManagedEmployee: Identifiable, Equatable {
-    let id: UUID
+    let id: Int
     var fullName: String
     var email: String
-    var positionId: UUID?
+    var positionId: Int?
 
-    init(id: UUID = UUID(), fullName: String, email: String, positionId: UUID? = nil) {
+    init(id: Int, fullName: String, email: String, positionId: Int? = nil) {
         self.id = id
         self.fullName = fullName
         self.email = email

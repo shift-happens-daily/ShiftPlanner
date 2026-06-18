@@ -8,7 +8,9 @@ struct EmployeeRolePickerSheet: View {
     let employee: ManagedEmployee
     let positions: [ManagedPosition]
     let currentPositionTitle: String
-    let onAssignPosition: (UUID?) -> Void
+    let canAssignPosition: Bool
+    let canDeletePosition: Bool
+    let onAssignPosition: (Int?) -> Void
     let onCreatePosition: (String) -> Void
     let onDeletePosition: (ManagedPosition) -> Void
 
@@ -27,21 +29,25 @@ struct EmployeeRolePickerSheet: View {
                                 title: languageManager.text("No role", "Без должности"),
                                 subtitle: currentPositionTitle == localized("No role assigned", "Без должности") ? languageManager.text("Currently selected", "Выбрано сейчас") : nil
                             ) {
-                                onAssignPosition(nil)
-                                dismiss()
+                                if canAssignPosition {
+                                    onAssignPosition(nil)
+                                    dismiss()
+                                }
                             }
 
                             ForEach(positions) { position in
                                 pickerRow(
                                     title: position.title,
                                     subtitle: position.title == currentPositionTitle ? languageManager.text("Currently selected", "Выбрано сейчас") : nil,
-                                    trailingAction: {
+                                    trailingAction: canDeletePosition ? {
                                         onDeletePosition(position)
                                         dismiss()
-                                    }
+                                    } : nil
                                 ) {
-                                    onAssignPosition(position.id)
-                                    dismiss()
+                                    if canAssignPosition {
+                                        onAssignPosition(position.id)
+                                        dismiss()
+                                    }
                                 }
                             }
                         } else {
@@ -50,13 +56,15 @@ struct EmployeeRolePickerSheet: View {
                                     pickerRow(
                                         title: position.title,
                                         subtitle: position.title == currentPositionTitle ? languageManager.text("Currently selected", "Выбрано сейчас") : nil,
-                                        trailingAction: {
+                                        trailingAction: canDeletePosition ? {
                                             onDeletePosition(position)
                                             dismiss()
-                                        }
+                                        } : nil
                                     ) {
-                                        onAssignPosition(position.id)
-                                        dismiss()
+                                        if canAssignPosition {
+                                            onAssignPosition(position.id)
+                                            dismiss()
+                                        }
                                     }
                                 }
                             }

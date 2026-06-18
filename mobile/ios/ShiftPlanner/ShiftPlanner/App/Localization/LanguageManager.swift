@@ -35,7 +35,16 @@ final class LanguageManager: ObservableObject {
     }
 
     nonisolated static var storedLocale: Locale {
-        Locale(identifier: storedLanguage().localeIdentifier)
+        let identifier: String
+
+        switch storedLanguage() {
+        case .english:
+            identifier = "en_US"
+        case .russian:
+            identifier = "ru_RU"
+        }
+
+        return Locale(identifier: identifier)
     }
 
     nonisolated static func storedLanguage() -> AppLanguage {

@@ -41,7 +41,9 @@ final class MockAuthRepository: AuthRepository {
             name: "Test User",
             role: .manager,
             employeeId: nil,
-            company: nil
+            company: nil,
+            branch: nil,
+            position: nil
         )
 
         currentUser = user
@@ -68,7 +70,9 @@ final class MockAuthRepository: AuthRepository {
             name: name,
             role: role,
             employeeId: nil,
-            company: nil
+            company: nil,
+            branch: nil,
+            position: nil
         )
 
         currentUser = user

@@ -5,6 +5,7 @@ struct ManagedEmployeeCardView: View {
 
     let employee: ManagedEmployee
     let positionTitle: String
+    let canDeleteEmployee: Bool
     let onOpenRolePicker: () -> Void
     let onDelete: () -> Void
 
@@ -52,23 +53,25 @@ struct ManagedEmployeeCardView: View {
                 .foregroundStyle(themeManager.selectedTheme.primaryTextColor)
                 .fixedSize(horizontal: false, vertical: true)
 
-                Button {
-                    onDelete()
-                } label: {
-                    Image(systemName: "xmark")
-                        .font(.caption.weight(.bold))
-                        .frame(width: 14, height: 14)
-                        .padding(9)
-                        .foregroundStyle(themeManager.selectedTheme.accentColor)
+                if canDeleteEmployee {
+                    Button {
+                        onDelete()
+                    } label: {
+                        Image(systemName: "xmark")
+                            .font(.caption.weight(.bold))
+                            .frame(width: 14, height: 14)
+                            .padding(9)
+                            .foregroundStyle(themeManager.selectedTheme.accentColor)
+                    }
+                    .buttonStyle(.plain)
+                    .background(themeManager.selectedTheme.cardTint)
+                    .overlay {
+                        RoundedRectangle(cornerRadius: 14, style: .continuous)
+                            .stroke(themeManager.selectedTheme.borderColor, lineWidth: 1)
+                    }
+                    .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+                    .fixedSize()
                 }
-                .buttonStyle(.plain)
-                .background(themeManager.selectedTheme.cardTint)
-                .overlay {
-                    RoundedRectangle(cornerRadius: 14, style: .continuous)
-                        .stroke(themeManager.selectedTheme.borderColor, lineWidth: 1)
-                }
-                .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
-                .fixedSize()
             }
         }
         .padding(14)
