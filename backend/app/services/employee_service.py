@@ -17,11 +17,18 @@ from app.schemas.employee import (
     EmployeeRead,
     EmployeeWorkloadRead,
 )
+from app.schemas.auth import UserRead
 from app.services import auth_service
 
 
-def list_employees(db: Session) -> list[EmployeeRead]:
-    return [_build_employee_read(employee) for employee in employee_repository.list_employees(db)]
+def list_employees(db: Session, current_user: UserRead) -> list[EmployeeRead]:
+    if current_user.company_id is None:
+        return []
+
+    return [
+        _build_employee_read(employee)
+        for employee in employee_repository.list_employees_by_company(db, current_user.company_id)
+    ]
 
 
 def create_employee(db: Session, payload: EmployeeCreate) -> EmployeeRead:

@@ -68,6 +68,67 @@ def build_requirements_workbook(rows: list[list[object]]) -> bytes:
     return buffer.getvalue()
 
 
+def seed_second_company_scope_data() -> None:
+    manager_password_hash = "$2b$12$oo5ryRPAlz/TOfenPoE3JuFYJsdljzAhv.FLXcvx6vrvCPcCA1kTm"
+    employee_password_hash = "$2b$12$uSYcqEdeSEBbX1C4vnns9.33t2QvChgi0eQ5RxJBGg8jCHGqu3w8a"
+
+    with psycopg.connect(PSYCOPG_DSN) as connection:
+        with connection.cursor() as cursor:
+            cursor.execute("UPDATE companies SET manager_user_id = 1 WHERE id = 1")
+            cursor.execute(
+                """
+                INSERT INTO users (full_name, email, password_hash, role)
+                VALUES ('Second Manager', 'second-manager@example.com', %s, 'manager')
+                RETURNING id
+                """,
+                (manager_password_hash,),
+            )
+            second_manager_id = cursor.fetchone()[0]
+            cursor.execute(
+                """
+                INSERT INTO companies (name, invite_code, manager_user_id)
+                VALUES ('Other Company', 'OTHER123', %s)
+                RETURNING id
+                """,
+                (second_manager_id,),
+            )
+            second_company_id = cursor.fetchone()[0]
+            cursor.execute(
+                """
+                INSERT INTO branches (company_id, name, address)
+                VALUES (%s, 'Other Branch', 'Elsewhere')
+                RETURNING id
+                """,
+                (second_company_id,),
+            )
+            second_branch_id = cursor.fetchone()[0]
+            cursor.execute(
+                """
+                INSERT INTO positions (company_id, name)
+                VALUES (%s, 'Other Position')
+                RETURNING id
+                """,
+                (second_company_id,),
+            )
+            second_position_id = cursor.fetchone()[0]
+            cursor.execute(
+                """
+                INSERT INTO users (full_name, email, password_hash, role)
+                VALUES ('Other Employee', 'other-employee@example.com', %s, 'employee')
+                RETURNING id
+                """,
+                (employee_password_hash,),
+            )
+            second_employee_user_id = cursor.fetchone()[0]
+            cursor.execute(
+                """
+                INSERT INTO employees (user_id, company_id, branch_id, position_id, max_hours_per_week)
+                VALUES (%s, %s, %s, %s, 40)
+                """,
+                (second_employee_user_id, second_company_id, second_branch_id, second_position_id),
+            )
+
+
 def test_auth_token_and_profile_endpoints(client: TestClient) -> None:
     manager_headers = login_json(client, "manager@example.com", "manager123")
     employee_headers = login_form(client, "ivan@example.com", "employee123")
@@ -90,6 +151,31 @@ def test_auth_token_and_profile_endpoints(client: TestClient) -> None:
 
     unauthorized = client.get("/auth/me")
     assert unauthorized.status_code == 401
+
+
+def test_employee_and_position_lists_are_scoped_to_authenticated_company(client: TestClient) -> None:
+    seed_second_company_scope_data()
+    manager_headers = login_json(client, "manager@example.com", "manager123")
+    second_manager_headers = login_json(client, "second-manager@example.com", "manager123")
+
+    first_company_employees = client.get("/employees/", headers=manager_headers)
+    assert first_company_employees.status_code == 200, first_company_employees.text
+    assert [employee["full_name"] for employee in first_company_employees.json()] == ["Ivan Barista"]
+
+    first_company_positions = client.get("/positions/", headers=manager_headers)
+    assert first_company_positions.status_code == 200, first_company_positions.text
+    assert [position["title"] for position in first_company_positions.json()] == ["Barista", "Cashier"]
+
+    second_company_employees = client.get("/employees/", headers=second_manager_headers)
+    assert second_company_employees.status_code == 200, second_company_employees.text
+    assert [employee["full_name"] for employee in second_company_employees.json()] == ["Other Employee"]
+
+    second_company_positions = client.get("/positions/", headers=second_manager_headers)
+    assert second_company_positions.status_code == 200, second_company_positions.text
+    assert [position["title"] for position in second_company_positions.json()] == ["Other Position"]
+
+    assert client.get("/employees/").status_code == 401
+    assert client.get("/positions/").status_code == 401
 
 
 def test_invite_preview_and_join_flow(client: TestClient) -> None:
