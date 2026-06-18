@@ -10,10 +10,11 @@ struct RequirementsView: View {
     private let user: AppUser
     private let onUserUpdated: (AppUser) -> Void
 
+    @MainActor
     init(
         user: AppUser,
         onUserUpdated: @escaping (AppUser) -> Void,
-        repository: RequirementsRepository = APIRequirementsRepository()
+        repository: RequirementsRepository? = nil
     ) {
         self.user = user
         self.onUserUpdated = onUserUpdated

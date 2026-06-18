@@ -26,10 +26,10 @@ final class RequirementsViewModel: ObservableObject {
 
     init(
         user: AppUser,
-        repository: RequirementsRepository = APIRequirementsRepository(),
+        repository: RequirementsRepository? = nil,
         referenceDate: Date = .now
     ) {
-        self.repository = repository
+        self.repository = repository ?? APIRequirementsRepository()
         self.hasCompany = user.hasCompany
 
         var calendar = Calendar(identifier: .gregorian)
