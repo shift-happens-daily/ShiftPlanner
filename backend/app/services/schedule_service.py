@@ -24,15 +24,39 @@ from app.schemas.schedule import (
 
 def list_requirements(
     db: Session,
+    current_user: UserRead,
     start_date: date | None = None,
     end_date: date | None = None,
     position_id: int | None = None,
+    branch_id: int | None = None,
 ) -> list[ScheduleRequirementRead]:
+    if current_user.company_id is None:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="User is not linked to a company.",
+        )
+
+    if branch_id is not None:
+        branch = company_repository.get_branch_by_id(db, branch_id)
+        if branch is None or branch.company_id != current_user.company_id:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Branch does not belong to the authenticated user's company.",
+            )
+
+    if start_date is not None and end_date is not None and end_date < start_date:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="date_to must be later than or equal to date_from.",
+        )
+
     requirements = schedule_repository.list_requirements(
         db,
         start_date=start_date,
         end_date=end_date,
         position_id=position_id,
+        company_id=current_user.company_id,
+        branch_id=branch_id,
     )
     return [
         _build_requirement_read(db, requirement)
@@ -47,6 +71,7 @@ def create_requirement(db: Session, payload: ScheduleRequirementCreate) -> Sched
     requirement = schedule_repository.create_requirement(
         db,
         company_id=position.company_id,
+        branch_id=payload.branch_id,
         position_id=payload.position_id,
         shift_date=payload.date,
         start_time=payload.start_time,
@@ -306,10 +331,12 @@ def _build_requirement_read(db: Session, requirement) -> ScheduleRequirementRead
     position = position_repository.get_position_by_id(db, requirement.position_id)
     return ScheduleRequirementRead(
         id=requirement.id,
+        branch_id=requirement.branch_id,
         position_id=requirement.position_id,
         position_title=position.name if position else "",
         date=requirement.shift_date,
         min_staff=requirement.required_employees,
+        required_count=requirement.required_employees,
         start_time=requirement.start_time,
         end_time=requirement.end_time,
     )

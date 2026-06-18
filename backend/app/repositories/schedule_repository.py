@@ -10,6 +10,7 @@ def create_requirement(
     db: Session,
     *,
     company_id: int,
+    branch_id: int | None = None,
     position_id: int,
     shift_date: date,
     start_time,
@@ -18,6 +19,7 @@ def create_requirement(
 ) -> ShiftRequirement:
     requirement = ShiftRequirement(
         company_id=company_id,
+        branch_id=branch_id,
         position_id=position_id,
         shift_date=shift_date,
         start_time=start_time,
@@ -35,8 +37,14 @@ def list_requirements(
     start_date: date | None = None,
     end_date: date | None = None,
     position_id: int | None = None,
+    company_id: int | None = None,
+    branch_id: int | None = None,
 ) -> list[ShiftRequirement]:
     query = select(ShiftRequirement).order_by(ShiftRequirement.shift_date, ShiftRequirement.id)
+    if company_id is not None:
+        query = query.where(ShiftRequirement.company_id == company_id)
+    if branch_id is not None:
+        query = query.where(ShiftRequirement.branch_id == branch_id)
     if start_date is not None:
         query = query.where(ShiftRequirement.shift_date >= start_date)
     if end_date is not None:
@@ -50,6 +58,7 @@ def create_requirements_bulk(db: Session, items: list[dict]) -> list[ShiftRequir
     requirements = [
         ShiftRequirement(
             company_id=item["company_id"],
+            branch_id=item.get("branch_id"),
             position_id=item["position_id"],
             shift_date=item["shift_date"],
             start_time=item["start_time"],

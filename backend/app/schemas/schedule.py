@@ -5,6 +5,7 @@ from pydantic import BaseModel, Field, model_validator
 
 
 class ScheduleRequirementCreate(BaseModel):
+    branch_id: int | None = Field(default=None, ge=1)
     position_id: int = Field(ge=1)
     date: date
     min_staff: int = Field(ge=1)
@@ -21,6 +22,7 @@ class ScheduleRequirementCreate(BaseModel):
 class ScheduleRequirementRead(ScheduleRequirementCreate):
     id: int
     position_title: str
+    required_count: int
 
 
 class ScheduleRequirementTemplateCreate(BaseModel):

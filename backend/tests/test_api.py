@@ -240,6 +240,55 @@ def test_employee_and_position_lists_are_scoped_to_authenticated_company(client:
     assert client.get("/positions/").status_code == 401
 
 
+def test_requirements_are_fetched_by_company_branch_and_date_range(client: TestClient) -> None:
+    manager_headers = login_json(client, "manager@example.com", "manager123")
+
+    with psycopg.connect(PSYCOPG_DSN) as connection:
+        with connection.cursor() as cursor:
+            cursor.execute(
+                "INSERT INTO branches (company_id, name, address) VALUES (1, 'Second Branch', 'Second Address') RETURNING id"
+            )
+            second_branch_id = cursor.fetchone()[0]
+            cursor.execute("INSERT INTO companies (name, invite_code) VALUES ('Other Company', 'OTHERREQ') RETURNING id")
+            other_company_id = cursor.fetchone()[0]
+            cursor.execute(
+                "INSERT INTO branches (company_id, name, address) VALUES (%s, 'Other Branch', 'Other Address') RETURNING id",
+                (other_company_id,),
+            )
+            other_branch_id = cursor.fetchone()[0]
+            cursor.execute(
+                "INSERT INTO positions (company_id, name) VALUES (%s, 'Other Requirement Position') RETURNING id",
+                (other_company_id,),
+            )
+            other_position_id = cursor.fetchone()[0]
+            cursor.execute(
+                """
+                INSERT INTO shift_requirements
+                    (company_id, branch_id, position_id, shift_date, start_time, end_time, required_employees)
+                VALUES
+                    (1, 1, 1, '2026-06-16', '09:00', '17:00', 2),
+                    (1, 1, 1, '2026-06-19', '09:00', '17:00', 3),
+                    (1, %s, 1, '2026-06-16', '10:00', '18:00', 4),
+                    (%s, %s, %s, '2026-06-16', '11:00', '19:00', 5)
+                """,
+                (second_branch_id, other_company_id, other_branch_id, other_position_id),
+            )
+
+    response = client.get(
+        "/schedule/requirements?branch_id=1&date_from=2026-06-16&date_to=2026-06-18",
+        headers=manager_headers,
+    )
+    assert response.status_code == 200, response.text
+    requirements = response.json()
+    assert [(item["branch_id"], item["date"], item["required_count"]) for item in requirements] == [
+        (1, "2026-06-16", 2)
+    ]
+    assert requirements[0]["min_staff"] == 2
+
+    unauthorized = client.get("/schedule/requirements?branch_id=1&date_from=2026-06-16&date_to=2026-06-18")
+    assert unauthorized.status_code == 401
+
+
 def test_invite_preview_and_join_flow(client: TestClient) -> None:
     manager_headers = login_json(client, "manager@example.com", "manager123")
 

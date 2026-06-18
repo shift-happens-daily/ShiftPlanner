@@ -11,6 +11,7 @@ class ShiftRequirement(Base):
 
     id: Mapped[int] = mapped_column(primary_key=True)
     company_id: Mapped[int] = mapped_column(ForeignKey("companies.id", ondelete="CASCADE"))
+    branch_id: Mapped[int | None] = mapped_column(ForeignKey("branches.id", ondelete="CASCADE"))
     position_id: Mapped[int] = mapped_column(ForeignKey("positions.id", ondelete="CASCADE"))
     shift_date: Mapped[date] = mapped_column(Date)
     start_time: Mapped[time] = mapped_column(Time)

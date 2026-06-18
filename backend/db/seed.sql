@@ -23,6 +23,6 @@ VALUES
 (1, 0, '10:00', '18:00'),
 (1, 1, '12:00', '20:00');
 
-INSERT INTO shift_requirements (company_id, position_id, shift_date, start_time, end_time, required_employees)
+INSERT INTO shift_requirements (company_id, branch_id, position_id, shift_date, start_time, end_time, required_employees)
 VALUES
-(1, 1, '2026-06-15', '10:00', '18:00', 1);
+(1, 1, 1, '2026-06-15', '10:00', '18:00', 1);
