@@ -110,6 +110,8 @@ export default function EmployeesTab({ language, userRole, user }) {
     position_id: '',
   });
 
+  const [selectedBranchId, setSelectedBranchId] = useState('');
+
   const [positionTitle, setPositionTitle] = useState('');
   const [editingPositionId, setEditingPositionId] = useState('');
   const [editingPositionTitle, setEditingPositionTitle] = useState('');
@@ -192,6 +194,7 @@ export default function EmployeesTab({ language, userRole, user }) {
       managePositionsHint: 'Редактируйте и удаляйте позиции для компании.',
       noPositionsMessage: 'Позиции не найдены. Создайте одну слева.',
       createEmployeeHint: 'Для уже зарегистрированного сотрудника лучше использовать инвайт-код.',
+      allBranches: 'Все филиалы',
       noCompanyForPosition: 'Сначала создайте компанию во вкладке «Компания». Компания должна прийти из /auth/me, localStorage больше не используется.',
       noPositionsHint: 'Сначала создайте позицию, потом добавьте сотрудника.',
     },
@@ -259,6 +262,7 @@ export default function EmployeesTab({ language, userRole, user }) {
       managePositionsHint: 'Edit and delete positions for the company.',
       noPositionsMessage: 'No positions available. Create one on the left.',
       createEmployeeHint: 'For an already registered employee, use the invite code flow.',
+      allBranches: 'All branches',
       noCompanyForPosition: 'Create a company in the Company tab first. The company must come from /auth/me; localStorage is no longer used.',
       noPositionsHint: 'Create a position first, then add an employee.',
     },
@@ -297,6 +301,22 @@ export default function EmployeesTab({ language, userRole, user }) {
 
   const selectedEmployeePosition = getEmployeePosition(selectedEmployee);
   const selectedEmployeeBranch = getEmployeeBranch(selectedEmployee);
+
+  const filteredEmployees = useMemo(() => {
+    if (!selectedBranchId) return employees;
+
+    return employees.filter((employee) => {
+      const employeeBranchId = employee.branch?.id || employee.branch_id || employee.branchId;
+      return String(employeeBranchId) === String(selectedBranchId);
+    });
+  }, [employees, selectedBranchId]);
+
+  useEffect(() => {
+    if (!selectedBranchId) return;
+    if (filteredEmployees.some((employee) => String(employee.id) === String(selectedEmployeeId))) return;
+
+    setSelectedEmployeeId(filteredEmployees[0] ? String(filteredEmployees[0].id) : '');
+  }, [filteredEmployees, selectedBranchId, selectedEmployeeId]);
 
   useEffect(() => {
     if (selectedEmployee) {
@@ -462,8 +482,14 @@ export default function EmployeesTab({ language, userRole, user }) {
       return;
     }
 
-    if (!employeesData.some((employee) => String(employee.id) === String(selectedEmployeeId))) {
-      setSelectedEmployeeId(employeesData[0] ? String(employeesData[0].id) : '');
+    const currentFiltered = employeesData.filter((employee) => {
+      if (!selectedBranchId) return true;
+      const employeeBranchId = employee.branch?.id || employee.branch_id || employee.branchId;
+      return String(employeeBranchId) === String(selectedBranchId);
+    });
+
+    if (!currentFiltered.some((employee) => String(employee.id) === String(selectedEmployeeId))) {
+      setSelectedEmployeeId(currentFiltered[0] ? String(currentFiltered[0].id) : '');
     }
   };
 
@@ -716,7 +742,7 @@ export default function EmployeesTab({ language, userRole, user }) {
           </div>
 
           <div style={styles.headerStats}>
-            <Metric label={t.employees} value={employees.length} />
+            <Metric label={t.employees} value={filteredEmployees.length} />
             <Metric label={t.positions} value={visiblePositions.length} />
           </div>
         </header>
@@ -829,13 +855,30 @@ export default function EmployeesTab({ language, userRole, user }) {
                     <h3 style={styles.panelTitle}>{t.employees}</h3>
                     <p style={styles.panelHint}>{t.selectEmployee}</p>
                   </div>
+
+                  <div style={styles.filterRow}>
+                    <label style={styles.label} htmlFor="branch-filter-select">{t.branch}</label>
+                    <select
+                      id="branch-filter-select"
+                      value={selectedBranchId}
+                      onChange={(event) => setSelectedBranchId(event.target.value)}
+                      style={styles.select}
+                    >
+                      <option value="">{t.allBranches}</option>
+                      {branches.map((branch) => (
+                        <option key={branch.id} value={branch.id}>
+                          {branch.name}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
                 </div>
 
-                {employees.length === 0 ? (
+                {filteredEmployees.length === 0 ? (
                   <div style={styles.emptyBox}>{t.noEmployees}</div>
                 ) : (
                   <div style={styles.list}>
-                    {employees.map((employee) => (
+                    {filteredEmployees.map((employee) => (
                       <button
                         key={employee.id}
                         type="button"
@@ -1196,6 +1239,14 @@ const styles = {
     justifyContent: 'space-between',
     alignItems: 'center',
     gap: '10px',
+    flexWrap: 'wrap',
+  },
+
+  filterRow: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '10px',
+    minWidth: '220px',
   },
 
   listButton: {
