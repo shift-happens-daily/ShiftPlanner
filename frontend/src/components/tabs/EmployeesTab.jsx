@@ -111,6 +111,8 @@ export default function EmployeesTab({ language, userRole, user }) {
   });
 
   const [positionTitle, setPositionTitle] = useState('');
+  const [editingPositionId, setEditingPositionId] = useState('');
+  const [editingPositionTitle, setEditingPositionTitle] = useState('');
 
   const [absenceForm, setAbsenceForm] = useState({
     absence_type: 'vacation',
@@ -174,6 +176,8 @@ export default function EmployeesTab({ language, userRole, user }) {
       requiredEmployeePosition: 'Выберите позицию сотрудника.',
       duplicateEmployee: 'Пользователь или сотрудник с таким email уже существует. Используйте другой email или попросите сотрудника присоединиться по инвайт-коду.',
       positionCreated: 'Позиция создана.',
+      positionUpdated: 'Позиция обновлена локально.',
+      positionDeleted: 'Позиция удалена локально.',
       employeeCreated: 'Сотрудник создан.',
       availabilitySaved: 'Доступность сохранена.',
       assignmentsSaved: 'Назначения сохранены локально.',
@@ -182,6 +186,11 @@ export default function EmployeesTab({ language, userRole, user }) {
       assignBranch: 'Назначить филиал',
       assignPosition: 'Назначить позицию',
       backToList: 'Назад к списку',
+      edit: 'Редактировать',
+      cancel: 'Отменить',
+      confirmDeletePosition: 'Удалить эту позицию? Это повлияет только на интерфейс.',
+      managePositionsHint: 'Редактируйте и удаляйте позиции для компании.',
+      noPositionsMessage: 'Позиции не найдены. Создайте одну слева.',
       createEmployeeHint: 'Для уже зарегистрированного сотрудника лучше использовать инвайт-код.',
       noCompanyForPosition: 'Сначала создайте компанию во вкладке «Компания». Компания должна прийти из /auth/me, localStorage больше не используется.',
       noPositionsHint: 'Сначала создайте позицию, потом добавьте сотрудника.',
@@ -234,6 +243,8 @@ export default function EmployeesTab({ language, userRole, user }) {
       requiredEmployeePosition: 'Select employee position.',
       duplicateEmployee: 'A user or employee with this email already exists. Use another email or ask the employee to join by invite code.',
       positionCreated: 'Position created.',
+      positionUpdated: 'Position updated locally.',
+      positionDeleted: 'Position deleted locally.',
       employeeCreated: 'Employee created.',
       availabilitySaved: 'Availability saved.',
       assignmentsSaved: 'Assignments saved locally.',
@@ -242,6 +253,11 @@ export default function EmployeesTab({ language, userRole, user }) {
       assignBranch: 'Assign branch',
       assignPosition: 'Assign position',
       backToList: 'Back to list',
+      edit: 'Edit',
+      cancel: 'Cancel',
+      confirmDeletePosition: 'Delete this position? This will only affect the UI.',
+      managePositionsHint: 'Edit and delete positions for the company.',
+      noPositionsMessage: 'No positions available. Create one on the left.',
       createEmployeeHint: 'For an already registered employee, use the invite code flow.',
       noCompanyForPosition: 'Create a company in the Company tab first. The company must come from /auth/me; localStorage is no longer used.',
       noPositionsHint: 'Create a position first, then add an employee.',
@@ -550,6 +566,49 @@ export default function EmployeesTab({ language, userRole, user }) {
     }
   };
 
+  const handleStartEditingPosition = (position) => {
+    setErrorMessage('');
+    setSuccessMessage('');
+    setEditingPositionId(String(position.id));
+    setEditingPositionTitle(getPositionLabel(position));
+  };
+
+  const handleCancelEditPosition = () => {
+    setEditingPositionId('');
+    setEditingPositionTitle('');
+  };
+
+  const handleSaveEditedPosition = () => {
+    if (!editingPositionTitle.trim()) {
+      setErrorMessage(t.requiredPosition);
+      return;
+    }
+
+    setPositions((prev) =>
+      prev.map((position) =>
+        String(position.id) === String(editingPositionId)
+          ? { ...position, title: editingPositionTitle.trim() }
+          : position
+      )
+    );
+
+    setEditingPositionId('');
+    setEditingPositionTitle('');
+    setSuccessMessage(t.positionUpdated);
+  };
+
+  const handleDeletePosition = (positionId) => {
+    if (!window.confirm(t.confirmDeletePosition)) return;
+
+    setPositions((prev) => prev.filter((position) => String(position.id) !== String(positionId)));
+
+    if (String(editingPositionId) === String(positionId)) {
+      handleCancelEditPosition();
+    }
+
+    setSuccessMessage(t.positionDeleted);
+  };
+
   const handleAvailabilityChange = (index, key, value) => {
     setAvailabilityForm((prev) => ({
       ...prev,
@@ -763,8 +822,8 @@ export default function EmployeesTab({ language, userRole, user }) {
           </aside>
 
           <main style={styles.detailsPanel}>
-            {!selectedEmployee || isViewingEmployee ? (
-              <div style={styles.listPanel}>
+            <div style={styles.detailsScroll}>
+              <section style={styles.innerSection}>
                 <div style={styles.listHeader}>
                   <div>
                     <h3 style={styles.panelTitle}>{t.employees}</h3>
@@ -787,319 +846,145 @@ export default function EmployeesTab({ language, userRole, user }) {
                         }}
                       >
                         <div style={styles.listButtonContent}>
-                          <strong>{employee.full_name || employee.name || employee.fullName || 'Без имени'}</strong>
+                          <strong>{employee.full_name || employee.name || employee.fullName || '—'}</strong>
                           <span style={styles.listButtonMeta}>
-                            {employee.email || employee.email || '—'}
+                            {employee.email || '—'}
                           </span>
                         </div>
                       </button>
                     ))}
                   </div>
                 )}
-              </div>
-            ) : isDetailsLoading ? (
-              <div style={styles.emptyBox}>{t.loading}</div>
-            ) : (
-              <div style={styles.detailsScroll}>
-                <div style={styles.actionBar}>
-                  <button
-                    type="button"
-                    onClick={() => setIsViewingEmployee(true)}
-                    style={styles.secondaryButton}
-                  >
-                    ← {t.backToList}
-                  </button>
-                </div>
+              </section>
 
-                <div style={styles.employeeCard}>
-                  <Info label={t.fullName} value={selectedEmployee?.full_name || selectedEmployee?.name || '—'} />
-                  <Info label={t.email} value={selectedEmployee?.email || '—'} />
-                  <Info label={t.position} value={selectedEmployeePosition || t.empty} />
-                  <Info label={t.branch} value={selectedEmployeeBranch || t.empty} />
-                </div>
-
-                <section style={styles.innerSection}>
-                  <div style={styles.innerHeader}>
-                    <h4 style={styles.subTitle}>{t.assignPosition}</h4>
-                  </div>
-
-                  <div style={styles.stack}>
-                    <label style={styles.label}>{t.position}</label>
-                    <select
-                      value={selectedEmployeeDetails.position_id}
-                      onChange={(event) =>
-                        setSelectedEmployeeDetails((prev) => ({ ...prev, position_id: event.target.value }))
-                      }
-                      style={styles.select}
-                    >
-                      <option value="">{t.selectPosition}</option>
-                      {visiblePositions.map((position) => (
-                        <option key={position.id} value={position.id}>
-                          {getPositionLabel(position)}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-
-                  <div style={styles.stack}>
-                    <label style={styles.label}>{t.branch}</label>
-                    <select
-                      value={selectedEmployeeDetails.branch_id}
-                      onChange={(event) =>
-                        setSelectedEmployeeDetails((prev) => ({ ...prev, branch_id: event.target.value }))
-                      }
-                      style={styles.select}
-                    >
-                      <option value="">{t.selectBranch}</option>
-                      {branches.map((branch) => (
-                        <option key={branch.id} value={branch.id}>
-                          {branch.name}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-
-                  <button
-                    type="button"
-                    onClick={handleAssignDetails}
-                    style={styles.primaryButton}
-                  >
-                    {t.save}
-                  </button>
-                </section>
-
-                <section style={styles.innerSection}>
-                  <div style={styles.innerHeader}>
-                    <h4 style={styles.subTitle}>{t.availability}</h4>
-                    <button
-                      type="button"
-                      onClick={() =>
-                        setAvailabilityForm((prev) => ({
-                          ...prev,
-                          weekly_availability: [...prev.weekly_availability, createAvailabilityBlock()],
-                        }))
-                      }
-                      style={styles.secondaryButton}
-                    >
-                      {t.addRow}
-                    </button>
-                  </div>
-
-                  {availabilityForm.weekly_availability.length === 0 ? (
-                    <p style={styles.emptyText}>{t.noIntervals}</p>
-                  ) : (
-                    <div style={styles.availabilityList}>
-                      {availabilityForm.weekly_availability.map((block, index) => (
-                        <div key={`${block.weekday}-${index}`} style={styles.availabilityRow}>
-                          <select
-                            value={block.weekday}
-                            onChange={(event) =>
-                              handleAvailabilityChange(index, 'weekday', Number(event.target.value))
-                            }
-                            style={styles.select}
-                          >
-                            {WEEKDAYS.map((day) => (
-                              <option key={day.value} value={day.value}>
-                                {day[language] || day.ru}
-                              </option>
-                            ))}
-                          </select>
-
-                          <input
-                            type="time"
-                            value={String(block.start_time).slice(0, 5)}
-                            onChange={(event) =>
-                              handleAvailabilityChange(index, 'start_time', `${event.target.value}:00`)
-                            }
-                            style={styles.input}
-                          />
-
-                          <input
-                            type="time"
-                            value={String(block.end_time).slice(0, 5)}
-                            onChange={(event) =>
-                              handleAvailabilityChange(index, 'end_time', `${event.target.value}:00`)
-                            }
-                            style={styles.input}
-                          />
-
-                          <button
-                            type="button"
-                            onClick={() =>
-                              setAvailabilityForm((prev) => ({
-                                ...prev,
-                                weekly_availability: prev.weekly_availability.filter(
-                                  (_, itemIndex) => itemIndex !== index
-                                ),
-                              }))
-                            }
-                            style={styles.deleteButton}
-                          >
-                            {t.delete}
-                          </button>
-                        </div>
-                      ))}
+              {selectedEmployee && !isViewingEmployee && (
+                <div style={styles.modalOverlay}>
+                  <div style={styles.modalContent}>
+                    <div style={styles.actionBar}>
+                      <button
+                        type="button"
+                        onClick={() => setIsViewingEmployee(true)}
+                        style={styles.secondaryButton}
+                      >
+                        ← {t.backToList}
+                      </button>
                     </div>
-                  )}
 
-                  <div style={styles.daysOff}>
-                    <span style={styles.cardLabel}>{t.desiredDaysOff}</span>
-                    <div style={styles.dayPills}>
-                      {WEEKDAYS.map((day) => {
-                        const checked = availabilityForm.desired_days_off.includes(day.value);
-
-                        return (
-                          <button
-                            key={day.value}
-                            type="button"
-                            onClick={() =>
-                              setAvailabilityForm((prev) => ({
-                                ...prev,
-                                desired_days_off: checked
-                                  ? prev.desired_days_off.filter((value) => value !== day.value)
-                                  : [...prev.desired_days_off, day.value].sort((a, b) => a - b),
-                              }))
-                            }
-                            style={checked ? styles.dayPillActive : styles.dayPill}
-                          >
-                            {day[language] || day.ru}
-                          </button>
-                        );
-                      })}
+                    <div style={styles.employeeCard}>
+                      <Info label={t.fullName} value={selectedEmployee?.full_name || selectedEmployee?.name || '—'} />
+                      <Info label={t.email} value={selectedEmployee?.email || '—'} />
+                      <Info label={t.position} value={selectedEmployeePosition || t.empty} />
+                      <Info label={t.branch} value={selectedEmployeeBranch || t.empty} />
                     </div>
-                  </div>
 
-                  <button
-                    type="button"
-                    onClick={handleSaveAvailability}
-                    style={isSubmitting ? styles.primaryButtonDisabled : styles.primaryButton}
-                    disabled={isSubmitting}
-                  >
-                    {t.save}
-                  </button>
-                </section>
-
-                <section style={styles.innerSection}>
-                  <h4 style={styles.subTitle}>{t.absences}</h4>
-
-                  <div style={styles.absenceForm}>
-                    <select
-                      value={absenceForm.absence_type}
-                      onChange={(event) =>
-                        setAbsenceForm((prev) => ({ ...prev, absence_type: event.target.value }))
-                      }
-                      style={styles.select}
-                    >
-                      <option value="vacation">{t.vacation}</option>
-                      <option value="sick_leave">{t.sick_leave}</option>
-                      <option value="other">{t.other}</option>
-                    </select>
-
-                    <input
-                      type="date"
-                      value={absenceForm.start_date}
-                      onChange={(event) =>
-                        setAbsenceForm((prev) => ({ ...prev, start_date: event.target.value }))
-                      }
-                      style={styles.input}
-                    />
-
-                    <input
-                      type="date"
-                      value={absenceForm.end_date}
-                      onChange={(event) =>
-                        setAbsenceForm((prev) => ({ ...prev, end_date: event.target.value }))
-                      }
-                      style={styles.input}
-                    />
-
-                    <input
-                      value={absenceForm.comment}
-                      onChange={(event) =>
-                        setAbsenceForm((prev) => ({ ...prev, comment: event.target.value }))
-                      }
-                      placeholder={t.comment}
-                      style={styles.input}
-                    />
-
-                    <button
-                      type="button"
-                      onClick={handleCreateAbsence}
-                      style={isSubmitting ? styles.primaryButtonDisabled : styles.primaryButton}
-                      disabled={isSubmitting}
-                    >
-                      {t.addAbsence}
-                    </button>
-                  </div>
-
-                  {employeeAbsences.length === 0 ? (
-                    <p style={styles.emptyText}>{t.noAbsences}</p>
-                  ) : (
-                    <div style={styles.list}>
-                      {employeeAbsences.map((absence) => (
-                        <div key={absence.id} style={styles.listItem}>
-                          <div>
-                            <strong style={styles.itemTitle}>
-                              {t[absence.absence_type] || absence.absence_type}
-                            </strong>
-                            <div style={styles.itemMeta}>
-                              {absence.start_date} — {absence.end_date}
-                            </div>
-                            {absence.comment && <div style={styles.itemMeta}>{absence.comment}</div>}
-                          </div>
-
-                          <button
-                            type="button"
-                            onClick={() => handleDeleteAbsence(absence.id)}
-                            style={styles.deleteButton}
-                          >
-                            {t.delete}
-                          </button>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </section>
-
-                <section style={styles.innerSection}>
-                  <h4 style={styles.subTitle}>{t.workload}</h4>
-
-                  {employeeSummary ? (
-                    <>
-                      <div style={styles.metricGrid}>
-                        <Metric label={t.totalShifts} value={employeeSummary.workload.total_shifts} />
-                        <Metric label={t.totalHours} value={employeeSummary.workload.total_hours} />
+                    <div style={styles.innerSection}>
+                      <div style={styles.innerHeader}>
+                        <h4 style={styles.subTitle}>{t.assignPosition}</h4>
                       </div>
 
-                      <h4 style={styles.subTitle}>{t.shifts}</h4>
-
-                      {employeeSummary.shifts.length === 0 ? (
-                        <p style={styles.emptyText}>{t.noShifts}</p>
-                      ) : (
-                        <div style={styles.list}>
-                          {employeeSummary.shifts.map((shift) => (
-                            <div key={`${shift.schedule_id}-${shift.shift_id}`} style={styles.listItem}>
-                              <div>
-                                <strong style={styles.itemTitle}>{shift.date}</strong>
-                                <div style={styles.itemMeta}>
-                                  {String(shift.start_time).slice(0, 5)} —{' '}
-                                  {String(shift.end_time).slice(0, 5)}
-                                </div>
-                                <div style={styles.itemMeta}>
-                                  {t[shift.status] || localizeBackendMessage(shift.status, language)}
-                                </div>
-                              </div>
-                            </div>
+                      <div style={styles.stack}>
+                        <label style={styles.label}>{t.position}</label>
+                        <select
+                          value={selectedEmployeeDetails.position_id}
+                          onChange={(event) =>
+                            setSelectedEmployeeDetails((prev) => ({ ...prev, position_id: event.target.value }))
+                          }
+                          style={styles.select}
+                        >
+                          <option value="">{t.selectPosition}</option>
+                          {visiblePositions.map((position) => (
+                            <option key={position.id} value={position.id}>
+                              {getPositionLabel(position)}
+                            </option>
                           ))}
-                        </div>
-                      )}
-                    </>
-                  ) : (
-                    <p style={styles.emptyText}>{t.empty}</p>
-                  )}
-                </section>
-              </div>
-            )}
+                        </select>
+                      </div>
+
+                      <div style={styles.stack}>
+                        <label style={styles.label}>{t.branch}</label>
+                        <select
+                          value={selectedEmployeeDetails.branch_id}
+                          onChange={(event) =>
+                            setSelectedEmployeeDetails((prev) => ({ ...prev, branch_id: event.target.value }))
+                          }
+                          style={styles.select}
+                        >
+                          <option value="">{t.selectBranch}</option>
+                          {branches.map((branch) => (
+                            <option key={branch.id} value={branch.id}>
+                              {branch.name}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+
+                      <button type="button" onClick={handleAssignDetails} style={styles.primaryButton}>
+                        {t.save}
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              <section style={styles.innerSection}>
+                <div style={styles.listHeader}>
+                  <div>
+                    <h3 style={styles.panelTitle}>{t.positions}</h3>
+                    <p style={styles.panelHint}>{t.managePositionsHint}</p>
+                  </div>
+                </div>
+
+                {visiblePositions.length === 0 ? (
+                  <div style={styles.emptyBox}>{t.noPositionsMessage}</div>
+                ) : (
+                  <div style={styles.list}>
+                    {visiblePositions.map((position) => (
+                      <div key={position.id} style={styles.listItem}>
+                        {String(editingPositionId) === String(position.id) ? (
+                          <>
+                            <input
+                              value={editingPositionTitle}
+                              onChange={(event) => setEditingPositionTitle(event.target.value)}
+                              style={styles.input}
+                            />
+                            <div style={{ display: 'flex', gap: '10px' }}>
+                              <button type="button" onClick={handleSaveEditedPosition} style={styles.primaryButton}>
+                                {t.save}
+                              </button>
+                              <button type="button" onClick={handleCancelEditPosition} style={styles.secondaryButton}>
+                                {t.cancel}
+                              </button>
+                            </div>
+                          </>
+                        ) : (
+                          <>
+                            <div>
+                              <strong style={styles.itemTitle}>{getPositionLabel(position)}</strong>
+                            </div>
+                            <div style={{ display: 'flex', gap: '10px' }}>
+                              <button
+                                type="button"
+                                onClick={() => handleStartEditingPosition(position)}
+                                style={styles.secondaryButton}
+                              >
+                                {t.edit}
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => handleDeletePosition(position.id)}
+                                style={styles.deleteButton}
+                              >
+                                {t.delete}
+                              </button>
+                            </div>
+                          </>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </section>
+            </div>
           </main>
         </div>
       </div>
@@ -1573,6 +1458,28 @@ const styles = {
     color: '#4f646f',
     fontSize: '14px',
     fontWeight: '650',
+  },
+
+  modalOverlay: {
+    position: 'fixed',
+    inset: 0,
+    zIndex: 30,
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    background: 'rgba(0, 0, 0, 0.35)',
+    padding: '20px',
+  },
+
+  modalContent: {
+    width: 'min(760px, 100%)',
+    maxHeight: '90vh',
+    overflowY: 'auto',
+    padding: '24px',
+    borderRadius: '24px',
+    background: '#ffffff',
+    boxShadow: '0 24px 64px rgba(0, 38, 66, 0.24)',
+    position: 'relative',
   },
 
   toastLayer: {
