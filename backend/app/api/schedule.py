@@ -20,6 +20,7 @@ from app.schemas.schedule import (
     ScheduleRequirementBulkRead,
     ScheduleRequirementCreate,
     ScheduleRequirementRead,
+    ScheduleRequirementUpdate,
     ScheduleShiftUpdate,
     ShiftExchangeRequestCreate,
     ShiftExchangeRequestRead,
@@ -46,6 +47,20 @@ def create_requirement(
     db: Session = Depends(get_db),
 ) -> ScheduleRequirementRead:
     return schedule_service.create_requirement(db, payload, current_user)
+
+
+@router.patch(
+    "/requirements/{requirement_id}",
+    response_model=ScheduleRequirementRead,
+    responses={**BAD_REQUEST_RESPONSE, **UNAUTHORIZED_RESPONSE, **FORBIDDEN_RESPONSE, **NOT_FOUND_RESPONSE, **VALIDATION_ERROR_RESPONSE},
+)
+def update_requirement(
+    requirement_id: int,
+    payload: ScheduleRequirementUpdate,
+    current_user: UserRead = Depends(require_role("manager")),
+    db: Session = Depends(get_db),
+) -> ScheduleRequirementRead:
+    return schedule_service.update_requirement(db, requirement_id, payload, current_user)
 
 
 @router.get(

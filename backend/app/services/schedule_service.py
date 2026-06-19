@@ -13,6 +13,7 @@ from app.schemas.schedule import (
     ScheduleRequirementBulkRead,
     ScheduleRequirementCreate,
     ScheduleRequirementRead,
+    ScheduleRequirementUpdate,
     ScheduleShiftUpdate,
     ShiftExchangeRequestCreate,
     ShiftExchangeRequestRead,
@@ -107,6 +108,75 @@ def create_requirement(db: Session, payload: ScheduleRequirementCreate, current_
         required_employees=payload.required_count,
     )
     return _build_requirement_read(db, requirement)
+
+
+def update_requirement(
+    db: Session,
+    requirement_id: int,
+    payload: ScheduleRequirementUpdate,
+    current_user: UserRead,
+) -> ScheduleRequirementRead:
+    if current_user.company_id is None:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Manager is not linked to a company.",
+        )
+
+    requirement = schedule_repository.get_requirement_by_id(db, requirement_id)
+    if requirement is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Requirement not found")
+    if requirement.company_id != current_user.company_id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Requirement does not belong to the authenticated user's company.",
+        )
+
+    branch_id = payload.branch_id if payload.branch_id is not None else requirement.branch_id
+    if branch_id is None:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Branch is required.")
+    branch = company_repository.get_branch_by_id(db, branch_id)
+    if branch is None or branch.company_id != current_user.company_id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Branch does not belong to the authenticated user's company.",
+        )
+
+    position_id = payload.position_id if payload.position_id is not None else requirement.position_id
+    position = position_repository.get_position_by_id(db, position_id)
+    if position is None:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Position {position_id} was not found.")
+    if position.company_id != current_user.company_id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Position does not belong to the authenticated user's company.",
+        )
+
+    shift_date = payload.date if payload.date is not None else requirement.shift_date
+    start_time = payload.start_time if payload.start_time is not None else requirement.start_time
+    end_time = payload.end_time if payload.end_time is not None else requirement.end_time
+    required_employees = (
+        payload.required_count
+        if payload.required_count is not None
+        else requirement.required_employees
+    )
+
+    if end_time <= start_time:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="end_time must be later than start_time.",
+        )
+
+    updated_requirement = schedule_repository.update_requirement(
+        db,
+        requirement,
+        branch_id=branch_id,
+        position_id=position_id,
+        shift_date=shift_date,
+        start_time=start_time,
+        end_time=end_time,
+        required_employees=required_employees,
+    )
+    return _build_requirement_read(db, updated_requirement)
 
 
 def create_bulk_requirements(db: Session, payload: ScheduleRequirementBulkCreate) -> ScheduleRequirementBulkRead:

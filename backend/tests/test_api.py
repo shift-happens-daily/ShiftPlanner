@@ -374,6 +374,158 @@ def test_requirement_create_for_other_company_branch_or_position_is_forbidden(cl
     assert foreign_position.status_code == 403
 
 
+def test_manager_can_update_own_requirement_and_fetch_it(client: TestClient) -> None:
+    manager_headers = login_json(client, "manager@example.com", "manager123")
+
+    created = client.post(
+        "/schedule/requirements",
+        headers=manager_headers,
+        json={
+            "branch_id": 1,
+            "date": "2026-07-04",
+            "position_id": 1,
+            "start_time": "09:00:00",
+            "end_time": "17:00:00",
+            "required_count": 2,
+        },
+    )
+    assert created.status_code == 201, created.text
+    requirement_id = created.json()["id"]
+
+    updated = client.patch(
+        f"/schedule/requirements/{requirement_id}",
+        headers=manager_headers,
+        json={
+            "company_id": 999,
+            "date": "2026-07-05",
+            "branch_id": 1,
+            "position_id": 2,
+            "start_time": "10:00:00",
+            "end_time": "18:00:00",
+            "required_count": 5,
+        },
+    )
+    assert updated.status_code == 200, updated.text
+    updated_json = updated.json()
+    assert updated_json["id"] == requirement_id
+    assert updated_json["date"] == "2026-07-05"
+    assert updated_json["branch_id"] == 1
+    assert updated_json["position_id"] == 2
+    assert updated_json["start_time"] == "10:00:00"
+    assert updated_json["end_time"] == "18:00:00"
+    assert updated_json["required_count"] == 5
+    assert updated_json["min_staff"] == 5
+
+    fetched = client.get(
+        "/schedule/requirements?branch_id=1&date_from=2026-07-05&date_to=2026-07-05",
+        headers=manager_headers,
+    )
+    assert fetched.status_code == 200, fetched.text
+    assert [requirement["id"] for requirement in fetched.json()] == [requirement_id]
+    assert fetched.json()[0]["required_count"] == 5
+
+
+def test_employee_and_unauthenticated_users_cannot_update_requirement(client: TestClient) -> None:
+    manager_headers = login_json(client, "manager@example.com", "manager123")
+    employee_headers = login_json(client, "ivan@example.com", "employee123")
+
+    created = client.post(
+        "/schedule/requirements",
+        headers=manager_headers,
+        json={
+            "branch_id": 1,
+            "date": "2026-07-06",
+            "position_id": 1,
+            "start_time": "09:00:00",
+            "end_time": "17:00:00",
+            "required_count": 2,
+        },
+    )
+    assert created.status_code == 201, created.text
+    requirement_id = created.json()["id"]
+    payload = {"date": "2026-07-07", "required_count": 3}
+
+    employee_response = client.patch(f"/schedule/requirements/{requirement_id}", headers=employee_headers, json=payload)
+    assert employee_response.status_code == 403
+
+    unauthorized = client.patch(f"/schedule/requirements/{requirement_id}", json=payload)
+    assert unauthorized.status_code == 401
+
+
+def test_manager_cannot_update_other_company_requirement(client: TestClient) -> None:
+    seed_second_company_scope_data()
+    manager_headers = login_json(client, "manager@example.com", "manager123")
+
+    with psycopg.connect(PSYCOPG_DSN) as connection:
+        with connection.cursor() as cursor:
+            cursor.execute("SELECT id FROM companies WHERE invite_code = 'OTHER123'")
+            other_company_id = cursor.fetchone()[0]
+            cursor.execute("SELECT id FROM branches WHERE company_id = %s ORDER BY id LIMIT 1", (other_company_id,))
+            other_branch_id = cursor.fetchone()[0]
+            cursor.execute("SELECT id FROM positions WHERE company_id = %s ORDER BY id LIMIT 1", (other_company_id,))
+            other_position_id = cursor.fetchone()[0]
+            cursor.execute(
+                """
+                INSERT INTO shift_requirements
+                    (company_id, branch_id, position_id, shift_date, start_time, end_time, required_employees)
+                VALUES (%s, %s, %s, '2026-07-08', '09:00', '17:00', 2)
+                RETURNING id
+                """,
+                (other_company_id, other_branch_id, other_position_id),
+            )
+            other_requirement_id = cursor.fetchone()[0]
+
+    response = client.patch(
+        f"/schedule/requirements/{other_requirement_id}",
+        headers=manager_headers,
+        json={"required_count": 4},
+    )
+    assert response.status_code == 403
+
+
+def test_manager_cannot_move_requirement_to_other_company_branch_or_position(client: TestClient) -> None:
+    seed_second_company_scope_data()
+    manager_headers = login_json(client, "manager@example.com", "manager123")
+
+    created = client.post(
+        "/schedule/requirements",
+        headers=manager_headers,
+        json={
+            "branch_id": 1,
+            "date": "2026-07-09",
+            "position_id": 1,
+            "start_time": "09:00:00",
+            "end_time": "17:00:00",
+            "required_count": 2,
+        },
+    )
+    assert created.status_code == 201, created.text
+    requirement_id = created.json()["id"]
+
+    with psycopg.connect(PSYCOPG_DSN) as connection:
+        with connection.cursor() as cursor:
+            cursor.execute("SELECT id FROM companies WHERE invite_code = 'OTHER123'")
+            other_company_id = cursor.fetchone()[0]
+            cursor.execute("SELECT id FROM branches WHERE company_id = %s ORDER BY id LIMIT 1", (other_company_id,))
+            other_branch_id = cursor.fetchone()[0]
+            cursor.execute("SELECT id FROM positions WHERE company_id = %s ORDER BY id LIMIT 1", (other_company_id,))
+            other_position_id = cursor.fetchone()[0]
+
+    foreign_branch = client.patch(
+        f"/schedule/requirements/{requirement_id}",
+        headers=manager_headers,
+        json={"branch_id": other_branch_id},
+    )
+    assert foreign_branch.status_code == 403
+
+    foreign_position = client.patch(
+        f"/schedule/requirements/{requirement_id}",
+        headers=manager_headers,
+        json={"position_id": other_position_id},
+    )
+    assert foreign_position.status_code == 403
+
+
 def test_invite_preview_and_join_flow(client: TestClient) -> None:
     manager_headers = login_json(client, "manager@example.com", "manager123")
 

@@ -32,6 +32,30 @@ def create_requirement(
     return requirement
 
 
+def update_requirement(
+    db: Session,
+    requirement: ShiftRequirement,
+    *,
+    branch_id: int,
+    position_id: int,
+    shift_date: date,
+    start_time,
+    end_time,
+    required_employees: int,
+) -> ShiftRequirement:
+    requirement.branch_id = branch_id
+    requirement.position_id = position_id
+    requirement.shift_date = shift_date
+    requirement.start_time = start_time
+    requirement.end_time = end_time
+    requirement.required_employees = required_employees
+
+    db.add(requirement)
+    db.commit()
+    db.refresh(requirement)
+    return requirement
+
+
 def list_requirements(
     db: Session,
     start_date: date | None = None,
