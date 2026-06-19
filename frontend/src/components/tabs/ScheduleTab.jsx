@@ -31,6 +31,44 @@ function formatTime(value) {
   return String(value || '').slice(0, 5);
 }
 
+function parseTimeToHours(value) {
+  if (!value) return 0;
+  const parts = String(value).split(':');
+  const hours = Number(parts[0] || 0);
+  const minutes = Number(parts[1] || 0);
+  return hours + minutes / 60;
+}
+
+function formatDate(value) {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return '';
+  }
+
+  const iso = date.toISOString().slice(0, 10);
+  return iso;
+}
+
+function formatDisplayDate(value) {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return value;
+  }
+
+  return date.toLocaleDateString('en-US', {
+    weekday: 'short',
+    month: 'short',
+    day: 'numeric',
+  });
+}
+
+const MOCK_MY_SCHEDULE = [
+  { id: 'mock-1', date: new Date().toISOString(), start_time: '08:00', end_time: '12:00', position_title: 'Cashier', company_name: 'ShiftPlanner Inc.' },
+  { id: 'mock-2', date: new Date().toISOString(), start_time: '13:00', end_time: '17:00', position_title: 'Stock', company_name: 'ShiftPlanner Inc.' },
+  { id: 'mock-3', date: new Date(Date.now() + 24 * 3600 * 1000).toISOString(), start_time: '09:00', end_time: '14:00', position_title: 'Reception', company_name: 'ShiftPlanner Inc.' },
+  { id: 'mock-4', date: new Date(Date.now() + 2 * 24 * 3600 * 1000).toISOString(), start_time: '10:00', end_time: '15:00', position_title: 'Support', company_name: 'ShiftPlanner Inc.' },
+];
+
 function getShiftId(shift) {
   return shift?.id || shift?.shift_id;
 }
@@ -41,6 +79,10 @@ function getShiftPosition(shift) {
 
 function getShiftEmployeeName(shift) {
   return shift?.employee_name || shift?.employee?.full_name || shift?.full_name || '—';
+}
+
+function getShiftCompany(shift) {
+  return shift?.company_name || shift?.company?.name || shift?.company || '—';
 }
 
 function getEmployeePositionId(employee) {
@@ -147,6 +189,7 @@ export default function ScheduleTab({ language, userRole }) {
   });
 
   const [mySchedule, setMySchedule] = useState([]);
+  const [employeeViewMode, setEmployeeViewMode] = useState('day');
   const [employees, setEmployees] = useState([]);
   const [exchangeNotes, setExchangeNotes] = useState({});
   const [reassignEmployeeIds, setReassignEmployeeIds] = useState({});
@@ -159,7 +202,10 @@ export default function ScheduleTab({ language, userRole }) {
     ru: {
       titleManager: 'Расписание',
       titleEmployee: 'Мое расписание',
-      subtitleEmployee: 'Здесь отображаются опубликованные смены и можно отправить запрос на обмен сменой.',
+      subtitleEmployee: 'Здесь отображаются опубликованные смены.',
+      day: 'День',
+      week: 'Неделя',
+      month: 'Месяц',
       startDate: 'Начало периода',
       endDate: 'Конец периода',
       generate: 'Сгенерировать черновик',
@@ -172,7 +218,6 @@ export default function ScheduleTab({ language, userRole }) {
       loading: 'Загрузка...',
       unfilled: 'Незаполненные требования',
       shifts: 'Смены',
-      send: 'Отправить запрос',
       note: 'Комментарий',
       conflicts: 'Конфликты',
       empty: 'Нет данных',
@@ -183,7 +228,6 @@ export default function ScheduleTab({ language, userRole }) {
       scheduleCleared: 'Черновик очищен.',
       publishedDone: 'Расписание опубликовано.',
       shiftUpdated: 'Смена обновлена.',
-      exchangeSent: 'Запрос отправлен.',
       missingStaff: 'Не хватает',
       draft: 'Черновик',
       published: 'Опубликовано',
@@ -198,11 +242,15 @@ export default function ScheduleTab({ language, userRole }) {
       howOne: '1. «Настройки смен» задают спрос: сколько людей нужно.',
       howTwo: '2. «Сгенерировать» создает черновик смен.',
       howThree: '3. «Опубликовать» делает расписание видимым сотрудникам.',
+      company: 'Компания',
     },
     en: {
       titleManager: 'Schedule',
       titleEmployee: 'My schedule',
-      subtitleEmployee: 'Published shifts appear here. Employees can also request shift exchanges.',
+      subtitleEmployee: 'Published shifts appear here.',
+      day: 'Day',
+      week: 'Week',
+      month: 'Month',
       startDate: 'Start date',
       endDate: 'End date',
       generate: 'Generate draft',
@@ -215,7 +263,6 @@ export default function ScheduleTab({ language, userRole }) {
       loading: 'Loading...',
       unfilled: 'Unfilled requirements',
       shifts: 'Shifts',
-      send: 'Send request',
       note: 'Note',
       conflicts: 'Conflicts',
       empty: 'No data',
@@ -226,7 +273,6 @@ export default function ScheduleTab({ language, userRole }) {
       scheduleCleared: 'Draft cleared.',
       publishedDone: 'Schedule published.',
       shiftUpdated: 'Shift updated.',
-      exchangeSent: 'Request sent.',
       missingStaff: 'Missing',
       draft: 'Draft',
       published: 'Published',
@@ -241,6 +287,7 @@ export default function ScheduleTab({ language, userRole }) {
       howOne: '1. Shift setup defines demand: how many people are needed.',
       howTwo: '2. Generate creates a draft shift schedule.',
       howThree: '3. Publish makes the schedule visible to employees.',
+      company: 'Company',
     },
   };
 
@@ -250,15 +297,27 @@ export default function ScheduleTab({ language, userRole }) {
   const unfilledRequirements = useMemo(() => normalizeArray(schedule?.unfilled_requirements), [schedule]);
   const conflicts = useMemo(() => normalizeArray(schedule?.conflicts), [schedule]);
 
+  const employeeSchedule = mySchedule.length ? mySchedule : MOCK_MY_SCHEDULE;
+
   const groupedMySchedule = useMemo(
-    () => normalizeArray(mySchedule).reduce((acc, shift) => {
-      const key = shift.date || '—';
+    () => normalizeArray(employeeSchedule).reduce((acc, shift) => {
+      const key = formatDate(shift.date || new Date()) || '—';
       acc[key] = acc[key] || [];
       acc[key].push(shift);
       return acc;
     }, {}),
-    [mySchedule]
+    [employeeSchedule]
   );
+  const employeeDates = useMemo(() => {
+    const dates = [...new Set(normalizeArray(employeeSchedule).map((shift) => formatDate(shift.date || new Date())))];
+    return dates.sort();
+  }, [employeeSchedule]);
+
+  const employeeTimelineDates = useMemo(() => {
+    if (employeeViewMode === 'day') return employeeDates.slice(0, 1);
+    if (employeeViewMode === 'week') return employeeDates.slice(0, 7);
+    return employeeDates.slice(0, 30);
+  }, [employeeDates, employeeViewMode]);
 
   useEffect(() => {
     if (!errorMessage && !successMessage) return undefined;
@@ -391,28 +450,6 @@ export default function ScheduleTab({ language, userRole }) {
       const updatedSchedule = await updateShift(schedule.id, shiftId, payload);
       setSchedule(updatedSchedule);
       setSuccessMessage(t.shiftUpdated);
-    } catch (error) {
-      setErrorMessage(extractApiErrorMessage(error, null, language));
-    } finally {
-      setIsSubmitting(false);
-    }
-  };
-
-  const handleExchangeRequest = async (shiftId) => {
-    const note = exchangeNotes[shiftId]?.trim();
-
-    if (!note) {
-      setErrorMessage(t.note);
-      return;
-    }
-
-    clearMessages();
-    setIsSubmitting(true);
-
-    try {
-      await createExchangeRequest({ shift_id: shiftId, note });
-      setExchangeNotes((prev) => ({ ...prev, [shiftId]: '' }));
-      setSuccessMessage(t.exchangeSent);
     } catch (error) {
       setErrorMessage(extractApiErrorMessage(error, null, language));
     } finally {
@@ -696,58 +733,81 @@ export default function ScheduleTab({ language, userRole }) {
           </div>
         ) : (
           <main style={styles.employeeArea}>
-            {mySchedule.length === 0 ? (
-              <div style={styles.emptyHero}>
-                <h3 style={styles.emptyTitle}>{t.noPublishedSchedule}</h3>
-                <p style={styles.emptyText}>{t.noScheduleHint}</p>
-              </div>
-            ) : (
-              Object.entries(groupedMySchedule).map(([date, shifts]) => (
-                <section key={date} style={styles.panel}>
-                  <h3 style={styles.panelTitle}>{date}</h3>
+            <section style={styles.panel}>
+              <div style={styles.panelHeader}>
+                <div>
+                  <h3 style={styles.panelTitle}>{t.titleEmployee}</h3>
+                  <p style={styles.panelHint}>{t.subtitleEmployee}</p>
+                </div>
 
-                  <div style={styles.shiftList}>
-                    {shifts.map((shift) => {
-                      const shiftId = getShiftId(shift);
+                <div style={styles.modeSegment}>
+                  {['day', 'week', 'month'].map((mode) => (
+                    <button
+                      key={mode}
+                      type="button"
+                      onClick={() => setEmployeeViewMode(mode)}
+                      style={
+                        employeeViewMode === mode
+                          ? { ...styles.modeButton, ...styles.modeButtonActive }
+                          : styles.modeButton
+                      }
+                    >
+                      {t[mode] || mode}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {employeeSchedule.length === 0 ? (
+                <div style={styles.emptyHero}>
+                  <h3 style={styles.emptyTitle}>{t.noPublishedSchedule}</h3>
+                  <p style={styles.emptyText}>{t.noScheduleHint}</p>
+                </div>
+              ) : (
+                <div style={styles.employeeTimelineScroll}>
+                  <div style={styles.employeeTimeline}>
+                    {employeeTimelineDates.map((date) => {
+                      const shiftsForDate = normalizeArray(employeeSchedule).filter(
+                        (shift) => formatDate(shift.date || '') === date
+                      );
 
                       return (
-                        <div key={shiftId} style={styles.shiftCard}>
-                          <div style={styles.shiftMain}>
-                            <strong style={styles.itemTitle}>{getShiftPosition(shift)}</strong>
-                            <span style={styles.timeBadge}>
-                              {formatTime(shift.start_time)} — {formatTime(shift.end_time)}
-                            </span>
+                        <section key={date} style={styles.timelineDay}>
+                          <div style={styles.timelineDayHeader}>
+                            <strong style={styles.itemTitle}>{formatDisplayDate(date)}</strong>
+                            <span style={styles.itemMeta}>{date}</span>
                           </div>
 
-                          <div style={styles.exchangeBox}>
-                            <textarea
-                              value={exchangeNotes[shiftId] || ''}
-                              onChange={(event) =>
-                                setExchangeNotes((prev) => ({
-                                  ...prev,
-                                  [shiftId]: event.target.value,
-                                }))
-                              }
-                              placeholder={t.note}
-                              style={styles.textarea}
-                            />
+                          {shiftsForDate.length === 0 ? (
+                            <p style={styles.emptyText}>{t.empty}</p>
+                          ) : (
+                            <div style={styles.shiftList}>
+                              {shiftsForDate.map((shift) => {
+                                const shiftId = getShiftId(shift);
 
-                            <button
-                              type="button"
-                              onClick={() => handleExchangeRequest(shiftId)}
-                              style={styles.smallPrimaryButton}
-                              disabled={isSubmitting}
-                            >
-                              {t.send}
-                            </button>
-                          </div>
-                        </div>
+                                return (
+                                  <div key={shiftId} style={styles.shiftCard}>
+                                    <div style={styles.shiftMain}>
+                                      <div style={styles.shiftRow}>
+                                        <strong style={styles.itemTitle}>{getShiftPosition(shift)}</strong>
+                                        <span style={styles.itemMeta}>· {getShiftCompany(shift)}</span>
+                                        <span style={styles.timeBadge}>
+                                          {formatTime(shift.start_time)} — {formatTime(shift.end_time)}
+                                        </span>
+                                      </div>
+                                    </div>
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          )}
+                        </section>
                       );
                     })}
                   </div>
-                </section>
-              ))
-            )}
+                </div>
+              )}
+            </section>
           </main>
         )}
       </div>
@@ -855,7 +915,7 @@ const styles = {
 
   employeeArea: {
     minHeight: 0,
-    overflowY: 'auto',
+    overflow: 'hidden',
     display: 'flex',
     flexDirection: 'column',
     gap: '16px',
@@ -866,14 +926,19 @@ const styles = {
     borderRadius: '22px',
     background: '#f4faff',
     border: '1px solid rgba(79, 100, 111, 0.12)',
-    overflow: 'hidden', 
+    overflow: 'hidden',
+    display: 'flex',
+    flexDirection: 'column',
+    flex: 1,
   },
+
   panelHeader: {
     display: 'flex',
     justifyContent: 'space-between',
     alignItems: 'center',
     gap: '14px',
     marginBottom: '14px',
+    flexShrink: 0,
   },
 
   panelTitle: {
@@ -888,6 +953,60 @@ const styles = {
     color: '#4f646f',
     fontSize: '13px',
     fontWeight: '650',
+  },
+
+  modeSegment: {
+    display: 'inline-flex',
+    borderRadius: '999px',
+    background: '#eceff4',
+    padding: '4px',
+    gap: '6px',
+    flexShrink: 0,
+  },
+
+  modeButton: {
+    minWidth: '70px',
+    border: 'none',
+    borderRadius: '999px',
+    background: 'transparent',
+    color: '#4f646f',
+    padding: '10px 14px',
+    fontSize: '13px',
+    fontWeight: '700',
+    cursor: 'pointer',
+  },
+
+  modeButtonActive: {
+    background: '#002642',
+    color: '#f4faff',
+  },
+
+  employeeTimelineScroll: {
+    flex: 1,
+    overflowY: 'auto',
+    paddingRight: '4px',
+  },
+
+  employeeTimeline: {
+    display: 'grid',
+    gap: '16px',
+    marginTop: '10px',
+  },
+
+  timelineDay: {
+    padding: '16px',
+    borderRadius: '20px',
+    background: '#ffffff',
+    border: '1px solid rgba(222, 231, 231, 0.95)',
+    boxShadow: '0 8px 18px rgba(0, 38, 66, 0.08)',
+  },
+
+  timelineDayHeader: {
+    display: 'flex',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    gap: '12px',
+    marginBottom: '14px',
   },
 
   stack: {
@@ -1110,6 +1229,13 @@ const styles = {
     gap: '4px',
   },
 
+  shiftRow: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '8px',
+    flexWrap: 'wrap',
+  },
+
   shiftActions: {
     display: 'flex',
     alignItems: 'center',
@@ -1119,14 +1245,14 @@ const styles = {
   },
 
   timeBadge: {
-    width: 'fit-content',
-    padding: '6px 10px',
+    padding: '4px 10px',
     borderRadius: '999px',
-    background: '#ffffff',
+    background: '#dee7e7',
     color: '#002642',
-    border: '1px solid #dee7e7',
-    fontSize: '13px',
-    fontWeight: '800',
+    border: '1px solid rgba(79, 100, 111, 0.1)',
+    fontSize: '12px',
+    fontWeight: '700',
+    whiteSpace: 'nowrap',
   },
 
   bottomGrid: {
@@ -1155,15 +1281,6 @@ const styles = {
     gap: '3px',
   },
 
-  exchangeBox: {
-    minWidth: '320px',
-    flex: 1,
-    display: 'grid',
-    gridTemplateColumns: '1fr auto',
-    gap: '10px',
-    alignItems: 'center',
-  },
-
   itemTitle: {
     color: '#002642',
     fontWeight: '850',
@@ -1190,7 +1307,7 @@ const styles = {
     flex: 1,
     display: 'flex',
     flexDirection: 'column',
-    alignItems: 'center', 
+    alignItems: 'center',
     justifyContent: 'center',
     padding: '40px',
     textAlign: 'center',
