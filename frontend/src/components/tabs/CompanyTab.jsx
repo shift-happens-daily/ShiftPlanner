@@ -75,7 +75,6 @@ export default function CompanyTab({ language, userRole, user }) {
 
   const [inviteCode, setInviteCode] = useState('');
   const [invitePreview, setInvitePreview] = useState(null);
-  const [joinPayload, setJoinPayload] = useState({ branch_id: '', position_id: '' });
 
   const [branches, setBranches] = useState([]);
   const [branchName, setBranchName] = useState('');
@@ -102,15 +101,13 @@ export default function CompanyTab({ language, userRole, user }) {
       previewInvite: 'Проверить код',
       joinCompany: 'Присоединиться',
       invitePlaceholder: 'Введите инвайт-код',
-      selectBranch: 'Выберите филиал',
-      selectPosition: 'Выберите позицию',
       createCompany: 'Создать компанию',
       companyName: 'Название компании',
       saveCompany: 'Создать',
       empty: 'Нет данных',
       companyCreated: 'Компания создана.',
       companyJoined: 'Компания успешно привязана.',
-      previewHint: 'Сначала проверьте инвайт-код, затем выберите филиал и позицию.',
+      previewHint: 'Проверьте инвайт-код, затем нажмите "Присоединиться".',
       copied: 'Код скопирован.',
       noBranches: 'В компании пока нет филиалов. Менеджеру нужно создать филиал.',
       noPositions: 'В компании пока нет позиций. Менеджеру нужно создать позицию во вкладке «Сотрудники».',
@@ -125,6 +122,7 @@ export default function CompanyTab({ language, userRole, user }) {
       employeeHint: 'После присоединения вкладки расписания и отчетов станут доступны.',
       managerHint: 'Скопируйте инвайт-код и отправьте его сотрудникам.',
       inviteFound: 'Инвайт-код найден.',
+      joinSuccess: 'Вы успешно присоединились к компании!',
     },
     en: {
       title: 'Company',
@@ -141,15 +139,13 @@ export default function CompanyTab({ language, userRole, user }) {
       previewInvite: 'Preview invite',
       joinCompany: 'Join company',
       invitePlaceholder: 'Enter invite code',
-      selectBranch: 'Select branch',
-      selectPosition: 'Select position',
       createCompany: 'Create company',
       companyName: 'Company name',
       saveCompany: 'Create',
       empty: 'No data',
       companyCreated: 'Company created.',
       companyJoined: 'Company joined successfully.',
-      previewHint: 'Preview the invite code first, then choose branch and position.',
+      previewHint: 'Preview the invite code first, then click "Join company".',
       copied: 'Code copied.',
       noBranches: 'This company has no branches yet. A manager needs to create a branch.',
       noPositions: 'This company has no positions yet. A manager needs to create a position in the Employees tab.',
@@ -164,6 +160,7 @@ export default function CompanyTab({ language, userRole, user }) {
       employeeHint: 'After joining, schedule and reports tabs become available.',
       managerHint: 'Copy the invite code and send it to employees.',
       inviteFound: 'Invite found.',
+      joinSuccess: 'You have successfully joined the company!',
     },
   };
 
@@ -178,15 +175,9 @@ export default function CompanyTab({ language, userRole, user }) {
   const currentInviteCode = getInviteCode(currentCompany);
 
   const previewCompany = getCompanyFromPreview(invitePreview);
-  const previewBranches = getBranchesFromPreview(invitePreview);
-  const previewPositions = getPositionsFromPreview(invitePreview);
   const previewCompanyName = previewCompany?.name || t.empty;
 
-  const canJoin =
-    Boolean(invitePreview) &&
-    Boolean(joinPayload.branch_id) &&
-    Boolean(joinPayload.position_id) &&
-    !isSubmitting;
+  const canJoin = Boolean(invitePreview) && !isSubmitting;
 
   const clearMessages = () => {
     setErrorMessage('');
@@ -229,18 +220,10 @@ export default function CompanyTab({ language, userRole, user }) {
 
     try {
       const preview = await previewInviteCode(inviteCode.trim());
-      const loadedBranches = getBranchesFromPreview(preview);
-      const loadedPositions = getPositionsFromPreview(preview);
-
       setInvitePreview(preview);
-      setJoinPayload({
-        branch_id: loadedBranches[0]?.id ? String(loadedBranches[0].id) : '',
-        position_id: loadedPositions[0]?.id ? String(loadedPositions[0].id) : '',
-      });
       setSuccessMessage(t.inviteFound);
     } catch (error) {
       setInvitePreview(null);
-      setJoinPayload({ branch_id: '', position_id: '' });
       setErrorMessage(extractApiErrorMessage(error, null, language));
     } finally {
       setIsSubmitting(false);
@@ -257,18 +240,20 @@ export default function CompanyTab({ language, userRole, user }) {
     setIsSubmitting(true);
 
     try {
+      const previewBranches = getBranchesFromPreview(invitePreview);
+      const previewPositions = getPositionsFromPreview(invitePreview);
+
       await joinCompany({
         invite_code: inviteCode.trim(),
-        branch_id: Number(joinPayload.branch_id),
-        position_id: Number(joinPayload.position_id),
+        branch_id: previewBranches[0]?.id || null,
+        position_id: previewPositions[0]?.id || null,
       });
 
       await refreshUser();
 
       setInviteCode('');
       setInvitePreview(null);
-      setJoinPayload({ branch_id: '', position_id: '' });
-      setSuccessMessage(t.companyJoined);
+      setSuccessMessage(t.joinSuccess);
     } catch (error) {
       setErrorMessage(extractApiErrorMessage(error, null, language));
     } finally {
@@ -481,50 +466,6 @@ export default function CompanyTab({ language, userRole, user }) {
               {invitePreview && (
                 <div style={styles.previewBox}>
                   <strong style={styles.previewTitle}>{previewCompanyName}</strong>
-
-                  {previewBranches.length === 0 ? (
-                    <p style={styles.emptyText}>{t.noBranches}</p>
-                  ) : (
-                    <div style={styles.formStack}>
-                      <label style={styles.label}>{t.branch}</label>
-                      <select
-                        value={joinPayload.branch_id}
-                        onChange={(event) =>
-                          setJoinPayload((prev) => ({ ...prev, branch_id: event.target.value }))
-                        }
-                        style={styles.input}
-                      >
-                        <option value="">{t.selectBranch}</option>
-                        {previewBranches.map((branch) => (
-                          <option key={branch.id} value={branch.id}>
-                            {getName(branch)}
-                          </option>
-                        ))}
-                      </select>
-                    </div>
-                  )}
-
-                  {previewPositions.length === 0 ? (
-                    <p style={styles.emptyText}>{t.noPositions}</p>
-                  ) : (
-                    <div style={styles.formStack}>
-                      <label style={styles.label}>{t.position}</label>
-                      <select
-                        value={joinPayload.position_id}
-                        onChange={(event) =>
-                          setJoinPayload((prev) => ({ ...prev, position_id: event.target.value }))
-                        }
-                        style={styles.input}
-                      >
-                        <option value="">{t.selectPosition}</option>
-                        {previewPositions.map((position) => (
-                          <option key={position.id} value={position.id}>
-                            {getName(position)}
-                          </option>
-                        ))}
-                      </select>
-                    </div>
-                  )}
 
                   <button
                     type="button"

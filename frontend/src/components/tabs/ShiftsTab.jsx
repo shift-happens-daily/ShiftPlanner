@@ -27,11 +27,7 @@ const WEEKDAYS = [
   { value: 6, ru: 'Вс', en: 'Sun' },
 ];
 
-const TIME_SLOTS = Array.from({ length: 33 }, (_, index) => {
-  const hour = Math.floor(index / 2) + 6;
-  const minutes = index % 2 === 0 ? '00' : '30';
-  return `${String(hour).padStart(2, '0')}:${minutes}`;
-});
+const TIME_SLOTS = Array.from({ length: 17 }, (_, index) => `${String(6 + index).padStart(2, '0')}:00`);
 
 function createEmptyAvailabilityMatrix() {
   const matrix = {};
@@ -48,16 +44,18 @@ function buildAvailabilityMatrix(availability = []) {
 
   availability.forEach((block) => {
     const weekday = Number(block.weekday);
-    const startStr = String(block.start_time || '').slice(0, 5);
-    const endStr = String(block.end_time || '').slice(0, 5);
+    const startHour = Number(String(block.start_time || '').slice(0, 2));
+    const endHour = Number(String(block.end_time || '').slice(0, 2));
 
-    if (!Number.isFinite(weekday)) return;
+    if (!Number.isFinite(weekday) || !Number.isFinite(startHour) || !Number.isFinite(endHour)) {
+      return;
+    }
 
-    TIME_SLOTS.forEach(slot => {
-      if (slot >= startStr && slot < endStr) {
-        if (matrix[weekday]) matrix[weekday].add(slot);
+    for (let hour = startHour; hour < endHour; hour += 1) {
+      if (matrix[weekday]) {
+        matrix[weekday].add(hour);
       }
-    });
+    }
   });
 
   return matrix;
@@ -66,34 +64,45 @@ function buildAvailabilityMatrix(availability = []) {
 function convertMatrixToIntervals(matrix) {
   const intervals = [];
 
-  Object.entries(matrix).forEach(([weekday, slotSet]) => {
-    const sortedSlots = Array.from(slotSet).sort();
-    if (sortedSlots.length === 0) return;
+  Object.entries(matrix).forEach(([weekday, hourSet]) => {
+    const hours = Array.from(hourSet).sort((a, b) => a - b);
+    let startHour = null;
+    let previousHour = null;
 
-    let start = sortedSlots[0];
-    let prev = sortedSlots[0];
-
-    for (let i = 1; i <= sortedSlots.length; i++) {
-      const current = sortedSlots[i];
-      const isContinuous = current && TIME_SLOTS[TIME_SLOTS.indexOf(prev) + 1] === current;
-
-      if (!isContinuous) {
-        const prevIdx = TIME_SLOTS.indexOf(prev);
-        const end = TIME_SLOTS[prevIdx + 1] || "22:30";
-        
-        intervals.push({
-          weekday: Number(weekday),
-          start_time: `${start}:00`,
-          end_time: `${end}:00`,
-        });
-        start = current;
+    hours.forEach((hour) => {
+      if (startHour === null) {
+        startHour = hour;
+        previousHour = hour;
+        return;
       }
-      prev = current;
+
+      if (hour === previousHour + 1) {
+        previousHour = hour;
+        return;
+      }
+
+      intervals.push({
+        weekday: Number(weekday),
+        start_time: `${String(startHour).padStart(2, '0')}:00:00`,
+        end_time: `${String(previousHour + 1).padStart(2, '0')}:00:00`,
+      });
+
+      startHour = hour;
+      previousHour = hour;
+    });
+
+    if (startHour !== null) {
+      intervals.push({
+        weekday: Number(weekday),
+        start_time: `${String(startHour).padStart(2, '0')}:00:00`,
+        end_time: `${String(previousHour + 1).padStart(2, '0')}:00:00`,
+      });
     }
   });
 
   return intervals;
 }
+
 function defaultSingleRequirement() {
   const today = new Date().toISOString().slice(0, 10);
 
@@ -1298,33 +1307,35 @@ export default function ShiftsTab({ language, userRole, user }) {
                   {TIME_SLOTS.map((time) => (
                     <div key={time} style={styles.gridRow}>
                       <div style={styles.gridTimeCell}>{time}</div>
-                        {WEEKDAYS.map((day) => {
-                          const isAvailable = availabilityMatrix[day.value]?.has(time);
+                      {WEEKDAYS.map((day) => {
+                        const hour = Number(time.slice(0, 2));
+                        const isAvailable = availabilityMatrix[day.value]?.has(hour);
 
-                          return (
-                            <button
-                              key={`${day.value}-${time}`}
-                              type="button"
-                              onClick={() =>
-                                setAvailabilityMatrix((prev) => {
-                                  const next = { ...prev };
-                                  const daySet = new Set(next[day.value]);
+                        return (
+                          <button
+                            key={`${day.value}-${time}`}
+                            type="button"
+                            onClick={() =>
+                              setAvailabilityMatrix((prev) => {
+                                const next = { ...prev };
+                                const daySet = new Set(next[day.value]);
 
-                                  if (daySet.has(time)) {
-                                    daySet.delete(time);
-                                  } else {
-                                    daySet.add(time);
-                                  }
+                                if (daySet.has(hour)) {
+                                  daySet.delete(hour);
+                                } else {
+                                  daySet.add(hour);
+                                }
 
-                                  next[day.value] = daySet;
-                                  return next;
-                                })
-                              }
-                              style={isAvailable ? styles.gridCellActive : styles.gridCell}
-                              aria-pressed={isAvailable}
-                            />
-                          );
-                        })}                    </div>
+                                next[day.value] = daySet;
+                                return next;
+                              })
+                            }
+                            style={isAvailable ? styles.gridCellActive : styles.gridCell}
+                            aria-pressed={isAvailable}
+                          />
+                        );
+                      })}
+                    </div>
                   ))}
                 </div>
               </div>
