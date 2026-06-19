@@ -41,12 +41,39 @@ function buildEmployeeListFromIndexes(schedules, dateIndexes) {
 }
 
 export default function ScheduleReview({ language, userRole }) {
-  const [viewMode, setViewMode] = useState('day'); // 'day' | '3day' | 'month'
+  const [viewMode, setViewMode] = useState('day');
   const [schedules, setSchedules] = useState([]);
   const [selectedDateIndex, setSelectedDateIndex] = useState(0);
-  const [selectedMap, setSelectedMap] = useState({}); // shiftId -> [employeeId]
+  const [selectedMap, setSelectedMap] = useState({});
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState('');
+
+  const texts = {
+    ru: {
+      title: 'Просмотр сгенерированного расписания',
+      employee: 'Сотрудник',
+      day: 'День',
+      threeDay: '3 дня',
+      month: 'Месяц',
+      importCSV: 'Импорт CSV',
+      exportCSV: 'Экспорт CSV',
+      noEmployees: 'Нет сотрудников',
+      loading: 'Загрузка...',
+    },
+    en: {
+      title: 'Generated Schedule Review',
+      employee: 'Employee',
+      day: 'Day',
+      threeDay: '3-day',
+      month: 'Month',
+      importCSV: 'Import CSV',
+      exportCSV: 'Export CSV',
+      noEmployees: 'No employees',
+      loading: 'Loading...',
+    },
+  };
+
+  const t = texts[language] || texts.ru;
 
   useEffect(() => {
     let mounted = true;
@@ -73,7 +100,9 @@ export default function ScheduleReview({ language, userRole }) {
 
   const dates = useMemo(() => schedules.map((s) => formatDate(s.date)), [schedules]);
 
-  const pageSize = viewMode === 'day' ? 1 : viewMode === '3day' ? 3 : 14; // month use 14-day compression by default
+  const pageSize = viewMode === 'day' ? 1 : viewMode === '3day' ? 3 : 30;
+
+  const cellWidth = 48;
 
   const visibleDates = useMemo(() => {
     if (!dates.length) return [];
@@ -134,93 +163,246 @@ export default function ScheduleReview({ language, userRole }) {
     reader.readAsText(file);
   };
 
-  if (isLoading) return <div style={{ padding: 20 }}>Loading...</div>;
+  if (isLoading) return <div style={{ padding: 20 }}>{t.loading}</div>;
   if (error) return <div style={{ padding: 20, color: 'red' }}>{error}</div>;
+
+  const totalWidth = visibleDates.length * 24 * cellWidth;
 
   return (
     <section style={{ padding: 18 }}>
-      <h2>Generated Schedule Review</h2>
+      <h2>{t.title}</h2>
 
-      <div style={{ display: 'flex', gap: 12, alignItems: 'center', marginBottom: 12 }}>
+      <div style={{ display: 'flex', gap: 12, alignItems: 'center', marginBottom: 12, flexWrap: 'wrap' }}>
         <button onClick={() => setSelectedDateIndex((i) => Math.max(0, i - 1))}>&larr;</button>
         <strong>{dates[selectedDateIndex] || '—'}</strong>
         <button onClick={() => setSelectedDateIndex((i) => Math.min(dates.length - 1, i + 1))}>&rarr;</button>
 
-        <div style={{ marginLeft: 12, display: 'flex', gap: 6 }}>
-          <button onClick={() => setViewMode('day')} style={{ fontWeight: viewMode === 'day' ? 700 : 400 }}>Day</button>
-          <button onClick={() => setViewMode('3day')} style={{ fontWeight: viewMode === '3day' ? 700 : 400 }}>3-day</button>
-          <button onClick={() => setViewMode('month')} style={{ fontWeight: viewMode === 'month' ? 700 : 400 }}>Month</button>
+        <div style={{ marginLeft: 12, display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+          <button 
+            onClick={() => setViewMode('day')} 
+            style={{ 
+              fontWeight: viewMode === 'day' ? 700 : 400,
+              padding: '6px 12px',
+              borderRadius: '6px',
+              background: viewMode === 'day' ? '#002642' : '#dee7e7',
+              color: viewMode === 'day' ? '#fff' : '#002642',
+              border: '1px solid #dee7e7',
+              cursor: 'pointer'
+            }}
+          >{t.day}</button>
+          <button 
+            onClick={() => setViewMode('3day')} 
+            style={{ 
+              fontWeight: viewMode === '3day' ? 700 : 400,
+              padding: '6px 12px',
+              borderRadius: '6px',
+              background: viewMode === '3day' ? '#002642' : '#dee7e7',
+              color: viewMode === '3day' ? '#fff' : '#002642',
+              border: '1px solid #dee7e7',
+              cursor: 'pointer'
+            }}
+          >{t.threeDay}</button>
+          <button 
+            onClick={() => setViewMode('month')} 
+            style={{ 
+              fontWeight: viewMode === 'month' ? 700 : 400,
+              padding: '6px 12px',
+              borderRadius: '6px',
+              background: viewMode === 'month' ? '#002642' : '#dee7e7',
+              color: viewMode === 'month' ? '#fff' : '#002642',
+              border: '1px solid #dee7e7',
+              cursor: 'pointer'
+            }}
+          >{t.month}</button>
         </div>
 
-        <div style={{ marginLeft: 'auto', display: 'flex', gap: 8 }}>
-          <label style={{ display: 'inline-flex', gap: 6, alignItems: 'center' }}>
-            Import CSV
+        <div style={{ marginLeft: 'auto', display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+          <label style={{ display: 'inline-flex', gap: 6, alignItems: 'center', cursor: 'pointer' }}>
+            {t.importCSV}
             <input type="file" accept=".csv" style={{ display: 'none' }} onChange={(e) => e.target.files && importCSV(e.target.files[0])} />
           </label>
-          <button onClick={exportCSV}>Export CSV</button>
+          <button onClick={exportCSV} style={{
+            padding: '6px 12px',
+            borderRadius: '6px',
+            background: '#002642',
+            color: '#fff',
+            border: 'none',
+            cursor: 'pointer'
+          }}>{t.exportCSV}</button>
         </div>
       </div>
 
-      <div>
-        <div style={{ display: 'grid', gridTemplateColumns: '220px 1fr', gap: 12 }}>
-          <div>
-            <div style={{ fontWeight: 700, padding: '6px 8px' }}>Employee</div>
-            {employeesForView.length === 0 && <div style={{ padding: 8, color: '#666' }}>No employees</div>}
-            {employeesForView.map((emp) => (
-              <div key={emp.id} style={{ padding: '6px 8px', borderBottom: '1px solid #f0f0f0' }}>{emp.full_name || emp.name || emp.email || `#${emp.id}`}</div>
-            ))}
-          </div>
-
-          <div style={{ overflowX: 'auto' }}>
-            <div style={{ display: 'flex', gap: 8, minWidth: 24 * 48 * visibleDates.length }}>
-              {visibleDates.map((d, idx) => (
-                <div key={d} style={{ flex: '0 0 auto', minWidth: 24 * 48 }}>
-                  <div style={{ display: 'flex', gap: 0, borderBottom: '1px solid #ddd' }}>
+      <div style={{ overflowX: 'auto' }}>
+        <table style={{ 
+          borderCollapse: 'collapse', 
+          minWidth: 200 + totalWidth,
+          tableLayout: 'fixed'
+        }}>
+          <thead>
+            <tr>
+              <th style={{ 
+                position: 'sticky', 
+                left: 0, 
+                zIndex: 10, 
+                background: '#f4faff', 
+                padding: '10px 16px', 
+                borderBottom: '2px solid #dee7e7',
+                width: '200px',
+                minWidth: '200px',
+                maxWidth: '200px',
+                textAlign: 'left',
+                fontSize: '14px',
+                fontWeight: '700',
+                color: '#002642'
+              }}>
+                {t.employee}
+              </th>
+              {visibleDates.map((d) => (
+                <th key={d} style={{ 
+                  padding: '10px 4px', 
+                  borderBottom: '2px solid #dee7e7', 
+                  textAlign: 'center',
+                  fontSize: '14px',
+                  fontWeight: '600',
+                  color: '#4f646f',
+                  background: '#f4faff',
+                  width: 24 * cellWidth,
+                  minWidth: 24 * cellWidth,
+                  maxWidth: 24 * cellWidth
+                }}>
+                  {d}
+                </th>
+              ))}
+            </tr>
+            <tr>
+              <th style={{ 
+                position: 'sticky', 
+                left: 0, 
+                zIndex: 10, 
+                background: '#f4faff', 
+                padding: '4px 16px', 
+                borderBottom: '2px solid #dee7e7',
+                width: '200px',
+                minWidth: '200px',
+                maxWidth: '200px'
+              }} />
+              {visibleDates.map((d) => (
+                <th key={`${d}-time`} style={{ 
+                  padding: '4px 2px', 
+                  borderBottom: '2px solid #dee7e7',
+                  background: '#f4faff'
+                }}>
+                  <div style={{ display: 'flex', gap: 0 }}>
                     {Array.from({ length: 24 }).map((_, h) => (
-                      <div key={h} style={{ flex: '0 0 48px', textAlign: 'center', fontSize: 12, padding: 4, borderLeft: '1px solid #f5f5f5' }}>{`${String(h).padStart(2, '0')}:00`}</div>
-                    ))}
-                  </div>
-
-                  <div>
-                    {employeesForView.map((emp) => (
-                      <div key={emp.id} style={{ position: 'relative', height: 72, borderBottom: '1px solid #f2f2f2' }}>
-                        <div style={{ position: 'absolute', inset: 0, display: 'flex', overflow: 'hidden' }}>
-                          {Array.from({ length: 24 }).map((_, h) => (
-                            <div key={h} style={{ flex: '0 0 48px', borderLeft: '1px solid rgba(0,0,0,0.03)' }} />
-                          ))}
-                        </div>
-
-                        {/* shifts for this day and employee */}
-                        {(() => {
-                          const di = dateIndexForVisible[idx];
-                          const day = schedules[di];
-                          if (!day) return null;
-                          const myShifts = (day.shifts || []).filter((shift) => {
-                            const ids = (shift.candidate_employees || shift.assigned_employees || []).map((e) => String(e.id));
-                            return ids.includes(String(emp.id));
-                          });
-
-                          return myShifts.map((shift) => {
-                            const start = parseTimeToHours(shift.start_time);
-                            const end = parseTimeToHours(shift.end_time || shift.start_time);
-                            const left = (start / 24) * 100;
-                            const width = Math.max(((end - start) / 24) * 100, 1);
-                            return (
-                              <div key={shift.id} style={{ position: 'absolute', left: `${left}%`, width: `${width}%`, top: 12, height: 44, background: '#1976d2', color: '#fff', borderRadius: 6, padding: '6px 8px', fontSize: 12, overflow: 'hidden', whiteSpace: 'nowrap', textOverflow: 'ellipsis' }}>
-                                <div style={{ fontWeight: 700 }}>{shift.position_title || shift.position || '—'}</div>
-                                <div style={{ fontSize: 11, opacity: 0.95 }}>{`${String(shift.start_time || '').slice(0,5)} - ${String(shift.end_time || '').slice(0,5)}`}</div>
-                              </div>
-                            );
-                          });
-                        })()}
+                      <div key={h} style={{ 
+                        flex: `0 0 ${cellWidth}px`, 
+                        textAlign: 'center', 
+                        fontSize: 11,
+                        color: '#4f646f',
+                        fontWeight: '500'
+                      }}>
+                        {`${String(h).padStart(2, '0')}:00`}
                       </div>
                     ))}
                   </div>
-                </div>
+                </th>
               ))}
-            </div>
-          </div>
-        </div>
+            </tr>
+          </thead>
+          <tbody>
+            {employeesForView.map((emp, rowIndex) => (
+              <tr key={emp.id}>
+                <td style={{ 
+                  position: 'sticky', 
+                  left: 0, 
+                  zIndex: 5, 
+                  background: rowIndex % 2 === 0 ? '#ffffff' : '#f8faff',
+                  padding: '8px 16px', 
+                  borderBottom: '1px solid #f0f0f0',
+                  width: '200px',
+                  minWidth: '200px',
+                  maxWidth: '200px',
+                  fontWeight: '600',
+                  fontSize: '14px',
+                  color: '#002642'
+                }}>
+                  {emp.full_name || emp.name || emp.email || `#${emp.id}`}
+                </td>
+                {visibleDates.map((d, idx) => {
+                  const di = dateIndexForVisible[idx];
+                  const day = schedules[di];
+                  if (!day) return <td key={`${d}-${emp.id}`} style={{ 
+                    padding: 0, 
+                    borderBottom: '1px solid #f0f0f0', 
+                    height: 72, 
+                    background: rowIndex % 2 === 0 ? '#ffffff' : '#f8faff',
+                    width: 24 * cellWidth,
+                    minWidth: 24 * cellWidth,
+                    maxWidth: 24 * cellWidth
+                  }} />;
+                  
+                  const myShifts = (day.shifts || []).filter((shift) => {
+                    const ids = (shift.candidate_employees || shift.assigned_employees || []).map((e) => String(e.id));
+                    return ids.includes(String(emp.id));
+                  });
+
+                  return (
+                    <td key={`${d}-${emp.id}`} style={{ 
+                      padding: 0, 
+                      borderBottom: '1px solid #f0f0f0', 
+                      height: 72, 
+                      position: 'relative',
+                      background: rowIndex % 2 === 0 ? '#ffffff' : '#f8faff',
+                      width: 24 * cellWidth,
+                      minWidth: 24 * cellWidth,
+                      maxWidth: 24 * cellWidth
+                    }}>
+                      <div style={{ position: 'relative', width: '100%', height: '100%' }}>
+                        {myShifts.map((shift) => {
+                          const start = parseTimeToHours(shift.start_time);
+                          const end = parseTimeToHours(shift.end_time || shift.start_time);
+                          const duration = end - start;
+                          const minWidthPx = 20;
+                          const leftPx = start * cellWidth;
+                          const widthPx = Math.max(duration * cellWidth, minWidthPx);
+                          return (
+                            <div
+                              key={shift.id}
+                              style={{
+                                position: 'absolute',
+                                left: `${leftPx}px`,
+                                width: `${widthPx}px`,
+                                top: 12,
+                                height: 48,
+                                background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+                                color: '#fff',
+                                borderRadius: 8,
+                                padding: '4px 8px',
+                                fontSize: 11,
+                                overflow: 'hidden',
+                                whiteSpace: 'nowrap',
+                                textOverflow: 'ellipsis',
+                                boxShadow: '0 2px 8px rgba(102,126,234,0.25)',
+                                border: '1px solid rgba(255,255,255,0.1)'
+                              }}
+                            >
+                              <div style={{ fontWeight: 700, fontSize: 11 }}>
+                                {shift.position_title || shift.position || '—'}
+                              </div>
+                              <div style={{ fontSize: 10, opacity: 0.9 }}>
+                                {`${String(shift.start_time || '').slice(0,5)} - ${String(shift.end_time || '').slice(0,5)}`}
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </td>
+                  );
+                })}
+              </tr>
+            ))}
+          </tbody>
+        </table>
       </div>
     </section>
   );
