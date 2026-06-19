@@ -1,3 +1,4 @@
+// frontend/src/components/tabs/EmployeesTab.jsx
 import { useEffect, useMemo, useState } from 'react';
 import {
   createEmployee,
@@ -34,11 +35,7 @@ function normalizeArray(value) {
 
 function normalizeError(error, fallback, language) {
   const message = extractApiErrorMessage(error, fallback, language);
-
-  if (!message) {
-    return fallback;
-  }
-
+  if (!message) return fallback;
   return message;
 }
 
@@ -63,6 +60,31 @@ function getCompanyId(company) {
 }
 
 export default function EmployeesTab({ language, userRole, user }) {
+  // Добавляем глобальные стили для полей ввода
+  useEffect(() => {
+    const styleSheet = document.createElement('style');
+    styleSheet.textContent = `
+      .employees-tab input,
+      .employees-tab select,
+      .employees-tab input:focus,
+      .employees-tab select:focus {
+        color: #002642 !important;
+        background-color: #ffffff !important;
+      }
+      .employees-tab input::placeholder {
+        color: #999 !important;
+        opacity: 1 !important;
+      }
+      .employees-tab input:-webkit-autofill {
+        -webkit-box-shadow: 0 0 0 30px #ffffff inset !important;
+        -webkit-text-fill-color: #002642 !important;
+        color: #002642 !important;
+      }
+    `;
+    document.head.appendChild(styleSheet);
+    return () => document.head.removeChild(styleSheet);
+  }, []);
+
   const [employees, setEmployees] = useState([]);
   const [positions, setPositions] = useState([]);
   const [branches, setBranches] = useState([]);
@@ -150,9 +172,7 @@ export default function EmployeesTab({ language, userRole, user }) {
       requiredEmployeeEmail: 'Введите email сотрудника.',
       invalidEmployeeEmail: 'Введите корректный email сотрудника.',
       requiredEmployeePosition: 'Выберите позицию сотрудника.',
-      duplicateEmployee:
-        'Пользователь или сотрудник с таким email уже существует. Используйте другой email или попросите сотрудника присоединиться по инвайт-коду.',
-      
+      duplicateEmployee: 'Пользователь или сотрудник с таким email уже существует. Используйте другой email или попросите сотрудника присоединиться по инвайт-коду.',
       positionCreated: 'Позиция создана.',
       employeeCreated: 'Сотрудник создан.',
       availabilitySaved: 'Доступность сохранена.',
@@ -212,8 +232,7 @@ export default function EmployeesTab({ language, userRole, user }) {
       requiredEmployeeEmail: 'Enter employee email.',
       invalidEmployeeEmail: 'Enter a valid employee email.',
       requiredEmployeePosition: 'Select employee position.',
-      duplicateEmployee:
-        'A user or employee with this email already exists. Use another email or ask the employee to join by invite code.',
+      duplicateEmployee: 'A user or employee with this email already exists. Use another email or ask the employee to join by invite code.',
       positionCreated: 'Position created.',
       employeeCreated: 'Employee created.',
       availabilitySaved: 'Availability saved.',
@@ -241,25 +260,17 @@ export default function EmployeesTab({ language, userRole, user }) {
 
     return positions.filter((position) => {
       const positionCompanyId = position.company_id || position.companyId;
-
-      if (!positionCompanyId) {
-        return false;
-      }
-
+      if (!positionCompanyId) return false;
       return String(positionCompanyId) === String(currentCompanyId);
     });
   }, [positions, currentCompanyId]);
 
   useEffect(() => {
-    if (!errorMessage && !successMessage) {
-      return undefined;
-    }
-
+    if (!errorMessage && !successMessage) return undefined;
     const timer = setTimeout(() => {
       setErrorMessage('');
       setSuccessMessage('');
     }, errorMessage ? 5000 : 2500);
-
     return () => clearTimeout(timer);
   }, [errorMessage, successMessage]);
 
@@ -275,8 +286,7 @@ export default function EmployeesTab({ language, userRole, user }) {
     if (selectedEmployee) {
       setSelectedEmployeeDetails({
         branch_id: selectedEmployee.branch?.id || selectedEmployee.branch_id || '',
-        position_id:
-          selectedEmployee.position_id || selectedEmployee.position?.id || selectedEmployee.position?.position_id || '',
+        position_id: selectedEmployee.position_id || selectedEmployee.position?.id || selectedEmployee.position?.position_id || '',
       });
     } else {
       setSelectedEmployeeDetails({ branch_id: '', position_id: '' });
@@ -284,9 +294,7 @@ export default function EmployeesTab({ language, userRole, user }) {
   }, [selectedEmployee]);
 
   useEffect(() => {
-    if (userRole !== 'manager') {
-      return undefined;
-    }
+    if (userRole !== 'manager') return undefined;
 
     let isMounted = true;
 
@@ -295,17 +303,14 @@ export default function EmployeesTab({ language, userRole, user }) {
       setErrorMessage('');
 
       try {
-        const [employeesData, positionsData] = await Promise.all([
-          listEmployees(),
-          listPositions(),
-        ]);
+        const [employeesData, positionsData] = await Promise.all([listEmployees(), listPositions()]);
 
         let branchesData = [];
 
         if (currentCompanyId) {
           try {
             branchesData = await listBranches(currentCompanyId);
-          } catch (error) {
+          } catch {
             branchesData = normalizeArray(currentCompany?.branches || []);
           }
         }
@@ -314,9 +319,7 @@ export default function EmployeesTab({ language, userRole, user }) {
           branchesData = [{ id: 'mock-branch', name: language === 'ru' ? 'Основной филиал' : 'Main branch' }];
         }
 
-        if (!isMounted) {
-          return;
-        }
+        if (!isMounted) return;
 
         const safeEmployees = normalizeArray(employeesData);
         const safePositions = normalizeArray(positionsData);
@@ -349,7 +352,7 @@ export default function EmployeesTab({ language, userRole, user }) {
     return () => {
       isMounted = false;
     };
-  }, [language, t.empty, userRole]);
+  }, [language, t.empty, userRole, currentCompanyId]);
 
   useEffect(() => {
     if (!selectedEmployeeId || userRole !== 'manager') {
@@ -372,9 +375,7 @@ export default function EmployeesTab({ language, userRole, user }) {
           getEmployeeCalendarSummary(selectedEmployeeId),
         ]);
 
-        if (!isMounted) {
-          return;
-        }
+        if (!isMounted) return;
 
         const weeklyAvailability = normalizeArray(availabilityData?.weekly_availability);
         const desiredDaysOff = normalizeArray(availabilityData?.desired_days_off);
@@ -456,9 +457,7 @@ export default function EmployeesTab({ language, userRole, user }) {
   };
 
   const handleAssignDetails = () => {
-    if (!selectedEmployee) {
-      return;
-    }
+    if (!selectedEmployee) return;
 
     const updatedEmployee = {
       ...selectedEmployee,
@@ -468,9 +467,9 @@ export default function EmployeesTab({ language, userRole, user }) {
       branch: branches.find((branch) => String(branch.id) === String(selectedEmployeeDetails.branch_id)) || selectedEmployee.branch,
     };
 
-    setEmployees((prev) => prev.map((employee) => (
+    setEmployees((prev) => prev.map((employee) =>
       String(employee.id) === String(selectedEmployee.id) ? updatedEmployee : employee
-    )));
+    ));
 
     setSuccessMessage(t.assignmentsSaved);
   };
@@ -529,9 +528,7 @@ export default function EmployeesTab({ language, userRole, user }) {
   };
 
   const handleCreateEmployee = async () => {
-    if (!validateEmployeeForm()) {
-      return;
-    }
+    if (!validateEmployeeForm()) return;
 
     clearMessages();
     setIsSubmitting(true);
@@ -556,16 +553,14 @@ export default function EmployeesTab({ language, userRole, user }) {
   const handleAvailabilityChange = (index, key, value) => {
     setAvailabilityForm((prev) => ({
       ...prev,
-      weekly_availability: prev.weekly_availability.map((item, itemIndex) => (
+      weekly_availability: prev.weekly_availability.map((item, itemIndex) =>
         itemIndex === index ? { ...item, [key]: value } : item
-      )),
+      ),
     }));
   };
 
   const handleSaveAvailability = async () => {
-    if (!selectedEmployeeId) {
-      return;
-    }
+    if (!selectedEmployeeId) return;
 
     clearMessages();
     setIsSubmitting(true);
@@ -621,9 +616,7 @@ export default function EmployeesTab({ language, userRole, user }) {
   };
 
   const handleDeleteAbsence = async (absenceId) => {
-    if (!selectedEmployeeId) {
-      return;
-    }
+    if (!selectedEmployeeId) return;
 
     clearMessages();
     setIsSubmitting(true);
@@ -655,7 +648,7 @@ export default function EmployeesTab({ language, userRole, user }) {
   }
 
   return (
-    <section style={styles.page}>
+    <section style={styles.page} className="employees-tab">
       <div style={styles.shell}>
         <header style={styles.header}>
           <div>
@@ -746,7 +739,7 @@ export default function EmployeesTab({ language, userRole, user }) {
                   onChange={(event) =>
                     setEmployeeForm((prev) => ({ ...prev, position_id: event.target.value }))
                   }
-                  style={styles.input}
+                  style={styles.select}
                   disabled={visiblePositions.length === 0}
                 >
                   <option value="">{visiblePositions.length === 0 ? t.noPositionsHint : t.selectPosition}</option>
@@ -794,10 +787,9 @@ export default function EmployeesTab({ language, userRole, user }) {
                         }}
                       >
                         <div style={styles.listButtonContent}>
-                          <strong>{employee.full_name}</strong>
+                          <strong>{employee.full_name || employee.name || employee.fullName || 'Без имени'}</strong>
                           <span style={styles.listButtonMeta}>
-                            {getEmployeePosition(employee) || t.empty}
-                            {getEmployeeBranch(employee) ? ` • ${getEmployeeBranch(employee)}` : ''}
+                            {employee.email || employee.email || '—'}
                           </span>
                         </div>
                       </button>
@@ -820,8 +812,8 @@ export default function EmployeesTab({ language, userRole, user }) {
                 </div>
 
                 <div style={styles.employeeCard}>
-                  <Info label={t.fullName} value={selectedEmployee.full_name} />
-                  <Info label={t.email} value={selectedEmployee.email} />
+                  <Info label={t.fullName} value={selectedEmployee?.full_name || selectedEmployee?.name || '—'} />
+                  <Info label={t.email} value={selectedEmployee?.email || '—'} />
                   <Info label={t.position} value={selectedEmployeePosition || t.empty} />
                   <Info label={t.branch} value={selectedEmployeeBranch || t.empty} />
                 </div>
@@ -838,7 +830,7 @@ export default function EmployeesTab({ language, userRole, user }) {
                       onChange={(event) =>
                         setSelectedEmployeeDetails((prev) => ({ ...prev, position_id: event.target.value }))
                       }
-                      style={styles.input}
+                      style={styles.select}
                     >
                       <option value="">{t.selectPosition}</option>
                       {visiblePositions.map((position) => (
@@ -856,7 +848,7 @@ export default function EmployeesTab({ language, userRole, user }) {
                       onChange={(event) =>
                         setSelectedEmployeeDetails((prev) => ({ ...prev, branch_id: event.target.value }))
                       }
-                      style={styles.input}
+                      style={styles.select}
                     >
                       <option value="">{t.selectBranch}</option>
                       {branches.map((branch) => (
@@ -904,7 +896,7 @@ export default function EmployeesTab({ language, userRole, user }) {
                             onChange={(event) =>
                               handleAvailabilityChange(index, 'weekday', Number(event.target.value))
                             }
-                            style={styles.input}
+                            style={styles.select}
                           >
                             {WEEKDAYS.map((day) => (
                               <option key={day.value} value={day.value}>
@@ -996,7 +988,7 @@ export default function EmployeesTab({ language, userRole, user }) {
                       onChange={(event) =>
                         setAbsenceForm((prev) => ({ ...prev, absence_type: event.target.value }))
                       }
-                      style={styles.input}
+                      style={styles.select}
                     >
                       <option value="vacation">{t.vacation}</option>
                       <option value="sick_leave">{t.sick_leave}</option>
@@ -1673,5 +1665,4 @@ const styles = {
     cursor: 'pointer',
     lineHeight: 1,
   },
-
 };
