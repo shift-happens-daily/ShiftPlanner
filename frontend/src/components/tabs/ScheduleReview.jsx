@@ -377,7 +377,7 @@ export default function ScheduleReview({ language, userRole }) {
                                 background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
                                 color: '#fff',
                                 borderRadius: 8,
-                                padding: '4px 8px',
+                                padding: '0px 0px',
                                 fontSize: 11,
                                 overflow: 'hidden',
                                 whiteSpace: 'nowrap',
