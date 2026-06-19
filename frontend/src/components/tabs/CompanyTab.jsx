@@ -75,6 +75,8 @@ export default function CompanyTab({ language, userRole, user }) {
 
   const [inviteCode, setInviteCode] = useState('');
   const [invitePreview, setInvitePreview] = useState(null);
+  const [selectedJoinBranchId, setSelectedJoinBranchId] = useState('');
+  const [selectedJoinPositionId, setSelectedJoinPositionId] = useState('');
 
   const [branches, setBranches] = useState([]);
   const [branchName, setBranchName] = useState('');
@@ -118,6 +120,8 @@ export default function CompanyTab({ language, userRole, user }) {
       createBranchError: 'Не удалось создать филиал.',
       createCompanyFirst: 'Сначала создайте компанию.',
       branchRequired: 'Введите название филиала.',
+      noBranchSelected: 'Без филиала',
+      noPositionSelected: 'Без позиции',
       positionsHint: 'Позиции создаются во вкладке «Сотрудники».',
       employeeHint: 'После присоединения вкладки расписания и отчетов станут доступны.',
       managerHint: 'Скопируйте инвайт-код и отправьте его сотрудникам.',
@@ -156,6 +160,8 @@ export default function CompanyTab({ language, userRole, user }) {
       createBranchError: 'Failed to create branch.',
       createCompanyFirst: 'Create a company first.',
       branchRequired: 'Enter branch name.',
+      noBranchSelected: 'No branch selected',
+      noPositionSelected: 'No position selected',
       positionsHint: 'Positions are created in the Employees tab.',
       employeeHint: 'After joining, schedule and reports tabs become available.',
       managerHint: 'Copy the invite code and send it to employees.',
@@ -176,6 +182,8 @@ export default function CompanyTab({ language, userRole, user }) {
 
   const previewCompany = getCompanyFromPreview(invitePreview);
   const previewCompanyName = previewCompany?.name || t.empty;
+  const previewBranches = getBranchesFromPreview(invitePreview);
+  const previewPositions = getPositionsFromPreview(invitePreview);
 
   const canJoin = Boolean(invitePreview) && !isSubmitting;
 
@@ -221,9 +229,13 @@ export default function CompanyTab({ language, userRole, user }) {
     try {
       const preview = await previewInviteCode(inviteCode.trim());
       setInvitePreview(preview);
+      setSelectedJoinBranchId('');
+      setSelectedJoinPositionId('');
       setSuccessMessage(t.inviteFound);
     } catch (error) {
       setInvitePreview(null);
+      setSelectedJoinBranchId('');
+      setSelectedJoinPositionId('');
       setErrorMessage(extractApiErrorMessage(error, null, language));
     } finally {
       setIsSubmitting(false);
@@ -240,19 +252,18 @@ export default function CompanyTab({ language, userRole, user }) {
     setIsSubmitting(true);
 
     try {
-      const previewBranches = getBranchesFromPreview(invitePreview);
-      const previewPositions = getPositionsFromPreview(invitePreview);
-
       await joinCompany({
         invite_code: inviteCode.trim(),
-        branch_id: previewBranches[0]?.id || null,
-        position_id: previewPositions[0]?.id || null,
+        branch_id: selectedJoinBranchId || null,
+        position_id: selectedJoinPositionId || null,
       });
 
       await refreshUser();
 
       setInviteCode('');
       setInvitePreview(null);
+      setSelectedJoinBranchId('');
+      setSelectedJoinPositionId('');
       setSuccessMessage(t.joinSuccess);
     } catch (error) {
       setErrorMessage(extractApiErrorMessage(error, null, language));
@@ -466,6 +477,42 @@ export default function CompanyTab({ language, userRole, user }) {
               {invitePreview && (
                 <div style={styles.previewBox}>
                   <strong style={styles.previewTitle}>{previewCompanyName}</strong>
+
+                  {previewBranches.length > 0 && (
+                    <div style={styles.formStack}>
+                      <label style={styles.label}>{t.branch}</label>
+                      <select
+                        value={selectedJoinBranchId}
+                        onChange={(event) => setSelectedJoinBranchId(event.target.value)}
+                        style={styles.select}
+                      >
+                        <option value="">{t.noBranchSelected}</option>
+                        {previewBranches.map((branch) => (
+                          <option key={branch.id} value={branch.id}>
+                            {getName(branch)}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  )}
+
+                  {previewPositions.length > 0 && (
+                    <div style={styles.formStack}>
+                      <label style={styles.label}>{t.position}</label>
+                      <select
+                        value={selectedJoinPositionId}
+                        onChange={(event) => setSelectedJoinPositionId(event.target.value)}
+                        style={styles.select}
+                      >
+                        <option value="">{t.noPositionSelected}</option>
+                        {previewPositions.map((position) => (
+                          <option key={position.id} value={position.id}>
+                            {getName(position)}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  )}
 
                   <button
                     type="button"

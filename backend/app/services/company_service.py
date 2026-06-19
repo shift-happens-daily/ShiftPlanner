@@ -152,33 +152,26 @@ def join_company_by_invite(
             detail="Company invite code not found.",
         )
 
-    if payload.branch_id is None:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Branch is required.",
-        )
+    branch = None
+    position = None
 
-    branch = company_repository.get_branch_by_id(db, payload.branch_id)
+    if payload.branch_id is not None:
+        branch = company_repository.get_branch_by_id(db, payload.branch_id)
 
-    if branch is None or branch.company_id != company.id:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Branch does not belong to company.",
-        )
+        if branch is None or branch.company_id != company.id:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Branch does not belong to company.",
+            )
 
-    if payload.position_id is None:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Position is required.",
-        )
+    if payload.position_id is not None:
+        position = position_repository.get_position_by_id(db, payload.position_id)
 
-    position = position_repository.get_position_by_id(db, payload.position_id)
-
-    if position is None or position.company_id != company.id:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Position does not belong to company.",
-        )
+        if position is None or position.company_id != company.id:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Position does not belong to company.",
+            )
 
     employee = employee_repository.get_employee_by_user_id(db, current_user.id)
 
@@ -187,16 +180,16 @@ def join_company_by_invite(
             db=db,
             user_id=current_user.id,
             company_id=company.id,
-            branch_id=branch.id,
-            position_id=position.id,
+            branch_id=branch.id if branch else None,
+            position_id=position.id if position else None,
         )
     else:
         employee_repository.update_employee_membership(
             db=db,
             employee=employee,
             company_id=company.id,
-            branch_id=branch.id,
-            position_id=position.id,
+            branch_id=branch.id if branch else None,
+            position_id=position.id if position else None,
         )
 
     from app.services import auth_service

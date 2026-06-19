@@ -947,7 +947,7 @@ export default function EmployeesTab({ language, userRole, user }) {
                               onChange={(event) => setEditingPositionTitle(event.target.value)}
                               style={styles.input}
                             />
-                            <div style={{ display: 'flex', gap: '10px' }}>
+                            <div style={styles.actionGroup}>
                               <button type="button" onClick={handleSaveEditedPosition} style={styles.primaryButton}>
                                 {t.save}
                               </button>
@@ -961,7 +961,7 @@ export default function EmployeesTab({ language, userRole, user }) {
                             <div>
                               <strong style={styles.itemTitle}>{getPositionLabel(position)}</strong>
                             </div>
-                            <div style={{ display: 'flex', gap: '10px' }}>
+                            <div style={styles.actionGroup}>
                               <button
                                 type="button"
                                 onClick={() => handleStartEditingPosition(position)}
@@ -1328,6 +1328,13 @@ const styles = {
     fontWeight: '800',
     cursor: 'pointer',
     whiteSpace: 'nowrap',
+  },
+
+  actionGroup: {
+    display: 'flex',
+    gap: '8px',
+    alignItems: 'center',
+    flexShrink: 0,
   },
 
   daysOff: {
