@@ -5,8 +5,9 @@ struct ManagedEmployeeCardView: View {
 
     let employee: ManagedEmployee
     let positionTitle: String
+    let isPickerExpanded: Bool
     let canDeleteEmployee: Bool
-    let onOpenRolePicker: () -> Void
+    let onToggleRolePicker: () -> Void
     let onDelete: () -> Void
 
     var body: some View {
@@ -27,7 +28,7 @@ struct ManagedEmployeeCardView: View {
 
             HStack(spacing: 10) {
                 Button {
-                    onOpenRolePicker()
+                    onToggleRolePicker()
                 } label: {
                     HStack(spacing: 5) {
                         Image(systemName: "briefcase")
@@ -36,7 +37,7 @@ struct ManagedEmployeeCardView: View {
                             .font(.subheadline)
                             .lineLimit(1)
                             .truncationMode(.tail)
-                        Image(systemName: "chevron.up.chevron.down")
+                        Image(systemName: isPickerExpanded ? "chevron.up" : "chevron.down")
                             .font(.caption)
                     }
                     .frame(maxWidth: 140, alignment: .leading)
