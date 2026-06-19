@@ -27,6 +27,17 @@ def list_employees(db: Session) -> list[Employee]:
     )
 
 
+def list_employees_by_company(db: Session, company_id: int) -> list[Employee]:
+    return list(
+        db.scalars(
+            select(Employee)
+            .options(*_employee_options())
+            .where(Employee.company_id == company_id)
+            .order_by(Employee.id)
+        )
+    )
+
+
 def get_employee_by_id(db: Session, employee_id: int) -> Employee | None:
     return db.scalars(
         select(Employee)

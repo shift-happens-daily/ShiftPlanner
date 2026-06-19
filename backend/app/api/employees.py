@@ -39,10 +39,10 @@ router = APIRouter()
     responses={**UNAUTHORIZED_RESPONSE},
 )
 def get_employees(
-    _: UserRead = Depends(get_current_user),
+    current_user: UserRead = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> list[EmployeeRead]:
-    return employee_service.list_employees(db)
+    return employee_service.list_employees(db, current_user)
 
 
 @router.post(

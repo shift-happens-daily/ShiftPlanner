@@ -14,14 +14,22 @@ from app.schemas.employee import (
     EmployeeCalendarShiftRead,
     EmployeeCalendarSummaryRead,
     EmployeeCreate,
+    EmployeePositionRead,
     EmployeeRead,
     EmployeeWorkloadRead,
 )
+from app.schemas.auth import UserRead
 from app.services import auth_service
 
 
-def list_employees(db: Session) -> list[EmployeeRead]:
-    return [_build_employee_read(employee) for employee in employee_repository.list_employees(db)]
+def list_employees(db: Session, current_user: UserRead) -> list[EmployeeRead]:
+    if current_user.company_id is None:
+        return []
+
+    return [
+        _build_employee_read(employee)
+        for employee in employee_repository.list_employees_by_company(db, current_user.company_id)
+    ]
 
 
 def create_employee(db: Session, payload: EmployeeCreate) -> EmployeeRead:
@@ -159,12 +167,18 @@ def get_calendar_summary(
 
 
 def _build_employee_read(employee) -> EmployeeRead:
+    position = None
+    if employee.position is not None:
+        position = EmployeePositionRead(id=employee.position.id, name=employee.position.name)
+
     return EmployeeRead(
         id=employee.id,
         full_name=employee.user.full_name,
         email=employee.user.email,
-        position_id=employee.position_id or 0,
-        position_title=employee.position.name if getattr(employee, "position", None) is not None else "",
+        role=employee.user.role,
+        position_id=employee.position_id,
+        position_title=employee.position.name if employee.position is not None else "",
+        position=position,
         availability=_build_availability_read(employee),
     )
 

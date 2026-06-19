@@ -11,6 +11,7 @@ CREATE TABLE users (
 CREATE TABLE companies (
     id SERIAL PRIMARY KEY,
     name VARCHAR(255) NOT NULL,
+    address TEXT,
     invite_code VARCHAR(50) UNIQUE,
     manager_user_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
@@ -67,6 +68,7 @@ CREATE TABLE absences (
 CREATE TABLE shift_requirements (
     id SERIAL PRIMARY KEY,
     company_id INTEGER NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
+    branch_id INTEGER REFERENCES branches(id) ON DELETE CASCADE,
     position_id INTEGER NOT NULL REFERENCES positions(id) ON DELETE CASCADE,
     shift_date DATE NOT NULL,
     start_time TIME NOT NULL,

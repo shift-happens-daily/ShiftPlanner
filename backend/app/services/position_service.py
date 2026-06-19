@@ -2,17 +2,21 @@ from fastapi import HTTPException, status
 from sqlalchemy.orm import Session
 
 from app.repositories import company_repository, position_repository
+from app.schemas.auth import UserRead
 from app.schemas.position import PositionCreate, PositionRead
 
 
-def list_positions(db: Session) -> list[PositionRead]:
+def list_positions(db: Session, current_user: UserRead) -> list[PositionRead]:
+    if current_user.company_id is None:
+        return []
+
     return [
         PositionRead(
             id=position.id,
             title=position.name,
             company_id=position.company_id,
         )
-        for position in position_repository.list_positions(db)
+        for position in position_repository.list_positions(db, current_user.company_id)
     ]
 
 

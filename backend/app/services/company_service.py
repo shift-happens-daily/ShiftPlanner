@@ -9,6 +9,7 @@ from app.schemas.company import (
     CompanyJoinRequest,
     CompanyRead,
     CompanySummaryRead,
+    CompanyUpdate,
 )
 
 
@@ -37,6 +38,15 @@ def list_companies(db: Session) -> list[CompanySummaryRead]:
     ]
 
 
+def _build_company_read(company) -> CompanyRead:
+    return CompanyRead(
+        id=company.id,
+        name=company.name,
+        address=company.address,
+        invite_code=company.invite_code or "",
+    )
+
+
 def create_company(db: Session, payload: CompanyCreate, current_user: UserRead) -> CompanyRead:
     company = company_repository.create_company(
         db=db,
@@ -44,11 +54,32 @@ def create_company(db: Session, payload: CompanyCreate, current_user: UserRead) 
         manager_user_id=current_user.id,
     )
 
-    return CompanyRead(
-        id=company.id,
-        name=company.name,
-        invite_code=company.invite_code or "",
+    return _build_company_read(company)
+
+
+def update_my_company(db: Session, payload: CompanyUpdate, current_user: UserRead) -> CompanyRead:
+    if current_user.company_id is None:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Manager is not linked to a company.",
+        )
+
+    company = company_repository.get_company_by_id(db, current_user.company_id)
+
+    if company is None or company.manager_user_id != current_user.id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Manager is not linked to this company.",
+        )
+
+    updated_company = company_repository.update_company(
+        db,
+        company,
+        name=payload.name,
+        address=payload.address if "address" in payload.model_fields_set else company.address,
     )
+
+    return _build_company_read(updated_company)
 
 
 def preview_invite_code(db: Session, invite_code: str):

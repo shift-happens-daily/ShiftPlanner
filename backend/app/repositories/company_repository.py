@@ -28,6 +28,24 @@ def create_company(
     return company
 
 
+def update_company(
+    db: Session,
+    company: Company,
+    *,
+    name: str | None = None,
+    address: str | None = None,
+) -> Company:
+    if name is not None:
+        company.name = name
+    company.address = address
+
+    db.add(company)
+    db.commit()
+    db.refresh(company)
+
+    return company
+
+
 def get_default_company(db: Session) -> Company:
     company = db.scalars(select(Company).order_by(Company.id)).first()
 

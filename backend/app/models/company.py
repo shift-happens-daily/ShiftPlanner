@@ -17,6 +17,7 @@ class Company(Base):
 
     id: Mapped[int] = mapped_column(primary_key=True)
     name: Mapped[str] = mapped_column(String(255))
+    address: Mapped[str | None] = mapped_column(Text)
     invite_code: Mapped[str | None] = mapped_column(String(50), unique=True)
 
     manager_user_id: Mapped[int | None] = mapped_column(

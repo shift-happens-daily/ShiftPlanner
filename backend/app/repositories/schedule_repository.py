@@ -10,6 +10,7 @@ def create_requirement(
     db: Session,
     *,
     company_id: int,
+    branch_id: int | None = None,
     position_id: int,
     shift_date: date,
     start_time,
@@ -18,6 +19,7 @@ def create_requirement(
 ) -> ShiftRequirement:
     requirement = ShiftRequirement(
         company_id=company_id,
+        branch_id=branch_id,
         position_id=position_id,
         shift_date=shift_date,
         start_time=start_time,
@@ -30,13 +32,43 @@ def create_requirement(
     return requirement
 
 
+def update_requirement(
+    db: Session,
+    requirement: ShiftRequirement,
+    *,
+    branch_id: int,
+    position_id: int,
+    shift_date: date,
+    start_time,
+    end_time,
+    required_employees: int,
+) -> ShiftRequirement:
+    requirement.branch_id = branch_id
+    requirement.position_id = position_id
+    requirement.shift_date = shift_date
+    requirement.start_time = start_time
+    requirement.end_time = end_time
+    requirement.required_employees = required_employees
+
+    db.add(requirement)
+    db.commit()
+    db.refresh(requirement)
+    return requirement
+
+
 def list_requirements(
     db: Session,
     start_date: date | None = None,
     end_date: date | None = None,
     position_id: int | None = None,
+    company_id: int | None = None,
+    branch_id: int | None = None,
 ) -> list[ShiftRequirement]:
     query = select(ShiftRequirement).order_by(ShiftRequirement.shift_date, ShiftRequirement.id)
+    if company_id is not None:
+        query = query.where(ShiftRequirement.company_id == company_id)
+    if branch_id is not None:
+        query = query.where(ShiftRequirement.branch_id == branch_id)
     if start_date is not None:
         query = query.where(ShiftRequirement.shift_date >= start_date)
     if end_date is not None:
@@ -50,6 +82,7 @@ def create_requirements_bulk(db: Session, items: list[dict]) -> list[ShiftRequir
     requirements = [
         ShiftRequirement(
             company_id=item["company_id"],
+            branch_id=item.get("branch_id"),
             position_id=item["position_id"],
             shift_date=item["shift_date"],
             start_time=item["start_time"],

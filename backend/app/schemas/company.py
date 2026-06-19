@@ -5,12 +5,18 @@ class CompanyCreate(BaseModel):
     name: str = Field(min_length=1)
 
 
+class CompanyUpdate(BaseModel):
+    name: str | None = Field(default=None, min_length=1)
+    address: str | None = None
+
+
 class CompanySummaryRead(BaseModel):
     id: int
     name: str
 
 
 class CompanyRead(CompanySummaryRead):
+    address: str | None = None
     invite_code: str
 
 
