@@ -51,6 +51,7 @@ export default function ScheduleReview({ language, userRole }) {
   const texts = {
     ru: {
       title: 'Просмотр сгенерированного расписания',
+      subtitle: 'Смотрите сгенерированные смены в удобном табличном формате.',
       employee: 'Сотрудник',
       day: 'День',
       threeDay: '3 дня',
@@ -170,14 +171,24 @@ export default function ScheduleReview({ language, userRole }) {
 
   return (
     <section style={{ padding: 18 }}>
-      <h2>{t.title}</h2>
+      <div style={{ background: '#ffffff', borderRadius: '22px', boxShadow: '0 22px 58px rgba(0, 38, 66, 0.16)', padding: 24 }}>
+        <div style={{ marginBottom: 12, display: 'flex', flexDirection: 'column', gap: 8 }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}>
+            <div>
+              <h2 style={{ margin: 0, color: '#002642' }}>{t.title}</h2>
+              <p style={{ margin: '8px 0 0', color: '#4f646f', fontSize: 14, maxWidth: 680 }}>{t.subtitle}</p>
+            </div>
+          </div>
+        </div>
 
-      <div style={{ display: 'flex', gap: 12, alignItems: 'center', marginBottom: 12, flexWrap: 'wrap' }}>
-        <button onClick={() => setSelectedDateIndex((i) => Math.max(0, i - 1))}>&larr;</button>
-        <strong>{dates[selectedDateIndex] || '—'}</strong>
-        <button onClick={() => setSelectedDateIndex((i) => Math.min(dates.length - 1, i + 1))}>&rarr;</button>
+        <div style={{ display: 'flex', gap: 12, alignItems: 'center', marginBottom: 20, flexWrap: 'wrap' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, background: '#f4faff', border: '1px solid #dee7e7', borderRadius: 12, padding: '10px 14px' }}>
+            <button onClick={() => setSelectedDateIndex((i) => Math.max(0, i - 1))} style={{ border: 'none', background: 'transparent', cursor: 'pointer', fontSize: 18 }}>&larr;</button>
+            <strong style={{ color: '#002642' }}>{dates[selectedDateIndex] || '—'}</strong>
+            <button onClick={() => setSelectedDateIndex((i) => Math.min(dates.length - 1, i + 1))} style={{ border: 'none', background: 'transparent', cursor: 'pointer', fontSize: 18 }}>&rarr;</button>
+          </div>
 
-        <div style={{ marginLeft: 12, display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
           <button 
             onClick={() => setViewMode('day')} 
             style={{ 
@@ -217,17 +228,18 @@ export default function ScheduleReview({ language, userRole }) {
         </div>
 
         <div style={{ marginLeft: 'auto', display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-          <label style={{ display: 'inline-flex', gap: 6, alignItems: 'center', cursor: 'pointer' }}>
+          <label style={{ display: 'inline-flex', gap: 6, alignItems: 'center', cursor: 'pointer', color: '#002642', fontWeight: 600, padding: '10px 14px', borderRadius: 12, border: '1px solid #dee7e7', background: '#ffffff' }}>
             {t.importCSV}
             <input type="file" accept=".csv" style={{ display: 'none' }} onChange={(e) => e.target.files && importCSV(e.target.files[0])} />
           </label>
           <button onClick={exportCSV} style={{
-            padding: '6px 12px',
-            borderRadius: '6px',
+            padding: '10px 14px',
+            borderRadius: '12px',
             background: '#002642',
             color: '#fff',
             border: 'none',
-            cursor: 'pointer'
+            cursor: 'pointer',
+            fontWeight: 600
           }}>{t.exportCSV}</button>
         </div>
       </div>
@@ -236,7 +248,11 @@ export default function ScheduleReview({ language, userRole }) {
         <table style={{ 
           borderCollapse: 'collapse', 
           minWidth: 200 + totalWidth,
-          tableLayout: 'fixed'
+          tableLayout: 'fixed',
+          background: '#ffffff',
+          borderRadius: '18px',
+          overflow: 'hidden',
+          boxShadow: '0 8px 24px rgba(0, 38, 66, 0.08)'
         }}>
           <thead>
             <tr>
@@ -311,17 +327,17 @@ export default function ScheduleReview({ language, userRole }) {
           </thead>
           <tbody>
             {employeesForView.map((emp, rowIndex) => (
-              <tr key={emp.id}>
+              <tr key={emp.id} style={{ background: rowIndex % 2 === 0 ? '#ffffff' : '#f8faff' }}>
                 <td style={{ 
                   position: 'sticky', 
                   left: 0, 
                   zIndex: 5, 
                   background: rowIndex % 2 === 0 ? '#ffffff' : '#f8faff',
-                  padding: '8px 16px', 
+                  padding: '12px 16px', 
                   borderBottom: '1px solid #f0f0f0',
-                  width: '200px',
-                  minWidth: '200px',
-                  maxWidth: '200px',
+                  width: '220px',
+                  minWidth: '220px',
+                  maxWidth: '220px',
                   fontWeight: '600',
                   fontSize: '14px',
                   color: '#002642'
@@ -404,6 +420,7 @@ export default function ScheduleReview({ language, userRole }) {
           </tbody>
         </table>
       </div>
-    </section>
+    </div>
+  </section>
   );
 }

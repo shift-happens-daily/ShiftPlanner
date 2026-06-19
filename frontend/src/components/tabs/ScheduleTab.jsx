@@ -789,7 +789,7 @@ const styles = {
     boxSizing: 'border-box',
     padding: '26px',
     borderRadius: '30px',
-    background: '#f4faff',
+    background: '#ffffff',
     border: '1px solid rgba(222, 231, 231, 0.95)',
     boxShadow: '0 22px 58px rgba(0, 38, 66, 0.18)',
     display: 'flex',
@@ -797,7 +797,6 @@ const styles = {
     overflow: 'hidden',
     position: 'relative',
   },
-
   header: {
     flexShrink: 0,
     display: 'flex',
@@ -865,11 +864,10 @@ const styles = {
   panel: {
     padding: '18px',
     borderRadius: '22px',
-    background: '#ffffff',
+    background: '#f4faff',
     border: '1px solid rgba(79, 100, 111, 0.12)',
-    overflow: 'hidden',
+    overflow: 'hidden', 
   },
-
   panelHeader: {
     display: 'flex',
     justifyContent: 'space-between',
@@ -1189,18 +1187,16 @@ const styles = {
   },
 
   emptyHero: {
-    height: '100%',
-    minHeight: '260px',
-    padding: '28px',
-    borderRadius: '24px',
-    background: '#ffffff',
-    border: '1px solid rgba(79, 100, 111, 0.12)',
+    flex: 1,
     display: 'flex',
     flexDirection: 'column',
-    alignItems: 'center',
+    alignItems: 'center', 
     justifyContent: 'center',
-    gap: '8px',
+    padding: '40px',
     textAlign: 'center',
+    background: '#f4faff',
+    borderRadius: '22px',
+    border: '1px solid rgba(79, 100, 111, 0.12)',
   },
 
   emptyTitle: {
