@@ -147,10 +147,55 @@ def test_auth_token_and_profile_endpoints(client: TestClient) -> None:
     assert employee_json["employee_id"] == 1
     assert employee_json["company"]["invite_code"] == "COFFEE123"
     assert employee_json["branch"]["name"] == "Main Branch"
-    assert employee_json["position"]["name"] == "Barista"
+    assert employee_json["position"] == {"id": 1, "name": "Barista"}
 
     unauthorized = client.get("/auth/me")
     assert unauthorized.status_code == 401
+
+
+def test_employee_without_assigned_position_returns_null(client: TestClient) -> None:
+    with psycopg.connect(PSYCOPG_DSN) as connection:
+        with connection.cursor() as cursor:
+            cursor.execute("UPDATE employees SET position_id = NULL WHERE id = 1")
+
+    employee_headers = login_json(client, "ivan@example.com", "employee123")
+    manager_headers = login_json(client, "manager@example.com", "manager123")
+
+    profile = client.get("/auth/me", headers=employee_headers)
+    assert profile.status_code == 200, profile.text
+    assert profile.json()["role"] == "employee"
+    assert profile.json()["position"] is None
+
+    employees = client.get("/employees/", headers=manager_headers)
+    assert employees.status_code == 200, employees.text
+    assert employees.json()[0]["position_id"] is None
+    assert employees.json()[0]["position"] is None
+
+
+def test_employees_list_includes_position_and_role(client: TestClient) -> None:
+    manager_headers = login_json(client, "manager@example.com", "manager123")
+
+    response = client.get("/employees/", headers=manager_headers)
+    assert response.status_code == 200, response.text
+    employee = response.json()[0]
+    assert employee["role"] == "employee"
+    assert employee["position"] == {"id": 1, "name": "Barista"}
+    assert employee["position_id"] == 1
+    assert employee["position_title"] == "Barista"
+
+
+def test_employee_position_data_does_not_change_role_permissions(client: TestClient) -> None:
+    manager_headers = login_json(client, "manager@example.com", "manager123")
+    employee_headers = login_json(client, "ivan@example.com", "employee123")
+    payload = {"full_name": "Role Check", "email": "role-check@example.com", "position_id": 1}
+
+    forbidden = client.post("/employees/", headers=employee_headers, json=payload)
+    assert forbidden.status_code == 403
+
+    created = client.post("/employees/", headers=manager_headers, json=payload)
+    assert created.status_code == 201, created.text
+    assert created.json()["role"] == "employee"
+    assert created.json()["position"] == {"id": 1, "name": "Barista"}
 
 
 def test_manager_can_update_own_company(client: TestClient) -> None:
