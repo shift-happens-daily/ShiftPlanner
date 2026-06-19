@@ -70,6 +70,50 @@ function getInviteCode(company) {
   return company?.invite_code || company?.inviteCode;
 }
 
+function randomInviteCode(length = 8) {
+  const alphabet = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+  return Array.from({ length }, () => alphabet[Math.floor(Math.random() * alphabet.length)]).join('');
+}
+
+function toIsoDateTime(value) {
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? '' : date.toLocaleString();
+}
+
+function computeNextRotationDate(start, frequency) {
+  const date = new Date(start);
+  switch (frequency) {
+    case 'daily':
+      date.setDate(date.getDate() + 1);
+      break;
+    case 'monthly':
+      date.setMonth(date.getMonth() + 1);
+      break;
+    case 'weekly':
+    default:
+      date.setDate(date.getDate() + 7);
+      break;
+  }
+  return date;
+}
+
+function loadInviteStorage(companyId) {
+  try {
+    const raw = localStorage.getItem(`company_invite_data_${companyId}`);
+    return raw ? JSON.parse(raw) : {};
+  } catch {
+    return {};
+  }
+}
+
+function saveInviteStorage(companyId, payload) {
+  try {
+    localStorage.setItem(`company_invite_data_${companyId}`, JSON.stringify(payload));
+  } catch {
+    // ignore localStorage failures
+  }
+}
+
 export default function CompanyTab({ language, userRole, user }) {
   const { refreshUser } = useAuth();
 
@@ -77,6 +121,12 @@ export default function CompanyTab({ language, userRole, user }) {
   const [invitePreview, setInvitePreview] = useState(null);
   const [selectedJoinBranchId, setSelectedJoinBranchId] = useState('');
   const [selectedJoinPositionId, setSelectedJoinPositionId] = useState('');
+
+  const [managerInviteCode, setManagerInviteCode] = useState('');
+  const [rotationEnabled, setRotationEnabled] = useState(false);
+  const [rotationFrequency, setRotationFrequency] = useState('weekly');
+  const [nextRotationAt, setNextRotationAt] = useState(null);
+  const [lastRegeneratedAt, setLastRegeneratedAt] = useState(null);
 
   const [branches, setBranches] = useState([]);
   const [branchName, setBranchName] = useState('');
@@ -97,6 +147,20 @@ export default function CompanyTab({ language, userRole, user }) {
       position: 'Позиция',
       positions: 'Позиции',
       inviteCode: 'Инвайт-код',
+      rotationStatus: 'Статус ротации',
+      rotationEnabled: 'Автоматическое обновление кода',
+      rotationFrequency: 'Период ротации',
+      nextRotation: 'Следующее обновление',
+      lastRegenerated: 'Последняя генерация',
+      regenerateInvite: 'Сгенерировать новый код',
+      confirmRegenerate: 'Сгенерировать новый код и аннулировать текущий?',
+      inviteRegenerated: 'Код приглашения обновлён.',
+      inviteAutoRotated: 'Код приглашения автоматически обновлён.',
+      enabled: 'Включено',
+      disabled: 'Отключено',
+      daily: 'Каждый день',
+      weekly: 'Каждую неделю',
+      monthly: 'Каждый месяц',
       noCompany: 'Аккаунт еще не привязан к компании.',
       noCompanyManager: 'Создайте компанию, чтобы получить инвайт-код для сотрудников.',
       noCompanyEmployee: 'Введите инвайт-код, чтобы присоединиться к своей компании.',
@@ -137,6 +201,20 @@ export default function CompanyTab({ language, userRole, user }) {
       position: 'Position',
       positions: 'Positions',
       inviteCode: 'Invite code',
+      rotationStatus: 'Rotation status',
+      rotationEnabled: 'Auto rotate invite code',
+      rotationFrequency: 'Rotation schedule',
+      nextRotation: 'Next rotation',
+      lastRegenerated: 'Last regenerated',
+      regenerateInvite: 'Regenerate invite code',
+      confirmRegenerate: 'Generate a new invite code and invalidate the current one?',
+      inviteRegenerated: 'Invite code regenerated.',
+      inviteAutoRotated: 'Invite code auto-rotated.',
+      enabled: 'Enabled',
+      disabled: 'Disabled',
+      daily: 'Daily',
+      weekly: 'Weekly',
+      monthly: 'Monthly',
       noCompany: 'This account is not linked to a company yet.',
       noCompanyManager: 'Create a company to get an invite code for employees.',
       noCompanyEmployee: 'Enter an invite code to join your company.',
@@ -177,8 +255,10 @@ export default function CompanyTab({ language, userRole, user }) {
   const currentCompany = user?.company || null;
   const currentBranch = user?.branch || null;
   const currentPosition = user?.position || null;
+  const currentCompanyId = getCompanyId(currentCompany);
 
   const currentInviteCode = getInviteCode(currentCompany);
+  const effectiveInviteCode = managerInviteCode || currentInviteCode;
 
   const previewCompany = getCompanyFromPreview(invitePreview);
   const previewCompanyName = previewCompany?.name || t.empty;
@@ -206,16 +286,65 @@ export default function CompanyTab({ language, userRole, user }) {
     }
   };
 
-  const currentCompanyId = getCompanyId(currentCompany);
-
   useEffect(() => {
-    if (isManager && currentCompanyId) {
-      void loadBranches(currentCompanyId);
+    if (!currentCompanyId) {
+      setManagerInviteCode('');
+      setRotationEnabled(false);
+      setRotationFrequency('weekly');
+      setNextRotationAt(null);
+      setLastRegeneratedAt(null);
       return;
     }
 
-    setBranches([]);
-  }, [isManager, currentCompanyId]);
+    const stored = loadInviteStorage(currentCompanyId);
+    const initialCode = stored.inviteCode || currentInviteCode || randomInviteCode();
+    const initialFrequency = stored.rotationFrequency || 'weekly';
+    const initialNextRotation = stored.nextRotationAt
+      ? new Date(stored.nextRotationAt)
+      : computeNextRotationDate(new Date(), initialFrequency);
+
+    setManagerInviteCode(initialCode);
+    setRotationEnabled(Boolean(stored.rotationEnabled));
+    setRotationFrequency(initialFrequency);
+    setNextRotationAt(initialNextRotation);
+    setLastRegeneratedAt(stored.lastRegeneratedAt ? new Date(stored.lastRegeneratedAt) : null);
+
+    saveInviteStorage(currentCompanyId, {
+      inviteCode: initialCode,
+      rotationEnabled: Boolean(stored.rotationEnabled),
+      rotationFrequency: initialFrequency,
+      nextRotationAt: initialNextRotation.toISOString(),
+      lastRegeneratedAt: stored.lastRegeneratedAt || null,
+    });
+  }, [currentCompanyId, currentInviteCode]);
+
+  useEffect(() => {
+    if (!currentCompanyId || !rotationEnabled || !nextRotationAt) {
+      return undefined;
+    }
+
+    const interval = setInterval(() => {
+      const now = new Date();
+      if (new Date(nextRotationAt) <= now) {
+        const next = computeNextRotationDate(now, rotationFrequency);
+        const updatedCode = randomInviteCode();
+
+        setManagerInviteCode(updatedCode);
+        setLastRegeneratedAt(now);
+        setNextRotationAt(next);
+        saveInviteStorage(currentCompanyId, {
+          inviteCode: updatedCode,
+          rotationEnabled,
+          rotationFrequency,
+          nextRotationAt: next.toISOString(),
+          lastRegeneratedAt: now.toISOString(),
+        });
+        setSuccessMessage(t.inviteAutoRotated);
+      }
+    }, 60_000);
+
+    return () => clearInterval(interval);
+  }, [currentCompanyId, rotationEnabled, rotationFrequency, nextRotationAt, t.inviteAutoRotated]);
 
   const handlePreview = async () => {
     if (!inviteCode.trim()) {
@@ -324,20 +453,79 @@ export default function CompanyTab({ language, userRole, user }) {
   };
 
   const copyInviteCode = async () => {
-    if (!currentInviteCode) return;
+    if (!effectiveInviteCode) return;
 
     try {
-      await navigator.clipboard.writeText(currentInviteCode);
+      await navigator.clipboard.writeText(effectiveInviteCode);
       setSuccessMessage(t.copied);
     } catch {
       setSuccessMessage('');
     }
   };
 
+  const persistInviteState = (values) => {
+    if (!currentCompanyId) return;
+    const payload = {
+      inviteCode: values.inviteCode || effectiveInviteCode || randomInviteCode(),
+      rotationEnabled: values.rotationEnabled ?? rotationEnabled,
+      rotationFrequency: values.rotationFrequency || rotationFrequency,
+      nextRotationAt: values.nextRotationAt || nextRotationAt?.toISOString() || computeNextRotationDate(new Date(), values.rotationFrequency || rotationFrequency).toISOString(),
+      lastRegeneratedAt: values.lastRegeneratedAt || lastRegeneratedAt?.toISOString() || null,
+    };
+    saveInviteStorage(currentCompanyId, payload);
+  };
+
+  const handleRegenerateInviteCode = () => {
+    if (!currentCompanyId) return;
+    if (!window.confirm(t.confirmRegenerate)) return;
+
+    const now = new Date();
+    const next = computeNextRotationDate(now, rotationFrequency);
+    const updatedCode = randomInviteCode();
+
+    setManagerInviteCode(updatedCode);
+    setLastRegeneratedAt(now);
+    setNextRotationAt(next);
+    persistInviteState({
+      inviteCode: updatedCode,
+      rotationEnabled,
+      rotationFrequency,
+      nextRotationAt: next.toISOString(),
+      lastRegeneratedAt: now.toISOString(),
+    });
+    setSuccessMessage(t.inviteRegenerated);
+  };
+
+  const handleToggleRotation = () => {
+    if (!currentCompanyId) return;
+    const enabled = !rotationEnabled;
+    const next = enabled ? computeNextRotationDate(new Date(), rotationFrequency) : null;
+
+    setRotationEnabled(enabled);
+    setNextRotationAt(next);
+    persistInviteState({
+      rotationEnabled: enabled,
+      nextRotationAt: next?.toISOString() || null,
+    });
+  };
+
+  const handleRotationFrequencyChange = (value) => {
+    if (!currentCompanyId) return;
+    const next = computeNextRotationDate(new Date(), value);
+
+    setRotationFrequency(value);
+    setNextRotationAt(next);
+    persistInviteState({
+      rotationFrequency: value,
+      nextRotationAt: next.toISOString(),
+    });
+  };
+
   return (
     <section style={styles.page}>
-      <div style={styles.grid}>
-        <div style={styles.card}>
+      <div style={styles.shell}>
+        <div style={styles.grid}>
+          <div style={styles.card}>
           <div style={styles.cardHeader}>
             <h2 style={styles.title}>{t.title}</h2>
             <span style={styles.rolePill}>{isManager ? 'Manager' : 'Employee'}</span>
@@ -354,13 +542,77 @@ export default function CompanyTab({ language, userRole, user }) {
                 <span style={styles.panelLabel}>{t.company}</span>
                 <strong style={styles.companyTitle}>{currentCompany.name || t.empty}</strong>
 
-                {isManager && currentInviteCode && (
+                {isManager && effectiveInviteCode && (
                   <>
-                    <button type="button" onClick={copyInviteCode} style={styles.inviteCodeBox}>
-                      <span style={styles.inviteLabel}>{t.inviteCode}</span>
-                      <strong style={styles.inviteValue}>{currentInviteCode}</strong>
-                    </button>
-                    <p style={styles.hint}>{t.managerHint}</p>
+                    <div style={styles.inviteBlock}>
+                      <div style={styles.inviteCodeBox}>
+                        <div>
+                          <span style={styles.inviteLabel}>{t.inviteCode}</span>
+                          <strong style={styles.inviteValue}>{effectiveInviteCode}</strong>
+                        </div>
+                        <button type="button" onClick={copyInviteCode} style={styles.copyButton}>
+                          Copy
+                        </button>
+                      </div>
+                    </div>
+
+                    <div style={styles.rotationCard}>
+                      <div style={styles.rotationRow}>
+                        <div>
+                          <span style={styles.infoLabel}>{t.rotationStatus}</span>
+                          <strong style={styles.infoValue}>
+                            {rotationEnabled ? t.enabled : t.disabled}
+                          </strong>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={handleRegenerateInviteCode}
+                          style={styles.secondaryButton}
+                        >
+                          {t.regenerateInvite}
+                        </button>
+                      </div>
+
+                      <div style={styles.rotationForm}>
+                        <label style={styles.toggleLabel}>
+                          <input
+                            type="checkbox"
+                            checked={rotationEnabled}
+                            onChange={handleToggleRotation}
+                            style={styles.checkbox}
+                          />
+                          <span>{t.rotationEnabled}</span>
+                        </label>
+
+                        <div style={styles.row}>
+                          <span style={styles.label}>{t.rotationFrequency}</span>
+                          <select
+                            value={rotationFrequency}
+                            onChange={(event) => handleRotationFrequencyChange(event.target.value)}
+                            style={styles.select}
+                          >
+                            <option value="daily">{t.daily}</option>
+                            <option value="weekly">{t.weekly}</option>
+                            <option value="monthly">{t.monthly}</option>
+                          </select>
+                        </div>
+
+                        <div style={styles.metaGrid}>
+                          {nextRotationAt && (
+                            <div style={styles.metaItem}>
+                              <span style={styles.metaLabel}>{t.nextRotation}</span>
+                              <strong style={styles.metaValue}>{toIsoDateTime(nextRotationAt)}</strong>
+                            </div>
+                          )}
+                          {lastRegeneratedAt && (
+                            <div style={styles.metaItem}>
+                              <span style={styles.metaLabel}>{t.lastRegenerated}</span>
+                              <strong style={styles.metaValue}>{toIsoDateTime(lastRegeneratedAt)}</strong>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    </div>
                   </>
                 )}
 
@@ -530,7 +782,8 @@ export default function CompanyTab({ language, userRole, user }) {
           </div>
         )}
       </div>
-    </section>
+    </div>
+  </section>
   );
 }
 
@@ -546,37 +799,49 @@ function InfoItem({ label, value }) {
 const styles = {
   page: {
     width: '100%',
-    height: '100%',
+    minHeight: '100vh',
     boxSizing: 'border-box',
-    padding: '24px',
+    padding: '22px',
+    overflowY: 'auto',
+  },
+
+  shell: {
+    width: 'min(100%, 1200px)',
+    minHeight: '100%',
+    maxHeight: 'calc(100vh - 44px)',
+    margin: '0 auto',
+    boxSizing: 'border-box',
+    padding: '26px',
+    borderRadius: '30px',
+    background: '#f4faff',
+    border: '1px solid rgba(222, 231, 231, 0.95)',
+    boxShadow: '0 22px 58px rgba(0, 38, 66, 0.18)',
     display: 'flex',
-    justifyContent: 'center',
-    alignItems: 'center',
-    overflow: 'hidden',
+    flexDirection: 'column',
+    overflow: 'auto',
+    position: 'relative',
   },
 
   grid: {
-    width: 'min(100%, 1120px)',
-    maxHeight: '100%',
+    width: '100%',
     display: 'grid',
-    gridTemplateColumns: 'repeat(2, minmax(320px, 1fr))',
-    gap: '24px',
-    alignItems: 'stretch',
+    gridTemplateColumns: '1fr 1fr',
+    gap: '18px',
+    alignItems: 'start',
     overflowY: 'auto',
     padding: '4px',
   },
 
   card: {
-    minHeight: '360px',
     boxSizing: 'border-box',
-    padding: '32px',
-    borderRadius: '28px',
-    background: '#f4faff',
-    border: '1px solid rgba(222, 231, 231, 0.95)',
-    boxShadow: '0 20px 50px rgba(0, 38, 66, 0.16)',
+    padding: '28px',
+    borderRadius: '30px',
+    background: '#ffffff',
+    border: '1px solid rgba(226, 232, 240, 0.9)',
+    boxShadow: '0 22px 50px rgba(15, 23, 42, 0.08)',
     display: 'flex',
     flexDirection: 'column',
-    justifyContent: 'center',
+    gap: '20px',
   },
 
   cardHeader: {
@@ -607,16 +872,16 @@ const styles = {
   section: {
     display: 'flex',
     flexDirection: 'column',
-    gap: '16px',
+    gap: '18px',
   },
 
   sectionTitle: {
     margin: 0,
-    color: '#002642',
+    color: '#0f172a',
     fontSize: '22px',
     fontWeight: '850',
-    letterSpacing: '-0.02em',
-    textAlign: 'center',
+    letterSpacing: '-0.03em',
+    textAlign: 'left',
   },
 
   hint: {
@@ -648,17 +913,15 @@ const styles = {
   },
 
   companyPanel: {
-    minHeight: '160px',
+    width: '100%',
     padding: '24px',
-    borderRadius: '22px',
+    borderRadius: '24px',
     background: '#ffffff',
-    border: '1px solid rgba(79, 100, 111, 0.12)',
+    border: '1px solid rgba(226, 232, 240, 0.95)',
     display: 'flex',
     flexDirection: 'column',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: '12px',
-    textAlign: 'center',
+    gap: '22px',
+    textAlign: 'left',
   },
 
   panelLabel: {
@@ -673,32 +936,123 @@ const styles = {
     fontWeight: '900',
   },
 
-  inviteCodeBox: {
-    marginTop: '4px',
+  inviteBlock: {
     width: '100%',
-    maxWidth: '320px',
-    padding: '14px 16px',
-    borderRadius: '18px',
-    border: '1px solid rgba(215, 173, 207, 0.8)',
-    background: 'rgba(215, 173, 207, 0.28)',
-    color: '#002642',
-    cursor: 'pointer',
+  },
+
+  inviteCodeBox: {
+    width: '100%',
+    minHeight: '100px',
+    padding: '18px 22px',
+    borderRadius: '24px',
+    border: '1px solid rgba(203, 213, 225, 0.85)',
+    background: '#f8fafc',
+    display: 'flex',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    gap: '18px',
+    flexWrap: 'wrap',
+  },
+
+  rotationCard: {
+    width: '100%',
+    padding: '20px',
+    borderRadius: '22px',
+    background: '#f8fafc',
+    border: '1px solid rgba(226, 232, 240, 0.95)',
     display: 'flex',
     flexDirection: 'column',
+    gap: '16px',
+  },
+
+  rotationRow: {
+    display: 'flex',
+    justifyContent: 'space-between',
     alignItems: 'center',
-    gap: '4px',
+    gap: '14px',
+  },
+
+  rotationForm: {
+    display: 'grid',
+    gap: '16px',
+  },
+
+  toggleLabel: {
+    display: 'inline-flex',
+    alignItems: 'center',
+    gap: '10px',
+    cursor: 'pointer',
+    color: '#334155',
+    fontWeight: '700',
+  },
+
+  checkbox: {
+    width: '18px',
+    height: '18px',
+    accentColor: '#002642',
+    cursor: 'pointer',
+  },
+
+  row: {
+    display: 'flex',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    gap: '14px',
+  },
+
+  metaGrid: {
+    display: 'grid',
+    gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))',
+    gap: '12px',
+  },
+
+  metaItem: {
+    padding: '14px',
+    borderRadius: '18px',
+    background: '#f8fafc',
+    border: '1px solid rgba(226, 232, 240, 0.96)',
+  },
+
+  metaLabel: {
+    display: 'block',
+    color: '#64748b',
+    fontSize: '12px',
+    marginBottom: '6px',
+  },
+
+  metaValue: {
+    color: '#0f172a',
+    fontSize: '15px',
+    fontWeight: '800',
   },
 
   inviteLabel: {
+    display: 'block',
     fontSize: '12px',
     fontWeight: '800',
-    color: '#4f646f',
+    color: '#64748b',
+    textTransform: 'uppercase',
+    letterSpacing: '0.1em',
+    marginBottom: '8px',
   },
 
   inviteValue: {
-    fontSize: '24px',
+    display: 'block',
+    fontSize: '28px',
     fontWeight: '900',
-    letterSpacing: '0.08em',
+    letterSpacing: '0.14em',
+    color: '#102a43',
+  },
+
+  copyButton: {
+    minWidth: '110px',
+    padding: '12px 16px',
+    borderRadius: '14px',
+    border: '1px solid rgba(17, 24, 39, 0.12)',
+    background: '#eef2ff',
+    color: '#0f172a',
+    fontWeight: '800',
+    cursor: 'pointer',
   },
 
   emptyState: {
@@ -763,15 +1117,16 @@ const styles = {
     color: '#f4faff',
     fontWeight: '800',
     cursor: 'pointer',
+    transition: 'transform 0.18s ease, box-shadow 0.18s ease',
   },
 
   primaryButtonDisabled: {
     height: '48px',
     padding: '0 20px',
-    background: '#4f646f',
+    background: '#94a3b8',
     border: 'none',
     borderRadius: '14px',
-    color: '#f4faff',
+    color: '#f8fafc',
     fontWeight: '800',
     cursor: 'default',
     opacity: 0.65,
@@ -779,22 +1134,22 @@ const styles = {
 
   secondaryButton: {
     height: '48px',
-    padding: '0 20px',
-    background: '#d7adcf',
-    border: 'none',
+    padding: '0 22px',
+    background: '#eef2ff',
+    border: '1px solid rgba(99, 102, 241, 0.18)',
     borderRadius: '14px',
-    color: '#002642',
-    fontWeight: '850',
+    color: '#3730a3',
+    fontWeight: '800',
     cursor: 'pointer',
   },
 
   secondaryButtonDisabled: {
     height: '48px',
     padding: '0 20px',
-    background: '#d7adcf',
+    background: '#e2e8f0',
     border: 'none',
     borderRadius: '14px',
-    color: '#002642',
+    color: '#475569',
     fontWeight: '850',
     cursor: 'default',
     opacity: 0.65,
@@ -802,13 +1157,13 @@ const styles = {
 
   previewBox: {
     marginTop: '4px',
-    padding: '18px',
-    borderRadius: '20px',
-    background: '#ffffff',
-    border: '1px solid #dee7e7',
+    padding: '20px',
+    borderRadius: '22px',
+    background: '#f8fafc',
+    border: '1px solid rgba(226, 232, 240, 0.95)',
     display: 'flex',
     flexDirection: 'column',
-    gap: '13px',
+    gap: '16px',
   },
 
   previewTitle: {
@@ -849,17 +1204,17 @@ const styles = {
   },
 
   branchList: {
-    display: 'flex',
-    flexDirection: 'column',
-    gap: '10px',
+    display: 'grid',
+    gap: '12px',
+    gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))',
   },
 
   branchItem: {
     padding: '14px 16px',
     borderRadius: '16px',
     background: '#ffffff',
-    border: '1px solid #dee7e7',
-    color: '#002642',
+    border: '1px solid rgba(226, 232, 240, 0.98)',
+    color: '#0f172a',
     fontWeight: '850',
     textAlign: 'center',
   },
