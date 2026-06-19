@@ -5,6 +5,7 @@ import EmployeesTab from './tabs/EmployeesTab';
 import ProfileTab from './tabs/ProfileTab';
 import ReportsTab from './tabs/ReportsTab';
 import ScheduleTab from './tabs/ScheduleTab';
+import ScheduleReview from './tabs/ScheduleReview';
 import ShiftsTab from './tabs/ShiftsTab';
 
 export default function DashboardTabs({ userRole, language, title, rightSlot }) {
@@ -93,7 +94,7 @@ export default function DashboardTabs({ userRole, language, title, rightSlot }) 
       case 'shifts':
         return <ShiftsTab {...sharedProps} />;
       case 'schedule':
-        return <ScheduleTab {...sharedProps} />;
+        return userRole === 'manager' ? <ScheduleReview {...sharedProps} /> : <ScheduleTab {...sharedProps} />;
       case 'reports':
         return <ReportsTab {...sharedProps} />;
       default:
