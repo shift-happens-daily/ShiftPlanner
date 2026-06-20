@@ -111,6 +111,8 @@ export default function EmployeesTab({ language, userRole, user }) {
   });
 
   const [selectedBranchId, setSelectedBranchId] = useState('');
+  const [selectedPositionId, setSelectedPositionId] = useState('');
+  const [searchQuery, setSearchQuery] = useState('');
 
   const [positionTitle, setPositionTitle] = useState('');
   const [editingPositionId, setEditingPositionId] = useState('');
@@ -199,6 +201,8 @@ export default function EmployeesTab({ language, userRole, user }) {
       managePositionsHint: 'Редактируйте и удаляйте позиции для компании.',
       noPositionsMessage: 'Позиции не найдены. Создайте одну слева.',
       allBranches: 'Все филиалы',
+      allPositions: 'Все позиции',
+      searchEmployee: 'Поиск сотрудника...',
       linkUserTitle: 'Привязать сотрудника по ID',
       linkUserHint: 'Введите User ID сотрудника, чтобы привязать его к компании',
       userIdLabel: 'User ID',
@@ -276,6 +280,8 @@ export default function EmployeesTab({ language, userRole, user }) {
       managePositionsHint: 'Edit and delete positions for the company.',
       noPositionsMessage: 'No positions available. Create one on the left.',
       allBranches: 'All branches',
+      allPositions: 'All positions',
+      searchEmployee: 'Search employee...',
       linkUserTitle: 'Link employee by ID',
       linkUserHint: 'Enter the employee\'s User ID to link them to the company',
       userIdLabel: 'User ID',
@@ -326,20 +332,36 @@ export default function EmployeesTab({ language, userRole, user }) {
   const selectedEmployeeBranch = getEmployeeBranch(selectedEmployee);
 
   const filteredEmployees = useMemo(() => {
-    if (!selectedBranchId) return employees;
+    const query = searchQuery.trim().toLowerCase();
 
     return employees.filter((employee) => {
-      const employeeBranchId = employee.branch?.id || employee.branch_id || employee.branchId;
-      return String(employeeBranchId) === String(selectedBranchId);
+      if (selectedBranchId) {
+        const employeeBranchId = employee.branch?.id || employee.branch_id || employee.branchId;
+        if (String(employeeBranchId) !== String(selectedBranchId)) return false;
+      }
+
+      if (selectedPositionId) {
+        const employeePositionId = employee.position_id
+          || employee.position?.id
+          || employee.position?.position_id;
+        if (String(employeePositionId) !== String(selectedPositionId)) return false;
+      }
+
+      if (query) {
+        const name = (employee.full_name || employee.name || employee.fullName || '').toLowerCase();
+        const email = (employee.email || '').toLowerCase();
+        if (!name.includes(query) && !email.includes(query)) return false;
+      }
+
+      return true;
     });
-  }, [employees, selectedBranchId]);
+  }, [employees, selectedBranchId, selectedPositionId, searchQuery]);
 
   useEffect(() => {
-    if (!selectedBranchId) return;
     if (filteredEmployees.some((employee) => String(employee.id) === String(selectedEmployeeId))) return;
 
     setSelectedEmployeeId(filteredEmployees[0] ? String(filteredEmployees[0].id) : '');
-  }, [filteredEmployees, selectedBranchId, selectedEmployeeId]);
+  }, [filteredEmployees, selectedEmployeeId]);
 
   useEffect(() => {
     if (selectedEmployee) {
@@ -925,17 +947,39 @@ export default function EmployeesTab({ language, userRole, user }) {
                   </div>
 
                   <div style={styles.filterRow}>
-                    <label style={styles.label} htmlFor="branch-filter-select">{t.branch}</label>
+                    <input
+                      type="text"
+                      value={searchQuery}
+                      onChange={(event) => setSearchQuery(event.target.value)}
+                      placeholder={t.searchEmployee}
+                      style={styles.searchInput}
+                      aria-label={t.searchEmployee}
+                    />
                     <select
                       id="branch-filter-select"
                       value={selectedBranchId}
                       onChange={(event) => setSelectedBranchId(event.target.value)}
-                      style={styles.select}
+                      style={styles.filterSelect}
+                      aria-label={t.branch}
                     >
                       <option value="">{t.allBranches}</option>
                       {branches.map((branch) => (
                         <option key={branch.id} value={branch.id}>
                           {branch.name}
+                        </option>
+                      ))}
+                    </select>
+                    <select
+                      id="position-filter-select"
+                      value={selectedPositionId}
+                      onChange={(event) => setSelectedPositionId(event.target.value)}
+                      style={styles.filterSelect}
+                      aria-label={t.position}
+                    >
+                      <option value="">{t.allPositions}</option>
+                      {visiblePositions.map((position) => (
+                        <option key={position.id} value={position.id}>
+                          {getPositionLabel(position)}
                         </option>
                       ))}
                     </select>
@@ -945,7 +989,7 @@ export default function EmployeesTab({ language, userRole, user }) {
                 {filteredEmployees.length === 0 ? (
                   <div style={styles.emptyBox}>{t.noEmployees}</div>
                 ) : (
-                  <div style={styles.list}>
+                  <div style={styles.employeeList}>
                     {filteredEmployees.map((employee) => (
                       <button
                         key={employee.id}
@@ -1329,8 +1373,38 @@ const styles = {
   filterRow: {
     display: 'flex',
     alignItems: 'center',
+    justifyContent: 'flex-end',
     gap: '10px',
-    minWidth: '220px',
+    flexWrap: 'nowrap',
+  },
+
+  searchInput: {
+    height: '40px',
+    width: '170px',
+    flexShrink: 0,
+    boxSizing: 'border-box',
+    borderRadius: '13px',
+    border: '2px solid #dee7e7',
+    background: '#ffffff',
+    padding: '0 14px',
+    color: '#002642',
+    fontSize: '14px',
+    outline: 'none',
+  },
+
+  filterSelect: {
+    height: '40px',
+    width: 'auto',
+    minWidth: '130px',
+    flexShrink: 0,
+    boxSizing: 'border-box',
+    borderRadius: '13px',
+    border: '2px solid #dee7e7',
+    background: '#ffffff',
+    padding: '0 12px',
+    color: '#002642',
+    fontSize: '14px',
+    outline: 'none',
   },
 
   listButton: {
@@ -1539,6 +1613,15 @@ const styles = {
     display: 'flex',
     flexDirection: 'column',
     gap: '10px',
+  },
+
+  employeeList: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '10px',
+    maxHeight: '240px',
+    overflowY: 'auto',
+    paddingRight: '4px',
   },
 
   listItem: {
