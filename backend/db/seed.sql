@@ -29,8 +29,8 @@ SELECT id, 'Main Branch', 'Barnaul, Lenin Street'
 FROM companies
 WHERE invite_code = 'COFFEE30';
 
-INSERT INTO professions (company_id, name)
-SELECT companies.id, profession.name
+INSERT INTO positions (company_id, name)
+SELECT companies.id, position.name
 FROM companies
 CROSS JOIN (
     VALUES
@@ -38,7 +38,7 @@ CROSS JOIN (
         ('Cashier'),
         ('Kitchen'),
         ('Supervisor')
-) AS profession(name)
+) AS position(name)
 WHERE companies.invite_code = 'COFFEE30';
 
 -- Generate 30 deterministic employee accounts. Keeping the sequence number in
@@ -85,7 +85,7 @@ SELECT
 FROM employee_names
 ORDER BY employee_number;
 
--- Profession distribution:
+-- position distribution:
 --   employee01..12 = Barista
 --   employee13..20 = Cashier
 --   employee21..26 = Kitchen
@@ -108,7 +108,7 @@ employee_configuration AS (
             WHEN employee_number <= 20 THEN 'Cashier'
             WHEN employee_number <= 26 THEN 'Kitchen'
             ELSE 'Supervisor'
-        END AS profession_name,
+        END AS position_name,
         CASE employee_number % 4
             WHEN 0 THEN 2400
             WHEN 1 THEN 2100
@@ -129,7 +129,7 @@ INSERT INTO employees (
     user_id,
     company_id,
     branch_id,
-    profession_id,
+    position_id,
     weekly_target_minutes,
     min_daily_minutes,
     max_daily_minutes
@@ -138,7 +138,7 @@ SELECT
     employee_configuration.user_id,
     companies.id,
     branches.id,
-    professions.id,
+    positions.id,
     employee_configuration.weekly_target_minutes,
     employee_configuration.min_daily_minutes,
     employee_configuration.max_daily_minutes
@@ -147,9 +147,9 @@ JOIN companies ON companies.invite_code = 'COFFEE30'
 JOIN branches
   ON branches.company_id = companies.id
  AND branches.name = 'Main Branch'
-JOIN professions
-  ON professions.company_id = companies.id
- AND professions.name = employee_configuration.profession_name
+JOIN positions
+  ON positions.company_id = companies.id
+ AND positions.name = employee_configuration.position_name
 ORDER BY employee_configuration.employee_number;
 
 -- Longer Friday/Saturday trading hours make the example meaningfully different
@@ -184,7 +184,7 @@ CROSS JOIN (
 WHERE companies.invite_code = 'COFFEE30';
 
 -- Create one recurring requirement for every open 30-minute slot and
--- profession. Demand changes by time of day and is busier on Friday/weekends.
+-- position. Demand changes by time of day and is busier on Friday/weekends.
 WITH open_slots AS (
     SELECT
         business_hours.company_id,
@@ -198,12 +198,12 @@ WITH open_slots AS (
         INTERVAL '30 minutes'
     ) AS slot_start
 ),
-profession_demand AS (
+position_demand AS (
     SELECT
         open_slots.*,
-        professions.id AS profession_id,
-        professions.name AS profession_name,
-        CASE professions.name
+        positions.id AS position_id,
+        positions.name AS position_name,
+        CASE positions.name
             WHEN 'Barista' THEN
                 CASE
                     WHEN slot_time >= '08:00' AND slot_time < '11:00' THEN 4
@@ -229,15 +229,15 @@ profession_demand AS (
             WHEN 'Supervisor' THEN 1
         END AS required_count
     FROM open_slots
-    JOIN professions
-      ON professions.company_id = open_slots.company_id
+    JOIN positions
+      ON positions.company_id = open_slots.company_id
 )
 INSERT INTO staffing_requirements (
     company_id,
     branch_id,
     day_of_week,
     slot_time,
-    profession_id,
+    position_id,
     required_count
 )
 SELECT
@@ -245,11 +245,11 @@ SELECT
     branch_id,
     day_of_week,
     slot_time,
-    profession_id,
+    position_id,
     required_count
-FROM profession_demand
+FROM position_demand
 WHERE required_count > 0
-ORDER BY day_of_week, slot_time, profession_id;
+ORDER BY day_of_week, slot_time, position_id;
 
 -- Availability pattern
 -- --------------------
@@ -307,11 +307,6 @@ preferred_windows AS (
         END AS preferred_finish
     FROM candidate_slots
 )
-INSERT INTO employee_confirmed_availability (
-    employee_id,
-    day_of_week,
-    slot_time
-)
 SELECT employee_id, day_of_week, slot_time
 FROM preferred_windows
 WHERE day_of_week <> employee_number % 7
@@ -325,59 +320,41 @@ ORDER BY employee_id, day_of_week, slot_time;
 --   2. 10:00-18:00 availability on one rotating otherwise-unavailable day.
 --
 -- NOT EXISTS guarantees that no slot overlaps confirmed availability.
-WITH employee_order AS (
-    SELECT
-        employees.id AS employee_id,
-        ROW_NUMBER() OVER (ORDER BY users.email) AS employee_number
-    FROM employees
-    JOIN users ON users.id = employees.user_id
-),
-candidate_slots AS (
-    SELECT
-        employee_order.employee_id,
-        employee_order.employee_number,
-        business_hours.day_of_week,
-        slot_start::time AS slot_time
-    FROM employee_order
-    CROSS JOIN business_hours
-    CROSS JOIN LATERAL generate_series(
-        CURRENT_DATE + business_hours.start_time,
-        CURRENT_DATE + business_hours.finish_time - INTERVAL '30 minutes',
-        INTERVAL '30 minutes'
-    ) AS slot_start
-)
-INSERT INTO employee_possible_availability (
+
+-- Date-based employee availability for the demo schedule period.
+-- availability_status:
+-- available   = employee is free
+-- if_needed   = employee is available only if needed
+-- unavailable = employee is busy
+INSERT INTO employee_availability (
     employee_id,
-    day_of_week,
-    slot_time
+    availability_date,
+    slot_time,
+    availability_status
 )
 SELECT
-    candidate_slots.employee_id,
-    candidate_slots.day_of_week,
-    candidate_slots.slot_time
-FROM candidate_slots
-WHERE (
-        (
-            day_of_week <> employee_number % 7
-            AND day_of_week <> (employee_number + 3) % 7
-        )
-        OR (
-            day_of_week = employee_number % 7
-            AND slot_time >= '10:00'
-            AND slot_time < '18:00'
-        )
-    )
-  AND NOT EXISTS (
-      SELECT 1
-      FROM employee_confirmed_availability AS confirmed
-      WHERE confirmed.employee_id = candidate_slots.employee_id
-        AND confirmed.day_of_week = candidate_slots.day_of_week
-        AND confirmed.slot_time = candidate_slots.slot_time
-  )
-ORDER BY employee_id, day_of_week, slot_time;
+    employees.id,
+    generated_dates.work_date::date,
+    generated_slots.slot_time::time,
+    CASE
+        WHEN employees.id % 5 = 0 THEN 'if_needed'
+        WHEN employees.id % 7 = 0 THEN 'unavailable'
+        ELSE 'available'
+    END AS availability_status
+FROM employees
+CROSS JOIN generate_series(
+    TIMESTAMP '2026-06-15 00:00:00',
+    TIMESTAMP '2026-06-21 00:00:00',
+    INTERVAL '1 day'
+) AS generated_dates(work_date)
+CROSS JOIN generate_series(
+    TIMESTAMP '2026-06-15 08:00:00',
+    TIMESTAMP '2026-06-15 21:30:00',
+    INTERVAL '30 minutes'
+) AS generated_slots(slot_time);
 
 -- Concrete absences make the June 22-28 example exercise date-specific logic.
--- The selected employees cover different professions and absence types.
+-- The selected employees cover different positions and absence types.
 INSERT INTO absences (
     employee_id,
     absence_type,
