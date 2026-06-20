@@ -78,6 +78,10 @@ export default function ProfileTab({ language, user }) {
       label: t.email,
       value: email,
     },
+    {
+      label: "User ID",
+      value: user?.id || user?.user_id || '-',
+    },
   ];
 
   // Добавляем "Роль" только для менеджера

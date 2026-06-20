@@ -13,7 +13,7 @@ import {
 import { extractApiErrorMessage, localizeBackendMessage } from '../../services/error';
 import { mapEmployeeCalendarSummary } from '../../services/mappers';
 import { createPosition, listPositions } from '../../services/positionService';
-import { listBranches } from '../../services/companyService';
+import { listBranches, linkUserToCompany } from '../../services/companyService';
 
 const WEEKDAYS = [
   { value: 0, ru: 'Пн', en: 'Mon' },
@@ -123,6 +123,11 @@ export default function EmployeesTab({ language, userRole, user }) {
     comment: '',
   });
 
+  // Для привязки по User ID
+  const [linkUserId, setLinkUserId] = useState('');
+  const [linkBranchId, setLinkBranchId] = useState('');
+  const [linkPositionId, setLinkPositionId] = useState('');
+
   const [isLoading, setIsLoading] = useState(true);
   const [isDetailsLoading, setIsDetailsLoading] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -193,9 +198,18 @@ export default function EmployeesTab({ language, userRole, user }) {
       confirmDeletePosition: 'Удалить эту позицию? Это повлияет только на интерфейс.',
       managePositionsHint: 'Редактируйте и удаляйте позиции для компании.',
       noPositionsMessage: 'Позиции не найдены. Создайте одну слева.',
-      createEmployeeHint: 'Для уже зарегистрированного сотрудника лучше использовать инвайт-код.',
       allBranches: 'Все филиалы',
-      noCompanyForPosition: 'Сначала создайте компанию во вкладке «Компания». Компания должна прийти из /auth/me, localStorage больше не используется.',
+      linkUserTitle: 'Привязать сотрудника по ID',
+      linkUserHint: 'Введите User ID сотрудника, чтобы привязать его к компании',
+      userIdLabel: 'User ID',
+      noBranchSelected: 'Без филиала',
+      noPositionSelected: 'Без позиции',
+      linkUserButton: 'Привязать',
+      linkSuccess: 'Пользователь привязан к компании!',
+      linkError: 'Ошибка привязки',
+      userIdRequired: 'Введите ID пользователя',
+      noCompanyForLink: 'У вас нет компании',
+      noCompanyForPosition: 'Сначала создайте компанию во вкладке «Компания».',
       noPositionsHint: 'Сначала создайте позицию, потом добавьте сотрудника.',
     },
     en: {
@@ -261,9 +275,18 @@ export default function EmployeesTab({ language, userRole, user }) {
       confirmDeletePosition: 'Delete this position? This will only affect the UI.',
       managePositionsHint: 'Edit and delete positions for the company.',
       noPositionsMessage: 'No positions available. Create one on the left.',
-      createEmployeeHint: 'For an already registered employee, use the invite code flow.',
       allBranches: 'All branches',
-      noCompanyForPosition: 'Create a company in the Company tab first. The company must come from /auth/me; localStorage is no longer used.',
+      linkUserTitle: 'Link employee by ID',
+      linkUserHint: 'Enter the employee\'s User ID to link them to the company',
+      userIdLabel: 'User ID',
+      noBranchSelected: 'No branch',
+      noPositionSelected: 'No position',
+      linkUserButton: 'Link',
+      linkSuccess: 'User linked to company!',
+      linkError: 'Failed to link user',
+      userIdRequired: 'Enter user ID',
+      noCompanyForLink: 'You don\'t have a company',
+      noCompanyForPosition: 'Create a company in the Company tab first.',
       noPositionsHint: 'Create a position first, then add an employee.',
     },
   };
@@ -724,6 +747,41 @@ export default function EmployeesTab({ language, userRole, user }) {
     }
   };
 
+  // ===== ПРИВЯЗКА ПО USER ID =====
+  const handleLinkUser = async () => {
+    if (!linkUserId.trim()) {
+      setErrorMessage(t.userIdRequired);
+      return;
+    }
+
+    const companyId = user?.company?.id;
+    if (!companyId) {
+      setErrorMessage(t.noCompanyForLink);
+      return;
+    }
+
+    clearMessages();
+    setIsSubmitting(true);
+
+    try {
+      await linkUserToCompany(companyId, {
+        user_id: Number(linkUserId),
+        branch_id: linkBranchId || null,
+        position_id: linkPositionId || null,
+      });
+
+      setLinkUserId('');
+      setLinkBranchId('');
+      setLinkPositionId('');
+      setSuccessMessage(t.linkSuccess);
+      await reloadEmployees();
+    } catch (error) {
+      setErrorMessage(error.message || t.linkError);
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
   if (isLoading) {
     return (
       <section style={styles.page}>
@@ -796,52 +854,62 @@ export default function EmployeesTab({ language, userRole, user }) {
               </div>
             </div>
 
+            {/* Блок привязки по User ID */}
             <div style={styles.panel}>
-              <h3 style={styles.panelTitle}>{t.createEmployee}</h3>
-              <p style={styles.panelHint}>{t.createEmployeeHint}</p>
+              <h3 style={styles.panelTitle}>{t.linkUserTitle}</h3>
+              <p style={styles.panelHint}>{t.linkUserHint}</p>
 
               <div style={styles.stack}>
+                <label style={styles.label}>{t.userIdLabel}</label>
                 <input
-                  value={employeeForm.full_name}
-                  onChange={(event) =>
-                    setEmployeeForm((prev) => ({ ...prev, full_name: event.target.value }))
-                  }
-                  placeholder={t.fullName}
+                  type="number"
+                  value={linkUserId}
+                  onChange={(e) => setLinkUserId(e.target.value)}
+                  placeholder="Например: 123"
                   style={styles.input}
                 />
 
-                <input
-                  value={employeeForm.email}
-                  onChange={(event) =>
-                    setEmployeeForm((prev) => ({ ...prev, email: event.target.value }))
-                  }
-                  placeholder={t.email}
-                  style={styles.input}
-                />
+                <div style={styles.row}>
+                  <div style={styles.flex}>
+                    <label style={styles.label}>{t.branch}</label>
+                    <select
+                      value={linkBranchId}
+                      onChange={(e) => setLinkBranchId(e.target.value)}
+                      style={styles.select}
+                    >
+                      <option value="">{t.noBranchSelected}</option>
+                      {branches.map((branch) => (
+                        <option key={branch.id} value={branch.id}>
+                          {branch.name}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
 
-                <select
-                  value={employeeForm.position_id}
-                  onChange={(event) =>
-                    setEmployeeForm((prev) => ({ ...prev, position_id: event.target.value }))
-                  }
-                  style={styles.select}
-                  disabled={visiblePositions.length === 0}
-                >
-                  <option value="">{visiblePositions.length === 0 ? t.noPositionsHint : t.selectPosition}</option>
-                  {visiblePositions.map((position) => (
-                    <option key={position.id} value={position.id}>
-                      {getPositionLabel(position)}
-                    </option>
-                  ))}
-                </select>
+                  <div style={styles.flex}>
+                    <label style={styles.label}>{t.position}</label>
+                    <select
+                      value={linkPositionId}
+                      onChange={(e) => setLinkPositionId(e.target.value)}
+                      style={styles.select}
+                    >
+                      <option value="">{t.noPositionSelected}</option>
+                      {visiblePositions.map((position) => (
+                        <option key={position.id} value={position.id}>
+                          {getPositionLabel(position)}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
 
                 <button
                   type="button"
-                  onClick={handleCreateEmployee}
-                  style={isSubmitting || visiblePositions.length === 0 ? styles.primaryButtonDisabled : styles.primaryButton}
-                  disabled={isSubmitting || visiblePositions.length === 0}
+                  onClick={handleLinkUser}
+                  style={isSubmitting || !linkUserId ? styles.primaryButtonDisabled : styles.primaryButton}
+                  disabled={isSubmitting || !linkUserId}
                 >
-                  {t.save}
+                  {isSubmitting ? '...' : t.linkUserButton}
                 </button>
               </div>
             </div>
@@ -1121,6 +1189,8 @@ const styles = {
     display: 'flex',
     flexDirection: 'column',
     gap: '14px',
+    overflowY: 'auto',
+    paddingRight: '4px',
   },
 
   panel: {
@@ -1149,6 +1219,20 @@ const styles = {
     display: 'flex',
     flexDirection: 'column',
     gap: '10px',
+  },
+
+  row: {
+    display: 'grid',
+    gridTemplateColumns: '1fr 1fr',
+    gap: '12px',
+    alignItems: 'end',
+  },
+
+  flex: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '6px',
+    flex: 1,
   },
 
   detailsPanel: {
