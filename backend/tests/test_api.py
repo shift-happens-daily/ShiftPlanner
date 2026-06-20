@@ -198,6 +198,105 @@ def test_employee_position_data_does_not_change_role_permissions(client: TestCli
     assert created.json()["position"] == {"id": 1, "name": "Barista"}
 
 
+def test_manager_can_update_employee_position_and_list_reflects_it(client: TestClient) -> None:
+    manager_headers = login_json(client, "manager@example.com", "manager123")
+
+    updated = client.patch(
+        "/employees/1/position",
+        headers=manager_headers,
+        json={"position_id": 2, "company_id": 999},
+    )
+    assert updated.status_code == 200, updated.text
+    assert updated.json()["position_id"] == 2
+    assert updated.json()["position"] == {"id": 2, "name": "Cashier"}
+    assert updated.json()["position_title"] == "Cashier"
+
+    employees = client.get("/employees/", headers=manager_headers)
+    assert employees.status_code == 200, employees.text
+    employee = next(item for item in employees.json() if item["id"] == 1)
+    assert employee["position"] == {"id": 2, "name": "Cashier"}
+
+
+def test_employee_and_unauthenticated_users_cannot_update_employee_position(client: TestClient) -> None:
+    employee_headers = login_json(client, "ivan@example.com", "employee123")
+
+    employee_response = client.patch(
+        "/employees/1/position",
+        headers=employee_headers,
+        json={"position_id": 2},
+    )
+    assert employee_response.status_code == 403
+
+    unauthorized = client.patch("/employees/1/position", json={"position_id": 2})
+    assert unauthorized.status_code == 401
+
+
+def test_manager_cannot_update_other_company_employee_or_assign_foreign_position(client: TestClient) -> None:
+    seed_second_company_scope_data()
+    manager_headers = login_json(client, "manager@example.com", "manager123")
+
+    with psycopg.connect(PSYCOPG_DSN) as connection:
+        with connection.cursor() as cursor:
+            cursor.execute("SELECT id FROM companies WHERE invite_code = 'OTHER123'")
+            other_company_id = cursor.fetchone()[0]
+            cursor.execute("SELECT id FROM employees WHERE company_id = %s ORDER BY id LIMIT 1", (other_company_id,))
+            other_employee_id = cursor.fetchone()[0]
+            cursor.execute("SELECT id FROM positions WHERE company_id = %s ORDER BY id LIMIT 1", (other_company_id,))
+            other_position_id = cursor.fetchone()[0]
+
+    foreign_employee = client.patch(
+        f"/employees/{other_employee_id}/position",
+        headers=manager_headers,
+        json={"position_id": 1},
+    )
+    assert foreign_employee.status_code == 403
+
+    foreign_position = client.patch(
+        "/employees/1/position",
+        headers=manager_headers,
+        json={"position_id": other_position_id},
+    )
+    assert foreign_position.status_code == 403
+
+
+def test_manager_can_unassign_employee_position(client: TestClient) -> None:
+    manager_headers = login_json(client, "manager@example.com", "manager123")
+
+    updated = client.patch(
+        "/employees/1/position",
+        headers=manager_headers,
+        json={"position_id": None},
+    )
+    assert updated.status_code == 200, updated.text
+    assert updated.json()["position_id"] is None
+    assert updated.json()["position"] is None
+    assert updated.json()["position_title"] == ""
+
+    employees = client.get("/employees/", headers=manager_headers)
+    assert employees.status_code == 200, employees.text
+    assert employees.json()[0]["position"] is None
+
+
+def test_employee_position_update_returns_clear_errors_for_invalid_ids(client: TestClient) -> None:
+    manager_headers = login_json(client, "manager@example.com", "manager123")
+
+    missing_employee = client.patch(
+        "/employees/999999/position",
+        headers=manager_headers,
+        json={"position_id": 1},
+    )
+    assert missing_employee.status_code == 404
+    assert missing_employee.json()["detail"] == "Employee was not found."
+
+    missing_position = client.patch(
+        "/employees/1/position",
+        headers=manager_headers,
+        json={"position_id": 999999},
+    )
+    assert missing_position.status_code == 404
+    assert missing_position.json()["detail"] == "Position was not found."
+
+
 def test_manager_can_update_own_company(client: TestClient) -> None:
     manager_headers = login_json(client, "manager@example.com", "manager123")
 

@@ -43,6 +43,10 @@ class EmployeePositionRead(BaseModel):
     name: str
 
 
+class EmployeePositionUpdate(BaseModel):
+    position_id: int | None = Field(ge=1)
+
+
 class EmployeeRead(BaseModel):
     id: int
     full_name: str
