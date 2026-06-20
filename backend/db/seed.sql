@@ -18,10 +18,11 @@ INSERT INTO employees (user_id, company_id, branch_id, position_id, max_hours_pe
 VALUES
 (2, 1, NULL, NULL, 40);
 
-INSERT INTO employee_availability (employee_id, weekday, start_time, end_time)
+INSERT INTO employee_availability (employee_id, weekday, start_time, end_time, availability_status)
 VALUES
-(1, 0, '10:00', '18:00'),
-(1, 1, '12:00', '20:00');
+(1, 0, '10:00', '18:00', 'available'),
+(1, 1, '12:00', '20:00', 'if_needed'),
+(1, 2, '10:00', '18:00', 'unavailable');
 
 INSERT INTO employee_desired_days_off (employee_id, weekday)
 VALUES

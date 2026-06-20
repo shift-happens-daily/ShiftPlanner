@@ -75,6 +75,13 @@ CREATE TABLE employee_availability (
     weekday INTEGER NOT NULL CHECK (weekday BETWEEN 0 AND 6),
     start_time TIME NOT NULL,
     end_time TIME NOT NULL,
+    availability_status VARCHAR(20) NOT NULL DEFAULT 'available'
+        CHECK (availability_status IN ('available', 'if_needed', 'unavailable')),
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    CHECK (end_time > start_time),
+    CHECK (EXTRACT(MINUTE FROM start_time)::INTEGER % 5 = 0),
+    CHECK (EXTRACT(MINUTE FROM end_time)::INTEGER % 5 = 0),
     UNIQUE (employee_id, weekday, start_time, end_time)
 );
 
