@@ -28,80 +28,109 @@ const WEEKDAYS = [
   { value: 6, ru: 'Вс', en: 'Sun' },
 ];
 
-const TIME_SLOTS = Array.from({ length: 17 }, (_, index) => `${String(6 + index).padStart(2, '0')}:00`);
+const SLOT_MINUTES = 30;
+const DAY_START_MINUTES = 6 * 60; // 06:00
+const DAY_END_MINUTES = 23 * 60; // 23:00 (exclusive end of the last slot)
 
-function createEmptyAvailabilityMatrix() {
-  const matrix = {};
+const TIME_SLOTS = Array.from(
+  { length: (DAY_END_MINUTES - DAY_START_MINUTES) / SLOT_MINUTES },
+  (_, index) => {
+    const total = DAY_START_MINUTES + (index * SLOT_MINUTES);
+    const hours = Math.floor(total / 60);
+    const minutes = total % 60;
+    return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}`;
+  },
+);
 
-  WEEKDAYS.forEach((day) => {
-    matrix[day.value] = new Map();
-  });
-
-  return matrix;
+function toDateKey(date) {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
 }
 
-function buildAvailabilityMatrix(availability = []) {
-  const matrix = createEmptyAvailabilityMatrix();
+function startOfToday() {
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  return today;
+}
 
-  availability.forEach((block) => {
-    const weekday = Number(block.weekday);
-    const startHour = Number(String(block.start_time || '').slice(0, 2));
-    const endHour = Number(String(block.end_time || '').slice(0, 2));
+function isPastDateKey(dateKey) {
+  const date = new Date(`${dateKey}T00:00:00`);
+  date.setHours(0, 0, 0, 0);
+  return date.getTime() < startOfToday().getTime();
+}
 
-    if (!Number.isFinite(weekday) || !Number.isFinite(startHour) || !Number.isFinite(endHour)) {
+function slotToMinutes(slot) {
+  const [hours, minutes] = String(slot).split(':').map(Number);
+  return (hours * 60) + (minutes || 0);
+}
+
+function minutesToTimeString(totalMinutes) {
+  const hours = Math.floor(totalMinutes / 60);
+  const minutes = totalMinutes % 60;
+  return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:00`;
+}
+
+function buildIntervalsForWeekday(weekday, slotStarts) {
+  const sorted = [...slotStarts].sort((a, b) => a - b);
+  const intervals = [];
+  let startMinutes = null;
+  let previousMinutes = null;
+
+  sorted.forEach((minutes) => {
+    if (startMinutes === null) {
+      startMinutes = minutes;
+      previousMinutes = minutes;
       return;
     }
 
-    for (let hour = startHour; hour < endHour; hour += 1) {
-      if (matrix[weekday]) {
-        matrix[weekday].set(hour, 'available');
-      }
+    if (minutes === previousMinutes + SLOT_MINUTES) {
+      previousMinutes = minutes;
+      return;
     }
-  });
 
-  return matrix;
-}
-
-function convertMatrixToIntervals(matrix) {
-  const intervals = [];
-
-  Object.entries(matrix).forEach(([weekday, hourMap]) => {
-    const hours = Array.from(hourMap.entries())
-      .filter(([_, status]) => status === 'available')
-      .map(([hour]) => hour)
-      .sort((a, b) => a - b);
-    let startHour = null;
-    let previousHour = null;
-
-    hours.forEach((hour) => {
-      if (startHour === null) {
-        startHour = hour;
-        previousHour = hour;
-        return;
-      }
-
-      if (hour === previousHour + 1) {
-        previousHour = hour;
-        return;
-      }
-
-      intervals.push({
-        weekday: Number(weekday),
-        start_time: `${String(startHour).padStart(2, '0')}:00:00`,
-        end_time: `${String(previousHour + 1).padStart(2, '0')}:00:00`,
-      });
-
-      startHour = hour;
-      previousHour = hour;
+    intervals.push({
+      weekday,
+      start_time: minutesToTimeString(startMinutes),
+      end_time: minutesToTimeString(previousMinutes + SLOT_MINUTES),
     });
 
-    if (startHour !== null) {
-      intervals.push({
-        weekday: Number(weekday),
-        start_time: `${String(startHour).padStart(2, '0')}:00:00`,
-        end_time: `${String(previousHour + 1).padStart(2, '0')}:00:00`,
-      });
-    }
+    startMinutes = minutes;
+    previousMinutes = minutes;
+  });
+
+  if (startMinutes !== null) {
+    intervals.push({
+      weekday,
+      start_time: minutesToTimeString(startMinutes),
+      end_time: minutesToTimeString(previousMinutes + SLOT_MINUTES),
+    });
+  }
+
+  return intervals;
+}
+
+// Backend only stores a recurring weekly availability template, so when saving we
+// aggregate the per-date selections back into weekly intervals (Monday = 0).
+function convertDatesToWeeklyIntervals(availabilityByDate) {
+  const slotsByWeekday = {};
+
+  Object.entries(availabilityByDate).forEach(([dateKey, slotMap]) => {
+    const jsDay = new Date(`${dateKey}T00:00:00`).getDay();
+    const weekday = (jsDay + 6) % 7;
+
+    Object.entries(slotMap || {}).forEach(([slot, status]) => {
+      if (status === 'available' || status === 'maybe') {
+        if (!slotsByWeekday[weekday]) slotsByWeekday[weekday] = new Set();
+        slotsByWeekday[weekday].add(slotToMinutes(slot));
+      }
+    });
+  });
+
+  const intervals = [];
+  Object.entries(slotsByWeekday).forEach(([weekday, slotStarts]) => {
+    intervals.push(...buildIntervalsForWeekday(Number(weekday), slotStarts));
   });
 
   return intervals;
@@ -261,7 +290,19 @@ export default function ShiftsTab({ language, userRole, user }) {
     desired_days_off: [],
   });
 
-  const [availabilityMatrix, setAvailabilityMatrix] = useState(() => createEmptyAvailabilityMatrix());
+  const availabilityStorageKey = employeeId
+    ? `shiftplanner_availability_by_date_${employeeId}`
+    : 'shiftplanner_availability_by_date_anon';
+
+  // Availability is tracked per calendar date: { 'YYYY-MM-DD': { [hour]: 'available' | 'maybe' } }
+  const [availabilityByDate, setAvailabilityByDate] = useState(() => {
+    try {
+      const raw = localStorage.getItem(availabilityStorageKey);
+      return raw ? JSON.parse(raw) : {};
+    } catch {
+      return {};
+    }
+  });
 
   const [selectedDate, setSelectedDate] = useState(() => new Date().toISOString().slice(0, 10));
 
@@ -277,6 +318,14 @@ export default function ShiftsTab({ language, userRole, user }) {
       return d;
     });
   }, [selectedDate]);
+
+  const shiftWeek = (deltaDays) => {
+    setSelectedDate((prev) => {
+      const d = new Date(prev);
+      d.setDate(d.getDate() + deltaDays);
+      return d.toISOString().slice(0, 10);
+    });
+  };
 
   const [absenceForm, setAbsenceForm] = useState({
     absence_type: 'vacation',
@@ -359,6 +408,9 @@ export default function ShiftsTab({ language, userRole, user }) {
       available: 'Доступен',
       maybe: 'Может быть',
       unavailable: 'Недоступен',
+      prevWeek: 'Предыдущая неделя',
+      nextWeek: 'Следующая неделя',
+      locked: 'Прошедшие даты изменить нельзя',
     },
     en: {
       titleManager: 'Shift setup',
@@ -422,6 +474,9 @@ export default function ShiftsTab({ language, userRole, user }) {
       available: 'Available',
       maybe: 'Maybe',
       unavailable: 'Unavailable',
+      prevWeek: 'Previous week',
+      nextWeek: 'Next week',
+      locked: 'Past dates cannot be edited',
     },
   };
 
@@ -452,6 +507,15 @@ export default function ShiftsTab({ language, userRole, user }) {
   useEffect(() => {
     localStorage.setItem(localRequirementsStorageKey, JSON.stringify(localRequirements));
   }, [localRequirements]);
+
+  useEffect(() => {
+    if (isManager) return;
+    try {
+      localStorage.setItem(availabilityStorageKey, JSON.stringify(availabilityByDate));
+    } catch {
+      // ignore localStorage failures
+    }
+  }, [availabilityByDate, availabilityStorageKey, isManager]);
 
   useEffect(() => {
     if (!errorMessage && !successMessage) return undefined;
@@ -502,7 +566,7 @@ export default function ShiftsTab({ language, userRole, user }) {
   const loadEmployeeData = useCallback(async () => {
     if (!employeeId) {
       setAvailabilityForm({ weekly_availability: [], desired_days_off: [] });
-      setAvailabilityMatrix(createEmptyAvailabilityMatrix());
+      setAvailabilityByDate({});
       setAbsences([]);
       setSummary(null);
       return;
@@ -520,11 +584,19 @@ export default function ShiftsTab({ language, userRole, user }) {
       weekly_availability: normalizedAvailability,
       desired_days_off: normalizeArray(availabilityData?.desired_days_off),
     });
-    setAvailabilityMatrix(buildAvailabilityMatrix(normalizedAvailability));
+
+    let storedByDate = {};
+    try {
+      const raw = localStorage.getItem(availabilityStorageKey);
+      storedByDate = raw ? JSON.parse(raw) : {};
+    } catch {
+      storedByDate = {};
+    }
+    setAvailabilityByDate(storedByDate);
 
     setAbsences(normalizeArray(absencesData));
     setSummary(mapEmployeeCalendarSummary(summaryData));
-  }, [employeeId]);
+  }, [employeeId, availabilityStorageKey]);
 
   const loadData = useCallback(async () => {
     setIsLoading(true);
@@ -561,22 +633,22 @@ export default function ShiftsTab({ language, userRole, user }) {
     }
   };
 
-  const toggleAvailability = (weekday, hour) => {
-    setAvailabilityMatrix((prev) => {
-      const next = { ...prev };
-      const dayMap = new Map(next[weekday]);
-      const currentStatus = dayMap.get(hour) || null;
+  const toggleAvailability = (dateKey, slot) => {
+    if (isPastDateKey(dateKey)) return;
+
+    setAvailabilityByDate((prev) => {
+      const dayMap = { ...(prev[dateKey] || {}) };
+      const currentStatus = dayMap[slot] || null;
 
       if (currentStatus === null) {
-        dayMap.set(hour, 'available');
+        dayMap[slot] = 'available';
       } else if (currentStatus === 'available') {
-        dayMap.set(hour, 'maybe');
+        dayMap[slot] = 'maybe';
       } else {
-        dayMap.delete(hour);
+        delete dayMap[slot];
       }
 
-      next[weekday] = dayMap;
-      return next;
+      return { ...prev, [dateKey]: dayMap };
     });
   };
 
@@ -756,9 +828,15 @@ export default function ShiftsTab({ language, userRole, user }) {
     setIsSubmitting(true);
 
     try {
+      try {
+        localStorage.setItem(availabilityStorageKey, JSON.stringify(availabilityByDate));
+      } catch {
+        // ignore localStorage failures
+      }
+
       await updateEmployeeAvailability(employeeId, {
-        ...availabilityForm,
-        weekly_availability: convertMatrixToIntervals(availabilityMatrix),
+        desired_days_off: availabilityForm.desired_days_off,
+        weekly_availability: convertDatesToWeeklyIntervals(availabilityByDate),
       });
       await loadEmployeeData();
       setSuccessMessage(t.availabilitySaved);
@@ -1195,12 +1273,30 @@ export default function ShiftsTab({ language, userRole, user }) {
                   <h3 style={styles.panelTitle}>{t.availability}</h3>
                 </div>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                  <button
+                    type="button"
+                    onClick={() => shiftWeek(-7)}
+                    style={styles.weekNavButton}
+                    aria-label={t.prevWeek}
+                    title={t.prevWeek}
+                  >
+                    {'\u2190'}
+                  </button>
                   <input
                     type="date"
                     value={selectedDate}
                     onChange={(e) => setSelectedDate(e.target.value)}
                     style={{ ...styles.input, width: 'auto' }}
                   />
+                  <button
+                    type="button"
+                    onClick={() => shiftWeek(7)}
+                    style={styles.weekNavButton}
+                    aria-label={t.nextWeek}
+                    title={t.nextWeek}
+                  >
+                    {'\u2192'}
+                  </button>
                 </div>
               </div>
 
@@ -1248,31 +1344,39 @@ export default function ShiftsTab({ language, userRole, user }) {
                 </div>
                 <div style={styles.availabilityGridBody}>
                   {TIME_SLOTS.map((time) => {
-                    const hour = Number(time.slice(0, 2));
                     return (
                       <div key={time} style={styles.gridRow}>
                         <div style={styles.gridTimeCell}>{time}</div>
-                        {WEEKDAYS.map((day) => {
-                          const status = availabilityMatrix[day.value]?.get(hour) || null;
+                        {WEEKDAYS.map((day, dayIndex) => {
+                          const cellDate = weekDates[dayIndex];
+                          const dateKey = toDateKey(cellDate);
+                          const past = isPastDateKey(dateKey);
+                          const status = availabilityByDate[dateKey]?.[time] || null;
+
+                          const cellStyle = past
+                            ? styles.gridCellLocked
+                            : status === 'available'
+                              ? styles.gridCellAvailable
+                              : status === 'maybe'
+                                ? styles.gridCellMaybe
+                                : styles.gridCell;
+
                           return (
                             <button
-                              key={`${day.value}-${time}`}
+                              key={`${dateKey}-${time}`}
                               type="button"
-                              onClick={() => toggleAvailability(day.value, hour)}
-                              style={
-                                status === 'available'
-                                  ? styles.gridCellAvailable
-                                  : status === 'maybe'
-                                    ? styles.gridCellMaybe
-                                    : styles.gridCell
-                              }
+                              onClick={past ? undefined : () => toggleAvailability(dateKey, time)}
+                              disabled={past}
+                              style={cellStyle}
                               aria-pressed={status === 'available'}
                               title={
-                                status === 'available'
-                                  ? t.available
-                                  : status === 'maybe'
-                                    ? t.maybe
-                                    : t.unavailable
+                                past
+                                  ? t.locked
+                                  : status === 'available'
+                                    ? t.available
+                                    : status === 'maybe'
+                                      ? t.maybe
+                                      : t.unavailable
                               }
                             />
                           );
@@ -1719,6 +1823,23 @@ const styles = {
     whiteSpace: 'nowrap',
   },
 
+  weekNavButton: {
+    width: '42px',
+    height: '42px',
+    flexShrink: 0,
+    background: '#dee7e7',
+    border: 'none',
+    borderRadius: '13px',
+    color: '#002642',
+    fontSize: '18px',
+    fontWeight: '900',
+    cursor: 'pointer',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    lineHeight: 1,
+  },
+
   deleteButton: {
     height: '38px',
     padding: '0 13px',
@@ -1958,6 +2079,16 @@ const styles = {
     border: '1px solid #F57C00',
     cursor: 'pointer',
     transition: 'all 0.15s ease',
+  },
+
+  gridCellLocked: {
+    width: '100%',
+    minHeight: '34px',
+    borderRadius: '12px',
+    background: 'repeating-linear-gradient(45deg, #eef3f6, #eef3f6 6px, #e2e8ec 6px, #e2e8ec 12px)',
+    border: '1px solid #dde5ea',
+    cursor: 'not-allowed',
+    opacity: 0.6,
   },
 
   desiredDaysOffSection: {
