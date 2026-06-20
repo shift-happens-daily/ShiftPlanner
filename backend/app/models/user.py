@@ -71,9 +71,17 @@ class EmployeeAvailability(Base):
 
     id: Mapped[int] = mapped_column(primary_key=True)
     employee_id: Mapped[int] = mapped_column(ForeignKey("employees.id", ondelete="CASCADE"))
-    weekday: Mapped[int] = mapped_column(Integer)
-    start_time: Mapped[time] = mapped_column(Time)
-    end_time: Mapped[time] = mapped_column(Time)
+    availability_date: Mapped[date] = mapped_column(Date)
+    slot_time: Mapped[time] = mapped_column(Time)
+    availability_status: Mapped[str] = mapped_column(String(20))
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime,
+        server_default=func.current_timestamp(),
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime,
+        server_default=func.current_timestamp(),
+    )
 
     employee: Mapped[Employee] = relationship(back_populates="availability_blocks")
 
