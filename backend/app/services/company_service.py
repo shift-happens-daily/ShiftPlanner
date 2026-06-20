@@ -4,7 +4,9 @@ from sqlalchemy.orm import Session
 from app.repositories import company_repository, employee_repository, position_repository
 from app.schemas.auth import CurrentUserResponse, UserRead
 from app.schemas.company import (
+    BranchCreate,
     BranchResponse,
+    BranchUpdate,
     CompanyCreate,
     CompanyJoinRequest,
     CompanyRead,
@@ -57,6 +59,23 @@ def create_company(db: Session, payload: CompanyCreate, current_user: UserRead) 
     return _build_company_read(company)
 
 
+def get_my_company(db: Session, current_user: UserRead) -> CompanyRead:
+    if current_user.company_id is None:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Manager is not linked to a company.",
+        )
+
+    company = company_repository.get_company_by_id(db, current_user.company_id)
+    if company is None or company.manager_user_id != current_user.id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Manager is not linked to this company.",
+        )
+
+    return _build_company_read(company)
+
+
 def update_my_company(db: Session, payload: CompanyUpdate, current_user: UserRead) -> CompanyRead:
     if current_user.company_id is None:
         raise HTTPException(
@@ -102,6 +121,7 @@ def preview_invite_code(db: Session, invite_code: str):
             {
                 "id": branch.id,
                 "name": branch.name,
+                "address": branch.address,
             }
             for branch in branches
         ],
@@ -128,13 +148,19 @@ def list_company_branches(db: Session, company_id: int) -> list[BranchResponse]:
         BranchResponse(
             id=branch.id,
             name=branch.name,
+            address=branch.address,
             company_id=branch.company_id,
         )
         for branch in _list_branches(db, company_id)
     ]
 
 
-def create_company_branch(db: Session, company_id: int, name: str) -> BranchResponse:
+def create_company_branch(
+    db: Session,
+    company_id: int,
+    name: str,
+    address: str | None = None,
+) -> BranchResponse:
     company = company_repository.get_company_by_id(db, company_id)
 
     if company is None:
@@ -155,13 +181,104 @@ def create_company_branch(db: Session, company_id: int, name: str) -> BranchResp
         db=db,
         company_id=company_id,
         name=branch_name,
+        address=address,
     )
 
     return BranchResponse(
         id=branch.id,
         name=branch.name,
+        address=branch.address,
         company_id=branch.company_id,
     )
+
+
+def list_manager_company_branches(
+    db: Session,
+    current_user: UserRead,
+    requested_company_id: int | None = None,
+) -> list[BranchResponse]:
+    company_id = _manager_company_id(current_user, requested_company_id)
+    return list_company_branches(db, company_id)
+
+
+def create_manager_company_branch(
+    db: Session,
+    payload: BranchCreate,
+    current_user: UserRead,
+    requested_company_id: int | None = None,
+) -> BranchResponse:
+    company_id = _manager_company_id(current_user, requested_company_id)
+    return create_company_branch(db, company_id, payload.name, payload.address)
+
+
+def update_company_branch(
+    db: Session,
+    branch_id: int,
+    payload: BranchUpdate,
+    current_user: UserRead,
+) -> BranchResponse:
+    company_id = _manager_company_id(current_user)
+    branch = company_repository.get_branch_by_id(db, branch_id)
+    if branch is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Branch not found.")
+    if branch.company_id != company_id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Branch does not belong to the authenticated user's company.",
+        )
+
+    branch_name = payload.name.strip() if payload.name is not None else branch.name
+    if not branch_name:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Branch name is required.",
+        )
+    address = payload.address if "address" in payload.model_fields_set else branch.address
+    updated_branch = company_repository.update_branch(
+        db,
+        branch,
+        name=branch_name,
+        address=address,
+    )
+    return BranchResponse(
+        id=updated_branch.id,
+        name=updated_branch.name,
+        address=updated_branch.address,
+        company_id=updated_branch.company_id,
+    )
+
+
+def delete_company_branch(db: Session, branch_id: int, current_user: UserRead) -> None:
+    company_id = _manager_company_id(current_user)
+    branch = company_repository.get_branch_by_id(db, branch_id)
+    if branch is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Branch not found.")
+    if branch.company_id != company_id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Branch does not belong to the authenticated user's company.",
+        )
+    if company_repository.branch_is_in_use(db, branch.id):
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Branch cannot be deleted while it is assigned to employees or requirements.",
+        )
+
+    company_repository.delete_branch(db, branch)
+
+
+def _manager_company_id(current_user: UserRead, requested_company_id: int | None = None) -> int:
+    if current_user.company_id is None:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Manager is not linked to a company.",
+        )
+    if requested_company_id is not None and requested_company_id != current_user.company_id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Company does not belong to the authenticated manager.",
+        )
+    return current_user.company_id
 
 
 def join_company_by_invite(

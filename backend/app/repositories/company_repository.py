@@ -3,7 +3,7 @@ import secrets
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.models import Branch, Company
+from app.models import Branch, Company, Employee, ShiftRequirement
 
 
 def list_companies(db: Session) -> list[Company]:
@@ -109,14 +109,51 @@ def get_branch_by_id(db: Session, branch_id: int) -> Branch | None:
     return db.get(Branch, branch_id)
 
 
-def create_branch(db: Session, company_id: int, name: str) -> Branch:
-    branch = Branch(company_id=company_id, name=name)
+def create_branch(db: Session, company_id: int, name: str, address: str | None = None) -> Branch:
+    branch = Branch(company_id=company_id, name=name, address=address)
 
     db.add(branch)
     db.commit()
     db.refresh(branch)
 
     return branch
+
+
+def update_branch(
+    db: Session,
+    branch: Branch,
+    *,
+    name: str,
+    address: str | None,
+) -> Branch:
+    branch.name = name
+    branch.address = address
+    db.add(branch)
+    db.commit()
+    db.refresh(branch)
+    return branch
+
+
+def branch_is_in_use(db: Session, branch_id: int) -> bool:
+    employee_id = db.scalar(
+        select(Employee.id)
+        .where(Employee.branch_id == branch_id)
+        .limit(1)
+    )
+    if employee_id is not None:
+        return True
+
+    requirement_id = db.scalar(
+        select(ShiftRequirement.id)
+        .where(ShiftRequirement.branch_id == branch_id)
+        .limit(1)
+    )
+    return requirement_id is not None
+
+
+def delete_branch(db: Session, branch: Branch) -> None:
+    db.delete(branch)
+    db.commit()
 
 
 def delete_company(db: Session, company: Company) -> None:

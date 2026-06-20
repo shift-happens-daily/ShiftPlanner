@@ -23,15 +23,23 @@ class CompanyRead(CompanySummaryRead):
 class BranchRead(BaseModel):
     id: int
     name: str
+    address: str | None = None
 
 
 class BranchCreate(BaseModel):
     name: str = Field(min_length=1)
+    address: str | None = None
+
+
+class BranchUpdate(BaseModel):
+    name: str | None = Field(default=None, min_length=1)
+    address: str | None = None
 
 
 class BranchResponse(BaseModel):
     id: int
     name: str
+    address: str | None = None
     company_id: int
 
 

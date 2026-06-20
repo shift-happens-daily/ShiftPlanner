@@ -321,6 +321,136 @@ def test_manager_can_update_own_company(client: TestClient) -> None:
     assert profile.json()["company"]["name"] == "Updated Coffee Bar"
 
 
+def test_manager_gets_own_company_with_address(client: TestClient) -> None:
+    manager_headers = login_json(client, "manager@example.com", "manager123")
+
+    response = client.get("/companies/me", headers=manager_headers)
+    assert response.status_code == 200, response.text
+    assert response.json() == {
+        "id": 1,
+        "name": "Coffee Bar Barnaul",
+        "address": "Barnaul, Lenin Street",
+        "invite_code": "COFFEE123",
+    }
+
+
+def test_employee_and_unauthenticated_users_cannot_get_manager_company(client: TestClient) -> None:
+    employee_headers = login_json(client, "ivan@example.com", "employee123")
+
+    assert client.get("/companies/me", headers=employee_headers).status_code == 403
+    assert client.get("/companies/me").status_code == 401
+
+
+def test_manager_can_create_and_list_branches_with_address(client: TestClient) -> None:
+    manager_headers = login_json(client, "manager@example.com", "manager123")
+
+    created = client.post(
+        "/companies/branches",
+        headers=manager_headers,
+        json={"name": "North Branch", "address": "North Street 10"},
+    )
+    assert created.status_code == 201, created.text
+    created_json = created.json()
+    assert created_json["company_id"] == 1
+    assert created_json["name"] == "North Branch"
+    assert created_json["address"] == "North Street 10"
+
+    listed = client.get("/companies/branches", headers=manager_headers)
+    assert listed.status_code == 200, listed.text
+    assert created_json in listed.json()
+
+    legacy_created = client.post(
+        "/companies/1/branches",
+        headers=manager_headers,
+        json={"name": "Legacy Branch", "address": "Legacy Street 5"},
+    )
+    assert legacy_created.status_code == 201, legacy_created.text
+    legacy_listed = client.get("/companies/1/branches", headers=manager_headers)
+    assert legacy_listed.status_code == 200, legacy_listed.text
+    assert legacy_created.json() in legacy_listed.json()
+
+
+def test_manager_can_update_and_delete_own_branch(client: TestClient) -> None:
+    manager_headers = login_json(client, "manager@example.com", "manager123")
+    created = client.post(
+        "/companies/branches",
+        headers=manager_headers,
+        json={"name": "Temporary Branch", "address": "Old Address"},
+    )
+    assert created.status_code == 201, created.text
+    branch_id = created.json()["id"]
+
+    updated = client.patch(
+        f"/companies/branches/{branch_id}",
+        headers=manager_headers,
+        json={"name": "Updated Branch", "address": "New Address"},
+    )
+    assert updated.status_code == 200, updated.text
+    assert updated.json()["name"] == "Updated Branch"
+    assert updated.json()["address"] == "New Address"
+
+    deleted = client.delete(f"/companies/branches/{branch_id}", headers=manager_headers)
+    assert deleted.status_code == 204, deleted.text
+
+    listed = client.get("/companies/branches", headers=manager_headers)
+    assert listed.status_code == 200, listed.text
+    assert branch_id not in [branch["id"] for branch in listed.json()]
+
+
+def test_employee_and_unauthenticated_users_cannot_update_or_delete_branches(client: TestClient) -> None:
+    employee_headers = login_json(client, "ivan@example.com", "employee123")
+
+    employee_update = client.patch(
+        "/companies/branches/1",
+        headers=employee_headers,
+        json={"address": "Forbidden"},
+    )
+    assert employee_update.status_code == 403
+    employee_delete = client.delete("/companies/branches/1", headers=employee_headers)
+    assert employee_delete.status_code == 403
+
+    assert client.patch("/companies/branches/1", json={"address": "No Token"}).status_code == 401
+    assert client.delete("/companies/branches/1").status_code == 401
+
+
+def test_manager_cannot_update_or_delete_other_company_branch(client: TestClient) -> None:
+    seed_second_company_scope_data()
+    manager_headers = login_json(client, "manager@example.com", "manager123")
+
+    with psycopg.connect(PSYCOPG_DSN) as connection:
+        with connection.cursor() as cursor:
+            cursor.execute("SELECT id FROM companies WHERE invite_code = 'OTHER123'")
+            other_company_id = cursor.fetchone()[0]
+            cursor.execute("SELECT id FROM branches WHERE company_id = %s ORDER BY id LIMIT 1", (other_company_id,))
+            other_branch_id = cursor.fetchone()[0]
+
+    update = client.patch(
+        f"/companies/branches/{other_branch_id}",
+        headers=manager_headers,
+        json={"name": "Not Allowed", "address": "Not Allowed"},
+    )
+    assert update.status_code == 403
+    delete = client.delete(f"/companies/branches/{other_branch_id}", headers=manager_headers)
+    assert delete.status_code == 403
+
+
+def test_invalid_and_referenced_branches_cannot_be_deleted(client: TestClient) -> None:
+    manager_headers = login_json(client, "manager@example.com", "manager123")
+
+    missing_update = client.patch(
+        "/companies/branches/999999",
+        headers=manager_headers,
+        json={"address": "Missing"},
+    )
+    assert missing_update.status_code == 404
+    missing_delete = client.delete("/companies/branches/999999", headers=manager_headers)
+    assert missing_delete.status_code == 404
+
+    referenced = client.delete("/companies/branches/1", headers=manager_headers)
+    assert referenced.status_code == 409
+    assert "assigned to employees or requirements" in referenced.json()["detail"]
+
+
 def test_employee_and_unauthenticated_users_cannot_update_company(client: TestClient) -> None:
     employee_headers = login_json(client, "ivan@example.com", "employee123")
 
