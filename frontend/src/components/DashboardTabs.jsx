@@ -11,7 +11,7 @@ import ShiftsTab from './tabs/ShiftsTab';
 export default function DashboardTabs({ userRole, language, title, rightSlot }) {
   const activeTabStorageKey = `shiftplanner_active_tab_${userRole || 'default'}`;
   const [activeTab, setActiveTab] = useState(() => (
-    localStorage.getItem(activeTabStorageKey) || 'profile'
+    localStorage.getItem(activeTabStorageKey) || 'schedule'
   ));
 
   const { user } = useAuth();
@@ -24,6 +24,9 @@ export default function DashboardTabs({ userRole, language, title, rightSlot }) 
       shifts: 'Настройки смен',
       schedule: 'Расписание',
       reports: 'Отчеты',
+      manager: 'Менеджер',
+      employee: 'Сотрудник',
+      openProfile: 'Открыть профиль',
     },
     en: {
       profile: 'Profile',
@@ -32,6 +35,9 @@ export default function DashboardTabs({ userRole, language, title, rightSlot }) 
       shifts: 'Shift setup',
       schedule: 'Schedule',
       reports: 'Reports',
+      manager: 'Manager',
+      employee: 'Employee',
+      openProfile: 'Open profile',
     },
   };
 
@@ -40,42 +46,54 @@ export default function DashboardTabs({ userRole, language, title, rightSlot }) 
   const tabs = useMemo(() => (
     userRole === 'manager'
       ? [
-        { id: 'profile', label: t.profile },
+        { id: 'schedule', label: t.schedule },
         { id: 'company', label: t.company },
         { id: 'employees', label: t.employees },
         { id: 'shifts', label: t.shifts },
-        { id: 'schedule', label: t.schedule },
         { id: 'reports', label: t.reports },
       ]
       : [
-        { id: 'profile', label: t.profile },
+        { id: 'schedule', label: t.schedule },
         { id: 'company', label: t.company },
         { id: 'shifts', label: t.shifts },
-        { id: 'schedule', label: t.schedule },
         { id: 'reports', label: t.reports },
       ]
   ), [t, userRole]);
 
-  const safeActiveTab = tabs.some((tab) => tab.id === activeTab) ? activeTab : 'profile';
+  // 'profile' is reachable via the header profile section, not the nav tabs.
+  const isValidTab = (tabId) => tabId === 'profile' || tabs.some((tab) => tab.id === tabId);
+  const safeActiveTab = isValidTab(activeTab) ? activeTab : 'schedule';
 
   useEffect(() => {
     const savedTab = localStorage.getItem(activeTabStorageKey);
 
-    if (savedTab && tabs.some((tab) => tab.id === savedTab)) {
+    if (savedTab && isValidTab(savedTab)) {
       setActiveTab(savedTab);
       return;
     }
 
-    if (!tabs.some((tab) => tab.id === activeTab)) {
-      setActiveTab('profile');
-      localStorage.setItem(activeTabStorageKey, 'profile');
+    if (!isValidTab(activeTab)) {
+      setActiveTab('schedule');
+      localStorage.setItem(activeTabStorageKey, 'schedule');
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeTab, activeTabStorageKey, tabs]);
 
   const handleTabClick = (tabId) => {
     setActiveTab(tabId);
     localStorage.setItem(activeTabStorageKey, tabId);
   };
+
+  const fullName = user?.fullName || user?.full_name || user?.name || '';
+  const positionName = user?.position?.name
+    || (userRole === 'manager' ? t.manager : t.employee);
+
+  const avatarInitials = (fullName.trim() || user?.email || '?')
+    .split(/\s+/)
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((part) => part[0]?.toUpperCase() || '')
+    .join('') || '?';
 
   const sharedProps = {
     language,
@@ -127,7 +145,26 @@ export default function DashboardTabs({ userRole, language, title, rightSlot }) 
           })}
         </nav>
 
-        {rightSlot && <div style={styles.rightSlot}>{rightSlot}</div>}
+        <div style={styles.headerRight}>
+          <button
+            type="button"
+            onClick={() => handleTabClick('profile')}
+            style={{
+              ...styles.profileButton,
+              ...(safeActiveTab === 'profile' ? styles.profileButtonActive : {}),
+            }}
+            aria-label={t.openProfile}
+            title={t.openProfile}
+          >
+            <span style={styles.avatar}>{avatarInitials}</span>
+            <span style={styles.profileInfo}>
+              <span style={styles.profileName}>{fullName || t.profile}</span>
+              <span style={styles.profilePosition}>{positionName}</span>
+            </span>
+          </button>
+
+          {rightSlot && <div style={styles.rightSlot}>{rightSlot}</div>}
+        </div>
       </header>
 
       <main style={styles.content}>{renderContent()}</main>
@@ -196,6 +233,77 @@ const styles = {
     background: '#f4faff',
     color: '#002642',
     boxShadow: '0 8px 22px rgba(0, 38, 66, 0.12)',
+  },
+
+  headerRight: {
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'flex-end',
+    gap: '16px',
+    flexShrink: 0,
+    minWidth: 'fit-content',
+  },
+
+  profileButton: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '12px',
+    padding: '8px 14px 8px 8px',
+    background: '#f4faff',
+    border: '1px solid rgba(79, 100, 111, 0.16)',
+    borderRadius: '999px',
+    cursor: 'pointer',
+    transition: 'all 0.2s ease',
+    maxWidth: '240px',
+  },
+
+  profileButtonActive: {
+    background: '#ffffff',
+    boxShadow: '0 8px 22px rgba(0, 38, 66, 0.12)',
+  },
+
+  avatar: {
+    flexShrink: 0,
+    width: '40px',
+    height: '40px',
+    borderRadius: '50%',
+    background: '#002642',
+    color: '#f4faff',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    fontSize: '15px',
+    fontWeight: '800',
+    letterSpacing: '0.02em',
+  },
+
+  profileInfo: {
+    display: 'flex',
+    flexDirection: 'column',
+    alignItems: 'flex-start',
+    minWidth: 0,
+  },
+
+  profileName: {
+    color: '#002642',
+    fontSize: '14px',
+    fontWeight: '800',
+    lineHeight: 1.2,
+    maxWidth: '150px',
+    overflow: 'hidden',
+    textOverflow: 'ellipsis',
+    whiteSpace: 'nowrap',
+  },
+
+  profilePosition: {
+    color: '#4f646f',
+    fontSize: '12px',
+    fontWeight: '600',
+    lineHeight: 1.2,
+    maxWidth: '150px',
+    overflow: 'hidden',
+    textOverflow: 'ellipsis',
+    whiteSpace: 'nowrap',
   },
 
   rightSlot: {
