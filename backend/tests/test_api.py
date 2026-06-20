@@ -285,6 +285,64 @@ def test_employee_and_position_lists_are_scoped_to_authenticated_company(client:
     assert client.get("/positions/").status_code == 401
 
 
+def test_manager_can_delete_own_unused_position(client: TestClient) -> None:
+    manager_headers = login_json(client, "manager@example.com", "manager123")
+
+    with psycopg.connect(PSYCOPG_DSN) as connection:
+        with connection.cursor() as cursor:
+            cursor.execute(
+                "INSERT INTO positions (company_id, name) VALUES (1, 'Temporary Position') RETURNING id"
+            )
+            position_id = cursor.fetchone()[0]
+
+    deleted = client.delete(f"/positions/{position_id}", headers=manager_headers)
+    assert deleted.status_code == 204, deleted.text
+
+    positions = client.get("/positions/", headers=manager_headers)
+    assert positions.status_code == 200, positions.text
+    assert position_id not in [position["id"] for position in positions.json()]
+
+
+def test_employee_and_unauthenticated_users_cannot_delete_position(client: TestClient) -> None:
+    employee_headers = login_json(client, "ivan@example.com", "employee123")
+
+    employee_response = client.delete("/positions/2", headers=employee_headers)
+    assert employee_response.status_code == 403
+
+    unauthorized = client.delete("/positions/2")
+    assert unauthorized.status_code == 401
+
+
+def test_manager_cannot_delete_other_company_position(client: TestClient) -> None:
+    seed_second_company_scope_data()
+    manager_headers = login_json(client, "manager@example.com", "manager123")
+
+    with psycopg.connect(PSYCOPG_DSN) as connection:
+        with connection.cursor() as cursor:
+            cursor.execute("SELECT id FROM companies WHERE invite_code = 'OTHER123'")
+            other_company_id = cursor.fetchone()[0]
+            cursor.execute("SELECT id FROM positions WHERE company_id = %s ORDER BY id LIMIT 1", (other_company_id,))
+            other_position_id = cursor.fetchone()[0]
+
+    response = client.delete(f"/positions/{other_position_id}", headers=manager_headers)
+    assert response.status_code == 403
+
+
+def test_deleting_non_existing_position_returns_not_found(client: TestClient) -> None:
+    manager_headers = login_json(client, "manager@example.com", "manager123")
+
+    response = client.delete("/positions/999999", headers=manager_headers)
+    assert response.status_code == 404
+
+
+def test_referenced_position_cannot_be_deleted(client: TestClient) -> None:
+    manager_headers = login_json(client, "manager@example.com", "manager123")
+
+    response = client.delete("/positions/1", headers=manager_headers)
+    assert response.status_code == 409
+    assert "assigned to employees, requirements, or shifts" in response.json()["detail"]
+
+
 def test_requirements_are_fetched_by_company_branch_and_date_range(client: TestClient) -> None:
     manager_headers = login_json(client, "manager@example.com", "manager123")
 
