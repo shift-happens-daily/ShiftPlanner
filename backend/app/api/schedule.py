@@ -109,10 +109,10 @@ def create_bulk_requirements(
 )
 def generate_schedule(
     payload: ScheduleGenerateRequest | None = None,
-    _: UserRead = Depends(require_role("manager")),
+    current_user: UserRead = Depends(require_role("manager")),
     db: Session = Depends(get_db),
 ) -> ScheduleRead:
-    return schedule_service.generate_schedule(db, payload)
+    return schedule_service.generate_schedule(db, current_user, payload)
 
 
 @router.get(
@@ -222,10 +222,10 @@ def update_shift(
 )
 def publish_schedule(
     schedule_id: int,
-    _: UserRead = Depends(require_role("manager")),
+    current_user: UserRead = Depends(require_role("manager")),
     db: Session = Depends(get_db),
 ) -> ScheduleRead:
-    return schedule_service.publish_schedule(db, schedule_id)
+    return schedule_service.publish_schedule(db, schedule_id, current_user)
 
 
 @router.delete("/requirements/{requirement_id}", status_code=204)

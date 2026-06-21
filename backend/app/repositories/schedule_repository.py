@@ -154,8 +154,7 @@ def list_schedule_shift_rows(db: Session, schedule_id: int) -> list[dict]:
     )
 
 
-def publish_schedule(db: Session, schedule_id: int) -> Schedule:
-    schedule = db.get(Schedule, schedule_id)
+def publish_schedule(db: Session, schedule: Schedule) -> Schedule:
     schedule.status = "published"
     db.add(schedule)
     db.commit()

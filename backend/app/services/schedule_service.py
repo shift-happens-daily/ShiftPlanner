@@ -211,11 +211,25 @@ def create_bulk_requirements(db: Session, payload: ScheduleRequirementBulkCreate
     )
 
 
-def generate_schedule(db: Session, payload: ScheduleGenerateRequest | None = None) -> ScheduleRead:
+def generate_schedule(
+    db: Session,
+    current_user: UserRead,
+    payload: ScheduleGenerateRequest | None = None,
+) -> ScheduleRead:
+    if current_user.company_id is None:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Manager is not linked to a company.",
+        )
+
     start_date = payload.start_date if payload else None
     end_date = payload.end_date if payload else None
-    requirements = schedule_repository.list_requirements(db, start_date=start_date, end_date=end_date)
-    default_company = company_repository.get_default_company(db)
+    requirements = schedule_repository.list_requirements(
+        db,
+        start_date=start_date,
+        end_date=end_date,
+        company_id=current_user.company_id,
+    )
 
     generated_shifts: list[dict] = []
     unfilled: list[dict] = []
@@ -266,10 +280,9 @@ def generate_schedule(db: Session, payload: ScheduleGenerateRequest | None = Non
 
     schedule_start = start_date or (min((item.shift_date for item in requirements), default=date.today()))
     schedule_end = end_date or (max((item.shift_date for item in requirements), default=schedule_start))
-    company_id = requirements[0].company_id if requirements else default_company.id
     schedule = schedule_repository.create_schedule(
         db,
-        company_id=company_id,
+        company_id=current_user.company_id,
         start_date=schedule_start,
         end_date=schedule_end,
         generated_shifts=generated_shifts,
@@ -310,13 +323,26 @@ def update_shift(db: Session, schedule_id: int, shift_id: int, payload: Schedule
     return _build_schedule_read(db, updated_schedule.id, updated_schedule.status)
 
 
-def publish_schedule(db: Session, schedule_id: int) -> ScheduleRead:
+def publish_schedule(db: Session, schedule_id: int, current_user: UserRead) -> ScheduleRead:
+    if current_user.role != "manager":
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Manager access required.")
+    if current_user.company_id is None:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Manager is not linked to a company.",
+        )
+
     schedule = schedule_repository.get_schedule(db, schedule_id)
     if schedule is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Schedule was not found.")
+    if schedule.company_id != current_user.company_id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Schedule does not belong to the authenticated manager's company.",
+        )
     if schedule.status != "draft":
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Only draft schedules can be published.")
-    published_schedule = schedule_repository.publish_schedule(db, schedule_id)
+    published_schedule = schedule_repository.publish_schedule(db, schedule)
     return _build_schedule_read(db, published_schedule.id, published_schedule.status)
 
 
