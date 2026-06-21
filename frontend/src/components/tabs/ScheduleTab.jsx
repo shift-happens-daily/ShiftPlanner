@@ -4,19 +4,16 @@ import { listEmployees } from '../../services/employeeService';
 import { extractApiErrorMessage, localizeBackendMessage } from '../../services/error';
 import {
   createExchangeRequest,
+  defaultSchedulePeriod,
   generateSchedule,
   getMySchedule,
+  mergePublishedSchedule,
   publishSchedule,
   updateShift,
 } from '../../services/scheduleService';
 
 function defaultPeriod() {
-  const today = new Date();
-
-  return {
-    start_date: new Date(today.getFullYear(), today.getMonth(), 1).toISOString().slice(0, 10),
-    end_date: new Date(today.getFullYear(), today.getMonth() + 1, 0).toISOString().slice(0, 10),
-  };
+  return defaultSchedulePeriod();
 }
 
 function normalizeArray(value) {
@@ -206,8 +203,9 @@ export default function ScheduleTab({ language, userRole }) {
       status: 'Статус',
       reassign: 'Переназначить',
       remove: 'Убрать сотрудника',
-      noSchedule: 'Расписание еще не сгенерировано.',
-      noScheduleHint: 'Выбери период и нажми «Сгенерировать черновик». Если смены не появятся, проверь требования к сменам.',
+      noSchedule: 'Расписание ещё не сгенерировано',
+      noScheduleHint: 'Выберите неделю (Пн–Вс) и нажмите «Сгенерировать черновик».',
+      noScheduleRequirements: 'Перед генерацией должны быть настроены шаблоны потребности, часы филиала и availability сотрудников.',
       loading: 'Загрузка...',
       unfilled: 'Незаполненные требования',
       shifts: 'Смены',
@@ -230,7 +228,10 @@ export default function ScheduleTab({ language, userRole }) {
       schedulePreview: 'Предпросмотр расписания',
       chooseEmployee: 'Выберите сотрудника',
       noEmployeesForPosition: 'Нет сотрудников этой позиции',
-      noPublishedSchedule: 'Опубликованных смен пока нет.',
+      noPublishedScheduleTitle: 'Пока нет опубликованных смен',
+      noPublishedScheduleHint: 'Когда менеджер опубликует расписание, ваши смены появятся здесь.',
+      noPublishedScheduleStep1: 'Дождитесь публикации от менеджера',
+      noPublishedScheduleStep2: 'Обновите страницу, если расписание уже опубликовали',
       sectionHowItWorks: 'Как это работает',
       howOne: '1. «Настройки смен» задают спрос: сколько людей нужно.',
       howTwo: '2. «Сгенерировать» создает черновик смен.',
@@ -251,8 +252,9 @@ export default function ScheduleTab({ language, userRole }) {
       status: 'Status',
       reassign: 'Reassign',
       remove: 'Remove employee',
-      noSchedule: 'Schedule has not been generated yet.',
-      noScheduleHint: 'Choose a period and click Generate draft. If no shifts appear, check shift requirements.',
+      noSchedule: 'Schedule has not been generated yet',
+      noScheduleHint: 'Pick a Mon–Sun week and click Generate draft.',
+      noScheduleRequirements: 'Before generating, set up staffing templates, branch hours, and employee availability.',
       loading: 'Loading...',
       unfilled: 'Unfilled requirements',
       shifts: 'Shifts',
@@ -275,7 +277,10 @@ export default function ScheduleTab({ language, userRole }) {
       schedulePreview: 'Schedule preview',
       chooseEmployee: 'Choose employee',
       noEmployeesForPosition: 'No employees for this position',
-      noPublishedSchedule: 'No published shifts yet.',
+      noPublishedScheduleTitle: 'No published shifts yet',
+      noPublishedScheduleHint: 'When your manager publishes the schedule, your shifts will appear here.',
+      noPublishedScheduleStep1: 'Wait for the manager to publish the schedule',
+      noPublishedScheduleStep2: 'Refresh the page if it was already published',
       sectionHowItWorks: 'How it works',
       howOne: '1. Shift setup defines demand: how many people are needed.',
       howTwo: '2. Generate creates a draft shift schedule.',
@@ -399,7 +404,7 @@ export default function ScheduleTab({ language, userRole }) {
 
     try {
       const publishedSchedule = await publishSchedule(schedule.id);
-      setSchedule(publishedSchedule);
+      setSchedule((prev) => mergePublishedSchedule(prev, publishedSchedule));
       setSuccessMessage(t.publishedDone);
     } catch (error) {
       setErrorMessage(extractApiErrorMessage(error, null, language));
@@ -589,8 +594,12 @@ export default function ScheduleTab({ language, userRole }) {
             <main style={styles.previewArea}>
               {!schedule ? (
                 <div style={styles.emptyHero}>
-                  <h3 style={styles.emptyTitle}>{t.noSchedule}</h3>
-                  <p style={styles.emptyText}>{t.noScheduleHint}</p>
+                  <div style={styles.emptyHeroInner}>
+                    <div style={styles.emptyIcon}>📅</div>
+                    <h3 style={styles.emptyTitle}>{t.noSchedule}</h3>
+                    <p style={styles.emptySubtitle}>{t.noScheduleHint}</p>
+                    <p style={styles.emptyNote}>{t.noScheduleRequirements}</p>
+                  </div>
                 </div>
               ) : (
                 <>
@@ -753,8 +762,19 @@ export default function ScheduleTab({ language, userRole }) {
 
               {employeeSchedule.length === 0 ? (
                 <div style={styles.emptyHero}>
-                  <h3 style={styles.emptyTitle}>{t.noPublishedSchedule}</h3>
-                  <p style={styles.emptyText}>{t.noScheduleHint}</p>
+                  <div style={styles.emptyHeroInner}>
+                    <div style={styles.emptyIcon}>🕒</div>
+                    <h3 style={styles.emptyTitle}>{t.noPublishedScheduleTitle}</h3>
+                    <p style={styles.emptySubtitle}>{t.noPublishedScheduleHint}</p>
+                    <ul style={styles.emptySteps}>
+                      {[t.noPublishedScheduleStep1, t.noPublishedScheduleStep2].map((step, index) => (
+                        <li key={step} style={styles.emptyStepRow}>
+                          <span style={styles.emptyStepBadge}>{index + 1}</span>
+                          <span style={styles.emptyStepText}>{step}</span>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
                 </div>
               ) : (
                 <div style={styles.employeeTimelineScroll}>
@@ -1302,11 +1322,33 @@ const styles = {
     flexDirection: 'column',
     alignItems: 'center',
     justifyContent: 'center',
-    padding: '40px',
-    textAlign: 'center',
-    background: '#f4faff',
+    padding: '48px 32px',
+    background: 'linear-gradient(180deg, #f8fbff 0%, #f4faff 100%)',
     borderRadius: '22px',
     border: '1px solid rgba(79, 100, 111, 0.12)',
+  },
+
+  emptyHeroInner: {
+    maxWidth: '420px',
+    display: 'flex',
+    flexDirection: 'column',
+    alignItems: 'center',
+    textAlign: 'center',
+    gap: '12px',
+  },
+
+  emptyIcon: {
+    width: '56px',
+    height: '56px',
+    borderRadius: '18px',
+    background: '#ffffff',
+    border: '1px solid rgba(203, 213, 225, 0.9)',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    fontSize: '24px',
+    marginBottom: '4px',
+    boxShadow: '0 8px 20px rgba(0, 38, 66, 0.06)',
   },
 
   emptyTitle: {
@@ -1314,6 +1356,69 @@ const styles = {
     color: '#002642',
     fontSize: '22px',
     fontWeight: '900',
+  },
+
+  emptySubtitle: {
+    margin: 0,
+    color: '#4f646f',
+    fontSize: '15px',
+    fontWeight: '650',
+    lineHeight: 1.5,
+  },
+
+  emptyNote: {
+    margin: '4px 0 0',
+    padding: '12px 14px',
+    borderRadius: '14px',
+    background: '#ffffff',
+    border: '1px solid rgba(203, 213, 225, 0.85)',
+    color: '#64748b',
+    fontSize: '13px',
+    fontWeight: '600',
+    lineHeight: 1.45,
+  },
+
+  emptySteps: {
+    margin: '8px 0 0',
+    padding: '14px 18px',
+    listStyle: 'none',
+    width: '100%',
+    boxSizing: 'border-box',
+    borderRadius: '16px',
+    background: '#ffffff',
+    border: '1px solid rgba(203, 213, 225, 0.85)',
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '10px',
+    textAlign: 'left',
+  },
+
+  emptyStepRow: {
+    display: 'flex',
+    alignItems: 'flex-start',
+    gap: '12px',
+  },
+
+  emptyStepBadge: {
+    flexShrink: 0,
+    width: '24px',
+    height: '24px',
+    borderRadius: '999px',
+    background: '#dee7e7',
+    color: '#002642',
+    fontSize: '12px',
+    fontWeight: '800',
+    display: 'inline-flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+
+  emptyStepText: {
+    color: '#334155',
+    fontSize: '14px',
+    fontWeight: '650',
+    lineHeight: 1.45,
+    textAlign: 'left',
   },
 
   emptyBox: {

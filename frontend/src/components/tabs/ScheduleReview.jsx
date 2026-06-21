@@ -1,5 +1,10 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { generateSchedule, publishSchedule } from '../../services/scheduleService';
+import {
+  defaultSchedulePeriod,
+  generateSchedule,
+  mergePublishedSchedule,
+  publishSchedule,
+} from '../../services/scheduleService';
 import { extractApiErrorMessage } from '../../services/error';
 
 function formatDate(d) {
@@ -11,11 +16,7 @@ function formatDate(d) {
 }
 
 function defaultPeriod() {
-  const today = new Date();
-  return {
-    start_date: new Date(today.getFullYear(), today.getMonth(), 1).toISOString().slice(0, 10),
-    end_date: new Date(today.getFullYear(), today.getMonth() + 1, 0).toISOString().slice(0, 10),
-  };
+  return defaultSchedulePeriod();
 }
 
 function normalizeArray(value) {
@@ -112,7 +113,7 @@ export default function ScheduleReview({ language }) {
       published: 'Опубликовано',
       unfilled: 'Не хватает людей',
       noSchedule: 'Расписание ещё не сгенерировано.',
-      noScheduleHint: 'Выберите период и нажмите «Сгенерировать». Если смены не появятся — проверьте требования к сменам и сотрудников.',
+      noScheduleHint: 'Выберите неделю (Пн–Вс) и нажмите «Сгенерировать». Алгоритму нужны шаблоны потребности, часы филиала и availability сотрудников.',
       generating: 'Генерация...',
       loading: 'Загрузка...',
       generated: 'Черновик расписания создан.',
@@ -135,7 +136,7 @@ export default function ScheduleReview({ language }) {
       published: 'Published',
       unfilled: 'Missing staff',
       noSchedule: 'Schedule has not been generated yet.',
-      noScheduleHint: 'Pick a period and click Generate. If no shifts appear, check shift requirements and employees.',
+      noScheduleHint: 'Pick a Mon–Sun week and click Generate. The solver needs staffing templates, branch hours, and employee availability.',
       generating: 'Generating...',
       loading: 'Loading...',
       generated: 'Draft schedule generated.',
@@ -222,7 +223,7 @@ export default function ScheduleReview({ language }) {
 
     try {
       const published = await publishSchedule(schedule.id);
-      setSchedule(published);
+      setSchedule((prev) => mergePublishedSchedule(prev, published));
       setSuccess(t.publishedDone);
     } catch (e) {
       setError(extractApiErrorMessage(e, null, language));
