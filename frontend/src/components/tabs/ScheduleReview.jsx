@@ -96,6 +96,17 @@ function isMissingCompanyError(error) {
   );
 }
 
+function countVisibleShifts(scheduleRead, realEmployeeIds) {
+  return normalizeArray(scheduleRead?.shifts).filter((shift) => (
+    realEmployeeIds.has(String(shift.employee_id))
+  )).length;
+}
+
+function hasStaffingRequirements(scheduleRead) {
+  return normalizeArray(scheduleRead?.shifts).length > 0
+    || normalizeArray(scheduleRead?.unfilled_requirements).length > 0;
+}
+
 export default function ScheduleReview({ language }) {
   const { user, isLoading: isAuthLoading } = useAuth();
   const hasCompany = Boolean(user?.company);
@@ -129,6 +140,7 @@ export default function ScheduleReview({ language }) {
       unfilled: 'Не хватает людей',
       noSchedule: 'Расписание ещё не сгенерировано.',
       noScheduleHint: 'Алгоритму нужны шаблоны потребности, часы филиала и availability сотрудников.',
+      noEmployeesAndRequirements: 'Нет сотрудников и требований для генерации расписания.',
       generating: 'Генерация...',
       loading: 'Загрузка...',
       generated: 'Черновик расписания создан.',
@@ -152,6 +164,7 @@ export default function ScheduleReview({ language }) {
       unfilled: 'Missing staff',
       noSchedule: 'Schedule has not been generated yet.',
       noScheduleHint: 'The solver needs staffing templates, branch hours, and employee availability.',
+      noEmployeesAndRequirements: 'No employees or staffing requirements to generate a schedule.',
       generating: 'Generating...',
       loading: 'Loading...',
       generated: 'Draft schedule generated.',
@@ -222,15 +235,24 @@ export default function ScheduleReview({ language }) {
 
     try {
       const generated = await generateSchedule(period);
+      const visibleShiftCount = countVisibleShifts(generated, realEmployeeIds);
+
       setSchedule(generated);
       setSelectedDateIndex(0);
-      setSuccess(t.generated);
+
+      if (visibleShiftCount > 0) {
+        setSuccess(t.generated);
+      } else if (realEmployeeIds.size === 0 && !hasStaffingRequirements(generated)) {
+        setError(t.noEmployeesAndRequirements);
+      } else {
+        setError(t.noScheduleHint);
+      }
     } catch (e) {
       setError(extractApiErrorMessage(e, t.noScheduleHint, language));
     } finally {
       setIsSubmitting(false);
     }
-  }, [language, t.generated, t.noScheduleHint]);
+  }, [language, realEmployeeIds, t.generated, t.noEmployeesAndRequirements, t.noScheduleHint]);
 
   const loadLatestSchedule = useCallback(async () => {
     for (const status of ['draft', 'published']) {
@@ -429,7 +451,7 @@ export default function ScheduleReview({ language }) {
           {schedule?.id && scheduleStatus === 'draft' && (
             <button
               onClick={handlePublish}
-              disabled={isSubmitting}
+              disabled={isSubmitting || !hasShifts}
               style={{
                 height: 40,
                 padding: '0 16px',
@@ -437,9 +459,9 @@ export default function ScheduleReview({ language }) {
                 background: '#d7adcf',
                 color: '#002642',
                 border: 'none',
-                cursor: isSubmitting ? 'default' : 'pointer',
+                cursor: isSubmitting || !hasShifts ? 'default' : 'pointer',
                 fontWeight: 700,
-                opacity: isSubmitting ? 0.65 : 1,
+                opacity: isSubmitting || !hasShifts ? 0.65 : 1,
               }}
             >
               {t.publish}
