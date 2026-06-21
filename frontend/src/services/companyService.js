@@ -25,6 +25,11 @@ export async function previewInviteCode(inviteCode) {
   return response.data;
 }
 
+export async function regenerateInviteCode() {
+  const response = await api.post('/companies/me/invite-code/regenerate');
+  return response.data;
+}
+
 export async function joinCompany(payload) {
   const response = await api.post('/companies/join', payload);
   return response.data;

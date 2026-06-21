@@ -1,5 +1,5 @@
 // frontend/src/components/tabs/CompanyTab.jsx
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { useAuth } from '../../context/useAuth';
 import {
   createBranch,
@@ -7,6 +7,7 @@ import {
   joinCompany,
   listBranches,
   previewInviteCode,
+  regenerateInviteCode,
 } from '../../services/companyService';
 import { extractApiErrorMessage } from '../../services/error';
 
@@ -70,45 +71,6 @@ function getInviteCode(company) {
   return company?.invite_code || company?.inviteCode;
 }
 
-function randomInviteCode(length = 8) {
-  const alphabet = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
-  return Array.from({ length }, () => alphabet[Math.floor(Math.random() * alphabet.length)]).join('');
-}
-
-function computeNextRotationDate(start, frequency) {
-  const date = new Date(start);
-  switch (frequency) {
-    case 'daily':
-      date.setDate(date.getDate() + 1);
-      break;
-    case 'monthly':
-      date.setMonth(date.getMonth() + 1);
-      break;
-    case 'weekly':
-    default:
-      date.setDate(date.getDate() + 7);
-      break;
-  }
-  return date;
-}
-
-function loadInviteStorage(companyId) {
-  try {
-    const raw = localStorage.getItem(`company_invite_data_${companyId}`);
-    return raw ? JSON.parse(raw) : {};
-  } catch {
-    return {};
-  }
-}
-
-function saveInviteStorage(companyId, payload) {
-  try {
-    localStorage.setItem(`company_invite_data_${companyId}`, JSON.stringify(payload));
-  } catch {
-    // ignore localStorage failures
-  }
-}
-
 export default function CompanyTab({ language, userRole, user }) {
   const { refreshUser } = useAuth();
 
@@ -116,12 +78,6 @@ export default function CompanyTab({ language, userRole, user }) {
   const [invitePreview, setInvitePreview] = useState(null);
   const [selectedJoinBranchId, setSelectedJoinBranchId] = useState('');
   const [selectedJoinPositionId, setSelectedJoinPositionId] = useState('');
-
-  const [managerInviteCode, setManagerInviteCode] = useState('');
-  const [rotationEnabled, setRotationEnabled] = useState(false);
-  const [rotationFrequency, setRotationFrequency] = useState('weekly');
-  const [nextRotationAt, setNextRotationAt] = useState(null);
-  const [lastRegeneratedAt, setLastRegeneratedAt] = useState(null);
 
   const [branches, setBranches] = useState([]);
   const [branchName, setBranchName] = useState('');
@@ -170,8 +126,9 @@ export default function CompanyTab({ language, userRole, user }) {
       companyCreated: 'Компания создана.',
       companyJoined: 'Компания успешно привязана.',
       previewHint: 'Проверьте инвайт-код, затем нажмите "Присоединиться".',
+      copy: 'Копировать',
       copied: 'Код скопирован.',
-      noBranches: 'В компании пока нет филиалов. Менеджеру нужно создать филиал.',
+      noBranches: 'В компании пока нет филиалов.',
       noPositions: 'В компании пока нет позиций. Менеджеру нужно создать позицию во вкладке «Сотрудники».',
       createBranch: 'Создать филиал',
       branchName: 'Название филиала',
@@ -225,8 +182,9 @@ export default function CompanyTab({ language, userRole, user }) {
       companyCreated: 'Company created.',
       companyJoined: 'Company joined successfully.',
       previewHint: 'Preview the invite code first, then click "Join company".',
+      copy: 'Copy',
       copied: 'Code copied.',
-      noBranches: 'This company has no branches yet. A manager needs to create a branch.',
+      noBranches: 'This company has no branches yet.',
       noPositions: 'This company has no positions yet. A manager needs to create a position in the Employees tab.',
       createBranch: 'Create branch',
       branchName: 'Branch name',
@@ -254,10 +212,7 @@ export default function CompanyTab({ language, userRole, user }) {
   const currentPosition = user?.position || null;
   const currentCompanyId = getCompanyId(currentCompany);
 
-  const currentInviteCode = getInviteCode(currentCompany);
-  // Always show/copy the real invite code from the backend so employees can join.
-  // The local rotation feature is disabled until the backend exposes a rotation endpoint.
-  const effectiveInviteCode = currentInviteCode || managerInviteCode;
+  const effectiveInviteCode = getInviteCode(currentCompany);
 
   const previewCompany = getCompanyFromPreview(invitePreview);
   const previewCompanyName = previewCompany?.name || t.empty;
@@ -284,41 +239,6 @@ export default function CompanyTab({ language, userRole, user }) {
       setBranches([]);
     }
   };
-
-  useEffect(() => {
-    if (!currentCompanyId) {
-      setManagerInviteCode('');
-      setRotationEnabled(false);
-      setRotationFrequency('weekly');
-      setNextRotationAt(null);
-      setLastRegeneratedAt(null);
-      return;
-    }
-
-    const stored = loadInviteStorage(currentCompanyId);
-    const initialCode = stored.inviteCode || currentInviteCode || randomInviteCode();
-    const initialFrequency = stored.rotationFrequency || 'weekly';
-    const initialNextRotation = stored.nextRotationAt
-      ? new Date(stored.nextRotationAt)
-      : computeNextRotationDate(new Date(), initialFrequency);
-
-    setManagerInviteCode(initialCode);
-    setRotationEnabled(Boolean(stored.rotationEnabled));
-    setRotationFrequency(initialFrequency);
-    setNextRotationAt(initialNextRotation);
-    setLastRegeneratedAt(stored.lastRegeneratedAt ? new Date(stored.lastRegeneratedAt) : null);
-
-    saveInviteStorage(currentCompanyId, {
-      inviteCode: initialCode,
-      rotationEnabled: Boolean(stored.rotationEnabled),
-      rotationFrequency: initialFrequency,
-      nextRotationAt: initialNextRotation.toISOString(),
-      lastRegeneratedAt: stored.lastRegeneratedAt || null,
-    });
-  }, [currentCompanyId, currentInviteCode]);
-
-  // Invite-code rotation is disabled for now (no backend endpoint yet), so it must
-  // never change the real invite code. Auto-rotation is intentionally a no-op.
 
   const handlePreview = async () => {
     if (!inviteCode.trim()) {
@@ -437,62 +357,22 @@ export default function CompanyTab({ language, userRole, user }) {
     }
   };
 
-  const persistInviteState = (values) => {
-    if (!currentCompanyId) return;
-    const payload = {
-      inviteCode: values.inviteCode || effectiveInviteCode || randomInviteCode(),
-      rotationEnabled: values.rotationEnabled ?? rotationEnabled,
-      rotationFrequency: values.rotationFrequency || rotationFrequency,
-      nextRotationAt: values.nextRotationAt || nextRotationAt?.toISOString() || computeNextRotationDate(new Date(), values.rotationFrequency || rotationFrequency).toISOString(),
-      lastRegeneratedAt: values.lastRegeneratedAt || lastRegeneratedAt?.toISOString() || null,
-    };
-    saveInviteStorage(currentCompanyId, payload);
-  };
-
-  const handleRegenerateInviteCode = () => {
+  const handleRegenerateInviteCode = async () => {
     if (!currentCompanyId) return;
     if (!window.confirm(t.confirmRegenerate)) return;
 
-    const now = new Date();
-    const next = computeNextRotationDate(now, rotationFrequency);
-    const updatedCode = randomInviteCode();
+    clearMessages();
+    setIsSubmitting(true);
 
-    setManagerInviteCode(updatedCode);
-    setLastRegeneratedAt(now);
-    setNextRotationAt(next);
-    persistInviteState({
-      inviteCode: updatedCode,
-      rotationEnabled,
-      rotationFrequency,
-      nextRotationAt: next.toISOString(),
-      lastRegeneratedAt: now.toISOString(),
-    });
-    setSuccessMessage(t.inviteRegenerated);
-  };
-
-  const handleToggleRotation = () => {
-    if (!currentCompanyId) return;
-    const enabled = !rotationEnabled;
-    const next = enabled ? computeNextRotationDate(new Date(), rotationFrequency) : null;
-
-    setRotationEnabled(enabled);
-    setNextRotationAt(next);
-    persistInviteState({
-      rotationEnabled: enabled,
-      nextRotationAt: next?.toISOString() || null,
-    });
-  };
-
-  const handleRotationFrequencyChange = (value) => {
-    if (!currentCompanyId) return;
-    const next = computeNextRotationDate(new Date(), value);
-
-    setRotationFrequency(value);
-    setNextRotationAt(next);
-    persistInviteState({
-      rotationFrequency: value,
-      nextRotationAt: next.toISOString(),
-    });
+    try {
+      await regenerateInviteCode();
+      await refreshUser();
+      setSuccessMessage(t.inviteRegenerated);
+    } catch (error) {
+      setErrorMessage(extractApiErrorMessage(error, null, language));
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   return (
@@ -517,65 +397,31 @@ export default function CompanyTab({ language, userRole, user }) {
                 <strong style={styles.companyTitle}>{currentCompany.name || t.empty}</strong>
 
                 {isManager && effectiveInviteCode && (
-                  <>
-                    <div style={styles.inviteBlock}>
-                      <div style={styles.inviteCodeBox}>
-                        <div>
-                          <span style={styles.inviteLabel}>{t.inviteCode}</span>
-                          <strong style={styles.inviteValue}>{effectiveInviteCode}</strong>
-                        </div>
-                        <button type="button" onClick={copyInviteCode} style={styles.copyButton}>
-                          Copy
-                        </button>
+                  <div style={styles.inviteBlock}>
+                    <div style={styles.inviteCodeBox}>
+                      <div>
+                        <span style={styles.inviteLabel}>{t.inviteCode}</span>
+                        <strong style={styles.inviteValue}>{effectiveInviteCode}</strong>
                       </div>
-                    </div>
-
-                    <div style={styles.rotationCard}>
-                      <div style={styles.rotationRow}>
-                        <div>
-                          <span style={styles.infoLabel}>{t.rotationStatus}</span>
-                          <strong style={styles.infoValue}>{t.disabled}</strong>
-                        </div>
+                      <div style={styles.inviteActions}>
+                        <button type="button" onClick={copyInviteCode} style={styles.copyButton}>
+                          {t.copy}
+                        </button>
                         <button
                           type="button"
                           onClick={handleRegenerateInviteCode}
-                          style={{ ...styles.secondaryButton, opacity: 0.5, cursor: 'not-allowed' }}
-                          disabled
+                          style={
+                            isSubmitting
+                              ? { ...styles.secondaryButton, opacity: 0.5, cursor: 'not-allowed' }
+                              : styles.secondaryButton
+                          }
+                          disabled={isSubmitting}
                         >
                           {t.regenerateInvite}
                         </button>
                       </div>
-
-                      <span style={styles.rotationHint}>{t.rotationComingSoon}</span>
-
-                      <div style={styles.rotationForm}>
-                        <label style={{ ...styles.toggleLabel, opacity: 0.5 }}>
-                          <input
-                            type="checkbox"
-                            checked={false}
-                            onChange={handleToggleRotation}
-                            style={styles.checkbox}
-                            disabled
-                          />
-                          <span>{t.rotationEnabled}</span>
-                        </label>
-
-                        <div style={{ ...styles.row, opacity: 0.5 }}>
-                          <span style={styles.label}>{t.rotationFrequency}</span>
-                          <select
-                            value={rotationFrequency}
-                            onChange={(event) => handleRotationFrequencyChange(event.target.value)}
-                            style={styles.select}
-                            disabled
-                          >
-                            <option value="daily">{t.daily}</option>
-                            <option value="weekly">{t.weekly}</option>
-                            <option value="monthly">{t.monthly}</option>
-                          </select>
-                        </div>
-                      </div>
                     </div>
-                  </>
+                  </div>
                 )}
 
                 {isEmployee && (
@@ -913,6 +759,13 @@ const styles = {
     justifyContent: 'space-between',
     alignItems: 'center',
     gap: '18px',
+    flexWrap: 'wrap',
+  },
+
+  inviteActions: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '10px',
     flexWrap: 'wrap',
   },
 

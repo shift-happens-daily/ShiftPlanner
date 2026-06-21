@@ -40,6 +40,18 @@ def link_user_to_my_company(
     )
 
 
+@router.post(
+    "/me/invite-code/regenerate",
+    response_model=CompanyRead,
+    responses={**UNAUTHORIZED_RESPONSE, **FORBIDDEN_RESPONSE},
+)
+def regenerate_my_company_invite_code(
+    current_user: UserRead = Depends(require_role("manager")),
+    db: Session = Depends(get_db),
+) -> CompanyRead:
+    return company_service.regenerate_my_company_invite_code(db, current_user)
+
+
 @router.get(
     "/",
     response_model=list[CompanySummaryRead],
