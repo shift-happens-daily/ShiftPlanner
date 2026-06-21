@@ -204,14 +204,15 @@ export default function EmployeesTab({ language, userRole, user }) {
       allPositions: 'Все позиции',
       searchEmployee: 'Поиск сотрудника...',
       linkUserTitle: 'Привязать сотрудника по ID',
-      linkUserHint: 'Введите User ID сотрудника, чтобы привязать его к компании',
+      linkUserHint: 'Введите User ID сотрудника (16 символов), чтобы привязать его к компании',
       userIdLabel: 'User ID',
+      userIdPlaceholder: 'Например: A1B2C3D4E5F6G7H8',
       noBranchSelected: 'Без филиала',
       noPositionSelected: 'Без позиции',
       linkUserButton: 'Привязать',
       linkSuccess: 'Пользователь привязан к компании!',
       linkError: 'Ошибка привязки',
-      userIdRequired: 'Введите ID пользователя',
+      userIdRequired: 'Введите 16-значный User ID',
       noCompanyForLink: 'У вас нет компании',
       noCompanyForPosition: 'Сначала создайте компанию во вкладке «Компания».',
       noPositionsHint: 'Сначала создайте позицию, потом добавьте сотрудника.',
@@ -283,14 +284,15 @@ export default function EmployeesTab({ language, userRole, user }) {
       allPositions: 'All positions',
       searchEmployee: 'Search employee...',
       linkUserTitle: 'Link employee by ID',
-      linkUserHint: 'Enter the employee\'s User ID to link them to the company',
+      linkUserHint: 'Enter the employee\'s 16-character User ID to link them to the company',
       userIdLabel: 'User ID',
+      userIdPlaceholder: 'e.g. A1B2C3D4E5F6G7H8',
       noBranchSelected: 'No branch',
       noPositionSelected: 'No position',
       linkUserButton: 'Link',
       linkSuccess: 'User linked to company!',
       linkError: 'Failed to link user',
-      userIdRequired: 'Enter user ID',
+      userIdRequired: 'Enter a 16-character User ID',
       noCompanyForLink: 'You don\'t have a company',
       noCompanyForPosition: 'Create a company in the Company tab first.',
       noPositionsHint: 'Create a position first, then add an employee.',
@@ -767,7 +769,9 @@ export default function EmployeesTab({ language, userRole, user }) {
 
   // ===== ПРИВЯЗКА ПО USER ID =====
   const handleLinkUser = async () => {
-    if (!linkUserId.trim()) {
+    const publicId = linkUserId.trim().toUpperCase();
+
+    if (publicId.length !== 16) {
       setErrorMessage(t.userIdRequired);
       return;
     }
@@ -782,10 +786,10 @@ export default function EmployeesTab({ language, userRole, user }) {
     setIsSubmitting(true);
 
     try {
-      await linkUserToCompany(companyId, {
-        user_id: Number(linkUserId),
-        branch_id: linkBranchId || null,
-        position_id: linkPositionId || null,
+      await linkUserToCompany({
+        user_public_id: publicId,
+        branch_id: linkBranchId ? Number(linkBranchId) : null,
+        position_id: linkPositionId ? Number(linkPositionId) : null,
       });
 
       setLinkUserId('');
@@ -794,7 +798,7 @@ export default function EmployeesTab({ language, userRole, user }) {
       setSuccessMessage(t.linkSuccess);
       await reloadEmployees();
     } catch (error) {
-      setErrorMessage(error.message || t.linkError);
+      setErrorMessage(getFriendlyError(error, t.linkError));
     } finally {
       setIsSubmitting(false);
     }
@@ -880,10 +884,11 @@ export default function EmployeesTab({ language, userRole, user }) {
               <div style={styles.stack}>
                 <label style={styles.label}>{t.userIdLabel}</label>
                 <input
-                  type="number"
+                  type="text"
                   value={linkUserId}
-                  onChange={(e) => setLinkUserId(e.target.value)}
-                  placeholder="Например: 123"
+                  onChange={(e) => setLinkUserId(e.target.value.toUpperCase())}
+                  placeholder={t.userIdPlaceholder}
+                  maxLength={16}
                   style={styles.input}
                 />
 

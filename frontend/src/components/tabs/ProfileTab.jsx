@@ -69,7 +69,7 @@ export default function ProfileTab({ language, user }) {
     },
     {
       label: "User ID",
-      value: user?.id || user?.user_id || '-',
+      value: user?.publicId || user?.public_id || '-',
     },
   ];
 
