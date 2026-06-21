@@ -504,12 +504,13 @@ def test_manager_gets_own_company_with_address(client: TestClient) -> None:
 
     response = client.get("/companies/me", headers=manager_headers)
     assert response.status_code == 200, response.text
-    assert response.json() == {
-        "id": 1,
-        "name": "Coffee Bar Barnaul",
-        "address": "Barnaul, Lenin Street",
-        "invite_code": SEED_INVITE_CODE,
-    }
+    response_json = response.json()
+    assert response_json["id"] == 1
+    assert response_json["name"] == "Coffee Bar Barnaul"
+    assert response_json["address"] == "Barnaul, Lenin Street"
+    assert response_json["invite_code"] == SEED_INVITE_CODE
+    assert response_json["invite_code_generated_at"] is not None
+    assert response_json["invite_code_expires_at"] is None
 
 
 def test_employee_and_unauthenticated_users_cannot_get_manager_company(client: TestClient) -> None:
@@ -560,6 +561,98 @@ def test_invite_code_collision_retries(client: TestClient, monkeypatch: pytest.M
     created = client.post("/companies/", headers=manager_headers, json={"name": "Collision Retry Company"})
     assert created.status_code == 201, created.text
     assert created.json()["invite_code"] == generated_code
+
+
+def test_manager_regenerates_invite_code_and_new_code_joins(client: TestClient) -> None:
+    manager_headers = login_json(client, "manager@example.com", "manager123")
+    before = client.get("/companies/me", headers=manager_headers)
+    assert before.status_code == 200, before.text
+    old_code = before.json()["invite_code"]
+
+    with psycopg.connect(PSYCOPG_DSN) as connection:
+        with connection.cursor() as cursor:
+            cursor.execute(
+                "UPDATE companies SET invite_code_generated_at = TIMESTAMP '2020-01-01 00:00:00' WHERE id = 1"
+            )
+
+    regenerated = client.post("/companies/me/invite-code/regenerate", headers=manager_headers)
+    assert regenerated.status_code == 200, regenerated.text
+    regenerated_json = regenerated.json()
+    new_code = regenerated_json["invite_code"]
+    assert len(new_code) == 16
+    assert new_code.isascii() and new_code.isalnum() and new_code == new_code.upper()
+    assert new_code != old_code
+    assert not regenerated_json["invite_code_generated_at"].startswith("2020-01-01")
+    assert regenerated_json["invite_code_expires_at"] is None
+
+    registered = client.post(
+        "/auth/register",
+        json={
+            "full_name": "Regenerated Invite User",
+            "email": "regenerated-invite@example.com",
+            "password": "employee456",
+            "role": "employee",
+        },
+    )
+    assert registered.status_code == 201, registered.text
+    employee_headers = login_json(client, "regenerated-invite@example.com", "employee456")
+
+    old_join = client.post(
+        "/companies/join",
+        headers=employee_headers,
+        json={"invite_code": old_code, "branch_id": 1, "position_id": 1},
+    )
+    assert old_join.status_code == 404
+
+    new_join = client.post(
+        "/companies/join",
+        headers=employee_headers,
+        json={"invite_code": new_code, "branch_id": 1, "position_id": 1},
+    )
+    assert new_join.status_code == 200, new_join.text
+
+
+def test_invite_code_regeneration_access_and_collision(client: TestClient, monkeypatch: pytest.MonkeyPatch) -> None:
+    replacement_code = "R3G5N7C9D1F2H4J6"
+    generated_codes = iter([SEED_INVITE_CODE, replacement_code])
+    monkeypatch.setattr(company_repository, "_generate_invite_code", lambda: next(generated_codes))
+    manager_headers = login_json(client, "manager@example.com", "manager123")
+
+    regenerated = client.post("/companies/me/invite-code/regenerate", headers=manager_headers)
+    assert regenerated.status_code == 200, regenerated.text
+    assert regenerated.json()["invite_code"] == replacement_code
+
+    employee_headers = login_json(client, "ivan@example.com", "employee123")
+    assert client.post("/companies/me/invite-code/regenerate", headers=employee_headers).status_code == 403
+    assert client.post("/companies/me/invite-code/regenerate").status_code == 401
+
+
+def test_expired_invite_code_cannot_be_used_to_join(client: TestClient) -> None:
+    registered = client.post(
+        "/auth/register",
+        json={
+            "full_name": "Expired Invite User",
+            "email": "expired-invite@example.com",
+            "password": "employee456",
+            "role": "employee",
+        },
+    )
+    assert registered.status_code == 201, registered.text
+    employee_headers = login_json(client, "expired-invite@example.com", "employee456")
+
+    with psycopg.connect(PSYCOPG_DSN) as connection:
+        with connection.cursor() as cursor:
+            cursor.execute(
+                "UPDATE companies SET invite_code_expires_at = CURRENT_TIMESTAMP - INTERVAL '1 minute' WHERE id = 1"
+            )
+
+    joined = client.post(
+        "/companies/join",
+        headers=employee_headers,
+        json={"invite_code": SEED_INVITE_CODE, "branch_id": 1, "position_id": 1},
+    )
+    assert joined.status_code == 400
+    assert joined.json()["detail"] == "Company invite code has expired."
 
 
 def test_invalid_invite_code_formats_are_rejected(client: TestClient) -> None:

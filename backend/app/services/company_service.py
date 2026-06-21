@@ -1,3 +1,5 @@
+from datetime import UTC, datetime
+
 from fastapi import HTTPException, status
 from sqlalchemy.orm import Session
 
@@ -50,6 +52,8 @@ def _build_company_read(company) -> CompanyRead:
         name=company.name,
         address=company.address,
         invite_code=company.invite_code or "",
+        invite_code_generated_at=company.invite_code_generated_at,
+        invite_code_expires_at=company.invite_code_expires_at,
     )
 
 
@@ -102,6 +106,19 @@ def update_my_company(db: Session, payload: CompanyUpdate, current_user: UserRea
         address=payload.address if "address" in payload.model_fields_set else company.address,
     )
 
+    return _build_company_read(updated_company)
+
+
+def regenerate_my_company_invite_code(db: Session, current_user: UserRead) -> CompanyRead:
+    company_id = _manager_company_id(current_user)
+    company = company_repository.get_company_by_id(db, company_id)
+    if company is None or company.manager_user_id != current_user.id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Manager is not linked to this company.",
+        )
+
+    updated_company = company_repository.regenerate_invite_code(db, company)
     return _build_company_read(updated_company)
 
 
@@ -388,6 +405,7 @@ def join_company_by_invite(
             detail="Company invite code not found.",
         )
 
+
     if payload.branch_id is not None:
         branch = company_repository.get_branch_by_id(db, payload.branch_id)
         if branch is None or branch.company_id != company.id:
@@ -395,6 +413,38 @@ def join_company_by_invite(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Branch does not belong to company.",
             )
+
+    if company.invite_code_expires_at is not None:
+        expires_at = company.invite_code_expires_at
+        if expires_at.tzinfo is None:
+            expires_at = expires_at.replace(tzinfo=UTC)
+        if expires_at <= datetime.now(UTC):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Company invite code has expired.",
+            )
+
+    if payload.branch_id is None:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Branch is required.",
+        )
+
+    branch = company_repository.get_branch_by_id(db, payload.branch_id)
+
+    if branch is None or branch.company_id != company.id:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Branch does not belong to company.",
+        )
+
+    if payload.position_id is None:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Position is required.",
+        )
+
+    position = position_repository.get_position_by_id(db, payload.position_id)
 
     if payload.position_id is not None:
         position = position_repository.get_position_by_id(db, payload.position_id)

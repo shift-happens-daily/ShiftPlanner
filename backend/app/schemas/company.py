@@ -1,4 +1,5 @@
 import re
+from datetime import datetime
 
 from pydantic import BaseModel, Field, field_validator
 
@@ -60,6 +61,8 @@ class CompanySummaryRead(BaseModel):
 class CompanyRead(CompanySummaryRead):
     address: str | None = None
     invite_code: str
+    invite_code_generated_at: datetime
+    invite_code_expires_at: datetime | None = None
 
 
 class BranchRead(BaseModel):
