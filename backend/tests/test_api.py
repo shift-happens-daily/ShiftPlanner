@@ -1544,6 +1544,141 @@ def test_bulk_requirements_creation_and_permissions(client: TestClient) -> None:
     assert forbidden.status_code == 403
 
 
+def test_manager_publishes_own_draft_and_employee_visibility_changes(client: TestClient) -> None:
+    manager_headers = login_json(client, "manager@example.com", "manager123")
+    employee_headers = login_json(client, "ivan@example.com", "employee123")
+
+    draft_schedule = client.get("/schedule/my", headers=employee_headers)
+    assert draft_schedule.status_code == 200, draft_schedule.text
+    assert draft_schedule.json() == []
+
+    assert client.post("/schedule/1/publish", headers=employee_headers).status_code == 403
+    assert client.post("/schedule/1/publish").status_code == 401
+
+    published = client.post("/schedule/1/publish", headers=manager_headers)
+    assert published.status_code == 200, published.text
+    assert published.json()["status"] == "published"
+
+    visible_schedule = client.get("/schedule/my", headers=employee_headers)
+    assert visible_schedule.status_code == 200, visible_schedule.text
+    assert len(visible_schedule.json()) == 1
+    assert visible_schedule.json()[0]["id"] == 1
+
+    already_published = client.post("/schedule/1/publish", headers=manager_headers)
+    assert already_published.status_code == 400
+
+
+def test_manager_generation_is_company_scoped_and_publishable(client: TestClient) -> None:
+    seed_second_company_scope_data()
+    with psycopg.connect(PSYCOPG_DSN) as connection:
+        with connection.cursor() as cursor:
+            cursor.execute("UPDATE employees SET position_id = 1 WHERE id = 1")
+            cursor.execute("SELECT id FROM companies WHERE invite_code = %s", (SECOND_COMPANY_INVITE_CODE,))
+            other_company_id = cursor.fetchone()[0]
+            cursor.execute("SELECT id FROM branches WHERE company_id = %s", (other_company_id,))
+            other_branch_id = cursor.fetchone()[0]
+            cursor.execute("SELECT id FROM positions WHERE company_id = %s", (other_company_id,))
+            other_position_id = cursor.fetchone()[0]
+            cursor.execute(
+                """
+                INSERT INTO shift_requirements (
+                    company_id, branch_id, position_id, shift_date,
+                    start_time, end_time, required_employees
+                )
+                VALUES (%s, %s, %s, '2026-06-15', '09:00', '17:00', 1)
+                """,
+                (other_company_id, other_branch_id, other_position_id),
+            )
+
+    manager_headers = login_json(client, "manager@example.com", "manager123")
+    employee_headers = login_json(client, "ivan@example.com", "employee123")
+    generated = client.post(
+        "/schedule/generate",
+        headers=manager_headers,
+        json={"start_date": "2026-06-15", "end_date": "2026-06-15"},
+    )
+    assert generated.status_code == 200, generated.text
+    generated_json = generated.json()
+    schedule_id = generated_json["id"]
+    assert generated_json["status"] == "draft"
+    assert all(shift["position_id"] != other_position_id for shift in generated_json["shifts"])
+    assert all(item["position_id"] != other_position_id for item in generated_json["unfilled_requirements"])
+
+    with psycopg.connect(PSYCOPG_DSN) as connection:
+        with connection.cursor() as cursor:
+            cursor.execute("SELECT company_id, status FROM schedules WHERE id = %s", (schedule_id,))
+            assert cursor.fetchone() == (1, "draft")
+            cursor.execute("SELECT DISTINCT company_id FROM shifts WHERE schedule_id = %s", (schedule_id,))
+            assert cursor.fetchall() == [(1,)]
+
+    hidden = client.get("/schedule/my", headers=employee_headers)
+    assert hidden.status_code == 200, hidden.text
+    assert hidden.json() == []
+
+    published = client.post(f"/schedule/{schedule_id}/publish", headers=manager_headers)
+    assert published.status_code == 200, published.text
+    visible = client.get("/schedule/my", headers=employee_headers)
+    assert visible.status_code == 200, visible.text
+    assert len(visible.json()) == 1
+
+
+def test_manager_without_company_cannot_generate_schedule(client: TestClient) -> None:
+    registered = client.post(
+        "/auth/register",
+        json={
+            "full_name": "Generation Manager Without Company",
+            "email": "generate-no-company@example.com",
+            "password": "manager456",
+            "role": "manager",
+        },
+    )
+    assert registered.status_code == 201, registered.text
+    headers = login_json(client, "generate-no-company@example.com", "manager456")
+
+    generated = client.post("/schedule/generate", headers=headers, json={})
+    assert generated.status_code == 403
+
+
+def test_manager_cannot_publish_another_company_schedule(client: TestClient) -> None:
+    seed_second_company_scope_data()
+    manager_headers = login_json(client, "manager@example.com", "manager123")
+
+    with psycopg.connect(PSYCOPG_DSN) as connection:
+        with connection.cursor() as cursor:
+            cursor.execute("SELECT id FROM companies WHERE invite_code = %s", (SECOND_COMPANY_INVITE_CODE,))
+            other_company_id = cursor.fetchone()[0]
+            cursor.execute(
+                """
+                INSERT INTO schedules (company_id, start_date, end_date, status)
+                VALUES (%s, '2026-08-01', '2026-08-07', 'draft')
+                RETURNING id
+                """,
+                (other_company_id,),
+            )
+            other_schedule_id = cursor.fetchone()[0]
+
+    forbidden = client.post(f"/schedule/{other_schedule_id}/publish", headers=manager_headers)
+    assert forbidden.status_code == 403
+
+    registered = client.post(
+        "/auth/register",
+        json={
+            "full_name": "Manager Without Company",
+            "email": "schedule-no-company@example.com",
+            "password": "manager456",
+            "role": "manager",
+        },
+    )
+    assert registered.status_code == 201, registered.text
+    no_company_headers = login_json(client, "schedule-no-company@example.com", "manager456")
+    assert client.post("/schedule/1/publish", headers=no_company_headers).status_code == 403
+
+    with psycopg.connect(PSYCOPG_DSN) as connection:
+        with connection.cursor() as cursor:
+            cursor.execute("SELECT status FROM schedules WHERE id = %s", (other_schedule_id,))
+            assert cursor.fetchone()[0] == "draft"
+
+
 def test_calendar_summary_reports_and_exchange_flow(client: TestClient) -> None:
     with psycopg.connect(PSYCOPG_DSN) as connection:
         with connection.cursor() as cursor:
