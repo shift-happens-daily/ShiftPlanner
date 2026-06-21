@@ -65,7 +65,11 @@ jobs:
 
           command -v git >/dev/null
           command -v docker >/dev/null
+          command -v certbot >/dev/null
           docker compose version >/dev/null
+          test "$(id -u)" -eq 0
+          test -f /etc/letsencrypt/live/shiftplanner.online/fullchain.pem
+          test -f /etc/letsencrypt/live/shiftplanner.online/privkey.pem
 
           if [ ! -d "$DEPLOY_DIR/.git" ]; then
             rm -rf -- "$DEPLOY_DIR"
@@ -82,6 +86,12 @@ jobs:
           git clean -fd
 
           if docker compose -p "$COMPOSE_PROJECT" up -d --build --remove-orphans --wait --wait-timeout 120; then
+            install -D -m 755 \
+              nginx/renewal-hooks/pre/shiftplanner-nginx \
+              /etc/letsencrypt/renewal-hooks/pre/shiftplanner-nginx
+            install -D -m 755 \
+              nginx/renewal-hooks/post/shiftplanner-nginx \
+              /etc/letsencrypt/renewal-hooks/post/shiftplanner-nginx
             docker image prune -f
           else
             git reset --hard "$PREVIOUS_SHA"
