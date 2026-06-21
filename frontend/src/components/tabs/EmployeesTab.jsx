@@ -396,10 +396,6 @@ export default function EmployeesTab({ language, userRole, user }) {
           }
         }
 
-        if (branchesData.length === 0 && currentCompanyId) {
-          branchesData = [{ id: 'mock-branch', name: language === 'ru' ? 'Основной филиал' : 'Main branch' }];
-        }
-
         if (!isMounted) return;
 
         const safeEmployees = normalizeArray(employeesData);

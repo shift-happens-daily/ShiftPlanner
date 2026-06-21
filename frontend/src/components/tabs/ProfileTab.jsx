@@ -53,19 +53,8 @@ export default function ProfileTab({ language, user }) {
   const fullName = user?.fullName || user?.full_name || user?.name || t.empty;
   const email = user?.email || t.empty;
   const employeeId = user?.employeeId || user?.employee_id;
-  const managerCompanyStorageKey = `shiftplanner_manager_company_${user?.email || 'current'}`;
 
-  let savedManagerCompany = null;
-
-  try {
-    const rawCompany = localStorage.getItem(managerCompanyStorageKey);
-    savedManagerCompany = rawCompany ? JSON.parse(rawCompany) : null;
-  } catch {
-    savedManagerCompany = null;
-  }
-
-  const fallbackCompany = user?.role === 'manager' ? savedManagerCompany : null;
-  const companyName = user?.company?.name || fallbackCompany?.name;
+  const companyName = user?.company?.name;
   const branchName = user?.branch?.name;
   const positionName = user?.position?.name;
 

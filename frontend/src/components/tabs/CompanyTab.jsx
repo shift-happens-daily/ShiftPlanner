@@ -75,11 +75,6 @@ function randomInviteCode(length = 8) {
   return Array.from({ length }, () => alphabet[Math.floor(Math.random() * alphabet.length)]).join('');
 }
 
-function toIsoDateTime(value) {
-  const date = new Date(value);
-  return Number.isNaN(date.getTime()) ? '' : date.toLocaleString();
-}
-
 function computeNextRotationDate(start, frequency) {
   const date = new Date(start);
   switch (frequency) {
@@ -148,6 +143,7 @@ export default function CompanyTab({ language, userRole, user }) {
       positions: 'Позиции',
       inviteCode: 'Инвайт-код',
       rotationStatus: 'Статус ротации',
+      rotationComingSoon: 'Ротация кода появится позже. Сейчас код постоянный.',
       rotationEnabled: 'Автоматическое обновление кода',
       rotationFrequency: 'Период ротации',
       nextRotation: 'Следующее обновление',
@@ -202,6 +198,7 @@ export default function CompanyTab({ language, userRole, user }) {
       positions: 'Positions',
       inviteCode: 'Invite code',
       rotationStatus: 'Rotation status',
+      rotationComingSoon: 'Code rotation is coming later. The code stays fixed for now.',
       rotationEnabled: 'Auto rotate invite code',
       rotationFrequency: 'Rotation schedule',
       nextRotation: 'Next rotation',
@@ -258,7 +255,9 @@ export default function CompanyTab({ language, userRole, user }) {
   const currentCompanyId = getCompanyId(currentCompany);
 
   const currentInviteCode = getInviteCode(currentCompany);
-  const effectiveInviteCode = managerInviteCode || currentInviteCode;
+  // Always show/copy the real invite code from the backend so employees can join.
+  // The local rotation feature is disabled until the backend exposes a rotation endpoint.
+  const effectiveInviteCode = currentInviteCode || managerInviteCode;
 
   const previewCompany = getCompanyFromPreview(invitePreview);
   const previewCompanyName = previewCompany?.name || t.empty;
@@ -318,33 +317,8 @@ export default function CompanyTab({ language, userRole, user }) {
     });
   }, [currentCompanyId, currentInviteCode]);
 
-  useEffect(() => {
-    if (!currentCompanyId || !rotationEnabled || !nextRotationAt) {
-      return undefined;
-    }
-
-    const interval = setInterval(() => {
-      const now = new Date();
-      if (new Date(nextRotationAt) <= now) {
-        const next = computeNextRotationDate(now, rotationFrequency);
-        const updatedCode = randomInviteCode();
-
-        setManagerInviteCode(updatedCode);
-        setLastRegeneratedAt(now);
-        setNextRotationAt(next);
-        saveInviteStorage(currentCompanyId, {
-          inviteCode: updatedCode,
-          rotationEnabled,
-          rotationFrequency,
-          nextRotationAt: next.toISOString(),
-          lastRegeneratedAt: now.toISOString(),
-        });
-        setSuccessMessage(t.inviteAutoRotated);
-      }
-    }, 60_000);
-
-    return () => clearInterval(interval);
-  }, [currentCompanyId, rotationEnabled, rotationFrequency, nextRotationAt, t.inviteAutoRotated]);
+  // Invite-code rotation is disabled for now (no backend endpoint yet), so it must
+  // never change the real invite code. Auto-rotation is intentionally a no-op.
 
   const handlePreview = async () => {
     if (!inviteCode.trim()) {
@@ -560,56 +534,44 @@ export default function CompanyTab({ language, userRole, user }) {
                       <div style={styles.rotationRow}>
                         <div>
                           <span style={styles.infoLabel}>{t.rotationStatus}</span>
-                          <strong style={styles.infoValue}>
-                            {rotationEnabled ? t.enabled : t.disabled}
-                          </strong>
+                          <strong style={styles.infoValue}>{t.disabled}</strong>
                         </div>
                         <button
                           type="button"
                           onClick={handleRegenerateInviteCode}
-                          style={styles.secondaryButton}
+                          style={{ ...styles.secondaryButton, opacity: 0.5, cursor: 'not-allowed' }}
+                          disabled
                         >
                           {t.regenerateInvite}
                         </button>
                       </div>
 
+                      <span style={styles.rotationHint}>{t.rotationComingSoon}</span>
+
                       <div style={styles.rotationForm}>
-                        <label style={styles.toggleLabel}>
+                        <label style={{ ...styles.toggleLabel, opacity: 0.5 }}>
                           <input
                             type="checkbox"
-                            checked={rotationEnabled}
+                            checked={false}
                             onChange={handleToggleRotation}
                             style={styles.checkbox}
+                            disabled
                           />
                           <span>{t.rotationEnabled}</span>
                         </label>
 
-                        <div style={styles.row}>
+                        <div style={{ ...styles.row, opacity: 0.5 }}>
                           <span style={styles.label}>{t.rotationFrequency}</span>
                           <select
                             value={rotationFrequency}
                             onChange={(event) => handleRotationFrequencyChange(event.target.value)}
                             style={styles.select}
+                            disabled
                           >
                             <option value="daily">{t.daily}</option>
                             <option value="weekly">{t.weekly}</option>
                             <option value="monthly">{t.monthly}</option>
                           </select>
-                        </div>
-
-                        <div style={styles.metaGrid}>
-                          {nextRotationAt && (
-                            <div style={styles.metaItem}>
-                              <span style={styles.metaLabel}>{t.nextRotation}</span>
-                              <strong style={styles.metaValue}>{toIsoDateTime(nextRotationAt)}</strong>
-                            </div>
-                          )}
-                          {lastRegeneratedAt && (
-                            <div style={styles.metaItem}>
-                              <span style={styles.metaLabel}>{t.lastRegenerated}</span>
-                              <strong style={styles.metaValue}>{toIsoDateTime(lastRegeneratedAt)}</strong>
-                            </div>
-                          )}
                         </div>
                       </div>
                     </div>
@@ -975,6 +937,14 @@ const styles = {
   rotationForm: {
     display: 'grid',
     gap: '16px',
+  },
+
+  rotationHint: {
+    display: 'block',
+    marginTop: '8px',
+    color: '#64748b',
+    fontSize: '13px',
+    fontWeight: '600',
   },
 
   toggleLabel: {

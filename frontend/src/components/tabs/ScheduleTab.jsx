@@ -62,13 +62,6 @@ function formatDisplayDate(value) {
   });
 }
 
-const MOCK_MY_SCHEDULE = [
-  { id: 'mock-1', date: new Date().toISOString(), start_time: '08:00', end_time: '12:00', position_title: 'Cashier', company_name: 'ShiftPlanner Inc.' },
-  { id: 'mock-2', date: new Date().toISOString(), start_time: '13:00', end_time: '17:00', position_title: 'Stock', company_name: 'ShiftPlanner Inc.' },
-  { id: 'mock-3', date: new Date(Date.now() + 24 * 3600 * 1000).toISOString(), start_time: '09:00', end_time: '14:00', position_title: 'Reception', company_name: 'ShiftPlanner Inc.' },
-  { id: 'mock-4', date: new Date(Date.now() + 2 * 24 * 3600 * 1000).toISOString(), start_time: '10:00', end_time: '15:00', position_title: 'Support', company_name: 'ShiftPlanner Inc.' },
-];
-
 function getShiftId(shift) {
   return shift?.id || shift?.shift_id;
 }
@@ -297,7 +290,7 @@ export default function ScheduleTab({ language, userRole }) {
   const unfilledRequirements = useMemo(() => normalizeArray(schedule?.unfilled_requirements), [schedule]);
   const conflicts = useMemo(() => normalizeArray(schedule?.conflicts), [schedule]);
 
-  const employeeSchedule = mySchedule.length ? mySchedule : MOCK_MY_SCHEDULE;
+  const employeeSchedule = mySchedule;
 
   const groupedMySchedule = useMemo(
     () => normalizeArray(employeeSchedule).reduce((acc, shift) => {
