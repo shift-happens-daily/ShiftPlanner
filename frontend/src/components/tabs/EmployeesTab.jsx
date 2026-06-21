@@ -9,6 +9,7 @@ import {
   listEmployeeAbsences,
   listEmployees,
   updateEmployeeAvailability,
+  updateEmployeeBranch,
   updateEmployeePosition,
 } from '../../services/employeeService';
 import { extractApiErrorMessage, localizeBackendMessage } from '../../services/error';
@@ -190,8 +191,8 @@ export default function EmployeesTab({ language, userRole, user }) {
       positionDeleted: 'Позиция удалена локально.',
       employeeCreated: 'Сотрудник создан.',
       availabilitySaved: 'Доступность сохранена.',
-      assignmentsSaved: 'Позиция сотрудника обновлена.',
-      assignmentsError: 'Не удалось обновить позицию сотрудника.',
+      assignmentsSaved: 'Данные сотрудника обновлены.',
+      assignmentsError: 'Не удалось обновить данные сотрудника.',
       branch: 'Филиал',
       selectBranch: 'Выберите филиал',
       assignBranch: 'Назначить филиал',
@@ -271,8 +272,8 @@ export default function EmployeesTab({ language, userRole, user }) {
       positionDeleted: 'Position deleted locally.',
       employeeCreated: 'Employee created.',
       availabilitySaved: 'Availability saved.',
-      assignmentsSaved: 'Employee position updated.',
-      assignmentsError: 'Failed to update employee position.',
+      assignmentsSaved: 'Employee details updated.',
+      assignmentsError: 'Failed to update employee details.',
       branch: 'Branch',
       selectBranch: 'Select branch',
       assignBranch: 'Assign branch',
@@ -554,6 +555,12 @@ export default function EmployeesTab({ language, userRole, user }) {
       await updateEmployeePosition(selectedEmployee.id, {
         position_id: selectedEmployeeDetails.position_id
           ? Number(selectedEmployeeDetails.position_id)
+          : null,
+      });
+
+      await updateEmployeeBranch(selectedEmployee.id, {
+        branch_id: selectedEmployeeDetails.branch_id
+          ? Number(selectedEmployeeDetails.branch_id)
           : null,
       });
 

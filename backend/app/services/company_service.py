@@ -405,9 +405,6 @@ def join_company_by_invite(
             detail="Company invite code not found.",
         )
 
-    branch = None
-    position = None
-
     if company.invite_code_expires_at is not None:
         expires_at = company.invite_code_expires_at
         if expires_at.tzinfo is None:
@@ -424,18 +421,15 @@ def join_company_by_invite(
             detail="Branch is required.",
         )
 
-    if payload.branch_id is not None:
-        branch = company_repository.get_branch_by_id(db, payload.branch_id)
-
-        if branch is None or branch.company_id != company.id:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Branch does not belong to company.",
-            )
+    branch = company_repository.get_branch_by_id(db, payload.branch_id)
+    if branch is None or branch.company_id != company.id:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Branch does not belong to company.",
+        )
 
     if payload.position_id is not None:
         position = position_repository.get_position_by_id(db, payload.position_id)
-
         if position is None or position.company_id != company.id:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
@@ -449,16 +443,16 @@ def join_company_by_invite(
             db=db,
             user_id=current_user.id,
             company_id=company.id,
-            branch_id=branch.id if branch else None,
-            position_id=position.id if position else None,
+            branch_id=payload.branch_id,
+            position_id=payload.position_id,
         )
     else:
         employee_repository.update_employee_membership(
             db=db,
             employee=employee,
             company_id=company.id,
-            branch_id=branch.id if branch else None,
-            position_id=position.id if position else None,
+            branch_id=payload.branch_id,
+            position_id=payload.position_id,
         )
 
     from app.services import auth_service

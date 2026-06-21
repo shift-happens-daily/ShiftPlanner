@@ -15,6 +15,11 @@ export async function updateEmployeePosition(employeeId, payload) {
   return response.data;
 }
 
+export async function updateEmployeeBranch(employeeId, payload) {
+  const response = await api.patch(`/employees/${employeeId}/branch`, payload);
+  return response.data;
+}
+
 export async function getEmployeeAvailability(employeeId) {
   const response = await api.get(`/employees/${employeeId}/availability`);
   return response.data;
