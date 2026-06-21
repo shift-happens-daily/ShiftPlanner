@@ -10,6 +10,11 @@ export async function createEmployee(payload) {
   return response.data;
 }
 
+export async function updateEmployeePosition(employeeId, payload) {
+  const response = await api.patch(`/employees/${employeeId}/position`, payload);
+  return response.data;
+}
+
 export async function getEmployeeAvailability(employeeId) {
   const response = await api.get(`/employees/${employeeId}/availability`);
   return response.data;

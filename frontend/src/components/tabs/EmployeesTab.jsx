@@ -9,6 +9,7 @@ import {
   listEmployeeAbsences,
   listEmployees,
   updateEmployeeAvailability,
+  updateEmployeePosition,
 } from '../../services/employeeService';
 import { extractApiErrorMessage, localizeBackendMessage } from '../../services/error';
 import { mapEmployeeCalendarSummary } from '../../services/mappers';
@@ -189,7 +190,8 @@ export default function EmployeesTab({ language, userRole, user }) {
       positionDeleted: 'Позиция удалена локально.',
       employeeCreated: 'Сотрудник создан.',
       availabilitySaved: 'Доступность сохранена.',
-      assignmentsSaved: 'Назначения сохранены локально.',
+      assignmentsSaved: 'Позиция сотрудника обновлена.',
+      assignmentsError: 'Не удалось обновить позицию сотрудника.',
       branch: 'Филиал',
       selectBranch: 'Выберите филиал',
       assignBranch: 'Назначить филиал',
@@ -269,7 +271,8 @@ export default function EmployeesTab({ language, userRole, user }) {
       positionDeleted: 'Position deleted locally.',
       employeeCreated: 'Employee created.',
       availabilitySaved: 'Availability saved.',
-      assignmentsSaved: 'Assignments saved locally.',
+      assignmentsSaved: 'Employee position updated.',
+      assignmentsError: 'Failed to update employee position.',
       branch: 'Branch',
       selectBranch: 'Select branch',
       assignBranch: 'Assign branch',
@@ -541,22 +544,26 @@ export default function EmployeesTab({ language, userRole, user }) {
     setPositions(positionsData);
   };
 
-  const handleAssignDetails = () => {
+  const handleAssignDetails = async () => {
     if (!selectedEmployee) return;
 
-    const updatedEmployee = {
-      ...selectedEmployee,
-      position_id: selectedEmployeeDetails.position_id || selectedEmployee.position_id,
-      branch_id: selectedEmployeeDetails.branch_id || selectedEmployee.branch_id,
-      position: visiblePositions.find((position) => String(position.id) === String(selectedEmployeeDetails.position_id)) || selectedEmployee.position,
-      branch: branches.find((branch) => String(branch.id) === String(selectedEmployeeDetails.branch_id)) || selectedEmployee.branch,
-    };
+    clearMessages();
+    setIsSubmitting(true);
 
-    setEmployees((prev) => prev.map((employee) =>
-      String(employee.id) === String(selectedEmployee.id) ? updatedEmployee : employee
-    ));
+    try {
+      await updateEmployeePosition(selectedEmployee.id, {
+        position_id: selectedEmployeeDetails.position_id
+          ? Number(selectedEmployeeDetails.position_id)
+          : null,
+      });
 
-    setSuccessMessage(t.assignmentsSaved);
+      await reloadEmployees(selectedEmployee.id);
+      setSuccessMessage(t.assignmentsSaved);
+    } catch (error) {
+      setErrorMessage(getFriendlyError(error, t.assignmentsError));
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   const handleCreatePosition = async () => {
