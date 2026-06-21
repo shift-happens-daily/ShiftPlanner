@@ -1,5 +1,16 @@
 import api from './api';
 
+const DEMO_SEED_EMPLOYEE_EMAIL = /^employee\d+@example\.com$/i;
+
+export function isDemoSeedEmployee(employee) {
+  const email = String(employee?.email || '').trim();
+  return DEMO_SEED_EMPLOYEE_EMAIL.test(email);
+}
+
+export function filterRealEmployees(employees) {
+  return (employees || []).filter((employee) => !isDemoSeedEmployee(employee));
+}
+
 export async function listEmployees() {
   const response = await api.get('/employees/');
   return response.data;

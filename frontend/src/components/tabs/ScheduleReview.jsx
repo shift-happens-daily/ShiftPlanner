@@ -5,6 +5,7 @@ import {
   mergePublishedSchedule,
   publishSchedule,
 } from '../../services/scheduleService';
+import { filterRealEmployees, listEmployees } from '../../services/employeeService';
 import { extractApiErrorMessage } from '../../services/error';
 
 function formatDate(d) {
@@ -89,8 +90,10 @@ export default function ScheduleReview({ language }) {
   const [viewMode, setViewMode] = useState('day');
   const [periodForm, setPeriodForm] = useState(defaultPeriod);
   const [schedule, setSchedule] = useState(null);
+  const [realEmployeeIds, setRealEmployeeIds] = useState(new Set());
+  const [employeesLoaded, setEmployeesLoaded] = useState(false);
   const [selectedDateIndex, setSelectedDateIndex] = useState(0);
-  const [isLoading, setIsLoading] = useState(true);
+  const [isLoading, setIsLoading] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
@@ -113,7 +116,7 @@ export default function ScheduleReview({ language }) {
       published: 'Опубликовано',
       unfilled: 'Не хватает людей',
       noSchedule: 'Расписание ещё не сгенерировано.',
-      noScheduleHint: 'Выберите неделю (Пн–Вс) и нажмите «Сгенерировать». Алгоритму нужны шаблоны потребности, часы филиала и availability сотрудников.',
+      noScheduleHint: 'Алгоритму нужны шаблоны потребности, часы филиала и availability сотрудников.',
       generating: 'Генерация...',
       loading: 'Загрузка...',
       generated: 'Черновик расписания создан.',
@@ -136,7 +139,7 @@ export default function ScheduleReview({ language }) {
       published: 'Published',
       unfilled: 'Missing staff',
       noSchedule: 'Schedule has not been generated yet.',
-      noScheduleHint: 'Pick a Mon–Sun week and click Generate. The solver needs staffing templates, branch hours, and employee availability.',
+      noScheduleHint: 'The solver needs staffing templates, branch hours, and employee availability.',
       generating: 'Generating...',
       loading: 'Loading...',
       generated: 'Draft schedule generated.',
@@ -157,7 +160,24 @@ export default function ScheduleReview({ language }) {
     [schedule]
   );
 
-  const schedules = useMemo(() => groupShiftsByDate(schedule), [schedule]);
+  const displaySchedule = useMemo(() => {
+    if (!schedule) {
+      return null;
+    }
+
+    if (!employeesLoaded) {
+      return { ...schedule, shifts: [] };
+    }
+
+    return {
+      ...schedule,
+      shifts: normalizeArray(schedule.shifts).filter((shift) => (
+        realEmployeeIds.has(String(shift.employee_id))
+      )),
+    };
+  }, [schedule, employeesLoaded, realEmployeeIds]);
+
+  const schedules = useMemo(() => groupShiftsByDate(displaySchedule), [displaySchedule]);
   const dates = useMemo(() => schedules.map((s) => s.date), [schedules]);
 
   const pageSize = viewMode === 'day' ? 1 : viewMode === '3day' ? 3 : 30;
@@ -202,8 +222,31 @@ export default function ScheduleReview({ language }) {
   }, [language, t.generated, t.noScheduleHint]);
 
   useEffect(() => {
-    void runGenerate(defaultPeriod());
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    let cancelled = false;
+
+    async function loadCompanyEmployees() {
+      try {
+        const employees = await listEmployees();
+        if (cancelled) return;
+        setRealEmployeeIds(new Set(
+          filterRealEmployees(employees).map((employee) => String(employee.id))
+        ));
+      } catch {
+        if (!cancelled) {
+          setRealEmployeeIds(new Set());
+        }
+      } finally {
+        if (!cancelled) {
+          setEmployeesLoaded(true);
+        }
+      }
+    }
+
+    void loadCompanyEmployees();
+
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   useEffect(() => {
