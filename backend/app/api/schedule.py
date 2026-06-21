@@ -1,4 +1,5 @@
 from datetime import date
+from typing import Literal
 
 from fastapi import APIRouter, Depends, Query, status
 from sqlalchemy.orm import Session
@@ -179,6 +180,19 @@ def update_exchange_request(
     db: Session = Depends(get_db),
 ) -> ShiftExchangeRequestRead:
     return schedule_service.update_exchange_request_status(db, exchange_request_id, payload)
+
+
+@router.get(
+    "/latest",
+    response_model=ScheduleRead,
+    responses={**UNAUTHORIZED_RESPONSE, **FORBIDDEN_RESPONSE, **NOT_FOUND_RESPONSE, **VALIDATION_ERROR_RESPONSE},
+)
+def get_latest_schedule(
+    schedule_status: Literal["draft", "published", "archived"] | None = Query(default=None, alias="status"),
+    current_user: UserRead = Depends(require_role("manager")),
+    db: Session = Depends(get_db),
+) -> ScheduleRead:
+    return schedule_service.get_latest_schedule(db, current_user, schedule_status)
 
 
 @router.get(
