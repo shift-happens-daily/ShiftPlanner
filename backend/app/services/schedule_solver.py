@@ -25,7 +25,7 @@ SLOTS_PER_HOUR = 60 // SLOT_MINUTES
 @dataclass(frozen=True)
 class EmployeeData:
     id: int
-    profession_id: int
+    position_id: int
     weekly_target_slots: int
     min_daily_slots: int
     max_daily_slots: int
@@ -35,13 +35,13 @@ class EmployeeData:
 class DemandKey:
     work_date: date
     slot_time: time
-    profession_id: int
+    position_id: int
 
 
 @dataclass(frozen=True)
 class GeneratedAssignment:
     employee_id: int
-    profession_id: int
+    position_id: int
     work_date: date
     start_time: time
     end_time: time
@@ -72,7 +72,7 @@ class LoadedData:
     dates: list[date]
     business_slots: dict[date, list[time]]
     demand: dict[DemandKey, int]
-    availability: dict[tuple[int, int, time], str]
+    availability: dict[tuple[int, date, time], str]
     absent_dates: set[tuple[int, date]]
 
 
@@ -95,7 +95,7 @@ def generate_schedule(
 
     Coverage is a soft constraint, so a valid result is persisted even when
     demand cannot be fully covered. The first optimization phase minimizes
-    uncovered demand and then possible-availability use. A second phase keeps
+    uncovered demand and then if-needed availability use. A second phase keeps
     those values fixed and improves overstaffing, weekly target deviation, and
     unnecessary shift starts.
     """
@@ -127,20 +127,20 @@ def generate_schedule(
     ) = _build_model(data)
 
     # Phase 1 is lexicographic in one safe weighted expression. One additional
-    # uncovered employee-slot costs more than every possible-availability
-    # assignment combined, so possible availability is never avoided by leaving
+    # uncovered employee-slot costs more than every if-needed availability
+    # assignment combined, so if-needed availability is never avoided by leaving
     # coverable demand unmet.
-    possible_vars = [
+    if_needed_vars = [
         variable
         for key, variable in assignment_vars.items()
-        if data.availability[(key[0], key[1].weekday(), key[2])] == "possible"
+        if data.availability[(key[0], key[1], key[2])] == "if_needed"
     ]
-    max_possible_assignments = len(possible_vars)
+    max_if_needed_assignments = len(if_needed_vars)
     total_shortage = sum(shortage_vars.values())
-    total_possible = sum(possible_vars)
+    total_if_needed = sum(if_needed_vars)
     model.minimize(
-        total_shortage * (max_possible_assignments + 1)
-        + total_possible
+        total_shortage * (max_if_needed_assignments + 1)
+        + total_if_needed
     )
 
     first_solver = _new_solver(
@@ -155,11 +155,11 @@ def generate_schedule(
         )
 
     best_shortage = sum(first_solver.value(var) for var in shortage_vars.values())
-    best_possible = sum(first_solver.value(var) for var in possible_vars)
+    best_if_needed = sum(first_solver.value(var) for var in if_needed_vars)
 
     # Preserve the primary business priorities while improving schedule shape.
     model.add(total_shortage == best_shortage)
-    model.add(total_possible == best_possible)
+    model.add(total_if_needed == best_if_needed)
 
     total_overstaff = sum(overstaff_vars.values())
     total_target_deviation = sum(target_deviation_vars)
@@ -259,7 +259,7 @@ def _load_data(
             """
             SELECT
                 id,
-                profession_id,
+                position_id,
                 weekly_target_minutes,
                 min_daily_minutes,
                 max_daily_minutes
@@ -275,7 +275,7 @@ def _load_data(
     employees = [
         EmployeeData(
             id=row["id"],
-            profession_id=row["profession_id"],
+            position_id=row["position_id"],
             weekly_target_slots=row["weekly_target_minutes"] // SLOT_MINUTES,
             min_daily_slots=row["min_daily_minutes"] // SLOT_MINUTES,
             max_daily_slots=row["max_daily_minutes"] // SLOT_MINUTES,
@@ -307,11 +307,11 @@ def _load_data(
     }
 
     recurring_demand = {
-        (row["day_of_week"], row["slot_time"], row["profession_id"]): row["required_count"]
+        (row["day_of_week"], row["slot_time"], row["position_id"]): row["required_count"]
         for row in db.execute(
             text(
                 """
-                SELECT day_of_week, slot_time, profession_id, required_count
+                SELECT day_of_week, slot_time, position_id, required_count
                 FROM staffing_requirements
                 WHERE company_id = :company_id AND branch_id = :branch_id
                   AND required_count > 0
@@ -321,34 +321,43 @@ def _load_data(
         ).mappings()
     }
     demand = {
-        DemandKey(work_date, slot_time, profession_id): required_count
+        DemandKey(work_date, slot_time, position_id): required_count
         for work_date in dates
-        for (weekday, slot_time, profession_id), required_count in recurring_demand.items()
+        for (weekday, slot_time, position_id), required_count in recurring_demand.items()
         if weekday == work_date.weekday()
     }
 
-    availability: dict[tuple[int, int, time], str] = {}
-    availability_params = {"company_id": company_id, "branch_id": branch_id}
-    for table_name, source in (
-        ("employee_possible_availability", "possible"),
-        ("employee_confirmed_availability", "confirmed"),
-    ):
-        rows = db.execute(
-            text(
-                f"""
-                SELECT availability.employee_id, availability.day_of_week, availability.slot_time
-                FROM {table_name} AS availability
-                JOIN employees ON employees.id = availability.employee_id
-                WHERE employees.company_id = :company_id
-                  AND employees.branch_id = :branch_id
-                  AND employees.is_active = TRUE
-                """
-            ),
-            availability_params,
-        ).mappings()
-        for row in rows:
-            # Confirmed wins defensively if legacy data predates the overlap trigger.
-            availability[(row["employee_id"], row["day_of_week"], row["slot_time"])] = source
+    availability_rows = db.execute(
+        text(
+            """
+            SELECT
+                availability.employee_id,
+                availability.availability_date,
+                availability.slot_time,
+                availability.availability_status
+            FROM employee_availability AS availability
+            JOIN employees ON employees.id = availability.employee_id
+            WHERE employees.company_id = :company_id
+              AND employees.branch_id = :branch_id
+              AND employees.is_active = TRUE
+              AND availability.availability_date BETWEEN :start_date AND :end_date
+            """
+        ),
+        {
+            "company_id": company_id,
+            "branch_id": branch_id,
+            "start_date": start_date,
+            "end_date": end_date,
+        },
+    ).mappings()
+    availability = {
+        (
+            row["employee_id"],
+            row["availability_date"],
+            row["slot_time"],
+        ): row["availability_status"]
+        for row in availability_rows
+    }
 
     absence_rows = db.execute(
         text(
@@ -405,7 +414,7 @@ def _validate_loaded_data(data: LoadedData) -> None:
         if key.slot_time not in data.business_slots[key.work_date]:
             raise ScheduleDataError(
                 "staffing requirement is outside business hours: "
-                f"{key.work_date} {key.slot_time} profession {key.profession_id}"
+                f"{key.work_date} {key.slot_time} position {key.position_id}"
             )
 
 
@@ -418,19 +427,20 @@ def _build_model(data: LoadedData):
     target_deviation_vars: list[cp_model.IntVar] = []
     candidate_counts: dict[DemandKey, int] = {}
 
-    demanded_professions = {key.profession_id for key in data.demand}
+    demanded_positions = {key.position_id for key in data.demand}
 
     # Assignment variables only exist for legal availability slots. A missing
     # variable is therefore a hard prohibition, directly enforcing rules 1-2.
     for employee in data.employees:
-        if employee.profession_id not in demanded_professions:
+        if employee.position_id not in demanded_positions:
             continue
         for work_date in data.dates:
             if (employee.id, work_date) in data.absent_dates:
                 continue
             for slot_time in data.business_slots[work_date]:
-                availability_key = (employee.id, work_date.weekday(), slot_time)
-                if availability_key not in data.availability:
+                availability_key = (employee.id, work_date, slot_time)
+                availability_status = data.availability.get(availability_key)
+                if availability_status not in {"available", "if_needed"}:
                     continue
                 key = (employee.id, work_date, slot_time)
                 assignment_vars[key] = model.new_bool_var(
@@ -444,19 +454,19 @@ def _build_model(data: LoadedData):
         matching = [
             assignment_vars[(employee.id, demand_key.work_date, demand_key.slot_time)]
             for employee in data.employees
-            if employee.profession_id == demand_key.profession_id
+            if employee.position_id == demand_key.position_id
             and (employee.id, demand_key.work_date, demand_key.slot_time) in assignment_vars
         ]
         candidate_counts[demand_key] = len(matching)
         shortage = model.new_int_var(
             0,
             required_count,
-            f"short_{demand_key.work_date}_{demand_key.slot_time:%H%M}_p{demand_key.profession_id}",
+            f"short_{demand_key.work_date}_{demand_key.slot_time:%H%M}_pos{demand_key.position_id}",
         )
         overstaff = model.new_int_var(
             0,
             len(matching),
-            f"over_{demand_key.work_date}_{demand_key.slot_time:%H%M}_p{demand_key.profession_id}",
+            f"over_{demand_key.work_date}_{demand_key.slot_time:%H%M}_pos{demand_key.position_id}",
         )
         model.add(sum(matching) + shortage == required_count + overstaff)
         shortage_vars[demand_key] = shortage
@@ -472,7 +482,7 @@ def _build_model(data: LoadedData):
                 variable = assignment_vars.get((employee.id, work_date, slot_time))
                 if variable is None:
                     continue
-                demand_key = DemandKey(work_date, slot_time, employee.profession_id)
+                demand_key = DemandKey(work_date, slot_time, employee.position_id)
                 if demand_key not in demanded_keys:
                     overstaff_vars[demand_key] = variable
 
@@ -608,16 +618,14 @@ def _extract_assignments(
             slot_sources = tuple(
                 (
                     slot_time,
-                    data.availability[
-                        (employee.id, work_date.weekday(), slot_time)
-                    ],
+                    data.availability[(employee.id, work_date, slot_time)],
                 )
                 for slot_time in worked_slots
             )
             assignments.append(
                 GeneratedAssignment(
                     employee_id=employee.id,
-                    profession_id=employee.profession_id,
+                    position_id=employee.position_id,
                     work_date=work_date,
                     start_time=worked_slots[0],
                     end_time=_add_minutes(worked_slots[-1], SLOT_MINUTES),
@@ -695,7 +703,7 @@ def _save_result(
                 INSERT INTO schedule_assignments (
                     schedule_id,
                     employee_id,
-                    profession_id,
+                    position_id,
                     work_date,
                     start_time,
                     end_time
@@ -703,7 +711,7 @@ def _save_result(
                 VALUES (
                     :schedule_id,
                     :employee_id,
-                    :profession_id,
+                    :position_id,
                     :work_date,
                     :start_time,
                     :end_time
@@ -714,7 +722,7 @@ def _save_result(
             {
                 "schedule_id": schedule_id,
                 "employee_id": assignment.employee_id,
-                "profession_id": assignment.profession_id,
+                "position_id": assignment.position_id,
                 "work_date": assignment.work_date,
                 "start_time": assignment.start_time,
                 "end_time": assignment.end_time,
@@ -750,7 +758,7 @@ def _save_result(
                     work_date,
                     day_of_week,
                     slot_time,
-                    profession_id,
+                    position_id,
                     required_count,
                     uncovered_count,
                     reason
@@ -760,7 +768,7 @@ def _save_result(
                     :work_date,
                     :day_of_week,
                     :slot_time,
-                    :profession_id,
+                    :position_id,
                     :required_count,
                     :uncovered_count,
                     :reason
@@ -773,7 +781,7 @@ def _save_result(
                     "work_date": item.key.work_date,
                     "day_of_week": item.key.work_date.weekday(),
                     "slot_time": item.key.slot_time,
-                    "profession_id": item.key.profession_id,
+                    "position_id": item.key.position_id,
                     "required_count": item.required_count,
                     "uncovered_count": item.uncovered_count,
                     "reason": item.reason,

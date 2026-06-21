@@ -24,7 +24,8 @@ services:
       dockerfile: Dockerfile
     container_name: shiftplanner_backend
     environment:
-      DATABASE_URL: postgresql+psycopg://shiftplanner_user:shiftplanner_password@postgres:5432/shiftplanner
+      # DATABASE_URL: postgresql+psycopg://shiftplanner_user:shiftplanner_password@postgres:5432/shiftplanner
+      DATABASE_URL: postgresql+psycopg://postgres:1792@localhost:5432/shiftplanner_test
       FRONTEND_ORIGINS: http://localhost:5173
       JWT_SECRET_KEY: change-me-in-production
       JWT_ALGORITHM: HS256

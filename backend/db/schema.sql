@@ -39,9 +39,9 @@ CREATE TABLE branches (
 
 CREATE INDEX idx_branches_company_id ON branches(company_id);
 
--- A profession is a company-owned job classification. It replaces the old
--- positions table and is referenced by employees and staffing requirements.
-CREATE TABLE professions (
+-- A position is a company-owned job classification referenced by employees
+-- and staffing requirements.
+CREATE TABLE positions (
     id SERIAL PRIMARY KEY,
     company_id INTEGER NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
     name VARCHAR(100) NOT NULL,
@@ -50,14 +50,14 @@ CREATE TABLE professions (
     UNIQUE (company_id, id)
 );
 
-CREATE INDEX idx_professions_company_id ON professions(company_id);
+CREATE INDEX idx_positions_company_id ON positions(company_id);
 
 CREATE TABLE employees (
     id SERIAL PRIMARY KEY,
     user_id INTEGER NOT NULL UNIQUE REFERENCES users(id) ON DELETE CASCADE,
     company_id INTEGER NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
     branch_id INTEGER NOT NULL,
-    profession_id INTEGER NOT NULL,
+    position_id INTEGER NOT NULL,
 
     -- Minutes avoid fractional-hour rounding and must map to whole 30-minute slots.
     weekly_target_minutes INTEGER NOT NULL DEFAULT 2400
@@ -73,18 +73,18 @@ CREATE TABLE employees (
     CONSTRAINT fk_employees_branch
         FOREIGN KEY (company_id, branch_id)
         REFERENCES branches(company_id, id) ON DELETE CASCADE,
-    CONSTRAINT fk_employees_profession
-        FOREIGN KEY (company_id, profession_id)
-        REFERENCES professions(company_id, id) ON DELETE RESTRICT,
-    -- Allows assignments to guarantee that the recorded profession belongs to
+    CONSTRAINT fk_employees_position
+        FOREIGN KEY (company_id, position_id)
+        REFERENCES positions(company_id, id) ON DELETE RESTRICT,
+    -- Allows assignments to guarantee that the recorded position belongs to
     -- the assigned employee.
-    UNIQUE (id, profession_id)
+    UNIQUE (id, position_id)
 );
 
 CREATE INDEX idx_employees_company_branch_active
     ON employees(company_id, branch_id, is_active);
-CREATE INDEX idx_employees_profession_active
-    ON employees(profession_id, is_active);
+CREATE INDEX idx_employees_position_active
+    ON employees(position_id, is_active);
 
 -- A branch may have different opening hours on every weekday. A missing weekday
 -- means the branch is closed. Overnight opening periods are intentionally not
@@ -115,7 +115,7 @@ CREATE TABLE business_hours (
 CREATE INDEX idx_business_hours_company_branch
     ON business_hours(company_id, branch_id);
 
--- Recurring demand template: one row per weekday, 30-minute slot, profession,
+-- Recurring demand template: one row per weekday, 30-minute slot, position,
 -- and branch. The solver expands these rows into concrete dates.
 CREATE TABLE staffing_requirements (
     id SERIAL PRIMARY KEY,
@@ -123,96 +123,46 @@ CREATE TABLE staffing_requirements (
     branch_id INTEGER NOT NULL,
     day_of_week SMALLINT NOT NULL CHECK (day_of_week BETWEEN 0 AND 6),
     slot_time TIME NOT NULL,
-    profession_id INTEGER NOT NULL,
+    position_id INTEGER NOT NULL,
     required_count INTEGER NOT NULL CHECK (required_count >= 0),
 
     CONSTRAINT fk_staffing_requirements_branch
         FOREIGN KEY (company_id, branch_id)
         REFERENCES branches(company_id, id) ON DELETE CASCADE,
-    CONSTRAINT fk_staffing_requirements_profession
-        FOREIGN KEY (company_id, profession_id)
-        REFERENCES professions(company_id, id) ON DELETE CASCADE,
+    CONSTRAINT fk_staffing_requirements_position
+        FOREIGN KEY (company_id, position_id)
+        REFERENCES positions(company_id, id) ON DELETE CASCADE,
     CONSTRAINT ck_staffing_requirements_slot CHECK (
         EXTRACT(MINUTE FROM slot_time) IN (0, 30)
         AND EXTRACT(SECOND FROM slot_time) = 0
     ),
-    UNIQUE (branch_id, day_of_week, slot_time, profession_id)
+    UNIQUE (branch_id, day_of_week, slot_time, position_id)
 );
 
 CREATE INDEX idx_staffing_requirements_lookup
     ON staffing_requirements(company_id, branch_id, day_of_week, slot_time);
-CREATE INDEX idx_staffing_requirements_profession
-    ON staffing_requirements(profession_id);
+CREATE INDEX idx_staffing_requirements_position
+    ON staffing_requirements(position_id);
 
--- Availability is intentionally stored in two physical tables to match the
--- business workflow. Each row is exactly one recurring 30-minute slot.
-CREATE TABLE employee_confirmed_availability (
+-- Availability is concrete-date and slot based. The status controls whether a
+-- slot is preferred, usable only as a fallback, or prohibited.
+CREATE TABLE employee_availability (
     id SERIAL PRIMARY KEY,
     employee_id INTEGER NOT NULL REFERENCES employees(id) ON DELETE CASCADE,
-    day_of_week SMALLINT NOT NULL CHECK (day_of_week BETWEEN 0 AND 6),
+    availability_date DATE NOT NULL,
     slot_time TIME NOT NULL,
-    CONSTRAINT ck_confirmed_availability_slot CHECK (
+    availability_status VARCHAR(20) NOT NULL CHECK (
+        availability_status IN ('available', 'if_needed', 'unavailable')
+    ),
+    CONSTRAINT ck_employee_availability_slot CHECK (
         EXTRACT(MINUTE FROM slot_time) IN (0, 30)
         AND EXTRACT(SECOND FROM slot_time) = 0
     ),
-    UNIQUE (employee_id, day_of_week, slot_time)
+    UNIQUE (employee_id, availability_date, slot_time)
 );
 
-CREATE INDEX idx_confirmed_availability_lookup
-    ON employee_confirmed_availability(day_of_week, slot_time, employee_id);
-
-CREATE TABLE employee_possible_availability (
-    id SERIAL PRIMARY KEY,
-    employee_id INTEGER NOT NULL REFERENCES employees(id) ON DELETE CASCADE,
-    day_of_week SMALLINT NOT NULL CHECK (day_of_week BETWEEN 0 AND 6),
-    slot_time TIME NOT NULL,
-    CONSTRAINT ck_possible_availability_slot CHECK (
-        EXTRACT(MINUTE FROM slot_time) IN (0, 30)
-        AND EXTRACT(SECOND FROM slot_time) = 0
-    ),
-    UNIQUE (employee_id, day_of_week, slot_time)
-);
-
-CREATE INDEX idx_possible_availability_lookup
-    ON employee_possible_availability(day_of_week, slot_time, employee_id);
-
--- Prevent ambiguous priority by disallowing the same employee slot in both
--- availability tables.
-CREATE OR REPLACE FUNCTION reject_overlapping_availability()
-RETURNS TRIGGER AS $$
-BEGIN
-    IF TG_TABLE_NAME = 'employee_confirmed_availability' THEN
-        IF EXISTS (
-            SELECT 1
-            FROM employee_possible_availability
-            WHERE employee_id = NEW.employee_id
-              AND day_of_week = NEW.day_of_week
-              AND slot_time = NEW.slot_time
-        ) THEN
-            RAISE EXCEPTION 'Availability slot already exists as possible availability';
-        END IF;
-    ELSE
-        IF EXISTS (
-            SELECT 1
-            FROM employee_confirmed_availability
-            WHERE employee_id = NEW.employee_id
-              AND day_of_week = NEW.day_of_week
-              AND slot_time = NEW.slot_time
-        ) THEN
-            RAISE EXCEPTION 'Availability slot already exists as confirmed availability';
-        END IF;
-    END IF;
-    RETURN NEW;
-END;
-$$ LANGUAGE plpgsql;
-
-CREATE TRIGGER trg_confirmed_availability_no_overlap
-BEFORE INSERT OR UPDATE ON employee_confirmed_availability
-FOR EACH ROW EXECUTE FUNCTION reject_overlapping_availability();
-
-CREATE TRIGGER trg_possible_availability_no_overlap
-BEFORE INSERT OR UPDATE ON employee_possible_availability
-FOR EACH ROW EXECUTE FUNCTION reject_overlapping_availability();
+CREATE INDEX idx_employee_availability_lookup
+    ON employee_availability(availability_date, slot_time, employee_id);
 
 CREATE TABLE absences (
     id SERIAL PRIMARY KEY,
@@ -256,15 +206,15 @@ CREATE TABLE schedule_assignments (
     id SERIAL PRIMARY KEY,
     schedule_id INTEGER NOT NULL REFERENCES schedules(id) ON DELETE CASCADE,
     employee_id INTEGER NOT NULL,
-    profession_id INTEGER NOT NULL,
+    position_id INTEGER NOT NULL,
     work_date DATE NOT NULL,
     start_time TIME NOT NULL,
     end_time TIME NOT NULL,
     created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
 
-    CONSTRAINT fk_schedule_assignment_employee_profession
-        FOREIGN KEY (employee_id, profession_id)
-        REFERENCES employees(id, profession_id) ON DELETE RESTRICT,
+    CONSTRAINT fk_schedule_assignment_employee_position
+        FOREIGN KEY (employee_id, position_id)
+        REFERENCES employees(id, position_id) ON DELETE RESTRICT,
     CONSTRAINT ck_schedule_assignment_time_order CHECK (end_time > start_time),
     CONSTRAINT ck_schedule_assignment_start_slot CHECK (
         EXTRACT(MINUTE FROM start_time) IN (0, 30)
@@ -281,8 +231,8 @@ CREATE INDEX idx_schedule_assignments_schedule_date
     ON schedule_assignments(schedule_id, work_date, start_time);
 CREATE INDEX idx_schedule_assignments_employee_date
     ON schedule_assignments(employee_id, work_date);
-CREATE INDEX idx_schedule_assignments_profession_date
-    ON schedule_assignments(profession_id, work_date);
+CREATE INDEX idx_schedule_assignments_position_date
+    ON schedule_assignments(position_id, work_date);
 
 -- Slot-level children make coverage and availability-source auditing possible
 -- without duplicating employee/shift data in every solver query.
@@ -292,7 +242,7 @@ CREATE TABLE schedule_assignment_slots (
         REFERENCES schedule_assignments(id) ON DELETE CASCADE,
     slot_time TIME NOT NULL,
     availability_source VARCHAR(20) NOT NULL
-        CHECK (availability_source IN ('confirmed', 'possible')),
+        CHECK (availability_source IN ('available', 'if_needed')),
     CONSTRAINT ck_schedule_assignment_slots_time CHECK (
         EXTRACT(MINUTE FROM slot_time) IN (0, 30)
         AND EXTRACT(SECOND FROM slot_time) = 0
@@ -312,7 +262,7 @@ CREATE TABLE uncovered_slots (
     work_date DATE NOT NULL,
     day_of_week SMALLINT NOT NULL CHECK (day_of_week BETWEEN 0 AND 6),
     slot_time TIME NOT NULL,
-    profession_id INTEGER NOT NULL REFERENCES professions(id) ON DELETE RESTRICT,
+    position_id INTEGER NOT NULL REFERENCES positions(id) ON DELETE RESTRICT,
     required_count INTEGER NOT NULL CHECK (required_count > 0),
     uncovered_count INTEGER NOT NULL CHECK (
         uncovered_count > 0 AND uncovered_count <= required_count
@@ -328,13 +278,13 @@ CREATE TABLE uncovered_slots (
         EXTRACT(MINUTE FROM slot_time) IN (0, 30)
         AND EXTRACT(SECOND FROM slot_time) = 0
     ),
-    UNIQUE (schedule_id, work_date, slot_time, profession_id)
+    UNIQUE (schedule_id, work_date, slot_time, position_id)
 );
 
 CREATE INDEX idx_uncovered_slots_schedule_date
     ON uncovered_slots(schedule_id, work_date, slot_time);
-CREATE INDEX idx_uncovered_slots_profession
-    ON uncovered_slots(profession_id);
+CREATE INDEX idx_uncovered_slots_position
+    ON uncovered_slots(position_id);
 
 CREATE TABLE shift_exchange_requests (
     id SERIAL PRIMARY KEY,
