@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   defaultSchedulePeriod,
   generateSchedule,
+  getLatestSchedule,
   mergePublishedSchedule,
   publishSchedule,
 } from '../../services/scheduleService';
@@ -93,7 +94,7 @@ export default function ScheduleReview({ language }) {
   const [realEmployeeIds, setRealEmployeeIds] = useState(new Set());
   const [employeesLoaded, setEmployeesLoaded] = useState(false);
   const [selectedDateIndex, setSelectedDateIndex] = useState(0);
-  const [isLoading, setIsLoading] = useState(false);
+  const [isLoading, setIsLoading] = useState(true);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
@@ -217,37 +218,63 @@ export default function ScheduleReview({ language }) {
       setError(extractApiErrorMessage(e, t.noScheduleHint, language));
     } finally {
       setIsSubmitting(false);
-      setIsLoading(false);
     }
   }, [language, t.generated, t.noScheduleHint]);
+
+  const loadLatestSchedule = useCallback(async () => {
+    for (const status of ['draft', 'published']) {
+      try {
+        return await getLatestSchedule(status);
+      } catch (error) {
+        if (error?.response?.status === 404) {
+          continue;
+        }
+        throw error;
+      }
+    }
+
+    return null;
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
 
-    async function loadCompanyEmployees() {
+    async function loadInitialData() {
+      setIsLoading(true);
+      setError('');
+
       try {
-        const employees = await listEmployees();
+        const [employees, latestSchedule] = await Promise.all([
+          listEmployees().catch(() => []),
+          loadLatestSchedule(),
+        ]);
+
         if (cancelled) return;
+
         setRealEmployeeIds(new Set(
           filterRealEmployees(employees).map((employee) => String(employee.id))
         ));
-      } catch {
+        setSchedule(latestSchedule);
+        setSelectedDateIndex(0);
+      } catch (error) {
         if (!cancelled) {
-          setRealEmployeeIds(new Set());
+          setError(extractApiErrorMessage(error, t.noScheduleHint, language));
+          setSchedule(null);
         }
       } finally {
         if (!cancelled) {
           setEmployeesLoaded(true);
+          setIsLoading(false);
         }
       }
     }
 
-    void loadCompanyEmployees();
+    void loadInitialData();
 
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [language, loadLatestSchedule, t.noScheduleHint]);
 
   useEffect(() => {
     if (!error && !success) return undefined;

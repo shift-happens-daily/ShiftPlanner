@@ -61,6 +61,12 @@ export async function generateSchedule(payload) {
   return response.data;
 }
 
+export async function getLatestSchedule(status) {
+  const params = status ? { status } : undefined;
+  const response = await api.get('/schedule/latest', { params });
+  return response.data;
+}
+
 export async function getSchedule(scheduleId) {
   const response = await api.get(`/schedule/${scheduleId}`);
   return response.data;
