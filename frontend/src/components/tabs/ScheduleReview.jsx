@@ -7,6 +7,7 @@ import {
   publishSchedule,
 } from '../../services/scheduleService';
 import { filterRealEmployees, listEmployees } from '../../services/employeeService';
+import { useAuth } from '../../context/useAuth';
 import { extractApiErrorMessage } from '../../services/error';
 
 function formatDate(d) {
@@ -87,7 +88,17 @@ function buildEmployeeListFromIndexes(schedules, dateIndexes) {
   );
 }
 
+function isMissingCompanyError(error) {
+  const detail = error?.response?.data?.detail;
+  return error?.response?.status === 403 && (
+    detail === 'Manager is not linked to a company.'
+    || detail === 'User is not linked to a company.'
+  );
+}
+
 export default function ScheduleReview({ language }) {
+  const { user, isLoading: isAuthLoading } = useAuth();
+  const hasCompany = Boolean(user?.company);
   const [viewMode, setViewMode] = useState('day');
   const [periodForm, setPeriodForm] = useState(defaultPeriod);
   const [schedule, setSchedule] = useState(null);
@@ -226,7 +237,7 @@ export default function ScheduleReview({ language }) {
       try {
         return await getLatestSchedule(status);
       } catch (error) {
-        if (error?.response?.status === 404) {
+        if (error?.response?.status === 404 || isMissingCompanyError(error)) {
           continue;
         }
         throw error;
@@ -237,11 +248,25 @@ export default function ScheduleReview({ language }) {
   }, []);
 
   useEffect(() => {
+    if (isAuthLoading) {
+      return undefined;
+    }
+
     let cancelled = false;
 
     async function loadInitialData() {
       setIsLoading(true);
       setError('');
+
+      if (!hasCompany) {
+        if (cancelled) return;
+        setRealEmployeeIds(new Set());
+        setSchedule(null);
+        setSelectedDateIndex(0);
+        setEmployeesLoaded(true);
+        setIsLoading(false);
+        return;
+      }
 
       try {
         const [employees, latestSchedule] = await Promise.all([
@@ -257,7 +282,7 @@ export default function ScheduleReview({ language }) {
         setSchedule(latestSchedule);
         setSelectedDateIndex(0);
       } catch (error) {
-        if (!cancelled) {
+        if (!cancelled && !isMissingCompanyError(error)) {
           setError(extractApiErrorMessage(error, t.noScheduleHint, language));
           setSchedule(null);
         }
@@ -274,7 +299,7 @@ export default function ScheduleReview({ language }) {
     return () => {
       cancelled = true;
     };
-  }, [language, loadLatestSchedule, t.noScheduleHint]);
+  }, [hasCompany, isAuthLoading, language, loadLatestSchedule, t.noScheduleHint]);
 
   useEffect(() => {
     if (!error && !success) return undefined;
@@ -318,7 +343,7 @@ export default function ScheduleReview({ language }) {
     downloadCSV('generated_schedule.csv', rows);
   };
 
-  if (isLoading) return <div style={{ padding: 20 }}>{t.loading}</div>;
+  if (isLoading || isAuthLoading) return <div style={{ padding: 20 }}>{t.loading}</div>;
 
   const totalWidth = visibleDates.length * 24 * cellWidth;
   const hasShifts = schedules.length > 0 && employeesForView.length > 0;
