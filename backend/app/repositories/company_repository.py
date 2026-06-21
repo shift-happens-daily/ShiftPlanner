@@ -50,6 +50,16 @@ def update_company(
     return company
 
 
+def regenerate_invite_code(db: Session, company: Company) -> Company:
+    company.invite_code = _generate_unique_invite_code(db)
+    company.invite_code_generated_at = datetime.now(UTC).replace(tzinfo=None)
+    company.invite_code_expires_at = None
+    db.add(company)
+    db.commit()
+    db.refresh(company)
+    return company
+
+
 def get_default_company(db: Session) -> Company:
     company = db.scalars(select(Company).order_by(Company.id)).first()
 
