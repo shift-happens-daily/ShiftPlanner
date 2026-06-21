@@ -1,7 +1,7 @@
 from fastapi import HTTPException, status
 from sqlalchemy.orm import Session
 
-from app.repositories import company_repository, employee_repository, position_repository
+from app.repositories import company_repository, employee_repository, position_repository, user_repository
 from app.schemas.auth import CurrentUserResponse, UserRead
 from app.schemas.company import (
     BranchCreate,
@@ -9,9 +9,12 @@ from app.schemas.company import (
     BranchUpdate,
     CompanyCreate,
     CompanyJoinRequest,
+    CompanyLinkUserRequest,
     CompanyRead,
     CompanySummaryRead,
     CompanyUpdate,
+    LinkedEmployeePositionRead,
+    LinkedEmployeeRead,
     normalize_invite_code,
 )
 
@@ -288,6 +291,82 @@ def _manager_company_id(current_user: UserRead, requested_company_id: int | None
             detail="Company does not belong to the authenticated manager.",
         )
     return current_user.company_id
+
+
+def link_user_to_manager_company(
+    db: Session,
+    payload: CompanyLinkUserRequest,
+    current_user: UserRead,
+) -> LinkedEmployeeRead:
+    company_id = _manager_company_id(current_user)
+    target_user = user_repository.get_user_by_public_id(db, payload.user_public_id)
+    if target_user is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="User public ID not found.",
+        )
+    if target_user.role != "employee":
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Only employee users can be linked to a company.",
+        )
+
+    employee = employee_repository.get_employee_by_user_id(db, target_user.id)
+    if employee is not None and employee.company_id == company_id:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="User is already linked to this company.",
+        )
+
+    if payload.branch_id is not None:
+        branch = company_repository.get_branch_by_id(db, payload.branch_id)
+        if branch is None or branch.company_id != company_id:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Branch does not belong to the authenticated manager's company.",
+            )
+
+    if payload.position_id is not None:
+        position = position_repository.get_position_by_id(db, payload.position_id)
+        if position is None or position.company_id != company_id:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Position does not belong to the authenticated manager's company.",
+            )
+
+    if employee is None:
+        linked_employee = employee_repository.create_employee(
+            db=db,
+            user_id=target_user.id,
+            company_id=company_id,
+            branch_id=payload.branch_id,
+            position_id=payload.position_id,
+        )
+    else:
+        linked_employee = employee_repository.update_employee_membership(
+            db=db,
+            employee=employee,
+            company_id=company_id,
+            branch_id=payload.branch_id,
+            position_id=payload.position_id,
+        )
+
+    return LinkedEmployeeRead(
+        id=linked_employee.id,
+        public_id=linked_employee.user.public_id,
+        full_name=linked_employee.user.full_name,
+        email=linked_employee.user.email,
+        branch_id=linked_employee.branch_id,
+        position_id=linked_employee.position_id,
+        position=(
+            LinkedEmployeePositionRead(
+                id=linked_employee.position.id,
+                name=linked_employee.position.name,
+            )
+            if linked_employee.position is not None
+            else None
+        ),
+    )
 
 
 def join_company_by_invite(

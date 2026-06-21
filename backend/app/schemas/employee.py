@@ -49,6 +49,7 @@ class EmployeePositionUpdate(BaseModel):
 
 class EmployeeRead(BaseModel):
     id: int
+    public_id: str
     full_name: str
     email: str
     role: Literal["manager", "employee"]

@@ -17,13 +17,27 @@ from app.schemas.company import (
     BranchUpdate,
     CompanyCreate,
     CompanyJoinRequest,
+    CompanyLinkUserRequest,
     CompanyRead,
     CompanySummaryRead,
     CompanyUpdate,
+    LinkedEmployeeRead,
 )
 from app.services import company_service
 
 router = APIRouter()
+
+@router.post("/me/link-user", response_model=LinkedEmployeeRead)
+def link_user_to_my_company(
+    payload: CompanyLinkUserRequest,
+    db: Session = Depends(get_db),
+    current_user: UserRead = Depends(require_role("manager")),
+):
+    return company_service.link_user_to_manager_company(
+        db=db,
+        payload=payload,
+        current_user=current_user,
+    )
 
 
 @router.get(
