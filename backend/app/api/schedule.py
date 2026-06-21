@@ -20,6 +20,7 @@ from app.schemas.schedule import (
     ScheduleRequirementBulkRead,
     ScheduleRequirementCreate,
     ScheduleRequirementRead,
+    ScheduleRequirementUpdate,
     ScheduleShiftUpdate,
     ShiftExchangeRequestCreate,
     ShiftExchangeRequestRead,
@@ -42,10 +43,24 @@ router = APIRouter()
 )
 def create_requirement(
     payload: ScheduleRequirementCreate,
-    _: UserRead = Depends(require_role("manager")),
+    current_user: UserRead = Depends(require_role("manager")),
     db: Session = Depends(get_db),
 ) -> ScheduleRequirementRead:
-    return schedule_service.create_requirement(db, payload)
+    return schedule_service.create_requirement(db, payload, current_user)
+
+
+@router.patch(
+    "/requirements/{requirement_id}",
+    response_model=ScheduleRequirementRead,
+    responses={**BAD_REQUEST_RESPONSE, **UNAUTHORIZED_RESPONSE, **FORBIDDEN_RESPONSE, **NOT_FOUND_RESPONSE, **VALIDATION_ERROR_RESPONSE},
+)
+def update_requirement(
+    requirement_id: int,
+    payload: ScheduleRequirementUpdate,
+    current_user: UserRead = Depends(require_role("manager")),
+    db: Session = Depends(get_db),
+) -> ScheduleRequirementRead:
+    return schedule_service.update_requirement(db, requirement_id, payload, current_user)
 
 
 @router.get(
@@ -54,13 +69,23 @@ def create_requirement(
     responses={**UNAUTHORIZED_RESPONSE, **VALIDATION_ERROR_RESPONSE},
 )
 def get_requirements(
+    branch_id: int | None = Query(default=None, ge=1),
+    date_from: date | None = Query(default=None),
+    date_to: date | None = Query(default=None),
     start_date: date | None = Query(default=None),
     end_date: date | None = Query(default=None),
     position_id: int | None = Query(default=None, ge=1),
-    _: UserRead = Depends(get_current_user),
+    current_user: UserRead = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> list[ScheduleRequirementRead]:
-    return schedule_service.list_requirements(db, start_date=start_date, end_date=end_date, position_id=position_id)
+    return schedule_service.list_requirements(
+        db,
+        current_user,
+        start_date=date_from or start_date,
+        end_date=date_to or end_date,
+        position_id=position_id,
+        branch_id=branch_id,
+    )
 
 
 @router.post(

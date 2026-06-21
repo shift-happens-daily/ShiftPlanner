@@ -19,7 +19,7 @@ enum AuthError: LocalizedError {
         case .invalidEmail:
             return "Enter a valid email"
         case .passwordTooShort:
-            return "Password must be at least 6 characters"
+            return "Password must be at least 8 characters"
             
         case .passwordsDontMatch:
             return "Passwords do not match"
@@ -39,7 +39,9 @@ final class MockAuthRepository: AuthRepository {
             id: UUID().uuidString,
             email: email,
             name: "Test User",
-            role: .manager
+            role: .manager,
+            employeeId: nil,
+            company: nil
         )
 
         currentUser = user
@@ -64,7 +66,9 @@ final class MockAuthRepository: AuthRepository {
             id: UUID().uuidString,
             email: email,
             name: name,
-            role: role
+            role: role,
+            employeeId: nil,
+            company: nil
         )
 
         currentUser = user
@@ -114,7 +118,7 @@ final class MockAuthRepository: AuthRepository {
             throw AuthError.emptyPassword
         }
 
-        if password.count < 6 {
+        if password.count < 8 {
             throw AuthError.passwordTooShort
         }
         

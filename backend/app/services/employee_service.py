@@ -14,14 +14,23 @@ from app.schemas.employee import (
     EmployeeCalendarShiftRead,
     EmployeeCalendarSummaryRead,
     EmployeeCreate,
+    EmployeePositionRead,
+    EmployeePositionUpdate,
     EmployeeRead,
     EmployeeWorkloadRead,
 )
+from app.schemas.auth import UserRead
 from app.services import auth_service
 
 
-def list_employees(db: Session) -> list[EmployeeRead]:
-    return [_build_employee_read(employee) for employee in employee_repository.list_employees(db)]
+def list_employees(db: Session, current_user: UserRead) -> list[EmployeeRead]:
+    if current_user.company_id is None:
+        return []
+
+    return [
+        _build_employee_read(employee)
+        for employee in employee_repository.list_employees_by_company(db, current_user.company_id)
+    ]
 
 
 def create_employee(db: Session, payload: EmployeeCreate) -> EmployeeRead:
@@ -48,6 +57,51 @@ def create_employee(db: Session, payload: EmployeeCreate) -> EmployeeRead:
         position_id=position.id,
     )
     return _build_employee_read(employee)
+
+
+def update_employee_position(
+    db: Session,
+    employee_id: int,
+    payload: EmployeePositionUpdate,
+    current_user: UserRead,
+) -> EmployeeRead:
+    if current_user.company_id is None:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Manager is not linked to a company.",
+        )
+
+    employee = employee_repository.get_employee_by_id(db, employee_id)
+    if employee is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Employee was not found.",
+        )
+    if employee.company_id != current_user.company_id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Employee does not belong to the authenticated user's company.",
+        )
+
+    if payload.position_id is not None:
+        position = position_repository.get_position_by_id(db, payload.position_id)
+        if position is None:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Position was not found.",
+            )
+        if position.company_id != current_user.company_id:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Position does not belong to the authenticated user's company.",
+            )
+
+    updated_employee = employee_repository.update_employee_position(
+        db,
+        employee=employee,
+        position_id=payload.position_id,
+    )
+    return _build_employee_read(updated_employee)
 
 
 def get_availability(db: Session, employee_id: int) -> AvailabilityRead:
@@ -159,12 +213,18 @@ def get_calendar_summary(
 
 
 def _build_employee_read(employee) -> EmployeeRead:
+    position = None
+    if employee.position is not None:
+        position = EmployeePositionRead(id=employee.position.id, name=employee.position.name)
+
     return EmployeeRead(
         id=employee.id,
         full_name=employee.user.full_name,
         email=employee.user.email,
-        position_id=employee.position_id or 0,
-        position_title=employee.position.name if getattr(employee, "position", None) is not None else "",
+        role=employee.user.role,
+        position_id=employee.position_id,
+        position_title=employee.position.name if employee.position is not None else "",
+        position=position,
         availability=_build_availability_read(employee),
     )
 

@@ -142,6 +142,13 @@ def create_placeholder_employee_password() -> str:
 
 def _build_user_read(db: Session, user) -> UserRead:
     employee = employee_repository.get_employee_by_user_id(db, user.id)
+    company_id = None
+
+    if user.role == "manager":
+        company = company_repository.get_company_by_manager_user_id(db, user.id)
+        company_id = company.id if company else None
+    elif employee is not None:
+        company_id = employee.company_id
 
     return UserRead(
         id=user.id,
@@ -149,11 +156,13 @@ def _build_user_read(db: Session, user) -> UserRead:
         email=user.email,
         role=user.role,
         employee_id=employee.id if employee else None,
+        company_id=company_id,
     )
 
 
 def _build_register_response(db: Session, user) -> RegisterResponse:
     employee = employee_repository.get_employee_by_user_id(db, user.id)
+    company_id = employee.company_id if employee else None
 
     return RegisterResponse(
         id=user.id,
@@ -161,12 +170,14 @@ def _build_register_response(db: Session, user) -> RegisterResponse:
         email=user.email,
         role=user.role,
         employee_id=employee.id if employee else None,
+        company_id=company_id,
     )
 
 
 def _build_current_user_response(db: Session, user) -> CurrentUserResponse:
     employee = None
     company = None
+    company_id = None
     branch = None
     position = None
 
@@ -174,6 +185,7 @@ def _build_current_user_response(db: Session, user) -> CurrentUserResponse:
         company_model = company_repository.get_company_by_manager_user_id(db, user.id)
 
         if company_model is not None:
+            company_id = company_model.id
             company = CurrentUserCompanyRead(
                 id=company_model.id,
                 name=company_model.name,
@@ -184,6 +196,8 @@ def _build_current_user_response(db: Session, user) -> CurrentUserResponse:
         employee = employee_repository.get_employee_by_user_id(db, user.id)
 
         if employee is not None:
+            company_id = employee.company_id
+
             if employee.company is not None:
                 company = CurrentUserCompanyRead(
                     id=employee.company.id,
@@ -209,6 +223,7 @@ def _build_current_user_response(db: Session, user) -> CurrentUserResponse:
         email=user.email,
         role=user.role,
         employee_id=employee.id if employee else None,
+        company_id=company_id,
         company=company,
         branch=branch,
         position=position,

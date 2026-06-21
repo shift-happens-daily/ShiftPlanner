@@ -5,7 +5,7 @@ struct EmployeeScheduleView: View {
         NavigationStack {
             Text("Emloyee schedule")
                 .navigationTitle("Employee schedule")
+                .navigationBarTitleDisplayMode(.inline)
         }
     }
 }
-

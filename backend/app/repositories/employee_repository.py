@@ -27,6 +27,17 @@ def list_employees(db: Session) -> list[Employee]:
     )
 
 
+def list_employees_by_company(db: Session, company_id: int) -> list[Employee]:
+    return list(
+        db.scalars(
+            select(Employee)
+            .options(*_employee_options())
+            .where(Employee.company_id == company_id)
+            .order_by(Employee.id)
+        )
+    )
+
+
 def get_employee_by_id(db: Session, employee_id: int) -> Employee | None:
     return db.scalars(
         select(Employee)
@@ -90,6 +101,19 @@ def update_employee_membership(
     db.commit()
     db.refresh(employee)
 
+    return get_employee_by_id(db, employee.id)
+
+
+def update_employee_position(
+    db: Session,
+    *,
+    employee: Employee,
+    position_id: int | None,
+) -> Employee:
+    employee.position_id = position_id
+    db.add(employee)
+    db.commit()
+    db.refresh(employee)
     return get_employee_by_id(db, employee.id)
 
 

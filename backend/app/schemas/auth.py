@@ -16,6 +16,7 @@ class UserRead(BaseModel):
     email: str
     role: Role
     employee_id: int | None = None
+    company_id: int | None = None
 
 
 class LoginResponse(BaseModel):

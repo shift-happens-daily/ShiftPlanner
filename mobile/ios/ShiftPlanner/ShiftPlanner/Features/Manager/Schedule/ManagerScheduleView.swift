@@ -5,6 +5,7 @@ struct ManagerScheduleView: View {
         NavigationStack {
             Text("Manager schedule info")
                 .navigationTitle("Manager schedule")
+                .navigationBarTitleDisplayMode(.inline)
         }
     }
 }

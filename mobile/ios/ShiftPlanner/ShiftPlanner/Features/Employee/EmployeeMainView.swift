@@ -1,9 +1,24 @@
 import SwiftUI
 
 struct EmployeeMainView: View {
+    let user: AppUser
+    let onLogout: () async -> Void
+    let onUserUpdated: (AppUser) -> Void
+
+    @State private var isShowingInviteSheet = false
+
     var body: some View {
         TabView {
-            AvailabilityView()
+            Group {
+                if user.hasCompany, user.employeeId != nil {
+                    AvailabilityView(user: user)
+                        .id(user.employeeId)
+                } else {
+                    AvailabilityLockedView {
+                        isShowingInviteSheet = true
+                    }
+                }
+            }
                 .tabItem {
                     Label("Availability", systemImage: "clock.badge.checkmark")
                 }
@@ -12,6 +27,17 @@ struct EmployeeMainView: View {
                 .tabItem {
                     Label("Schedule", systemImage: "calendar")
                 }
+
+            EmployeeProfileView(user: user, onLogout: onLogout)
+                .tabItem {
+                    Label("Profile", systemImage: "person.crop.circle")
+                }
+        }
+        .sheet(isPresented: $isShowingInviteSheet) {
+            CompanyInviteView(
+                mode: .employeeJoin,
+                onUserJoined: onUserUpdated
+            )
         }
     }
 }

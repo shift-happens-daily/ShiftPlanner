@@ -3,11 +3,15 @@ from typing import Literal
 
 from pydantic import BaseModel, Field, model_validator
 
+Date = date
+
 
 class ScheduleRequirementCreate(BaseModel):
+    branch_id: int | None = Field(default=None, ge=1)
     position_id: int = Field(ge=1)
     date: date
-    min_staff: int = Field(ge=1)
+    min_staff: int | None = Field(default=None, ge=1)
+    required_count: int | None = Field(default=None, ge=1)
     start_time: time
     end_time: time
 
@@ -15,12 +19,37 @@ class ScheduleRequirementCreate(BaseModel):
     def validate_time_range(self) -> "ScheduleRequirementCreate":
         if self.end_time <= self.start_time:
             raise ValueError("end_time must be later than start_time.")
+        if self.required_count is None and self.min_staff is None:
+            raise ValueError("required_count or min_staff is required.")
+        if self.required_count is None:
+            self.required_count = self.min_staff
+        if self.min_staff is None:
+            self.min_staff = self.required_count
         return self
 
 
 class ScheduleRequirementRead(ScheduleRequirementCreate):
     id: int
     position_title: str
+    required_count: int
+
+
+class ScheduleRequirementUpdate(BaseModel):
+    branch_id: int | None = Field(default=None, ge=1)
+    position_id: int | None = Field(default=None, ge=1)
+    date: Date | None = None
+    min_staff: int | None = Field(default=None, ge=1)
+    required_count: int | None = Field(default=None, ge=1)
+    start_time: time | None = None
+    end_time: time | None = None
+
+    @model_validator(mode="after")
+    def sync_staff_fields(self) -> "ScheduleRequirementUpdate":
+        if self.required_count is None and self.min_staff is not None:
+            self.required_count = self.min_staff
+        if self.min_staff is None and self.required_count is not None:
+            self.min_staff = self.required_count
+        return self
 
 
 class ScheduleRequirementTemplateCreate(BaseModel):

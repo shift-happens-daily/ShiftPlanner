@@ -5,27 +5,41 @@ class CompanyCreate(BaseModel):
     name: str = Field(min_length=1)
 
 
+class CompanyUpdate(BaseModel):
+    name: str | None = Field(default=None, min_length=1)
+    address: str | None = None
+
+
 class CompanySummaryRead(BaseModel):
     id: int
     name: str
 
 
 class CompanyRead(CompanySummaryRead):
+    address: str | None = None
     invite_code: str
 
 
 class BranchRead(BaseModel):
     id: int
     name: str
+    address: str | None = None
 
 
 class BranchCreate(BaseModel):
     name: str = Field(min_length=1)
+    address: str | None = None
+
+
+class BranchUpdate(BaseModel):
+    name: str | None = Field(default=None, min_length=1)
+    address: str | None = None
 
 
 class BranchResponse(BaseModel):
     id: int
     name: str
+    address: str | None = None
     company_id: int
 
 
