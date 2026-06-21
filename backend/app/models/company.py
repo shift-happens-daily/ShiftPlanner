@@ -18,7 +18,12 @@ class Company(Base):
     id: Mapped[int] = mapped_column(primary_key=True)
     name: Mapped[str] = mapped_column(String(255))
     address: Mapped[str | None] = mapped_column(Text)
-    invite_code: Mapped[str | None] = mapped_column(String(50), unique=True)
+    invite_code: Mapped[str] = mapped_column(String(16), unique=True, nullable=False)
+    invite_code_generated_at: Mapped[datetime] = mapped_column(
+        DateTime,
+        server_default=func.current_timestamp(),
+    )
+    invite_code_expires_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
 
     manager_user_id: Mapped[int | None] = mapped_column(
         ForeignKey("users.id", ondelete="SET NULL"),
