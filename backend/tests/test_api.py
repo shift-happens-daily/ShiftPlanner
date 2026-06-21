@@ -580,6 +580,155 @@ def test_invalid_invite_code_formats_are_rejected(client: TestClient) -> None:
     assert invalid_characters.status_code == 422
 
 
+def test_employee_joins_with_only_invite_code_and_manager_assigns_later(client: TestClient) -> None:
+    registered = client.post(
+        "/auth/register",
+        json={
+            "full_name": "Invite Only Employee",
+            "email": "invite-only@example.com",
+            "password": "employee456",
+            "role": "employee",
+        },
+    )
+    assert registered.status_code == 201, registered.text
+    employee_headers = login_json(client, "invite-only@example.com", "employee456")
+
+    joined = client.post(
+        "/companies/join",
+        headers=employee_headers,
+        json={"invite_code": SEED_INVITE_CODE},
+    )
+    assert joined.status_code == 200, joined.text
+    joined_json = joined.json()
+    assert joined_json["branch_id"] is None
+    assert joined_json["position_id"] is None
+    assert joined_json["branch"] is None
+    assert joined_json["position"] is None
+
+    manager_headers = login_json(client, "manager@example.com", "manager123")
+    employees = client.get("/employees/", headers=manager_headers)
+    assert employees.status_code == 200, employees.text
+    employee = next(item for item in employees.json() if item["public_id"] == registered.json()["public_id"])
+    assert employee["branch_id"] is None
+    assert employee["position_id"] is None
+
+    assigned_position = client.patch(
+        f"/employees/{employee['id']}/position",
+        headers=manager_headers,
+        json={"position_id": 1},
+    )
+    assert assigned_position.status_code == 200, assigned_position.text
+    assert assigned_position.json()["position_id"] == 1
+
+    assigned_branch = client.patch(
+        f"/employees/{employee['id']}/branch",
+        headers=manager_headers,
+        json={"branch_id": 1},
+    )
+    assert assigned_branch.status_code == 200, assigned_branch.text
+    assert assigned_branch.json()["branch_id"] == 1
+
+    unassigned_branch = client.patch(
+        f"/employees/{employee['id']}/branch",
+        headers=manager_headers,
+        json={"branch_id": None},
+    )
+    assert unassigned_branch.status_code == 200, unassigned_branch.text
+    assert unassigned_branch.json()["branch_id"] is None
+
+    assert client.patch(
+        f"/employees/{employee['id']}/branch",
+        headers=employee_headers,
+        json={"branch_id": None},
+    ).status_code == 403
+    assert client.patch(
+        f"/employees/{employee['id']}/branch",
+        json={"branch_id": None},
+    ).status_code == 401
+
+
+def test_employee_joins_with_partial_optional_assignments(client: TestClient) -> None:
+    for email in ("position-only@example.com", "branch-only@example.com"):
+        registered = client.post(
+            "/auth/register",
+            json={
+                "full_name": "Partial Assignment Employee",
+                "email": email,
+                "password": "employee456",
+                "role": "employee",
+            },
+        )
+        assert registered.status_code == 201, registered.text
+
+    position_headers = login_json(client, "position-only@example.com", "employee456")
+    position_only = client.post(
+        "/companies/join",
+        headers=position_headers,
+        json={"invite_code": SEED_INVITE_CODE, "branch_id": None, "position_id": 1},
+    )
+    assert position_only.status_code == 200, position_only.text
+    assert position_only.json()["branch_id"] is None
+    assert position_only.json()["position_id"] == 1
+    assert position_only.json()["position"] == {"id": 1, "name": "Barista"}
+
+    branch_headers = login_json(client, "branch-only@example.com", "employee456")
+    branch_only = client.post(
+        "/companies/join",
+        headers=branch_headers,
+        json={"invite_code": SEED_INVITE_CODE, "branch_id": 1, "position_id": None},
+    )
+    assert branch_only.status_code == 200, branch_only.text
+    assert branch_only.json()["branch_id"] == 1
+    assert branch_only.json()["position_id"] is None
+    assert branch_only.json()["position"] is None
+
+
+def test_join_rejects_branch_and_position_from_another_company(client: TestClient) -> None:
+    seed_second_company_scope_data()
+    registered = client.post(
+        "/auth/register",
+        json={
+            "full_name": "Foreign Assignment Employee",
+            "email": "foreign-assignment@example.com",
+            "password": "employee456",
+            "role": "employee",
+        },
+    )
+    assert registered.status_code == 201, registered.text
+    employee_headers = login_json(client, "foreign-assignment@example.com", "employee456")
+
+    with psycopg.connect(PSYCOPG_DSN) as connection:
+        with connection.cursor() as cursor:
+            cursor.execute("SELECT id FROM companies WHERE invite_code = %s", (SECOND_COMPANY_INVITE_CODE,))
+            other_company_id = cursor.fetchone()[0]
+            cursor.execute("SELECT id FROM branches WHERE company_id = %s", (other_company_id,))
+            other_branch_id = cursor.fetchone()[0]
+            cursor.execute("SELECT id FROM positions WHERE company_id = %s", (other_company_id,))
+            other_position_id = cursor.fetchone()[0]
+
+    foreign_branch = client.post(
+        "/companies/join",
+        headers=employee_headers,
+        json={"invite_code": SEED_INVITE_CODE, "branch_id": other_branch_id},
+    )
+    assert foreign_branch.status_code == 400
+
+    foreign_position = client.post(
+        "/companies/join",
+        headers=employee_headers,
+        json={"invite_code": SEED_INVITE_CODE, "position_id": other_position_id},
+    )
+    assert foreign_position.status_code == 400
+
+    manager_headers = login_json(client, "manager@example.com", "manager123")
+    foreign_branch_assignment = client.patch(
+        "/employees/1/branch",
+        headers=manager_headers,
+        json={"branch_id": other_branch_id},
+    )
+    assert foreign_branch_assignment.status_code == 403
+
+
 def test_manager_can_create_and_list_branches_with_address(client: TestClient) -> None:
     manager_headers = login_json(client, "manager@example.com", "manager123")
 

@@ -117,6 +117,19 @@ def update_employee_position(
     return get_employee_by_id(db, employee.id)
 
 
+def update_employee_branch(
+    db: Session,
+    *,
+    employee: Employee,
+    branch_id: int | None,
+) -> Employee:
+    employee.branch_id = branch_id
+    db.add(employee)
+    db.commit()
+    db.refresh(employee)
+    return get_employee_by_id(db, employee.id)
+
+
 def delete_employees_by_company(db: Session, company_id: int) -> None:
     employees = list(
         db.scalars(
