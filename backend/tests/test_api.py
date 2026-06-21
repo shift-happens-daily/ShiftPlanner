@@ -1716,6 +1716,85 @@ def test_manager_generation_is_company_scoped_and_publishable(client: TestClient
     assert len(visible.json()) == 1
 
 
+def test_repeated_generation_does_not_stack_shifts_or_reported_hours(client: TestClient) -> None:
+    with psycopg.connect(PSYCOPG_DSN) as connection:
+        with connection.cursor() as cursor:
+            cursor.execute("UPDATE employees SET position_id = 1 WHERE id = 1")
+
+    manager_headers = login_json(client, "manager@example.com", "manager123")
+    employee_headers = login_json(client, "ivan@example.com", "employee123")
+    payload = {"start_date": "2026-06-15", "end_date": "2026-06-21"}
+
+    first = client.post("/schedule/generate", headers=manager_headers, json=payload)
+    second = client.post("/schedule/generate", headers=manager_headers, json=payload)
+    assert first.status_code == 200, first.text
+    assert second.status_code == 200, second.text
+    assert first.json()["id"] != second.json()["id"]
+    second_schedule_id = second.json()["id"]
+
+    with psycopg.connect(PSYCOPG_DSN) as connection:
+        with connection.cursor() as cursor:
+            cursor.execute(
+                """
+                SELECT COUNT(*) FROM schedules
+                WHERE company_id = 1
+                  AND start_date = '2026-06-15'
+                  AND end_date = '2026-06-21'
+                  AND status = 'draft'
+                """
+            )
+            assert cursor.fetchone()[0] == 1
+            cursor.execute(
+                """
+                SELECT COUNT(*)
+                FROM shift_assignments sa
+                JOIN shifts s ON s.id = sa.shift_id
+                WHERE s.schedule_id = %s
+                """,
+                (second_schedule_id,),
+            )
+            assert cursor.fetchone()[0] == 1
+
+    assert client.get("/schedule/my", headers=employee_headers).json() == []
+    published_second = client.post(f"/schedule/{second_schedule_id}/publish", headers=manager_headers)
+    assert published_second.status_code == 200, published_second.text
+    assert len(client.get("/schedule/my", headers=employee_headers).json()) == 1
+
+    first_report = client.get(
+        "/reports/me?start_date=2026-06-15&end_date=2026-06-21",
+        headers=employee_headers,
+    )
+    assert first_report.status_code == 200, first_report.text
+    assert first_report.json()["total_shifts"] == 1
+    assert first_report.json()["total_hours"] == 8.0
+
+    third = client.post("/schedule/generate", headers=manager_headers, json=payload)
+    assert third.status_code == 200, third.text
+    third_schedule_id = third.json()["id"]
+    assert len(client.get("/schedule/my", headers=employee_headers).json()) == 1
+
+    published_third = client.post(f"/schedule/{third_schedule_id}/publish", headers=manager_headers)
+    assert published_third.status_code == 200, published_third.text
+
+    with psycopg.connect(PSYCOPG_DSN) as connection:
+        with connection.cursor() as cursor:
+            cursor.execute("SELECT status FROM schedules WHERE id = %s", (second_schedule_id,))
+            assert cursor.fetchone()[0] == "archived"
+            cursor.execute("SELECT status FROM schedules WHERE id = %s", (third_schedule_id,))
+            assert cursor.fetchone()[0] == "published"
+
+    final_schedule = client.get("/schedule/my", headers=employee_headers)
+    assert final_schedule.status_code == 200, final_schedule.text
+    assert len(final_schedule.json()) == 1
+    final_report = client.get(
+        "/reports/me?start_date=2026-06-15&end_date=2026-06-21",
+        headers=employee_headers,
+    )
+    assert final_report.status_code == 200, final_report.text
+    assert final_report.json()["total_shifts"] == 1
+    assert final_report.json()["total_hours"] == 8.0
+
+
 def test_manager_without_company_cannot_generate_schedule(client: TestClient) -> None:
     registered = client.post(
         "/auth/register",

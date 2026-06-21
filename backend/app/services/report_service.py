@@ -8,8 +8,18 @@ from app.schemas.auth import UserRead
 from app.schemas.report import EmployeeReportRead, EmployeeSelfReportRead
 
 
-def list_employee_reports(db: Session, start_date: date | None = None, end_date: date | None = None) -> list[EmployeeReportRead]:
-    rows = report_repository.list_published_shift_rows(db, start_date=start_date, end_date=end_date)
+def list_employee_reports(
+    db: Session,
+    start_date: date | None = None,
+    end_date: date | None = None,
+    company_id: int | None = None,
+) -> list[EmployeeReportRead]:
+    rows = report_repository.list_published_shift_rows(
+        db,
+        start_date=start_date,
+        end_date=end_date,
+        company_id=company_id,
+    )
     totals: dict[int, dict] = {}
 
     for row in rows:
@@ -47,7 +57,12 @@ def get_my_report(db: Session, current_user: UserRead, start_date: date | None =
     if employee is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Employee was not found.")
 
-    reports = list_employee_reports(db, start_date=start_date, end_date=end_date)
+    reports = list_employee_reports(
+        db,
+        start_date=start_date,
+        end_date=end_date,
+        company_id=employee.company_id,
+    )
     report = next((item for item in reports if item.employee_id == current_user.employee_id), None)
     return EmployeeSelfReportRead(
         employee_id=employee.id,
