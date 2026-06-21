@@ -12,6 +12,7 @@ class LoginRequest(BaseModel):
 
 class UserRead(BaseModel):
     id: int
+    public_id: str
     full_name: str
     email: str
     role: Role

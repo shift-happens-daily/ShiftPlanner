@@ -13,7 +13,7 @@ if str(ROOT_DIR) not in sys.path:
 
 from app.database import DATABASE_URL
 from app.main import app
-from app.repositories import company_repository
+from app.repositories import company_repository, user_repository
 from app.services import auth_service
 
 SCHEMA_SQL = (ROOT_DIR / "db" / "schema.sql").read_text(encoding="utf-8")
@@ -152,6 +152,179 @@ def test_auth_token_and_profile_endpoints(client: TestClient) -> None:
 
     unauthorized = client.get("/auth/me")
     assert unauthorized.status_code == 401
+
+
+def test_registered_user_receives_public_id_in_profile_without_membership(client: TestClient) -> None:
+    requested_public_id = "frontend-value"
+    registered = client.post(
+        "/auth/register",
+        json={
+            "full_name": "Public ID User",
+            "email": "public-id-user@example.com",
+            "password": "employee456",
+            "role": "employee",
+            "public_id": requested_public_id,
+        },
+    )
+    assert registered.status_code == 201, registered.text
+    public_id = registered.json()["public_id"]
+    assert len(public_id) == 16
+    assert public_id.isalnum()
+    assert public_id == public_id.upper()
+    assert public_id != requested_public_id
+    assert registered.json()["employee_id"] is None
+    assert registered.json()["company_id"] is None
+
+    headers = login_json(client, "public-id-user@example.com", "employee456")
+    profile = client.get("/auth/me", headers=headers)
+    assert profile.status_code == 200, profile.text
+    assert profile.json()["public_id"] == public_id
+    assert profile.json()["employee_id"] is None
+    assert profile.json()["company_id"] is None
+
+
+def test_public_id_collision_retries(client: TestClient, monkeypatch: pytest.MonkeyPatch) -> None:
+    with psycopg.connect(PSYCOPG_DSN) as connection:
+        with connection.cursor() as cursor:
+            cursor.execute("SELECT public_id FROM users ORDER BY id LIMIT 1")
+            existing_public_id = cursor.fetchone()[0]
+
+    generated_public_id = "Z9Z9Z9Z9Z9Z9Z9Z9"
+    generated_ids = iter([existing_public_id, generated_public_id])
+    monkeypatch.setattr(user_repository, "_generate_public_id", lambda: next(generated_ids))
+
+    registered = client.post(
+        "/auth/register",
+        json={
+            "full_name": "Collision User",
+            "email": "public-id-collision@example.com",
+            "password": "employee456",
+            "role": "employee",
+        },
+    )
+    assert registered.status_code == 201, registered.text
+    assert registered.json()["public_id"] == generated_public_id
+
+
+def test_employee_response_exposes_immutable_public_id(client: TestClient) -> None:
+    manager_headers = login_json(client, "manager@example.com", "manager123")
+
+    employees = client.get("/employees/", headers=manager_headers)
+    assert employees.status_code == 200, employees.text
+    original_public_id = employees.json()[0]["public_id"]
+
+    updated = client.patch(
+        "/employees/1/position",
+        headers=manager_headers,
+        json={"position_id": None, "public_id": "ZZZZZZZZZZZZZZZZ"},
+    )
+    assert updated.status_code == 200, updated.text
+    assert updated.json()["public_id"] == original_public_id
+
+    refreshed = client.get("/employees/", headers=manager_headers)
+    assert refreshed.status_code == 200, refreshed.text
+    assert refreshed.json()[0]["public_id"] == original_public_id
+
+
+def test_manager_links_existing_user_by_public_id(client: TestClient) -> None:
+    registered = client.post(
+        "/auth/register",
+        json={
+            "full_name": "Link Target",
+            "email": "link-target@example.com",
+            "password": "employee456",
+            "role": "employee",
+        },
+    )
+    assert registered.status_code == 201, registered.text
+    public_id = registered.json()["public_id"]
+    manager_headers = login_json(client, "manager@example.com", "manager123")
+
+    linked = client.post(
+        "/companies/me/link-user",
+        headers=manager_headers,
+        json={"user_public_id": public_id, "branch_id": None, "position_id": None},
+    )
+    assert linked.status_code == 200, linked.text
+    assert linked.json()["public_id"] == public_id
+    assert linked.json()["branch_id"] is None
+    assert linked.json()["position_id"] is None
+    assert linked.json()["position"] is None
+
+    employees = client.get("/employees/", headers=manager_headers)
+    assert employees.status_code == 200, employees.text
+    assert public_id in {employee["public_id"] for employee in employees.json()}
+
+    duplicate = client.post(
+        "/companies/me/link-user",
+        headers=manager_headers,
+        json={"user_public_id": public_id},
+    )
+    assert duplicate.status_code == 409
+
+
+def test_link_user_validates_target_access_and_assignments(client: TestClient) -> None:
+    seed_second_company_scope_data()
+    registered = client.post(
+        "/auth/register",
+        json={
+            "full_name": "Assignment Target",
+            "email": "assignment-target@example.com",
+            "password": "employee456",
+            "role": "employee",
+        },
+    )
+    assert registered.status_code == 201, registered.text
+    public_id = registered.json()["public_id"]
+    manager_headers = login_json(client, "manager@example.com", "manager123")
+
+    with psycopg.connect(PSYCOPG_DSN) as connection:
+        with connection.cursor() as cursor:
+            cursor.execute("SELECT public_id FROM users WHERE email = 'second-manager@example.com'")
+            manager_public_id = cursor.fetchone()[0]
+            cursor.execute("SELECT id FROM companies WHERE invite_code = %s", (SECOND_COMPANY_INVITE_CODE,))
+            other_company_id = cursor.fetchone()[0]
+            cursor.execute("SELECT id FROM branches WHERE company_id = %s", (other_company_id,))
+            other_branch_id = cursor.fetchone()[0]
+            cursor.execute("SELECT id FROM positions WHERE company_id = %s", (other_company_id,))
+            other_position_id = cursor.fetchone()[0]
+
+    missing = client.post(
+        "/companies/me/link-user",
+        headers=manager_headers,
+        json={"user_public_id": "ZZZZZZZZZZZZZZZZ"},
+    )
+    assert missing.status_code == 404
+
+    manager_target = client.post(
+        "/companies/me/link-user",
+        headers=manager_headers,
+        json={"user_public_id": manager_public_id},
+    )
+    assert manager_target.status_code == 400
+
+    foreign_branch = client.post(
+        "/companies/me/link-user",
+        headers=manager_headers,
+        json={"user_public_id": public_id, "branch_id": other_branch_id},
+    )
+    assert foreign_branch.status_code == 403
+
+    foreign_position = client.post(
+        "/companies/me/link-user",
+        headers=manager_headers,
+        json={"user_public_id": public_id, "position_id": other_position_id},
+    )
+    assert foreign_position.status_code == 403
+
+    employee_headers = login_json(client, "ivan@example.com", "employee123")
+    forbidden = client.post(
+        "/companies/me/link-user",
+        headers=employee_headers,
+        json={"user_public_id": public_id},
+    )
+    assert forbidden.status_code == 403
+    assert client.post("/companies/me/link-user", json={"user_public_id": public_id}).status_code == 401
 
 
 def test_employee_without_assigned_position_returns_null(client: TestClient) -> None:

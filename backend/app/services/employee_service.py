@@ -219,6 +219,7 @@ def _build_employee_read(employee) -> EmployeeRead:
 
     return EmployeeRead(
         id=employee.id,
+        public_id=employee.user.public_id,
         full_name=employee.user.full_name,
         email=employee.user.email,
         role=employee.user.role,

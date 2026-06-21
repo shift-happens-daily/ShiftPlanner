@@ -3,7 +3,36 @@ import re
 from pydantic import BaseModel, Field, field_validator
 
 INVITE_CODE_PATTERN = re.compile(r"^[A-Z0-9]{16}$")
+PUBLIC_ID_PATTERN = re.compile(r"^[A-Z0-9]{16}$")
 
+
+class CompanyLinkUserRequest(BaseModel):
+    user_public_id: str = Field(..., min_length=16, max_length=16)
+    branch_id: int | None = None
+    position_id: int | None = None
+
+    @field_validator("user_public_id")
+    @classmethod
+    def validate_user_public_id(cls, value: str) -> str:
+        normalized = value.strip().upper()
+        if not PUBLIC_ID_PATTERN.fullmatch(normalized):
+            raise ValueError("User public ID must be a 16-character alphanumeric code.")
+        return normalized
+
+
+class LinkedEmployeePositionRead(BaseModel):
+    id: int
+    name: str
+
+
+class LinkedEmployeeRead(BaseModel):
+    id: int
+    public_id: str
+    full_name: str
+    email: str
+    branch_id: int | None = None
+    position_id: int | None = None
+    position: LinkedEmployeePositionRead | None = None
 
 def normalize_invite_code(value: str) -> str:
     if not isinstance(value, str):
