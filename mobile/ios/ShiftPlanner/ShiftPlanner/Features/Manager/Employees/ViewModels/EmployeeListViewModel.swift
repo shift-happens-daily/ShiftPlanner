@@ -4,6 +4,7 @@ import Combine
 @MainActor
 final class EmployeeListViewModel: ObservableObject {
     @Published private(set) var employees: [ManagedEmployee] = []
+    @Published private(set) var branches: [ManagedBranch] = []
     @Published private(set) var positions: [ManagedPosition] = []
     @Published var errorMessage: String?
     @Published var statusMessage: String?
@@ -34,11 +35,11 @@ final class EmployeeListViewModel: ObservableObject {
         errorMessage = nil
 
         do {
+            let branches = try await repository.fetchBranches()
+            self.branches = branches.sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
             let positions = try await repository.fetchPositions()
             self.positions = positions.sorted { $0.title.localizedCaseInsensitiveCompare($1.title) == .orderedAscending }
-            let employees = try await repository.fetchEmployees(
-                allowedPositionIDs: Set(positions.map(\.id))
-            )
+            let employees = try await repository.fetchEmployees()
             self.employees = employees
         } catch {
             errorMessage = error.localizedDescription
@@ -112,6 +113,17 @@ final class EmployeeListViewModel: ObservableObject {
         }
     }
 
+    func assignBranch(_ branchId: Int?, to employee: ManagedEmployee) async {
+        do {
+            employees = try await repository.assignBranch(branchId, to: employee, in: employees)
+            errorMessage = nil
+            statusMessage = localized("Employee branch updated.", "Филиал сотрудника обновлен.")
+        } catch {
+            errorMessage = error.localizedDescription
+            statusMessage = nil
+        }
+    }
+
     func removeEmployee(_ employee: ManagedEmployee) async {
         do {
             employees = try await repository.removeEmployee(employee, from: employees)
@@ -126,9 +138,18 @@ final class EmployeeListViewModel: ObservableObject {
     func positionTitle(for employee: ManagedEmployee) -> String {
         guard let positionId = employee.positionId,
               let position = positions.first(where: { $0.id == positionId }) else {
-            return localized("No role assigned", "Без должности")
+            return employee.positionTitle ?? localized("No role assigned", "Без должности")
         }
 
         return position.title
+    }
+
+    func branchTitle(for employee: ManagedEmployee) -> String {
+        guard let branchId = employee.branchId,
+              let branch = branches.first(where: { $0.id == branchId }) else {
+            return employee.branchName ?? localized("No branch", "Без филиала")
+        }
+
+        return branch.name
     }
 }

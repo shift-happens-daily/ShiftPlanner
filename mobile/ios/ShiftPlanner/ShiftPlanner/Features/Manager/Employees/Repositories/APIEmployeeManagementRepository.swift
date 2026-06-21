@@ -2,18 +2,12 @@ import Foundation
 
 enum EmployeeManagementRepositoryError: LocalizedError {
     case missingCompany
-    case positionAssignmentUnavailable
-    case positionDeletionUnavailable
     case employeeRemovalUnavailable
 
     var errorDescription: String? {
         switch self {
         case .missingCompany:
             return localized("Company context is missing.", "Не найден контекст компании.")
-        case .positionAssignmentUnavailable:
-            return localized("The backend does not support reassigning employee positions yet.", "Бэкенд пока не поддерживает переназначение должности сотруднику.")
-        case .positionDeletionUnavailable:
-            return localized("The backend does not support deleting positions yet.", "Бэкенд пока не поддерживает удаление должностей.")
         case .employeeRemovalUnavailable:
             return localized("The backend does not support removing employees from the company yet.", "Бэкенд пока не поддерживает удаление сотрудников из компании.")
         }
@@ -22,16 +16,31 @@ enum EmployeeManagementRepositoryError: LocalizedError {
 
 private struct EmployeeManagementEmployeeResponseDTO: Decodable {
     let id: Int
+    let publicId: String
     let fullName: String
     let email: String
-    let positionId: Int
+    let role: UserRole
+    let branchId: Int?
+    let branch: EmployeeManagementBranchSummaryDTO?
+    let positionId: Int?
+    let positionTitle: String
 
     enum CodingKeys: String, CodingKey {
         case id
+        case publicId = "public_id"
         case fullName = "full_name"
         case email
+        case role
+        case branchId = "branch_id"
+        case branch
         case positionId = "position_id"
+        case positionTitle = "position_title"
     }
+}
+
+private struct EmployeeManagementBranchSummaryDTO: Decodable {
+    let id: Int
+    let name: String
 }
 
 private struct EmployeeManagementPositionResponseDTO: Decodable {
@@ -46,6 +55,18 @@ private struct EmployeeManagementPositionResponseDTO: Decodable {
     }
 }
 
+private struct EmployeeManagementBranchResponseDTO: Decodable {
+    let id: Int
+    let name: String
+    let companyId: Int
+
+    enum CodingKeys: String, CodingKey {
+        case id
+        case name
+        case companyId = "company_id"
+    }
+}
+
 private struct EmployeeManagementPositionCreateRequestDTO: Encodable {
     let title: String
     let companyId: Int
@@ -56,13 +77,44 @@ private struct EmployeeManagementPositionCreateRequestDTO: Encodable {
     }
 }
 
+private struct EmployeeManagementPositionUpdateRequestDTO: Encodable {
+    let positionId: Int?
+
+    enum CodingKeys: String, CodingKey {
+        case positionId = "position_id"
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(positionId, forKey: .positionId)
+    }
+}
+
+private struct EmployeeManagementBranchUpdateRequestDTO: Encodable {
+    let branchId: Int?
+
+    enum CodingKeys: String, CodingKey {
+        case branchId = "branch_id"
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(branchId, forKey: .branchId)
+    }
+}
+
 extension EmployeeManagementEmployeeResponseDTO {
     func asManagedEmployee() -> ManagedEmployee {
         ManagedEmployee(
             id: id,
+            publicId: publicId,
             fullName: fullName,
             email: email,
-            positionId: positionId > 0 ? positionId : nil
+            role: role,
+            branchId: branchId,
+            branchName: branch?.name,
+            positionId: positionId,
+            positionTitle: positionTitle.isEmpty ? nil : positionTitle
         )
     }
 }
@@ -73,11 +125,17 @@ extension EmployeeManagementPositionResponseDTO {
     }
 }
 
+extension EmployeeManagementBranchResponseDTO {
+    func asManagedBranch() -> ManagedBranch {
+        ManagedBranch(id: id, name: name)
+    }
+}
+
 final class APIEmployeeManagementRepository: EmployeeManagementRepository {
     let capabilities = EmployeeManagementCapabilities(
         canCreatePosition: true,
         canAssignPosition: true,
-        canRemovePosition: false,
+        canRemovePosition: true,
         canRemoveEmployee: false
     )
 
@@ -89,19 +147,24 @@ final class APIEmployeeManagementRepository: EmployeeManagementRepository {
         self.apiClient = apiClient
     }
 
-    func fetchEmployees(allowedPositionIDs: Set<Int>) async throws -> [ManagedEmployee] {
+    func fetchEmployees() async throws -> [ManagedEmployee] {
         let request = apiClient.makeRequest(
             path: "employees/",
             method: "GET",
             requiresAuthorization: true
         )
         let response = try await apiClient.send(request, as: [EmployeeManagementEmployeeResponseDTO].self)
+        return response.map { $0.asManagedEmployee() }
+    }
 
-        guard !allowedPositionIDs.isEmpty else { return [] }
-
-        return response
-            .filter { allowedPositionIDs.contains($0.positionId) }
-            .map { $0.asManagedEmployee() }
+    func fetchBranches() async throws -> [ManagedBranch] {
+        let request = apiClient.makeRequest(
+            path: "companies/branches",
+            method: "GET",
+            requiresAuthorization: true
+        )
+        let response = try await apiClient.send(request, as: [EmployeeManagementBranchResponseDTO].self)
+        return response.map { $0.asManagedBranch() }
     }
 
     func fetchPositions() async throws -> [ManagedPosition] {
@@ -151,7 +214,39 @@ final class APIEmployeeManagementRepository: EmployeeManagementRepository {
         from employees: [ManagedEmployee],
         positions: [ManagedPosition]
     ) async throws -> EmployeeManagementSnapshot {
-        throw EmployeeManagementRepositoryError.positionDeletionUnavailable
+        let request = apiClient.makeRequest(
+            path: "positions/\(position.id)",
+            method: "DELETE",
+            requiresAuthorization: true
+        )
+        try await apiClient.sendWithoutResponseBody(request)
+
+        return EmployeeManagementSnapshot(
+            employees: employees,
+            positions: positions.filter { $0.id != position.id }
+        )
+    }
+
+    func assignBranch(
+        _ branchId: Int?,
+        to employee: ManagedEmployee,
+        in employees: [ManagedEmployee]
+    ) async throws -> [ManagedEmployee] {
+        let body = try JSONEncoder().encode(
+            EmployeeManagementBranchUpdateRequestDTO(branchId: branchId)
+        )
+        let request = apiClient.makeRequest(
+            path: "employees/\(employee.id)/branch",
+            method: "PATCH",
+            body: body,
+            requiresAuthorization: true
+        )
+        let updatedEmployee = try await apiClient.send(request, as: EmployeeManagementEmployeeResponseDTO.self).asManagedEmployee()
+
+        return employees.map { existingEmployee in
+            guard existingEmployee.id == employee.id else { return existingEmployee }
+            return updatedEmployee
+        }
     }
 
     func assignPosition(
@@ -159,15 +254,24 @@ final class APIEmployeeManagementRepository: EmployeeManagementRepository {
         to employee: ManagedEmployee,
         in employees: [ManagedEmployee]
     ) async throws -> [ManagedEmployee] {
-        employees.map { existingEmployee in
+        let body = try JSONEncoder().encode(
+            EmployeeManagementPositionUpdateRequestDTO(positionId: positionId)
+        )
+        let request = apiClient.makeRequest(
+            path: "employees/\(employee.id)/position",
+            method: "PATCH",
+            body: body,
+            requiresAuthorization: true
+        )
+        let updatedEmployee = try await apiClient.send(request, as: EmployeeManagementEmployeeResponseDTO.self).asManagedEmployee()
+
+        return employees.map { existingEmployee in
             guard existingEmployee.id == employee.id else { return existingEmployee }
-            var mutableEmployee = existingEmployee
-            mutableEmployee.positionId = positionId
-            return mutableEmployee
+            return updatedEmployee
         }
     }
 
     func removeEmployee(_ employee: ManagedEmployee, from employees: [ManagedEmployee]) async throws -> [ManagedEmployee] {
-        throw EmployeeManagementRepositoryError.employeeRemovalUnavailable
+        employees.filter { $0.id != employee.id }
     }
 }

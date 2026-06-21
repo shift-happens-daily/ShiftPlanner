@@ -8,28 +8,48 @@ struct MockEmployeeManagementRepository: EmployeeManagementRepository {
         canRemoveEmployee: true
     )
 
-    func fetchEmployees(allowedPositionIDs: Set<Int>) async throws -> [ManagedEmployee] {
+    func fetchEmployees() async throws -> [ManagedEmployee] {
+        let branches = try await fetchBranches()
         let positions = try await fetchPositions()
 
         return [
             ManagedEmployee(
                 id: 1,
+                publicId: "EMPLOYEE00000001",
                 fullName: "Anna Petrova",
                 email: "anna@example.com",
+                role: .employee,
+                branchId: branches[safe: 0]?.id,
+                branchName: branches[safe: 0]?.name,
                 positionId: positions[safe: 0]?.id
             ),
             ManagedEmployee(
                 id: 2,
+                publicId: "EMPLOYEE00000002",
                 fullName: "Ivan Smirnov",
                 email: "ivan@example.com",
+                role: .employee,
+                branchId: branches[safe: 1]?.id,
+                branchName: branches[safe: 1]?.name,
                 positionId: positions[safe: 1]?.id
             ),
             ManagedEmployee(
                 id: 3,
+                publicId: "EMPLOYEE00000003",
                 fullName: "Maria Sokolova",
                 email: "maria@example.com",
+                role: .employee,
+                branchId: nil,
+                branchName: nil,
                 positionId: nil
             )
+        ]
+    }
+
+    func fetchBranches() async throws -> [ManagedBranch] {
+        [
+            ManagedBranch(id: 1, name: "Main Branch"),
+            ManagedBranch(id: 2, name: "Downtown")
         ]
     }
 
@@ -77,6 +97,22 @@ struct MockEmployeeManagementRepository: EmployeeManagementRepository {
             guard existingEmployee.id == employee.id else { return existingEmployee }
             var mutableEmployee = existingEmployee
             mutableEmployee.positionId = positionId
+            return mutableEmployee
+        }
+    }
+
+    func assignBranch(
+        _ branchId: Int?,
+        to employee: ManagedEmployee,
+        in employees: [ManagedEmployee]
+    ) async throws -> [ManagedEmployee] {
+        let branches = try await fetchBranches()
+
+        return employees.map { existingEmployee in
+            guard existingEmployee.id == employee.id else { return existingEmployee }
+            var mutableEmployee = existingEmployee
+            mutableEmployee.branchId = branchId
+            mutableEmployee.branchName = branches.first(where: { $0.id == branchId })?.name
             return mutableEmployee
         }
     }

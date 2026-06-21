@@ -7,6 +7,7 @@ struct EmployeeListView: View {
     @StateObject private var viewModel: EmployeeListViewModel
     @State private var employeePendingRemoval: ManagedEmployee?
     @State private var positionPendingRemoval: ManagedPosition?
+    @State private var branchPickerEmployee: ManagedEmployee?
     @State private var rolePickerEmployee: ManagedEmployee?
 
     let user: AppUser
@@ -41,6 +42,9 @@ struct EmployeeListView: View {
             .background(themeManager.selectedTheme.screenBackground)
             .navigationTitle(languageManager.text("Employees", "Сотрудники"))
             .navigationBarTitleDisplayMode(.inline)
+            .sheet(item: $branchPickerEmployee) { employee in
+                branchPickerSheet(for: employee)
+            }
             .sheet(item: $rolePickerEmployee) { employee in
                 rolePickerSheet(for: employee)
             }
@@ -68,7 +72,12 @@ struct EmployeeListView: View {
                     positionPendingRemoval = nil
                 }
             } message: {
-                Text(languageManager.text("Employees with this role will become unassigned in the local preview.", "Сотрудники с этой должностью станут без роли в локальном предпросмотре."))
+                Text(
+                    languageManager.text(
+                        "The position will be removed from the backend. If it is still used by employees, requirements, or shifts, the server will reject deletion.",
+                        "Должность будет удалена на бэкенде. Если она все еще используется сотрудниками, требованиями или сменами, сервер не даст ее удалить."
+                    )
+                )
             }
             .task {
                 if user.hasCompany {
@@ -131,9 +140,14 @@ struct EmployeeListView: View {
     private func employeeCard(_ employee: ManagedEmployee, index: Int) -> some View {
         ManagedEmployeeCardView(
             employee: employee,
+            branchTitle: viewModel.branchTitle(for: employee),
             positionTitle: viewModel.positionTitle(for: employee),
-            isPickerExpanded: rolePickerEmployee?.id == employee.id,
-            canDeleteEmployee: viewModel.capabilities.canRemoveEmployee,
+            isBranchPickerExpanded: branchPickerEmployee?.id == employee.id,
+            isRolePickerExpanded: rolePickerEmployee?.id == employee.id,
+            canDeleteEmployee: true,
+            onToggleBranchPicker: {
+                branchPickerEmployee = employee
+            },
             onToggleRolePicker: {
                 rolePickerEmployee = employee
             },
@@ -168,15 +182,41 @@ struct EmployeeListView: View {
 
     private var syncInfoMessage: String {
         if viewModel.capabilities.canAssignPosition &&
-            viewModel.capabilities.canRemoveEmployee &&
             viewModel.capabilities.canRemovePosition {
-            return languageManager.text("Employee data is synced with the backend.", "Данные сотрудников синхронизируются с бэкендом.")
+            return languageManager.text(
+                "Roles and positions are synced with the backend. Employee removal is still local-only for now.",
+                "Роли и должности синхронизируются с бэкендом. Удаление сотрудника пока работает только локально."
+            )
         }
 
         return languageManager.text(
-            "Employee and role lists are loaded from the backend. Position creation works via API, while reassignment and deletion are waiting for backend support.",
-            "Списки сотрудников и должностей загружаются с бэкенда. Создание должности уже работает через API, а переназначение и удаление ждут поддержки на бэкенде."
+            "Employee, branch, and role lists are loaded from the backend. Some management actions may still work only locally.",
+            "Списки сотрудников, филиалов и должностей загружаются с бэкенда. Часть действий управления пока может работать только локально."
         )
+    }
+
+    private func branchPickerSheet(for employee: ManagedEmployee) -> some View {
+        NavigationStack {
+            VStack(spacing: 0) {
+                BranchPickerListView(
+                    branches: viewModel.branches,
+                    currentBranchTitle: viewModel.branchTitle(for: employee),
+                    onAssignBranch: { branchId in
+                        Task {
+                            await viewModel.assignBranch(branchId, to: employee)
+                            branchPickerEmployee = nil
+                        }
+                    }
+                )
+                .padding()
+
+                Spacer(minLength: 0)
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+            .background(themeManager.selectedTheme.screenBackground)
+            .navigationTitle(languageManager.text("Branch", "Филиал"))
+            .navigationBarTitleDisplayMode(.inline)
+        }
     }
 
     private func rolePickerSheet(for employee: ManagedEmployee) -> some View {
