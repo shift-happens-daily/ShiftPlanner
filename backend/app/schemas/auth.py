@@ -54,6 +54,8 @@ class CurrentUserPositionRead(BaseModel):
 
 
 class CurrentUserResponse(UserRead):
+    branch_id: int | None = None
+    position_id: int | None = None
     company: CurrentUserCompanyRead | None = None
     branch: CurrentUserBranchRead | None = None
     position: CurrentUserPositionRead | None = None

@@ -13,6 +13,7 @@ from app.schemas.employee import (
     EmployeeCalendarPositionRead,
     EmployeeCalendarShiftRead,
     EmployeeCalendarSummaryRead,
+    EmployeeBranchUpdate,
     EmployeeCreate,
     EmployeePositionRead,
     EmployeePositionUpdate,
@@ -100,6 +101,45 @@ def update_employee_position(
         db,
         employee=employee,
         position_id=payload.position_id,
+    )
+    return _build_employee_read(updated_employee)
+
+
+def update_employee_branch(
+    db: Session,
+    employee_id: int,
+    payload: EmployeeBranchUpdate,
+    current_user: UserRead,
+) -> EmployeeRead:
+    if current_user.company_id is None:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Manager is not linked to a company.",
+        )
+
+    employee = employee_repository.get_employee_by_id(db, employee_id)
+    if employee is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Employee was not found.")
+    if employee.company_id != current_user.company_id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Employee does not belong to the authenticated user's company.",
+        )
+
+    if payload.branch_id is not None:
+        branch = company_repository.get_branch_by_id(db, payload.branch_id)
+        if branch is None:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Branch was not found.")
+        if branch.company_id != current_user.company_id:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Branch does not belong to the authenticated user's company.",
+            )
+
+    updated_employee = employee_repository.update_employee_branch(
+        db,
+        employee=employee,
+        branch_id=payload.branch_id,
     )
     return _build_employee_read(updated_employee)
 
@@ -223,6 +263,7 @@ def _build_employee_read(employee) -> EmployeeRead:
         full_name=employee.user.full_name,
         email=employee.user.email,
         role=employee.user.role,
+        branch_id=employee.branch_id,
         position_id=employee.position_id,
         position_title=employee.position.name if employee.position is not None else "",
         position=position,

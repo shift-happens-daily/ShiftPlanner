@@ -47,12 +47,17 @@ class EmployeePositionUpdate(BaseModel):
     position_id: int | None = Field(ge=1)
 
 
+class EmployeeBranchUpdate(BaseModel):
+    branch_id: int | None = Field(ge=1)
+
+
 class EmployeeRead(BaseModel):
     id: int
     public_id: str
     full_name: str
     email: str
     role: Literal["manager", "employee"]
+    branch_id: int | None
     position_id: int | None
     position_title: str
     position: EmployeePositionRead | None = None

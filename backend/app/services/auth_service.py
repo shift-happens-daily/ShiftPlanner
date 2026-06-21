@@ -227,6 +227,8 @@ def _build_current_user_response(db: Session, user) -> CurrentUserResponse:
         role=user.role,
         employee_id=employee.id if employee else None,
         company_id=company_id,
+        branch_id=employee.branch_id if employee else None,
+        position_id=employee.position_id if employee else None,
         company=company,
         branch=branch,
         position=position,
