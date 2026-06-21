@@ -1,20 +1,44 @@
+CREATE EXTENSION IF NOT EXISTS pgcrypto;
+
+CREATE OR REPLACE FUNCTION generate_alphanumeric_code(code_length INTEGER)
+RETURNS TEXT AS $$
+DECLARE
+    chars TEXT := 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
+    result TEXT := '';
+    i INTEGER;
+BEGIN
+    FOR i IN 1..code_length LOOP
+        result := result || substr(chars, floor(random() * length(chars) + 1)::INTEGER, 1);
+    END LOOP;
+
+    RETURN result;
+END;
+$$ LANGUAGE plpgsql;
+
 CREATE TABLE users (
     id SERIAL PRIMARY KEY,
+    public_id VARCHAR(16) UNIQUE NOT NULL DEFAULT generate_alphanumeric_code(16),
     full_name VARCHAR(255) NOT NULL,
     email VARCHAR(255) UNIQUE NOT NULL,
     password_hash TEXT NOT NULL,
     role VARCHAR(50) NOT NULL CHECK (role IN ('manager', 'employee')),
     is_registration_complete BOOLEAN NOT NULL DEFAULT TRUE,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    CHECK (public_id ~ '^[A-Za-z0-9]{16}$')   
 );
 
 CREATE TABLE companies (
     id SERIAL PRIMARY KEY,
     name VARCHAR(255) NOT NULL,
     address TEXT,
-    invite_code VARCHAR(50) UNIQUE,
+    invite_code VARCHAR(16) UNIQUE NOT NULL DEFAULT generate_alphanumeric_code(16),
+    invite_code_generated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    invite_code_expires_at TIMESTAMP,
     manager_user_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    CHECK (invite_code ~ '^[A-Za-z0-9]{16}$')
 );
 
 CREATE TABLE branches (
@@ -32,12 +56,17 @@ CREATE TABLE positions (
 
 CREATE TABLE employees (
     id SERIAL PRIMARY KEY,
+    employee_code VARCHAR(16) UNIQUE NOT NULL DEFAULT generate_alphanumeric_code(16),
     user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     company_id INTEGER NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
     branch_id INTEGER REFERENCES branches(id) ON DELETE SET NULL,
     position_id INTEGER REFERENCES positions(id) ON DELETE SET NULL,
-    max_hours_per_week INTEGER DEFAULT 40,
-    is_active BOOLEAN DEFAULT TRUE
+    max_hours_per_week INTEGER DEFAULT 40 CHECK (max_hours_per_week > 0),
+    is_active BOOLEAN DEFAULT TRUE,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE (user_id, company_id),
+    CHECK (employee_code ~ '^[A-Za-z0-9]{16}$')
 );
 
 CREATE TABLE employee_availability (
@@ -46,6 +75,13 @@ CREATE TABLE employee_availability (
     weekday INTEGER NOT NULL CHECK (weekday BETWEEN 0 AND 6),
     start_time TIME NOT NULL,
     end_time TIME NOT NULL,
+    availability_status VARCHAR(20) NOT NULL DEFAULT 'available'
+        CHECK (availability_status IN ('available', 'if_needed', 'unavailable')),
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    CHECK (end_time > start_time),
+    CHECK (EXTRACT(MINUTE FROM start_time)::INTEGER % 5 = 0),
+    CHECK (EXTRACT(MINUTE FROM end_time)::INTEGER % 5 = 0),
     UNIQUE (employee_id, weekday, start_time, end_time)
 );
 
@@ -73,7 +109,12 @@ CREATE TABLE shift_requirements (
     shift_date DATE NOT NULL,
     start_time TIME NOT NULL,
     end_time TIME NOT NULL,
-    required_employees INTEGER NOT NULL DEFAULT 1
+    required_employees INTEGER NOT NULL DEFAULT 1 CHECK (required_employees > 0),
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    CHECK (end_time > start_time),
+    CHECK (EXTRACT(MINUTE FROM start_time)::INTEGER % 5 = 0),
+    CHECK (EXTRACT(MINUTE FROM end_time)::INTEGER % 5 = 0)
 );
 
 CREATE TABLE schedules (
@@ -94,7 +135,11 @@ CREATE TABLE shifts (
     shift_date DATE NOT NULL,
     start_time TIME NOT NULL,
     end_time TIME NOT NULL,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    CHECK (end_time > start_time),
+    CHECK (EXTRACT(MINUTE FROM start_time)::INTEGER % 5 = 0),
+    CHECK (EXTRACT(MINUTE FROM end_time)::INTEGER % 5 = 0)
 );
 
 CREATE TABLE shift_assignments (
