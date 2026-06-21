@@ -9,6 +9,7 @@ h11==0.16.0
 httpx==0.28.1
 idna==3.18
 openpyxl==3.1.5
+ortools==9.14.6206
 passlib==1.7.4
 psycopg[binary]==3.2.13
 pydantic==2.13.4

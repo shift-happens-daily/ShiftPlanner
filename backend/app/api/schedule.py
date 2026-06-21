@@ -1,4 +1,5 @@
 from datetime import date
+from typing import Literal
 
 from fastapi import APIRouter, Depends, Query, status
 from sqlalchemy.orm import Session
@@ -109,10 +110,10 @@ def create_bulk_requirements(
 )
 def generate_schedule(
     payload: ScheduleGenerateRequest | None = None,
-    _: UserRead = Depends(require_role("manager")),
+    current_user: UserRead = Depends(require_role("manager")),
     db: Session = Depends(get_db),
 ) -> ScheduleRead:
-    return schedule_service.generate_schedule(db, payload)
+    return schedule_service.generate_schedule(db, current_user, payload)
 
 
 @router.get(
@@ -182,6 +183,19 @@ def update_exchange_request(
 
 
 @router.get(
+    "/latest",
+    response_model=ScheduleRead,
+    responses={**UNAUTHORIZED_RESPONSE, **FORBIDDEN_RESPONSE, **NOT_FOUND_RESPONSE, **VALIDATION_ERROR_RESPONSE},
+)
+def get_latest_schedule(
+    schedule_status: Literal["draft", "published", "archived"] | None = Query(default=None, alias="status"),
+    current_user: UserRead = Depends(require_role("manager")),
+    db: Session = Depends(get_db),
+) -> ScheduleRead:
+    return schedule_service.get_latest_schedule(db, current_user, schedule_status)
+
+
+@router.get(
     "/{schedule_id}",
     response_model=ScheduleRead,
     responses={**UNAUTHORIZED_RESPONSE, **NOT_FOUND_RESPONSE, **VALIDATION_ERROR_RESPONSE},
@@ -222,10 +236,10 @@ def update_shift(
 )
 def publish_schedule(
     schedule_id: int,
-    _: UserRead = Depends(require_role("manager")),
+    current_user: UserRead = Depends(require_role("manager")),
     db: Session = Depends(get_db),
 ) -> ScheduleRead:
-    return schedule_service.publish_schedule(db, schedule_id)
+    return schedule_service.publish_schedule(db, schedule_id, current_user)
 
 
 @router.delete("/requirements/{requirement_id}", status_code=204)

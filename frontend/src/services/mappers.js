@@ -10,6 +10,7 @@ export function mapCurrentUser(profile) {
   const { firstName, lastName } = splitFullName(profile?.full_name);
   return {
     id: profile?.id ?? null,
+    publicId: profile?.public_id ?? null,
     fullName: profile?.full_name || '',
     firstName,
     lastName,

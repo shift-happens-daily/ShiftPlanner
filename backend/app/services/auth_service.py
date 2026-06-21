@@ -152,6 +152,7 @@ def _build_user_read(db: Session, user) -> UserRead:
 
     return UserRead(
         id=user.id,
+        public_id=user.public_id,
         full_name=user.full_name,
         email=user.email,
         role=user.role,
@@ -166,6 +167,7 @@ def _build_register_response(db: Session, user) -> RegisterResponse:
 
     return RegisterResponse(
         id=user.id,
+        public_id=user.public_id,
         full_name=user.full_name,
         email=user.email,
         role=user.role,
@@ -219,11 +221,14 @@ def _build_current_user_response(db: Session, user) -> CurrentUserResponse:
 
     return CurrentUserResponse(
         id=user.id,
+        public_id=user.public_id,
         full_name=user.full_name,
         email=user.email,
         role=user.role,
         employee_id=employee.id if employee else None,
         company_id=company_id,
+        branch_id=employee.branch_id if employee else None,
+        position_id=employee.position_id if employee else None,
         company=company,
         branch=branch,
         position=position,

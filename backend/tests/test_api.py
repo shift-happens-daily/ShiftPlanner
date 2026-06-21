@@ -13,18 +13,19 @@ if str(ROOT_DIR) not in sys.path:
 
 from app.database import DATABASE_URL
 from app.main import app
+from app.repositories import company_repository, user_repository
 from app.services import auth_service
 
 SCHEMA_SQL = (ROOT_DIR / "db" / "schema.sql").read_text(encoding="utf-8")
 SEED_SQL = (ROOT_DIR / "db" / "seed.sql").read_text(encoding="utf-8")
 PSYCOPG_DSN = DATABASE_URL.replace("postgresql+psycopg://", "postgresql://", 1)
+SEED_INVITE_CODE = "A7K9P2X4M8Q1L5R3"
+SECOND_COMPANY_INVITE_CODE = "B8L0Q3Y5N9R2M6S4"
+OTHER_REQUIREMENTS_INVITE_CODE = "C9M1R4Z6P0S3N7T5"
 
 
 def _execute_script(cursor, script: str) -> None:
-    for statement in script.split(";"):
-        sql = statement.strip()
-        if sql:
-            cursor.execute(sql)
+    cursor.execute(script, prepare=False)
 
 
 def reset_database() -> None:
@@ -87,10 +88,10 @@ def seed_second_company_scope_data() -> None:
             cursor.execute(
                 """
                 INSERT INTO companies (name, invite_code, manager_user_id)
-                VALUES ('Other Company', 'OTHER123', %s)
+                VALUES ('Other Company', %s, %s)
                 RETURNING id
                 """,
-                (second_manager_id,),
+                (SECOND_COMPANY_INVITE_CODE, second_manager_id),
             )
             second_company_id = cursor.fetchone()[0]
             cursor.execute(
@@ -138,19 +139,192 @@ def test_auth_token_and_profile_endpoints(client: TestClient) -> None:
     manager_json = manager_profile.json()
     assert manager_json["role"] == "manager"
     assert manager_json["employee_id"] is None
-    assert manager_json["company"]["invite_code"] == "COFFEE123"
+    assert manager_json["company"]["invite_code"] == SEED_INVITE_CODE
 
     employee_profile = client.get("/auth/me", headers=employee_headers)
     assert employee_profile.status_code == 200, employee_profile.text
     employee_json = employee_profile.json()
     assert employee_json["role"] == "employee"
     assert employee_json["employee_id"] == 1
-    assert employee_json["company"]["invite_code"] == "COFFEE123"
-    assert employee_json["branch"]["name"] == "Main Branch"
-    assert employee_json["position"] == {"id": 1, "name": "Barista"}
+    assert employee_json["company"]["invite_code"] == SEED_INVITE_CODE
+    assert employee_json["branch"] is None
+    assert employee_json["position"] is None
 
     unauthorized = client.get("/auth/me")
     assert unauthorized.status_code == 401
+
+
+def test_registered_user_receives_public_id_in_profile_without_membership(client: TestClient) -> None:
+    requested_public_id = "frontend-value"
+    registered = client.post(
+        "/auth/register",
+        json={
+            "full_name": "Public ID User",
+            "email": "public-id-user@example.com",
+            "password": "employee456",
+            "role": "employee",
+            "public_id": requested_public_id,
+        },
+    )
+    assert registered.status_code == 201, registered.text
+    public_id = registered.json()["public_id"]
+    assert len(public_id) == 16
+    assert public_id.isalnum()
+    assert public_id == public_id.upper()
+    assert public_id != requested_public_id
+    assert registered.json()["employee_id"] is None
+    assert registered.json()["company_id"] is None
+
+    headers = login_json(client, "public-id-user@example.com", "employee456")
+    profile = client.get("/auth/me", headers=headers)
+    assert profile.status_code == 200, profile.text
+    assert profile.json()["public_id"] == public_id
+    assert profile.json()["employee_id"] is None
+    assert profile.json()["company_id"] is None
+
+
+def test_public_id_collision_retries(client: TestClient, monkeypatch: pytest.MonkeyPatch) -> None:
+    with psycopg.connect(PSYCOPG_DSN) as connection:
+        with connection.cursor() as cursor:
+            cursor.execute("SELECT public_id FROM users ORDER BY id LIMIT 1")
+            existing_public_id = cursor.fetchone()[0]
+
+    generated_public_id = "Z9Z9Z9Z9Z9Z9Z9Z9"
+    generated_ids = iter([existing_public_id, generated_public_id])
+    monkeypatch.setattr(user_repository, "_generate_public_id", lambda: next(generated_ids))
+
+    registered = client.post(
+        "/auth/register",
+        json={
+            "full_name": "Collision User",
+            "email": "public-id-collision@example.com",
+            "password": "employee456",
+            "role": "employee",
+        },
+    )
+    assert registered.status_code == 201, registered.text
+    assert registered.json()["public_id"] == generated_public_id
+
+
+def test_employee_response_exposes_immutable_public_id(client: TestClient) -> None:
+    manager_headers = login_json(client, "manager@example.com", "manager123")
+
+    employees = client.get("/employees/", headers=manager_headers)
+    assert employees.status_code == 200, employees.text
+    original_public_id = employees.json()[0]["public_id"]
+
+    updated = client.patch(
+        "/employees/1/position",
+        headers=manager_headers,
+        json={"position_id": None, "public_id": "ZZZZZZZZZZZZZZZZ"},
+    )
+    assert updated.status_code == 200, updated.text
+    assert updated.json()["public_id"] == original_public_id
+
+    refreshed = client.get("/employees/", headers=manager_headers)
+    assert refreshed.status_code == 200, refreshed.text
+    assert refreshed.json()[0]["public_id"] == original_public_id
+
+
+def test_manager_links_existing_user_by_public_id(client: TestClient) -> None:
+    registered = client.post(
+        "/auth/register",
+        json={
+            "full_name": "Link Target",
+            "email": "link-target@example.com",
+            "password": "employee456",
+            "role": "employee",
+        },
+    )
+    assert registered.status_code == 201, registered.text
+    public_id = registered.json()["public_id"]
+    manager_headers = login_json(client, "manager@example.com", "manager123")
+
+    linked = client.post(
+        "/companies/me/link-user",
+        headers=manager_headers,
+        json={"user_public_id": public_id, "branch_id": None, "position_id": None},
+    )
+    assert linked.status_code == 200, linked.text
+    assert linked.json()["public_id"] == public_id
+    assert linked.json()["branch_id"] is None
+    assert linked.json()["position_id"] is None
+    assert linked.json()["position"] is None
+
+    employees = client.get("/employees/", headers=manager_headers)
+    assert employees.status_code == 200, employees.text
+    assert public_id in {employee["public_id"] for employee in employees.json()}
+
+    duplicate = client.post(
+        "/companies/me/link-user",
+        headers=manager_headers,
+        json={"user_public_id": public_id},
+    )
+    assert duplicate.status_code == 409
+
+
+def test_link_user_validates_target_access_and_assignments(client: TestClient) -> None:
+    seed_second_company_scope_data()
+    registered = client.post(
+        "/auth/register",
+        json={
+            "full_name": "Assignment Target",
+            "email": "assignment-target@example.com",
+            "password": "employee456",
+            "role": "employee",
+        },
+    )
+    assert registered.status_code == 201, registered.text
+    public_id = registered.json()["public_id"]
+    manager_headers = login_json(client, "manager@example.com", "manager123")
+
+    with psycopg.connect(PSYCOPG_DSN) as connection:
+        with connection.cursor() as cursor:
+            cursor.execute("SELECT public_id FROM users WHERE email = 'second-manager@example.com'")
+            manager_public_id = cursor.fetchone()[0]
+            cursor.execute("SELECT id FROM companies WHERE invite_code = %s", (SECOND_COMPANY_INVITE_CODE,))
+            other_company_id = cursor.fetchone()[0]
+            cursor.execute("SELECT id FROM branches WHERE company_id = %s", (other_company_id,))
+            other_branch_id = cursor.fetchone()[0]
+            cursor.execute("SELECT id FROM positions WHERE company_id = %s", (other_company_id,))
+            other_position_id = cursor.fetchone()[0]
+
+    missing = client.post(
+        "/companies/me/link-user",
+        headers=manager_headers,
+        json={"user_public_id": "ZZZZZZZZZZZZZZZZ"},
+    )
+    assert missing.status_code == 404
+
+    manager_target = client.post(
+        "/companies/me/link-user",
+        headers=manager_headers,
+        json={"user_public_id": manager_public_id},
+    )
+    assert manager_target.status_code == 400
+
+    foreign_branch = client.post(
+        "/companies/me/link-user",
+        headers=manager_headers,
+        json={"user_public_id": public_id, "branch_id": other_branch_id},
+    )
+    assert foreign_branch.status_code == 403
+
+    foreign_position = client.post(
+        "/companies/me/link-user",
+        headers=manager_headers,
+        json={"user_public_id": public_id, "position_id": other_position_id},
+    )
+    assert foreign_position.status_code == 403
+
+    employee_headers = login_json(client, "ivan@example.com", "employee123")
+    forbidden = client.post(
+        "/companies/me/link-user",
+        headers=employee_headers,
+        json={"user_public_id": public_id},
+    )
+    assert forbidden.status_code == 403
+    assert client.post("/companies/me/link-user", json={"user_public_id": public_id}).status_code == 401
 
 
 def test_employee_without_assigned_position_returns_null(client: TestClient) -> None:
@@ -173,6 +347,10 @@ def test_employee_without_assigned_position_returns_null(client: TestClient) -> 
 
 
 def test_employees_list_includes_position_and_role(client: TestClient) -> None:
+    with psycopg.connect(PSYCOPG_DSN) as connection:
+        with connection.cursor() as cursor:
+            cursor.execute("UPDATE employees SET branch_id = 1, position_id = 1 WHERE id = 1")
+
     manager_headers = login_json(client, "manager@example.com", "manager123")
 
     response = client.get("/employees/", headers=manager_headers)
@@ -198,6 +376,105 @@ def test_employee_position_data_does_not_change_role_permissions(client: TestCli
     assert created.json()["position"] == {"id": 1, "name": "Barista"}
 
 
+def test_manager_can_update_employee_position_and_list_reflects_it(client: TestClient) -> None:
+    manager_headers = login_json(client, "manager@example.com", "manager123")
+
+    updated = client.patch(
+        "/employees/1/position",
+        headers=manager_headers,
+        json={"position_id": 2, "company_id": 999},
+    )
+    assert updated.status_code == 200, updated.text
+    assert updated.json()["position_id"] == 2
+    assert updated.json()["position"] == {"id": 2, "name": "Cashier"}
+    assert updated.json()["position_title"] == "Cashier"
+
+    employees = client.get("/employees/", headers=manager_headers)
+    assert employees.status_code == 200, employees.text
+    employee = next(item for item in employees.json() if item["id"] == 1)
+    assert employee["position"] == {"id": 2, "name": "Cashier"}
+
+
+def test_employee_and_unauthenticated_users_cannot_update_employee_position(client: TestClient) -> None:
+    employee_headers = login_json(client, "ivan@example.com", "employee123")
+
+    employee_response = client.patch(
+        "/employees/1/position",
+        headers=employee_headers,
+        json={"position_id": 2},
+    )
+    assert employee_response.status_code == 403
+
+    unauthorized = client.patch("/employees/1/position", json={"position_id": 2})
+    assert unauthorized.status_code == 401
+
+
+def test_manager_cannot_update_other_company_employee_or_assign_foreign_position(client: TestClient) -> None:
+    seed_second_company_scope_data()
+    manager_headers = login_json(client, "manager@example.com", "manager123")
+
+    with psycopg.connect(PSYCOPG_DSN) as connection:
+        with connection.cursor() as cursor:
+            cursor.execute("SELECT id FROM companies WHERE invite_code = %s", (SECOND_COMPANY_INVITE_CODE,))
+            other_company_id = cursor.fetchone()[0]
+            cursor.execute("SELECT id FROM employees WHERE company_id = %s ORDER BY id LIMIT 1", (other_company_id,))
+            other_employee_id = cursor.fetchone()[0]
+            cursor.execute("SELECT id FROM positions WHERE company_id = %s ORDER BY id LIMIT 1", (other_company_id,))
+            other_position_id = cursor.fetchone()[0]
+
+    foreign_employee = client.patch(
+        f"/employees/{other_employee_id}/position",
+        headers=manager_headers,
+        json={"position_id": 1},
+    )
+    assert foreign_employee.status_code == 403
+
+    foreign_position = client.patch(
+        "/employees/1/position",
+        headers=manager_headers,
+        json={"position_id": other_position_id},
+    )
+    assert foreign_position.status_code == 403
+
+
+def test_manager_can_unassign_employee_position(client: TestClient) -> None:
+    manager_headers = login_json(client, "manager@example.com", "manager123")
+
+    updated = client.patch(
+        "/employees/1/position",
+        headers=manager_headers,
+        json={"position_id": None},
+    )
+    assert updated.status_code == 200, updated.text
+    assert updated.json()["position_id"] is None
+    assert updated.json()["position"] is None
+    assert updated.json()["position_title"] == ""
+
+    employees = client.get("/employees/", headers=manager_headers)
+    assert employees.status_code == 200, employees.text
+    assert employees.json()[0]["position"] is None
+
+
+def test_employee_position_update_returns_clear_errors_for_invalid_ids(client: TestClient) -> None:
+    manager_headers = login_json(client, "manager@example.com", "manager123")
+
+    missing_employee = client.patch(
+        "/employees/999999/position",
+        headers=manager_headers,
+        json={"position_id": 1},
+    )
+    assert missing_employee.status_code == 404
+    assert missing_employee.json()["detail"] == "Employee was not found."
+
+    missing_position = client.patch(
+        "/employees/1/position",
+        headers=manager_headers,
+        json={"position_id": 999999},
+    )
+    assert missing_position.status_code == 404
+    assert missing_position.json()["detail"] == "Position was not found."
+
+
 def test_manager_can_update_own_company(client: TestClient) -> None:
     manager_headers = login_json(client, "manager@example.com", "manager123")
 
@@ -215,11 +492,444 @@ def test_manager_can_update_own_company(client: TestClient) -> None:
     assert updated_json["id"] == 1
     assert updated_json["name"] == "Updated Coffee Bar"
     assert updated_json["address"] == "Updated Address 42"
-    assert updated_json["invite_code"] == "COFFEE123"
+    assert updated_json["invite_code"] == SEED_INVITE_CODE
 
     profile = client.get("/auth/me", headers=manager_headers)
     assert profile.status_code == 200, profile.text
     assert profile.json()["company"]["name"] == "Updated Coffee Bar"
+
+
+def test_manager_gets_own_company_with_address(client: TestClient) -> None:
+    manager_headers = login_json(client, "manager@example.com", "manager123")
+
+    response = client.get("/companies/me", headers=manager_headers)
+    assert response.status_code == 200, response.text
+    response_json = response.json()
+    assert response_json["id"] == 1
+    assert response_json["name"] == "Coffee Bar Barnaul"
+    assert response_json["address"] == "Barnaul, Lenin Street"
+    assert response_json["invite_code"] == SEED_INVITE_CODE
+    assert response_json["invite_code_generated_at"] is not None
+    assert response_json["invite_code_expires_at"] is None
+
+
+def test_employee_and_unauthenticated_users_cannot_get_manager_company(client: TestClient) -> None:
+    employee_headers = login_json(client, "ivan@example.com", "employee123")
+
+    assert client.get("/companies/me", headers=employee_headers).status_code == 403
+    assert client.get("/companies/me").status_code == 401
+
+
+def test_new_companies_receive_unique_secure_invite_codes(client: TestClient) -> None:
+    manager_headers = login_json(client, "manager@example.com", "manager123")
+
+    first = client.post(
+        "/companies/",
+        headers=manager_headers,
+        json={"name": "First Generated Company", "invite_code": "AAAAAAAAAAAAAAAA"},
+    )
+    second = client.post("/companies/", headers=manager_headers, json={"name": "Second Generated Company"})
+    assert first.status_code == 201, first.text
+    assert second.status_code == 201, second.text
+
+    first_code = first.json()["invite_code"]
+    second_code = second.json()["invite_code"]
+    assert len(first_code) == 16
+    assert first_code.isascii() and first_code.isalnum() and first_code == first_code.upper()
+    assert len(second_code) == 16
+    assert second_code.isascii() and second_code.isalnum() and second_code == second_code.upper()
+    assert first_code != second_code
+    assert first_code != "AAAAAAAAAAAAAAAA"
+
+    with psycopg.connect(PSYCOPG_DSN) as connection:
+        with connection.cursor() as cursor:
+            cursor.execute(
+                "SELECT invite_code_generated_at, invite_code_expires_at FROM companies WHERE id = %s",
+                (first.json()["id"],),
+            )
+            generated_at, expires_at = cursor.fetchone()
+    assert generated_at is not None
+    assert expires_at is None
+
+
+def test_invite_code_collision_retries(client: TestClient, monkeypatch: pytest.MonkeyPatch) -> None:
+    generated_code = "D0N2S5A7Q1T4P8V6"
+    generated_codes = iter([SEED_INVITE_CODE, generated_code])
+    monkeypatch.setattr(company_repository, "_generate_invite_code", lambda: next(generated_codes))
+    manager_headers = login_json(client, "manager@example.com", "manager123")
+
+    created = client.post("/companies/", headers=manager_headers, json={"name": "Collision Retry Company"})
+    assert created.status_code == 201, created.text
+    assert created.json()["invite_code"] == generated_code
+
+
+def test_manager_regenerates_invite_code_and_new_code_joins(client: TestClient) -> None:
+    manager_headers = login_json(client, "manager@example.com", "manager123")
+    before = client.get("/companies/me", headers=manager_headers)
+    assert before.status_code == 200, before.text
+    old_code = before.json()["invite_code"]
+
+    with psycopg.connect(PSYCOPG_DSN) as connection:
+        with connection.cursor() as cursor:
+            cursor.execute(
+                "UPDATE companies SET invite_code_generated_at = TIMESTAMP '2020-01-01 00:00:00' WHERE id = 1"
+            )
+
+    regenerated = client.post("/companies/me/invite-code/regenerate", headers=manager_headers)
+    assert regenerated.status_code == 200, regenerated.text
+    regenerated_json = regenerated.json()
+    new_code = regenerated_json["invite_code"]
+    assert len(new_code) == 16
+    assert new_code.isascii() and new_code.isalnum() and new_code == new_code.upper()
+    assert new_code != old_code
+    assert not regenerated_json["invite_code_generated_at"].startswith("2020-01-01")
+    assert regenerated_json["invite_code_expires_at"] is None
+
+    registered = client.post(
+        "/auth/register",
+        json={
+            "full_name": "Regenerated Invite User",
+            "email": "regenerated-invite@example.com",
+            "password": "employee456",
+            "role": "employee",
+        },
+    )
+    assert registered.status_code == 201, registered.text
+    employee_headers = login_json(client, "regenerated-invite@example.com", "employee456")
+
+    old_join = client.post(
+        "/companies/join",
+        headers=employee_headers,
+        json={"invite_code": old_code, "branch_id": 1, "position_id": 1},
+    )
+    assert old_join.status_code == 404
+
+    new_join = client.post(
+        "/companies/join",
+        headers=employee_headers,
+        json={"invite_code": new_code, "branch_id": 1, "position_id": 1},
+    )
+    assert new_join.status_code == 200, new_join.text
+
+
+def test_invite_code_regeneration_access_and_collision(client: TestClient, monkeypatch: pytest.MonkeyPatch) -> None:
+    replacement_code = "R3G5N7C9D1F2H4J6"
+    generated_codes = iter([SEED_INVITE_CODE, replacement_code])
+    monkeypatch.setattr(company_repository, "_generate_invite_code", lambda: next(generated_codes))
+    manager_headers = login_json(client, "manager@example.com", "manager123")
+
+    regenerated = client.post("/companies/me/invite-code/regenerate", headers=manager_headers)
+    assert regenerated.status_code == 200, regenerated.text
+    assert regenerated.json()["invite_code"] == replacement_code
+
+    employee_headers = login_json(client, "ivan@example.com", "employee123")
+    assert client.post("/companies/me/invite-code/regenerate", headers=employee_headers).status_code == 403
+    assert client.post("/companies/me/invite-code/regenerate").status_code == 401
+
+
+def test_expired_invite_code_cannot_be_used_to_join(client: TestClient) -> None:
+    registered = client.post(
+        "/auth/register",
+        json={
+            "full_name": "Expired Invite User",
+            "email": "expired-invite@example.com",
+            "password": "employee456",
+            "role": "employee",
+        },
+    )
+    assert registered.status_code == 201, registered.text
+    employee_headers = login_json(client, "expired-invite@example.com", "employee456")
+
+    with psycopg.connect(PSYCOPG_DSN) as connection:
+        with connection.cursor() as cursor:
+            cursor.execute(
+                "UPDATE companies SET invite_code_expires_at = CURRENT_TIMESTAMP - INTERVAL '1 minute' WHERE id = 1"
+            )
+
+    joined = client.post(
+        "/companies/join",
+        headers=employee_headers,
+        json={"invite_code": SEED_INVITE_CODE, "branch_id": 1, "position_id": 1},
+    )
+    assert joined.status_code == 400
+    assert joined.json()["detail"] == "Company invite code has expired."
+
+
+def test_invalid_invite_code_formats_are_rejected(client: TestClient) -> None:
+    employee_headers = login_json(client, "ivan@example.com", "employee123")
+
+    short_code = client.post(
+        "/companies/join",
+        headers=employee_headers,
+        json={"invite_code": "SHORT123", "branch_id": None, "position_id": None},
+    )
+    assert short_code.status_code == 422
+
+    invalid_characters = client.post(
+        "/companies/join",
+        headers=employee_headers,
+        json={"invite_code": "A7K9P2X4M8Q1L5R!", "branch_id": None, "position_id": None},
+    )
+    assert invalid_characters.status_code == 422
+
+
+def test_employee_joins_with_only_invite_code_and_manager_assigns_later(client: TestClient) -> None:
+    registered = client.post(
+        "/auth/register",
+        json={
+            "full_name": "Invite Only Employee",
+            "email": "invite-only@example.com",
+            "password": "employee456",
+            "role": "employee",
+        },
+    )
+    assert registered.status_code == 201, registered.text
+    employee_headers = login_json(client, "invite-only@example.com", "employee456")
+
+    joined = client.post(
+        "/companies/join",
+        headers=employee_headers,
+        json={"invite_code": SEED_INVITE_CODE},
+    )
+    assert joined.status_code == 200, joined.text
+    joined_json = joined.json()
+    assert joined_json["branch_id"] is None
+    assert joined_json["position_id"] is None
+    assert joined_json["branch"] is None
+    assert joined_json["position"] is None
+
+    manager_headers = login_json(client, "manager@example.com", "manager123")
+    employees = client.get("/employees/", headers=manager_headers)
+    assert employees.status_code == 200, employees.text
+    employee = next(item for item in employees.json() if item["public_id"] == registered.json()["public_id"])
+    assert employee["branch_id"] is None
+    assert employee["position_id"] is None
+
+    assigned_position = client.patch(
+        f"/employees/{employee['id']}/position",
+        headers=manager_headers,
+        json={"position_id": 1},
+    )
+    assert assigned_position.status_code == 200, assigned_position.text
+    assert assigned_position.json()["position_id"] == 1
+
+    assigned_branch = client.patch(
+        f"/employees/{employee['id']}/branch",
+        headers=manager_headers,
+        json={"branch_id": 1},
+    )
+    assert assigned_branch.status_code == 200, assigned_branch.text
+    assert assigned_branch.json()["branch_id"] == 1
+
+    unassigned_branch = client.patch(
+        f"/employees/{employee['id']}/branch",
+        headers=manager_headers,
+        json={"branch_id": None},
+    )
+    assert unassigned_branch.status_code == 200, unassigned_branch.text
+    assert unassigned_branch.json()["branch_id"] is None
+
+    assert client.patch(
+        f"/employees/{employee['id']}/branch",
+        headers=employee_headers,
+        json={"branch_id": None},
+    ).status_code == 403
+    assert client.patch(
+        f"/employees/{employee['id']}/branch",
+        json={"branch_id": None},
+    ).status_code == 401
+
+
+def test_employee_joins_with_partial_optional_assignments(client: TestClient) -> None:
+    for email in ("position-only@example.com", "branch-only@example.com"):
+        registered = client.post(
+            "/auth/register",
+            json={
+                "full_name": "Partial Assignment Employee",
+                "email": email,
+                "password": "employee456",
+                "role": "employee",
+            },
+        )
+        assert registered.status_code == 201, registered.text
+
+    position_headers = login_json(client, "position-only@example.com", "employee456")
+    position_only = client.post(
+        "/companies/join",
+        headers=position_headers,
+        json={"invite_code": SEED_INVITE_CODE, "branch_id": None, "position_id": 1},
+    )
+    assert position_only.status_code == 200, position_only.text
+    assert position_only.json()["branch_id"] is None
+    assert position_only.json()["position_id"] == 1
+    assert position_only.json()["position"] == {"id": 1, "name": "Barista"}
+
+    branch_headers = login_json(client, "branch-only@example.com", "employee456")
+    branch_only = client.post(
+        "/companies/join",
+        headers=branch_headers,
+        json={"invite_code": SEED_INVITE_CODE, "branch_id": 1, "position_id": None},
+    )
+    assert branch_only.status_code == 200, branch_only.text
+    assert branch_only.json()["branch_id"] == 1
+    assert branch_only.json()["position_id"] is None
+    assert branch_only.json()["position"] is None
+
+
+def test_join_rejects_branch_and_position_from_another_company(client: TestClient) -> None:
+    seed_second_company_scope_data()
+    registered = client.post(
+        "/auth/register",
+        json={
+            "full_name": "Foreign Assignment Employee",
+            "email": "foreign-assignment@example.com",
+            "password": "employee456",
+            "role": "employee",
+        },
+    )
+    assert registered.status_code == 201, registered.text
+    employee_headers = login_json(client, "foreign-assignment@example.com", "employee456")
+
+    with psycopg.connect(PSYCOPG_DSN) as connection:
+        with connection.cursor() as cursor:
+            cursor.execute("SELECT id FROM companies WHERE invite_code = %s", (SECOND_COMPANY_INVITE_CODE,))
+            other_company_id = cursor.fetchone()[0]
+            cursor.execute("SELECT id FROM branches WHERE company_id = %s", (other_company_id,))
+            other_branch_id = cursor.fetchone()[0]
+            cursor.execute("SELECT id FROM positions WHERE company_id = %s", (other_company_id,))
+            other_position_id = cursor.fetchone()[0]
+
+    foreign_branch = client.post(
+        "/companies/join",
+        headers=employee_headers,
+        json={"invite_code": SEED_INVITE_CODE, "branch_id": other_branch_id},
+    )
+    assert foreign_branch.status_code == 400
+
+    foreign_position = client.post(
+        "/companies/join",
+        headers=employee_headers,
+        json={"invite_code": SEED_INVITE_CODE, "position_id": other_position_id},
+    )
+    assert foreign_position.status_code == 400
+
+    manager_headers = login_json(client, "manager@example.com", "manager123")
+    foreign_branch_assignment = client.patch(
+        "/employees/1/branch",
+        headers=manager_headers,
+        json={"branch_id": other_branch_id},
+    )
+    assert foreign_branch_assignment.status_code == 403
+
+
+def test_manager_can_create_and_list_branches_with_address(client: TestClient) -> None:
+    manager_headers = login_json(client, "manager@example.com", "manager123")
+
+    created = client.post(
+        "/companies/branches",
+        headers=manager_headers,
+        json={"name": "North Branch", "address": "North Street 10"},
+    )
+    assert created.status_code == 201, created.text
+    created_json = created.json()
+    assert created_json["company_id"] == 1
+    assert created_json["name"] == "North Branch"
+    assert created_json["address"] == "North Street 10"
+
+    listed = client.get("/companies/branches", headers=manager_headers)
+    assert listed.status_code == 200, listed.text
+    assert created_json in listed.json()
+
+    legacy_created = client.post(
+        "/companies/1/branches",
+        headers=manager_headers,
+        json={"name": "Legacy Branch", "address": "Legacy Street 5"},
+    )
+    assert legacy_created.status_code == 201, legacy_created.text
+    legacy_listed = client.get("/companies/1/branches", headers=manager_headers)
+    assert legacy_listed.status_code == 200, legacy_listed.text
+    assert legacy_created.json() in legacy_listed.json()
+
+
+def test_manager_can_update_and_delete_own_branch(client: TestClient) -> None:
+    manager_headers = login_json(client, "manager@example.com", "manager123")
+    created = client.post(
+        "/companies/branches",
+        headers=manager_headers,
+        json={"name": "Temporary Branch", "address": "Old Address"},
+    )
+    assert created.status_code == 201, created.text
+    branch_id = created.json()["id"]
+
+    updated = client.patch(
+        f"/companies/branches/{branch_id}",
+        headers=manager_headers,
+        json={"name": "Updated Branch", "address": "New Address"},
+    )
+    assert updated.status_code == 200, updated.text
+    assert updated.json()["name"] == "Updated Branch"
+    assert updated.json()["address"] == "New Address"
+
+    deleted = client.delete(f"/companies/branches/{branch_id}", headers=manager_headers)
+    assert deleted.status_code == 204, deleted.text
+
+    listed = client.get("/companies/branches", headers=manager_headers)
+    assert listed.status_code == 200, listed.text
+    assert branch_id not in [branch["id"] for branch in listed.json()]
+
+
+def test_employee_and_unauthenticated_users_cannot_update_or_delete_branches(client: TestClient) -> None:
+    employee_headers = login_json(client, "ivan@example.com", "employee123")
+
+    employee_update = client.patch(
+        "/companies/branches/1",
+        headers=employee_headers,
+        json={"address": "Forbidden"},
+    )
+    assert employee_update.status_code == 403
+    employee_delete = client.delete("/companies/branches/1", headers=employee_headers)
+    assert employee_delete.status_code == 403
+
+    assert client.patch("/companies/branches/1", json={"address": "No Token"}).status_code == 401
+    assert client.delete("/companies/branches/1").status_code == 401
+
+
+def test_manager_cannot_update_or_delete_other_company_branch(client: TestClient) -> None:
+    seed_second_company_scope_data()
+    manager_headers = login_json(client, "manager@example.com", "manager123")
+
+    with psycopg.connect(PSYCOPG_DSN) as connection:
+        with connection.cursor() as cursor:
+            cursor.execute("SELECT id FROM companies WHERE invite_code = %s", (SECOND_COMPANY_INVITE_CODE,))
+            other_company_id = cursor.fetchone()[0]
+            cursor.execute("SELECT id FROM branches WHERE company_id = %s ORDER BY id LIMIT 1", (other_company_id,))
+            other_branch_id = cursor.fetchone()[0]
+
+    update = client.patch(
+        f"/companies/branches/{other_branch_id}",
+        headers=manager_headers,
+        json={"name": "Not Allowed", "address": "Not Allowed"},
+    )
+    assert update.status_code == 403
+    delete = client.delete(f"/companies/branches/{other_branch_id}", headers=manager_headers)
+    assert delete.status_code == 403
+
+
+def test_invalid_and_referenced_branches_cannot_be_deleted(client: TestClient) -> None:
+    manager_headers = login_json(client, "manager@example.com", "manager123")
+
+    missing_update = client.patch(
+        "/companies/branches/999999",
+        headers=manager_headers,
+        json={"address": "Missing"},
+    )
+    assert missing_update.status_code == 404
+    missing_delete = client.delete("/companies/branches/999999", headers=manager_headers)
+    assert missing_delete.status_code == 404
+
+    referenced = client.delete("/companies/branches/1", headers=manager_headers)
+    assert referenced.status_code == 409
+    assert "assigned to employees or requirements" in referenced.json()["detail"]
 
 
 def test_employee_and_unauthenticated_users_cannot_update_company(client: TestClient) -> None:
@@ -285,6 +995,64 @@ def test_employee_and_position_lists_are_scoped_to_authenticated_company(client:
     assert client.get("/positions/").status_code == 401
 
 
+def test_manager_can_delete_own_unused_position(client: TestClient) -> None:
+    manager_headers = login_json(client, "manager@example.com", "manager123")
+
+    with psycopg.connect(PSYCOPG_DSN) as connection:
+        with connection.cursor() as cursor:
+            cursor.execute(
+                "INSERT INTO positions (company_id, name) VALUES (1, 'Temporary Position') RETURNING id"
+            )
+            position_id = cursor.fetchone()[0]
+
+    deleted = client.delete(f"/positions/{position_id}", headers=manager_headers)
+    assert deleted.status_code == 204, deleted.text
+
+    positions = client.get("/positions/", headers=manager_headers)
+    assert positions.status_code == 200, positions.text
+    assert position_id not in [position["id"] for position in positions.json()]
+
+
+def test_employee_and_unauthenticated_users_cannot_delete_position(client: TestClient) -> None:
+    employee_headers = login_json(client, "ivan@example.com", "employee123")
+
+    employee_response = client.delete("/positions/2", headers=employee_headers)
+    assert employee_response.status_code == 403
+
+    unauthorized = client.delete("/positions/2")
+    assert unauthorized.status_code == 401
+
+
+def test_manager_cannot_delete_other_company_position(client: TestClient) -> None:
+    seed_second_company_scope_data()
+    manager_headers = login_json(client, "manager@example.com", "manager123")
+
+    with psycopg.connect(PSYCOPG_DSN) as connection:
+        with connection.cursor() as cursor:
+            cursor.execute("SELECT id FROM companies WHERE invite_code = %s", (SECOND_COMPANY_INVITE_CODE,))
+            other_company_id = cursor.fetchone()[0]
+            cursor.execute("SELECT id FROM positions WHERE company_id = %s ORDER BY id LIMIT 1", (other_company_id,))
+            other_position_id = cursor.fetchone()[0]
+
+    response = client.delete(f"/positions/{other_position_id}", headers=manager_headers)
+    assert response.status_code == 403
+
+
+def test_deleting_non_existing_position_returns_not_found(client: TestClient) -> None:
+    manager_headers = login_json(client, "manager@example.com", "manager123")
+
+    response = client.delete("/positions/999999", headers=manager_headers)
+    assert response.status_code == 404
+
+
+def test_referenced_position_cannot_be_deleted(client: TestClient) -> None:
+    manager_headers = login_json(client, "manager@example.com", "manager123")
+
+    response = client.delete("/positions/1", headers=manager_headers)
+    assert response.status_code == 409
+    assert "assigned to employees, requirements, or shifts" in response.json()["detail"]
+
+
 def test_requirements_are_fetched_by_company_branch_and_date_range(client: TestClient) -> None:
     manager_headers = login_json(client, "manager@example.com", "manager123")
 
@@ -294,7 +1062,10 @@ def test_requirements_are_fetched_by_company_branch_and_date_range(client: TestC
                 "INSERT INTO branches (company_id, name, address) VALUES (1, 'Second Branch', 'Second Address') RETURNING id"
             )
             second_branch_id = cursor.fetchone()[0]
-            cursor.execute("INSERT INTO companies (name, invite_code) VALUES ('Other Company', 'OTHERREQ') RETURNING id")
+            cursor.execute(
+                "INSERT INTO companies (name, invite_code) VALUES ('Other Company', %s) RETURNING id",
+                (OTHER_REQUIREMENTS_INVITE_CODE,),
+            )
             other_company_id = cursor.fetchone()[0]
             cursor.execute(
                 "INSERT INTO branches (company_id, name, address) VALUES (%s, 'Other Branch', 'Other Address') RETURNING id",
@@ -390,7 +1161,7 @@ def test_requirement_create_for_other_company_branch_or_position_is_forbidden(cl
 
     with psycopg.connect(PSYCOPG_DSN) as connection:
         with connection.cursor() as cursor:
-            cursor.execute("SELECT id FROM companies WHERE invite_code = 'OTHER123'")
+            cursor.execute("SELECT id FROM companies WHERE invite_code = %s", (SECOND_COMPANY_INVITE_CODE,))
             other_company_id = cursor.fetchone()[0]
             cursor.execute("SELECT id FROM branches WHERE company_id = %s ORDER BY id LIMIT 1", (other_company_id,))
             other_branch_id = cursor.fetchone()[0]
@@ -503,7 +1274,7 @@ def test_manager_cannot_update_other_company_requirement(client: TestClient) -> 
 
     with psycopg.connect(PSYCOPG_DSN) as connection:
         with connection.cursor() as cursor:
-            cursor.execute("SELECT id FROM companies WHERE invite_code = 'OTHER123'")
+            cursor.execute("SELECT id FROM companies WHERE invite_code = %s", (SECOND_COMPANY_INVITE_CODE,))
             other_company_id = cursor.fetchone()[0]
             cursor.execute("SELECT id FROM branches WHERE company_id = %s ORDER BY id LIMIT 1", (other_company_id,))
             other_branch_id = cursor.fetchone()[0]
@@ -549,7 +1320,7 @@ def test_manager_cannot_move_requirement_to_other_company_branch_or_position(cli
 
     with psycopg.connect(PSYCOPG_DSN) as connection:
         with connection.cursor() as cursor:
-            cursor.execute("SELECT id FROM companies WHERE invite_code = 'OTHER123'")
+            cursor.execute("SELECT id FROM companies WHERE invite_code = %s", (SECOND_COMPANY_INVITE_CODE,))
             other_company_id = cursor.fetchone()[0]
             cursor.execute("SELECT id FROM branches WHERE company_id = %s ORDER BY id LIMIT 1", (other_company_id,))
             other_branch_id = cursor.fetchone()[0]
@@ -574,7 +1345,7 @@ def test_manager_cannot_move_requirement_to_other_company_branch_or_position(cli
 def test_invite_preview_and_join_flow(client: TestClient) -> None:
     manager_headers = login_json(client, "manager@example.com", "manager123")
 
-    preview = client.get("/companies/invite/COFFEE123", headers=manager_headers)
+    preview = client.get(f"/companies/invite/{SEED_INVITE_CODE}", headers=manager_headers)
     assert preview.status_code == 200, preview.text
     preview_json = preview.json()
     assert preview_json["company_name"] == "Coffee Bar Barnaul"
@@ -582,7 +1353,7 @@ def test_invite_preview_and_join_flow(client: TestClient) -> None:
     assert len(preview_json["positions"]) == 2
 
     invalid_preview = client.get("/companies/invite/BADCODE", headers=manager_headers)
-    assert invalid_preview.status_code == 404
+    assert invalid_preview.status_code == 422
 
     register = client.post(
         "/auth/register",
@@ -604,21 +1375,21 @@ def test_invite_preview_and_join_flow(client: TestClient) -> None:
     invalid_branch = client.post(
         "/companies/join",
         headers=employee_headers,
-        json={"invite_code": "COFFEE123", "branch_id": 999, "position_id": 1},
+        json={"invite_code": SEED_INVITE_CODE, "branch_id": 999, "position_id": 1},
     )
     assert invalid_branch.status_code == 400
 
     invalid_position = client.post(
         "/companies/join",
         headers=employee_headers,
-        json={"invite_code": "COFFEE123", "branch_id": 1, "position_id": 999},
+        json={"invite_code": SEED_INVITE_CODE, "branch_id": 1, "position_id": 999},
     )
     assert invalid_position.status_code == 400
 
     joined = client.post(
         "/companies/join",
         headers=employee_headers,
-        json={"invite_code": "COFFEE123", "branch_id": 1, "position_id": 2},
+        json={"invite_code": f"  {SEED_INVITE_CODE.lower()}  ", "branch_id": 1, "position_id": 2},
     )
     assert joined.status_code == 200, joined.text
     joined_json = joined.json()
@@ -631,11 +1402,11 @@ def test_invite_preview_and_join_flow(client: TestClient) -> None:
     assert reloaded_profile.status_code == 200, reloaded_profile.text
     reloaded_json = reloaded_profile.json()
     assert reloaded_json["employee_id"] == joined_json["employee_id"]
-    assert reloaded_json["company"]["invite_code"] == "COFFEE123"
+    assert reloaded_json["company"]["invite_code"] == SEED_INVITE_CODE
     assert reloaded_json["branch"]["id"] == 1
     assert reloaded_json["position"]["id"] == 2
 
-    manager_join = client.post("/companies/join", headers=manager_headers, json={"invite_code": "COFFEE123"})
+    manager_join = client.post("/companies/join", headers=manager_headers, json={"invite_code": SEED_INVITE_CODE})
     assert manager_join.status_code == 403
 
 
@@ -773,7 +1544,319 @@ def test_bulk_requirements_creation_and_permissions(client: TestClient) -> None:
     assert forbidden.status_code == 403
 
 
+def test_manager_publishes_own_draft_and_employee_visibility_changes(client: TestClient) -> None:
+    manager_headers = login_json(client, "manager@example.com", "manager123")
+    employee_headers = login_json(client, "ivan@example.com", "employee123")
+
+    draft_schedule = client.get("/schedule/my", headers=employee_headers)
+    assert draft_schedule.status_code == 200, draft_schedule.text
+    assert draft_schedule.json() == []
+
+    assert client.post("/schedule/1/publish", headers=employee_headers).status_code == 403
+    assert client.post("/schedule/1/publish").status_code == 401
+
+    published = client.post("/schedule/1/publish", headers=manager_headers)
+    assert published.status_code == 200, published.text
+    assert published.json()["status"] == "published"
+
+    visible_schedule = client.get("/schedule/my", headers=employee_headers)
+    assert visible_schedule.status_code == 200, visible_schedule.text
+    assert len(visible_schedule.json()) == 1
+    assert visible_schedule.json()[0]["id"] == 1
+
+    already_published = client.post("/schedule/1/publish", headers=manager_headers)
+    assert already_published.status_code == 400
+
+
+def test_manager_gets_latest_schedule_with_status_filters(client: TestClient) -> None:
+    manager_headers = login_json(client, "manager@example.com", "manager123")
+
+    latest_draft = client.get("/schedule/latest?status=draft", headers=manager_headers)
+    assert latest_draft.status_code == 200, latest_draft.text
+    assert latest_draft.json()["id"] == 1
+    assert latest_draft.json()["status"] == "draft"
+    assert len(latest_draft.json()["shifts"]) == 1
+
+    with psycopg.connect(PSYCOPG_DSN) as connection:
+        with connection.cursor() as cursor:
+            cursor.execute(
+                """
+                INSERT INTO schedules (company_id, start_date, end_date, status)
+                VALUES (1, '2026-07-01', '2026-07-07', 'published')
+                RETURNING id
+                """
+            )
+            published_id = cursor.fetchone()[0]
+            cursor.execute(
+                """
+                INSERT INTO schedules (company_id, start_date, end_date, status)
+                VALUES (1, '2026-08-01', '2026-08-07', 'archived')
+                RETURNING id
+                """
+            )
+            archived_id = cursor.fetchone()[0]
+
+    latest_published = client.get("/schedule/latest?status=published", headers=manager_headers)
+    assert latest_published.status_code == 200, latest_published.text
+    assert latest_published.json()["id"] == published_id
+    assert latest_published.json()["status"] == "published"
+
+    latest_archived = client.get("/schedule/latest?status=archived", headers=manager_headers)
+    assert latest_archived.status_code == 200, latest_archived.text
+    assert latest_archived.json()["id"] == archived_id
+    assert latest_archived.json()["status"] == "archived"
+
+    latest_any = client.get("/schedule/latest", headers=manager_headers)
+    assert latest_any.status_code == 200, latest_any.text
+    assert latest_any.json()["id"] == archived_id
+
+
+def test_latest_schedule_is_manager_company_scoped_and_manager_only(client: TestClient) -> None:
+    seed_second_company_scope_data()
+    manager_headers = login_json(client, "manager@example.com", "manager123")
+    employee_headers = login_json(client, "ivan@example.com", "employee123")
+
+    with psycopg.connect(PSYCOPG_DSN) as connection:
+        with connection.cursor() as cursor:
+            cursor.execute("SELECT id FROM companies WHERE invite_code = %s", (SECOND_COMPANY_INVITE_CODE,))
+            other_company_id = cursor.fetchone()[0]
+            cursor.execute(
+                """
+                INSERT INTO schedules (company_id, start_date, end_date, status)
+                VALUES (%s, '2026-09-01', '2026-09-07', 'draft')
+                RETURNING id
+                """,
+                (other_company_id,),
+            )
+            other_schedule_id = cursor.fetchone()[0]
+
+    latest = client.get("/schedule/latest", headers=manager_headers)
+    assert latest.status_code == 200, latest.text
+    assert latest.json()["id"] == 1
+    assert latest.json()["id"] != other_schedule_id
+    assert client.get("/schedule/latest", headers=employee_headers).status_code == 403
+    assert client.get("/schedule/latest").status_code == 401
+    assert client.get("/schedule/latest?status=invalid", headers=manager_headers).status_code == 422
+
+    registered = client.post(
+        "/auth/register",
+        json={
+            "full_name": "Latest Manager Without Company",
+            "email": "latest-no-company@example.com",
+            "password": "manager456",
+            "role": "manager",
+        },
+    )
+    assert registered.status_code == 201, registered.text
+    no_company_headers = login_json(client, "latest-no-company@example.com", "manager456")
+    assert client.get("/schedule/latest", headers=no_company_headers).status_code == 403
+
+
+def test_latest_schedule_returns_404_when_company_has_no_schedules(client: TestClient) -> None:
+    with psycopg.connect(PSYCOPG_DSN) as connection:
+        with connection.cursor() as cursor:
+            cursor.execute("DELETE FROM schedules WHERE company_id = 1")
+
+    manager_headers = login_json(client, "manager@example.com", "manager123")
+    missing = client.get("/schedule/latest", headers=manager_headers)
+    assert missing.status_code == 404
+
+
+def test_manager_generation_is_company_scoped_and_publishable(client: TestClient) -> None:
+    seed_second_company_scope_data()
+    with psycopg.connect(PSYCOPG_DSN) as connection:
+        with connection.cursor() as cursor:
+            cursor.execute("UPDATE employees SET position_id = 1 WHERE id = 1")
+            cursor.execute("SELECT id FROM companies WHERE invite_code = %s", (SECOND_COMPANY_INVITE_CODE,))
+            other_company_id = cursor.fetchone()[0]
+            cursor.execute("SELECT id FROM branches WHERE company_id = %s", (other_company_id,))
+            other_branch_id = cursor.fetchone()[0]
+            cursor.execute("SELECT id FROM positions WHERE company_id = %s", (other_company_id,))
+            other_position_id = cursor.fetchone()[0]
+            cursor.execute(
+                """
+                INSERT INTO shift_requirements (
+                    company_id, branch_id, position_id, shift_date,
+                    start_time, end_time, required_employees
+                )
+                VALUES (%s, %s, %s, '2026-06-15', '09:00', '17:00', 1)
+                """,
+                (other_company_id, other_branch_id, other_position_id),
+            )
+
+    manager_headers = login_json(client, "manager@example.com", "manager123")
+    employee_headers = login_json(client, "ivan@example.com", "employee123")
+    generated = client.post(
+        "/schedule/generate",
+        headers=manager_headers,
+        json={"start_date": "2026-06-15", "end_date": "2026-06-15"},
+    )
+    assert generated.status_code == 200, generated.text
+    generated_json = generated.json()
+    schedule_id = generated_json["id"]
+    assert generated_json["status"] == "draft"
+    assert all(shift["position_id"] != other_position_id for shift in generated_json["shifts"])
+    assert all(item["position_id"] != other_position_id for item in generated_json["unfilled_requirements"])
+
+    with psycopg.connect(PSYCOPG_DSN) as connection:
+        with connection.cursor() as cursor:
+            cursor.execute("SELECT company_id, status FROM schedules WHERE id = %s", (schedule_id,))
+            assert cursor.fetchone() == (1, "draft")
+            cursor.execute("SELECT DISTINCT company_id FROM shifts WHERE schedule_id = %s", (schedule_id,))
+            assert cursor.fetchall() == [(1,)]
+
+    hidden = client.get("/schedule/my", headers=employee_headers)
+    assert hidden.status_code == 200, hidden.text
+    assert hidden.json() == []
+
+    published = client.post(f"/schedule/{schedule_id}/publish", headers=manager_headers)
+    assert published.status_code == 200, published.text
+    visible = client.get("/schedule/my", headers=employee_headers)
+    assert visible.status_code == 200, visible.text
+    assert len(visible.json()) == 1
+
+
+def test_repeated_generation_does_not_stack_shifts_or_reported_hours(client: TestClient) -> None:
+    with psycopg.connect(PSYCOPG_DSN) as connection:
+        with connection.cursor() as cursor:
+            cursor.execute("UPDATE employees SET position_id = 1 WHERE id = 1")
+
+    manager_headers = login_json(client, "manager@example.com", "manager123")
+    employee_headers = login_json(client, "ivan@example.com", "employee123")
+    payload = {"start_date": "2026-06-15", "end_date": "2026-06-21"}
+
+    first = client.post("/schedule/generate", headers=manager_headers, json=payload)
+    second = client.post("/schedule/generate", headers=manager_headers, json=payload)
+    assert first.status_code == 200, first.text
+    assert second.status_code == 200, second.text
+    assert first.json()["id"] != second.json()["id"]
+    second_schedule_id = second.json()["id"]
+
+    with psycopg.connect(PSYCOPG_DSN) as connection:
+        with connection.cursor() as cursor:
+            cursor.execute(
+                """
+                SELECT COUNT(*) FROM schedules
+                WHERE company_id = 1
+                  AND start_date = '2026-06-15'
+                  AND end_date = '2026-06-21'
+                  AND status = 'draft'
+                """
+            )
+            assert cursor.fetchone()[0] == 1
+            cursor.execute(
+                """
+                SELECT COUNT(*)
+                FROM shift_assignments sa
+                JOIN shifts s ON s.id = sa.shift_id
+                WHERE s.schedule_id = %s
+                """,
+                (second_schedule_id,),
+            )
+            assert cursor.fetchone()[0] == 1
+
+    assert client.get("/schedule/my", headers=employee_headers).json() == []
+    published_second = client.post(f"/schedule/{second_schedule_id}/publish", headers=manager_headers)
+    assert published_second.status_code == 200, published_second.text
+    assert len(client.get("/schedule/my", headers=employee_headers).json()) == 1
+
+    first_report = client.get(
+        "/reports/me?start_date=2026-06-15&end_date=2026-06-21",
+        headers=employee_headers,
+    )
+    assert first_report.status_code == 200, first_report.text
+    assert first_report.json()["total_shifts"] == 1
+    assert first_report.json()["total_hours"] == 8.0
+
+    third = client.post("/schedule/generate", headers=manager_headers, json=payload)
+    assert third.status_code == 200, third.text
+    third_schedule_id = third.json()["id"]
+    assert len(client.get("/schedule/my", headers=employee_headers).json()) == 1
+
+    published_third = client.post(f"/schedule/{third_schedule_id}/publish", headers=manager_headers)
+    assert published_third.status_code == 200, published_third.text
+
+    with psycopg.connect(PSYCOPG_DSN) as connection:
+        with connection.cursor() as cursor:
+            cursor.execute("SELECT status FROM schedules WHERE id = %s", (second_schedule_id,))
+            assert cursor.fetchone()[0] == "archived"
+            cursor.execute("SELECT status FROM schedules WHERE id = %s", (third_schedule_id,))
+            assert cursor.fetchone()[0] == "published"
+
+    final_schedule = client.get("/schedule/my", headers=employee_headers)
+    assert final_schedule.status_code == 200, final_schedule.text
+    assert len(final_schedule.json()) == 1
+    final_report = client.get(
+        "/reports/me?start_date=2026-06-15&end_date=2026-06-21",
+        headers=employee_headers,
+    )
+    assert final_report.status_code == 200, final_report.text
+    assert final_report.json()["total_shifts"] == 1
+    assert final_report.json()["total_hours"] == 8.0
+
+
+def test_manager_without_company_cannot_generate_schedule(client: TestClient) -> None:
+    registered = client.post(
+        "/auth/register",
+        json={
+            "full_name": "Generation Manager Without Company",
+            "email": "generate-no-company@example.com",
+            "password": "manager456",
+            "role": "manager",
+        },
+    )
+    assert registered.status_code == 201, registered.text
+    headers = login_json(client, "generate-no-company@example.com", "manager456")
+
+    generated = client.post("/schedule/generate", headers=headers, json={})
+    assert generated.status_code == 403
+
+
+def test_manager_cannot_publish_another_company_schedule(client: TestClient) -> None:
+    seed_second_company_scope_data()
+    manager_headers = login_json(client, "manager@example.com", "manager123")
+
+    with psycopg.connect(PSYCOPG_DSN) as connection:
+        with connection.cursor() as cursor:
+            cursor.execute("SELECT id FROM companies WHERE invite_code = %s", (SECOND_COMPANY_INVITE_CODE,))
+            other_company_id = cursor.fetchone()[0]
+            cursor.execute(
+                """
+                INSERT INTO schedules (company_id, start_date, end_date, status)
+                VALUES (%s, '2026-08-01', '2026-08-07', 'draft')
+                RETURNING id
+                """,
+                (other_company_id,),
+            )
+            other_schedule_id = cursor.fetchone()[0]
+
+    forbidden = client.post(f"/schedule/{other_schedule_id}/publish", headers=manager_headers)
+    assert forbidden.status_code == 403
+
+    registered = client.post(
+        "/auth/register",
+        json={
+            "full_name": "Manager Without Company",
+            "email": "schedule-no-company@example.com",
+            "password": "manager456",
+            "role": "manager",
+        },
+    )
+    assert registered.status_code == 201, registered.text
+    no_company_headers = login_json(client, "schedule-no-company@example.com", "manager456")
+    assert client.post("/schedule/1/publish", headers=no_company_headers).status_code == 403
+
+    with psycopg.connect(PSYCOPG_DSN) as connection:
+        with connection.cursor() as cursor:
+            cursor.execute("SELECT status FROM schedules WHERE id = %s", (other_schedule_id,))
+            assert cursor.fetchone()[0] == "draft"
+
+
 def test_calendar_summary_reports_and_exchange_flow(client: TestClient) -> None:
+    with psycopg.connect(PSYCOPG_DSN) as connection:
+        with connection.cursor() as cursor:
+            cursor.execute("UPDATE employees SET branch_id = 1, position_id = 1 WHERE id = 1")
+
     manager_headers = login_json(client, "manager@example.com", "manager123")
     employee_headers = login_json(client, "ivan@example.com", "employee123")
 

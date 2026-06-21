@@ -24,7 +24,9 @@ from app.schemas.employee import (
     AvailabilityRead,
     AvailabilityUpsert,
     EmployeeCalendarSummaryRead,
+    EmployeeBranchUpdate,
     EmployeeCreate,
+    EmployeePositionUpdate,
     EmployeeRead,
 )
 from app.schemas.schedule import ShiftRead
@@ -57,6 +59,34 @@ def create_employee(
     db: Session = Depends(get_db),
 ) -> EmployeeRead:
     return employee_service.create_employee(db, payload)
+
+
+@router.patch(
+    "/{employee_id}/position",
+    response_model=EmployeeRead,
+    responses={**UNAUTHORIZED_RESPONSE, **FORBIDDEN_RESPONSE, **NOT_FOUND_RESPONSE, **VALIDATION_ERROR_RESPONSE},
+)
+def update_employee_position(
+    employee_id: int,
+    payload: EmployeePositionUpdate,
+    current_user: UserRead = Depends(require_role("manager")),
+    db: Session = Depends(get_db),
+) -> EmployeeRead:
+    return employee_service.update_employee_position(db, employee_id, payload, current_user)
+
+
+@router.patch(
+    "/{employee_id}/branch",
+    response_model=EmployeeRead,
+    responses={**UNAUTHORIZED_RESPONSE, **FORBIDDEN_RESPONSE, **NOT_FOUND_RESPONSE, **VALIDATION_ERROR_RESPONSE},
+)
+def update_employee_branch(
+    employee_id: int,
+    payload: EmployeeBranchUpdate,
+    current_user: UserRead = Depends(require_role("manager")),
+    db: Session = Depends(get_db),
+) -> EmployeeRead:
+    return employee_service.update_employee_branch(db, employee_id, payload, current_user)
 
 
 @router.get(

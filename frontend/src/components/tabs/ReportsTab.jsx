@@ -39,13 +39,22 @@ function normalizeNumber(value) {
   return Number.isFinite(number) ? number : 0;
 }
 
+const DEFAULT_HOURLY_RATE = 25;
+
 function normalizeManagerRow(item) {
+  const totalHours = normalizeNumber(item?.total_hours);
+  const hourlyRate = normalizeNumber(item?.hourly_rate) || DEFAULT_HOURLY_RATE;
+  const totalSalary = normalizeNumber(item?.total_salary) || normalizeNumber(item?.salary) || totalHours * hourlyRate;
+
   return {
     employee_id: item?.employee_id || item?.id || item?.user_id || `${item?.full_name}-${item?.position}`,
     full_name: item?.full_name || item?.employee_name || item?.name || '—',
     position: item?.position || item?.position_title || item?.position_name || '—',
-    total_hours: normalizeNumber(item?.total_hours),
+    branch: item?.branch || item?.branch_name || item?.branch_title || item?.branch?.name || '—',
+    total_hours: totalHours,
     total_shifts: normalizeNumber(item?.total_shifts),
+    hourly_rate: hourlyRate,
+    total_salary: totalSalary,
   };
 }
 
@@ -54,11 +63,15 @@ function normalizeEmployeeReport(report) {
     return null;
   }
 
+  const totalHours = normalizeNumber(report.total_hours);
+  const totalSalary = normalizeNumber(report.total_salary) || normalizeNumber(report.salary) || totalHours * DEFAULT_HOURLY_RATE;
+
   return {
     full_name: report.full_name || report.employee_name || report.name || '—',
     position: report.position || report.position_title || report.position_name || '—',
-    total_hours: normalizeNumber(report.total_hours),
+    total_hours: totalHours,
     total_shifts: normalizeNumber(report.total_shifts),
+    total_salary: totalSalary,
   };
 }
 
@@ -67,6 +80,10 @@ export default function ReportsTab({ language, userRole }) {
 
   const [filterForm, setFilterForm] = useState(defaultRange);
   const [appliedRange, setAppliedRange] = useState(defaultRange);
+  const [reportMode, setReportMode] = useState('hours');
+  const [employeeSearch, setEmployeeSearch] = useState('');
+  const [positionFilter, setPositionFilter] = useState('');
+  const [branchFilter, setBranchFilter] = useState('');
 
   const [managerReport, setManagerReport] = useState([]);
   const [employeeReport, setEmployeeReport] = useState(null);
@@ -90,6 +107,13 @@ export default function ReportsTab({ language, userRole }) {
       position: 'Позиция',
       hours: 'Часы',
       shifts: 'Смены',
+      salary: 'Зарплата',
+      branch: 'Филиал',
+      allBranches: 'Все филиалы',
+      reportType: 'Тип отчета',
+      hoursReport: 'По часам',
+      shiftsReport: 'По сменам',
+      salaryReport: 'По зарплате',
       total: 'Итого',
       export: 'Скачать XLSX',
       loading: 'Загрузка...',
@@ -117,6 +141,13 @@ export default function ReportsTab({ language, userRole }) {
       position: 'Position',
       hours: 'Hours',
       shifts: 'Shifts',
+      salary: 'Salary',
+      branch: 'Branch',
+      allBranches: 'All branches',
+      reportType: 'Report type',
+      hoursReport: 'By hours',
+      shiftsReport: 'By shifts',
+      salaryReport: 'By salary',
       total: 'Total',
       export: 'Download XLSX',
       loading: 'Loading...',
@@ -140,6 +171,15 @@ export default function ReportsTab({ language, userRole }) {
     [managerReport]
   );
 
+  const filteredManagerReport = useMemo(() => {
+    return normalizedManagerReport.filter((item) => {
+      const matchesEmployee = !employeeSearch || item.full_name.toLowerCase().includes(employeeSearch.toLowerCase());
+      const matchesPosition = !positionFilter || item.position.toLowerCase().includes(positionFilter.toLowerCase());
+      const matchesBranch = !branchFilter || item.branch.toLowerCase().includes(branchFilter.toLowerCase());
+      return matchesEmployee && matchesPosition && matchesBranch;
+    });
+  }, [normalizedManagerReport, employeeSearch, positionFilter, branchFilter]);
+
   const normalizedEmployeeReport = useMemo(
     () => normalizeEmployeeReport(employeeReport),
     [employeeReport]
@@ -147,22 +187,24 @@ export default function ReportsTab({ language, userRole }) {
 
   const totals = useMemo(() => {
     if (isManager) {
-      return normalizedManagerReport.reduce(
+      return filteredManagerReport.reduce(
         (acc, item) => ({
           total_hours: acc.total_hours + item.total_hours,
           total_shifts: acc.total_shifts + item.total_shifts,
+          total_salary: acc.total_salary + item.total_salary,
           employees: acc.employees + 1,
         }),
-        { total_hours: 0, total_shifts: 0, employees: 0 }
+        { total_hours: 0, total_shifts: 0, total_salary: 0, employees: 0 }
       );
     }
 
     return {
       total_hours: normalizedEmployeeReport?.total_hours || 0,
       total_shifts: normalizedEmployeeReport?.total_shifts || 0,
+      total_salary: normalizedEmployeeReport?.total_salary || 0,
       employees: normalizedEmployeeReport ? 1 : 0,
     };
-  }, [isManager, normalizedEmployeeReport, normalizedManagerReport]);
+  }, [isManager, normalizedEmployeeReport, filteredManagerReport]);
 
   useEffect(() => {
     if (!errorMessage && !successMessage) {
@@ -184,14 +226,22 @@ export default function ReportsTab({ language, userRole }) {
       setIsLoading(true);
     }
 
+    const requestParams = {
+      ...range,
+      report_type: reportMode,
+      employee_search: employeeSearch,
+      position: positionFilter,
+      branch: branchFilter,
+    };
+
     setErrorMessage('');
 
     try {
       if (isManager) {
-        const data = await getEmployeeReports(range);
+        const data = await getEmployeeReports(requestParams);
         setManagerReport(normalizeArray(data));
       } else {
-        const data = await getMyReport(range);
+        const data = await getMyReport(requestParams);
         setEmployeeReport(data);
       }
 
@@ -233,18 +283,34 @@ export default function ReportsTab({ language, userRole }) {
 
   const exportToExcel = () => {
     const rows = isManager
-      ? normalizedManagerReport.map((item) => ({
-          [t.employee]: item.full_name,
-          [t.position]: item.position || t.unknownPosition,
-          [t.hours]: item.total_hours,
-          [t.shifts]: item.total_shifts,
-        }))
+      ? filteredManagerReport.map((item) => {
+          const baseRow = {
+            [t.employee]: item.full_name,
+            [t.position]: item.position || t.unknownPosition,
+            [t.branch]: item.branch || '—',
+          };
+
+          if (reportMode === 'salary') {
+            return {
+              ...baseRow,
+              [t.hours]: item.total_hours,
+              [t.salary]: item.total_salary,
+            };
+          }
+
+          return {
+            ...baseRow,
+            [t.hours]: item.total_hours,
+            [t.shifts]: item.total_shifts,
+          };
+        })
       : [
           {
             [t.employee]: normalizedEmployeeReport?.full_name || '',
             [t.position]: normalizedEmployeeReport?.position || t.unknownPosition,
             [t.hours]: normalizedEmployeeReport?.total_hours || 0,
             [t.shifts]: normalizedEmployeeReport?.total_shifts || 0,
+            [t.salary]: normalizedEmployeeReport?.total_salary || 0,
           },
         ];
 
@@ -300,7 +366,7 @@ export default function ReportsTab({ language, userRole }) {
     );
   }
 
-  const hasManagerRows = normalizedManagerReport.length > 0;
+  const hasManagerRows = filteredManagerReport.length > 0;
   const hasEmployeeReport = Boolean(normalizedEmployeeReport);
 
   return (
@@ -352,6 +418,48 @@ export default function ReportsTab({ language, userRole }) {
                   />
                 </Field>
 
+                <Field label={t.reportType}>
+                  <select
+                    value={reportMode}
+                    onChange={(event) => setReportMode(event.target.value)}
+                    style={styles.select}
+                  >
+                    <option value="hours">{t.hoursReport}</option>
+                    <option value="shifts">{t.shiftsReport}</option>
+                    <option value="salary">{t.salaryReport}</option>
+                  </select>
+                </Field>
+
+                <Field label={t.employee}>
+                  <input
+                    type="text"
+                    value={employeeSearch}
+                    onChange={(event) => setEmployeeSearch(event.target.value)}
+                    placeholder={t.employee}
+                    style={styles.input}
+                  />
+                </Field>
+
+                <Field label={t.position}>
+                  <input
+                    type="text"
+                    value={positionFilter}
+                    onChange={(event) => setPositionFilter(event.target.value)}
+                    placeholder={t.position}
+                    style={styles.input}
+                  />
+                </Field>
+
+                <Field label={t.branch}>
+                  <input
+                    type="text"
+                    value={branchFilter}
+                    onChange={(event) => setBranchFilter(event.target.value)}
+                    placeholder={t.branch}
+                    style={styles.input}
+                  />
+                </Field>
+
                 <button
                   type="button"
                   onClick={applyFilters}
@@ -367,7 +475,11 @@ export default function ReportsTab({ language, userRole }) {
               <h3 style={styles.panelTitle}>{t.summary}</h3>
 
               <Metric label={t.totalHours} value={totals.total_hours} />
-              <Metric label={t.totalShifts} value={totals.total_shifts} />
+              {reportMode === 'salary' ? (
+                <Metric label={t.salary} value={totals.total_salary} />
+              ) : (
+                <Metric label={t.totalShifts} value={totals.total_shifts} />
+              )}
               {isManager && <Metric label={t.employees} value={totals.employees} />}
             </section>
           </aside>
@@ -379,17 +491,21 @@ export default function ReportsTab({ language, userRole }) {
                   <div style={styles.tableHeader}>
                     <span>{t.employee}</span>
                     <span>{t.position}</span>
+                    <span>{t.branch}</span>
                     <span>{t.hours}</span>
-                    <span>{t.shifts}</span>
+                    {reportMode !== 'salary' ? <span>{t.shifts}</span> : <span>{t.salary}</span>}
                   </div>
 
                   <div style={styles.tableBody}>
-                    {normalizedManagerReport.map((item) => (
+                    {filteredManagerReport.map((item) => (
                       <div key={item.employee_id} style={styles.tableRow}>
                         <strong style={styles.employeeName}>{item.full_name}</strong>
                         <span style={styles.tableCell}>{item.position || t.unknownPosition}</span>
+                        <span style={styles.tableCell}>{item.branch}</span>
                         <span style={styles.numberCell}>{item.total_hours}</span>
-                        <span style={styles.numberCell}>{item.total_shifts}</span>
+                        <span style={styles.numberCell}>
+                          {reportMode === 'salary' ? item.total_salary : item.total_shifts}
+                        </span>
                       </div>
                     ))}
                   </div>
@@ -397,8 +513,9 @@ export default function ReportsTab({ language, userRole }) {
                   <div style={styles.tableFooter}>
                     <strong>{t.total}</strong>
                     <span />
+                    <span />
                     <strong>{totals.total_hours}</strong>
-                    <strong>{totals.total_shifts}</strong>
+                    <strong>{reportMode === 'salary' ? totals.total_salary : totals.total_shifts}</strong>
                   </div>
                 </div>
               ) : (
@@ -419,7 +536,11 @@ export default function ReportsTab({ language, userRole }) {
 
                 <div style={styles.employeeStats}>
                   <Metric label={t.hours} value={normalizedEmployeeReport.total_hours} />
-                  <Metric label={t.shifts} value={normalizedEmployeeReport.total_shifts} />
+                  {reportMode === 'salary' ? (
+                    <Metric label={t.salary} value={normalizedEmployeeReport.total_salary} />
+                  ) : (
+                    <Metric label={t.shifts} value={normalizedEmployeeReport.total_shifts} />
+                  )}
                 </div>
               </div>
             ) : (

@@ -1,6 +1,6 @@
 from datetime import UTC, date, datetime
 
-from sqlalchemy import delete, select
+from sqlalchemy import delete, select, update
 from sqlalchemy.orm import Session
 
 from app.models import Employee, Position, Schedule, Shift, ShiftAssignment, ShiftExchangeRequest, ShiftRequirement, User
@@ -104,6 +104,20 @@ def create_schedule(
     end_date: date,
     generated_shifts: list[dict],
 ) -> Schedule:
+    existing_drafts = list(
+        db.scalars(
+            select(Schedule).where(
+                Schedule.company_id == company_id,
+                Schedule.start_date == start_date,
+                Schedule.end_date == end_date,
+                Schedule.status == "draft",
+            )
+        )
+    )
+    for existing_draft in existing_drafts:
+        db.delete(existing_draft)
+    db.flush()
+
     schedule = Schedule(company_id=company_id, start_date=start_date, end_date=end_date, status="draft")
     db.add(schedule)
     db.flush()
@@ -130,6 +144,18 @@ def get_schedule(db: Session, schedule_id: int) -> Schedule | None:
     return db.get(Schedule, schedule_id)
 
 
+def get_latest_schedule(
+    db: Session,
+    *,
+    company_id: int,
+    schedule_status: str | None = None,
+) -> Schedule | None:
+    query = select(Schedule).where(Schedule.company_id == company_id)
+    if schedule_status is not None:
+        query = query.where(Schedule.status == schedule_status)
+    return db.scalars(query.order_by(Schedule.id.desc())).first()
+
+
 def list_schedule_shift_rows(db: Session, schedule_id: int) -> list[dict]:
     return list(
         db.execute(
@@ -154,8 +180,18 @@ def list_schedule_shift_rows(db: Session, schedule_id: int) -> list[dict]:
     )
 
 
-def publish_schedule(db: Session, schedule_id: int) -> Schedule:
-    schedule = db.get(Schedule, schedule_id)
+def publish_schedule(db: Session, schedule: Schedule) -> Schedule:
+    db.execute(
+        update(Schedule)
+        .where(
+            Schedule.company_id == schedule.company_id,
+            Schedule.id != schedule.id,
+            Schedule.status == "published",
+            Schedule.start_date <= schedule.end_date,
+            Schedule.end_date >= schedule.start_date,
+        )
+        .values(status="archived")
+    )
     schedule.status = "published"
     db.add(schedule)
     db.commit()
@@ -354,7 +390,12 @@ def update_exchange_request_status(db: Session, exchange_request_id: int, status
     return exchange_request
 
 
-def list_published_shift_rows(db: Session, start_date: date | None = None, end_date: date | None = None) -> list[dict]:
+def list_published_shift_rows(
+    db: Session,
+    start_date: date | None = None,
+    end_date: date | None = None,
+    company_id: int | None = None,
+) -> list[dict]:
     query = (
         select(
             Employee.id.label("employee_id"),
@@ -375,6 +416,8 @@ def list_published_shift_rows(db: Session, start_date: date | None = None, end_d
         query = query.where(Shift.shift_date >= start_date)
     if end_date is not None:
         query = query.where(Shift.shift_date <= end_date)
+    if company_id is not None:
+        query = query.where(Schedule.company_id == company_id)
     return list(db.execute(query).mappings())
 
 
