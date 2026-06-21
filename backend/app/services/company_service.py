@@ -12,6 +12,7 @@ from app.schemas.company import (
     CompanyRead,
     CompanySummaryRead,
     CompanyUpdate,
+    normalize_invite_code,
 )
 
 
@@ -102,7 +103,15 @@ def update_my_company(db: Session, payload: CompanyUpdate, current_user: UserRea
 
 
 def preview_invite_code(db: Session, invite_code: str):
-    company = company_repository.get_company_by_invite_code(db, invite_code)
+    try:
+        normalized_invite_code = normalize_invite_code(invite_code)
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Invite code must contain exactly 16 uppercase letters or digits.",
+        ) from exc
+
+    company = company_repository.get_company_by_invite_code(db, normalized_invite_code)
 
     if company is None:
         raise HTTPException(

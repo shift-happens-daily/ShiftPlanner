@@ -1,4 +1,6 @@
 import secrets
+import string
+from datetime import UTC, datetime
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -17,7 +19,9 @@ def create_company(
 ) -> Company:
     company = Company(
         name=name,
-        invite_code=_generate_invite_code(),
+        invite_code=_generate_unique_invite_code(db),
+        invite_code_generated_at=datetime.now(UTC).replace(tzinfo=None),
+        invite_code_expires_at=None,
         manager_user_id=manager_user_id,
     )
 
@@ -52,7 +56,9 @@ def get_default_company(db: Session) -> Company:
     if company is None:
         company = Company(
             name="Default Company",
-            invite_code=_generate_invite_code(),
+            invite_code=_generate_unique_invite_code(db),
+            invite_code_generated_at=datetime.now(UTC).replace(tzinfo=None),
+            invite_code_expires_at=None,
             manager_user_id=None,
         )
         db.add(company)
@@ -162,4 +168,19 @@ def delete_company(db: Session, company: Company) -> None:
 
 
 def _generate_invite_code() -> str:
-    return secrets.token_hex(3).upper()
+    alphabet = string.ascii_uppercase + string.digits
+    return "".join(secrets.choice(alphabet) for _ in range(16))
+
+
+def _generate_unique_invite_code(db: Session, max_attempts: int = 20) -> str:
+    for _ in range(max_attempts):
+        invite_code = _generate_invite_code()
+        existing_id = db.scalar(
+            select(Company.id)
+            .where(Company.invite_code == invite_code)
+            .limit(1)
+        )
+        if existing_id is None:
+            return invite_code
+
+    raise RuntimeError("Could not generate a unique company invite code.")

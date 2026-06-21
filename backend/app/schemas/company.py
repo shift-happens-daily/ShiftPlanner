@@ -1,4 +1,17 @@
-from pydantic import BaseModel, Field
+import re
+
+from pydantic import BaseModel, Field, field_validator
+
+INVITE_CODE_PATTERN = re.compile(r"^[A-Z0-9]{16}$")
+
+
+def normalize_invite_code(value: str) -> str:
+    if not isinstance(value, str):
+        raise ValueError("Invite code must be a string.")
+    normalized = value.strip().upper()
+    if not INVITE_CODE_PATTERN.fullmatch(normalized):
+        raise ValueError("Invite code must contain exactly 16 uppercase letters or digits.")
+    return normalized
 
 
 class CompanyCreate(BaseModel):
@@ -57,6 +70,11 @@ class CompanyInvitePreviewRead(BaseModel):
 
 
 class CompanyJoinRequest(BaseModel):
-    invite_code: str = Field(min_length=1)
+    invite_code: str
     branch_id: int | None = Field(default=None, ge=1)
     position_id: int | None = Field(default=None, ge=1)
+
+    @field_validator("invite_code", mode="before")
+    @classmethod
+    def validate_invite_code(cls, value: str) -> str:
+        return normalize_invite_code(value)

@@ -13,18 +13,19 @@ if str(ROOT_DIR) not in sys.path:
 
 from app.database import DATABASE_URL
 from app.main import app
+from app.repositories import company_repository
 from app.services import auth_service
 
 SCHEMA_SQL = (ROOT_DIR / "db" / "schema.sql").read_text(encoding="utf-8")
 SEED_SQL = (ROOT_DIR / "db" / "seed.sql").read_text(encoding="utf-8")
 PSYCOPG_DSN = DATABASE_URL.replace("postgresql+psycopg://", "postgresql://", 1)
+SEED_INVITE_CODE = "A7K9P2X4M8Q1L5R3"
+SECOND_COMPANY_INVITE_CODE = "B8L0Q3Y5N9R2M6S4"
+OTHER_REQUIREMENTS_INVITE_CODE = "C9M1R4Z6P0S3N7T5"
 
 
 def _execute_script(cursor, script: str) -> None:
-    for statement in script.split(";"):
-        sql = statement.strip()
-        if sql:
-            cursor.execute(sql)
+    cursor.execute(script, prepare=False)
 
 
 def reset_database() -> None:
@@ -87,10 +88,10 @@ def seed_second_company_scope_data() -> None:
             cursor.execute(
                 """
                 INSERT INTO companies (name, invite_code, manager_user_id)
-                VALUES ('Other Company', 'OTHER123', %s)
+                VALUES ('Other Company', %s, %s)
                 RETURNING id
                 """,
-                (second_manager_id,),
+                (SECOND_COMPANY_INVITE_CODE, second_manager_id),
             )
             second_company_id = cursor.fetchone()[0]
             cursor.execute(
@@ -138,16 +139,16 @@ def test_auth_token_and_profile_endpoints(client: TestClient) -> None:
     manager_json = manager_profile.json()
     assert manager_json["role"] == "manager"
     assert manager_json["employee_id"] is None
-    assert manager_json["company"]["invite_code"] == "COFFEE123"
+    assert manager_json["company"]["invite_code"] == SEED_INVITE_CODE
 
     employee_profile = client.get("/auth/me", headers=employee_headers)
     assert employee_profile.status_code == 200, employee_profile.text
     employee_json = employee_profile.json()
     assert employee_json["role"] == "employee"
     assert employee_json["employee_id"] == 1
-    assert employee_json["company"]["invite_code"] == "COFFEE123"
-    assert employee_json["branch"]["name"] == "Main Branch"
-    assert employee_json["position"] == {"id": 1, "name": "Barista"}
+    assert employee_json["company"]["invite_code"] == SEED_INVITE_CODE
+    assert employee_json["branch"] is None
+    assert employee_json["position"] is None
 
     unauthorized = client.get("/auth/me")
     assert unauthorized.status_code == 401
@@ -173,6 +174,10 @@ def test_employee_without_assigned_position_returns_null(client: TestClient) -> 
 
 
 def test_employees_list_includes_position_and_role(client: TestClient) -> None:
+    with psycopg.connect(PSYCOPG_DSN) as connection:
+        with connection.cursor() as cursor:
+            cursor.execute("UPDATE employees SET branch_id = 1, position_id = 1 WHERE id = 1")
+
     manager_headers = login_json(client, "manager@example.com", "manager123")
 
     response = client.get("/employees/", headers=manager_headers)
@@ -237,7 +242,7 @@ def test_manager_cannot_update_other_company_employee_or_assign_foreign_position
 
     with psycopg.connect(PSYCOPG_DSN) as connection:
         with connection.cursor() as cursor:
-            cursor.execute("SELECT id FROM companies WHERE invite_code = 'OTHER123'")
+            cursor.execute("SELECT id FROM companies WHERE invite_code = %s", (SECOND_COMPANY_INVITE_CODE,))
             other_company_id = cursor.fetchone()[0]
             cursor.execute("SELECT id FROM employees WHERE company_id = %s ORDER BY id LIMIT 1", (other_company_id,))
             other_employee_id = cursor.fetchone()[0]
@@ -314,7 +319,7 @@ def test_manager_can_update_own_company(client: TestClient) -> None:
     assert updated_json["id"] == 1
     assert updated_json["name"] == "Updated Coffee Bar"
     assert updated_json["address"] == "Updated Address 42"
-    assert updated_json["invite_code"] == "COFFEE123"
+    assert updated_json["invite_code"] == SEED_INVITE_CODE
 
     profile = client.get("/auth/me", headers=manager_headers)
     assert profile.status_code == 200, profile.text
@@ -330,7 +335,7 @@ def test_manager_gets_own_company_with_address(client: TestClient) -> None:
         "id": 1,
         "name": "Coffee Bar Barnaul",
         "address": "Barnaul, Lenin Street",
-        "invite_code": "COFFEE123",
+        "invite_code": SEED_INVITE_CODE,
     }
 
 
@@ -339,6 +344,67 @@ def test_employee_and_unauthenticated_users_cannot_get_manager_company(client: T
 
     assert client.get("/companies/me", headers=employee_headers).status_code == 403
     assert client.get("/companies/me").status_code == 401
+
+
+def test_new_companies_receive_unique_secure_invite_codes(client: TestClient) -> None:
+    manager_headers = login_json(client, "manager@example.com", "manager123")
+
+    first = client.post(
+        "/companies/",
+        headers=manager_headers,
+        json={"name": "First Generated Company", "invite_code": "AAAAAAAAAAAAAAAA"},
+    )
+    second = client.post("/companies/", headers=manager_headers, json={"name": "Second Generated Company"})
+    assert first.status_code == 201, first.text
+    assert second.status_code == 201, second.text
+
+    first_code = first.json()["invite_code"]
+    second_code = second.json()["invite_code"]
+    assert len(first_code) == 16
+    assert first_code.isascii() and first_code.isalnum() and first_code == first_code.upper()
+    assert len(second_code) == 16
+    assert second_code.isascii() and second_code.isalnum() and second_code == second_code.upper()
+    assert first_code != second_code
+    assert first_code != "AAAAAAAAAAAAAAAA"
+
+    with psycopg.connect(PSYCOPG_DSN) as connection:
+        with connection.cursor() as cursor:
+            cursor.execute(
+                "SELECT invite_code_generated_at, invite_code_expires_at FROM companies WHERE id = %s",
+                (first.json()["id"],),
+            )
+            generated_at, expires_at = cursor.fetchone()
+    assert generated_at is not None
+    assert expires_at is None
+
+
+def test_invite_code_collision_retries(client: TestClient, monkeypatch: pytest.MonkeyPatch) -> None:
+    generated_code = "D0N2S5A7Q1T4P8V6"
+    generated_codes = iter([SEED_INVITE_CODE, generated_code])
+    monkeypatch.setattr(company_repository, "_generate_invite_code", lambda: next(generated_codes))
+    manager_headers = login_json(client, "manager@example.com", "manager123")
+
+    created = client.post("/companies/", headers=manager_headers, json={"name": "Collision Retry Company"})
+    assert created.status_code == 201, created.text
+    assert created.json()["invite_code"] == generated_code
+
+
+def test_invalid_invite_code_formats_are_rejected(client: TestClient) -> None:
+    employee_headers = login_json(client, "ivan@example.com", "employee123")
+
+    short_code = client.post(
+        "/companies/join",
+        headers=employee_headers,
+        json={"invite_code": "SHORT123", "branch_id": None, "position_id": None},
+    )
+    assert short_code.status_code == 422
+
+    invalid_characters = client.post(
+        "/companies/join",
+        headers=employee_headers,
+        json={"invite_code": "A7K9P2X4M8Q1L5R!", "branch_id": None, "position_id": None},
+    )
+    assert invalid_characters.status_code == 422
 
 
 def test_manager_can_create_and_list_branches_with_address(client: TestClient) -> None:
@@ -419,7 +485,7 @@ def test_manager_cannot_update_or_delete_other_company_branch(client: TestClient
 
     with psycopg.connect(PSYCOPG_DSN) as connection:
         with connection.cursor() as cursor:
-            cursor.execute("SELECT id FROM companies WHERE invite_code = 'OTHER123'")
+            cursor.execute("SELECT id FROM companies WHERE invite_code = %s", (SECOND_COMPANY_INVITE_CODE,))
             other_company_id = cursor.fetchone()[0]
             cursor.execute("SELECT id FROM branches WHERE company_id = %s ORDER BY id LIMIT 1", (other_company_id,))
             other_branch_id = cursor.fetchone()[0]
@@ -548,7 +614,7 @@ def test_manager_cannot_delete_other_company_position(client: TestClient) -> Non
 
     with psycopg.connect(PSYCOPG_DSN) as connection:
         with connection.cursor() as cursor:
-            cursor.execute("SELECT id FROM companies WHERE invite_code = 'OTHER123'")
+            cursor.execute("SELECT id FROM companies WHERE invite_code = %s", (SECOND_COMPANY_INVITE_CODE,))
             other_company_id = cursor.fetchone()[0]
             cursor.execute("SELECT id FROM positions WHERE company_id = %s ORDER BY id LIMIT 1", (other_company_id,))
             other_position_id = cursor.fetchone()[0]
@@ -581,7 +647,10 @@ def test_requirements_are_fetched_by_company_branch_and_date_range(client: TestC
                 "INSERT INTO branches (company_id, name, address) VALUES (1, 'Second Branch', 'Second Address') RETURNING id"
             )
             second_branch_id = cursor.fetchone()[0]
-            cursor.execute("INSERT INTO companies (name, invite_code) VALUES ('Other Company', 'OTHERREQ') RETURNING id")
+            cursor.execute(
+                "INSERT INTO companies (name, invite_code) VALUES ('Other Company', %s) RETURNING id",
+                (OTHER_REQUIREMENTS_INVITE_CODE,),
+            )
             other_company_id = cursor.fetchone()[0]
             cursor.execute(
                 "INSERT INTO branches (company_id, name, address) VALUES (%s, 'Other Branch', 'Other Address') RETURNING id",
@@ -677,7 +746,7 @@ def test_requirement_create_for_other_company_branch_or_position_is_forbidden(cl
 
     with psycopg.connect(PSYCOPG_DSN) as connection:
         with connection.cursor() as cursor:
-            cursor.execute("SELECT id FROM companies WHERE invite_code = 'OTHER123'")
+            cursor.execute("SELECT id FROM companies WHERE invite_code = %s", (SECOND_COMPANY_INVITE_CODE,))
             other_company_id = cursor.fetchone()[0]
             cursor.execute("SELECT id FROM branches WHERE company_id = %s ORDER BY id LIMIT 1", (other_company_id,))
             other_branch_id = cursor.fetchone()[0]
@@ -790,7 +859,7 @@ def test_manager_cannot_update_other_company_requirement(client: TestClient) -> 
 
     with psycopg.connect(PSYCOPG_DSN) as connection:
         with connection.cursor() as cursor:
-            cursor.execute("SELECT id FROM companies WHERE invite_code = 'OTHER123'")
+            cursor.execute("SELECT id FROM companies WHERE invite_code = %s", (SECOND_COMPANY_INVITE_CODE,))
             other_company_id = cursor.fetchone()[0]
             cursor.execute("SELECT id FROM branches WHERE company_id = %s ORDER BY id LIMIT 1", (other_company_id,))
             other_branch_id = cursor.fetchone()[0]
@@ -836,7 +905,7 @@ def test_manager_cannot_move_requirement_to_other_company_branch_or_position(cli
 
     with psycopg.connect(PSYCOPG_DSN) as connection:
         with connection.cursor() as cursor:
-            cursor.execute("SELECT id FROM companies WHERE invite_code = 'OTHER123'")
+            cursor.execute("SELECT id FROM companies WHERE invite_code = %s", (SECOND_COMPANY_INVITE_CODE,))
             other_company_id = cursor.fetchone()[0]
             cursor.execute("SELECT id FROM branches WHERE company_id = %s ORDER BY id LIMIT 1", (other_company_id,))
             other_branch_id = cursor.fetchone()[0]
@@ -861,7 +930,7 @@ def test_manager_cannot_move_requirement_to_other_company_branch_or_position(cli
 def test_invite_preview_and_join_flow(client: TestClient) -> None:
     manager_headers = login_json(client, "manager@example.com", "manager123")
 
-    preview = client.get("/companies/invite/COFFEE123", headers=manager_headers)
+    preview = client.get(f"/companies/invite/{SEED_INVITE_CODE}", headers=manager_headers)
     assert preview.status_code == 200, preview.text
     preview_json = preview.json()
     assert preview_json["company_name"] == "Coffee Bar Barnaul"
@@ -869,7 +938,7 @@ def test_invite_preview_and_join_flow(client: TestClient) -> None:
     assert len(preview_json["positions"]) == 2
 
     invalid_preview = client.get("/companies/invite/BADCODE", headers=manager_headers)
-    assert invalid_preview.status_code == 404
+    assert invalid_preview.status_code == 422
 
     register = client.post(
         "/auth/register",
@@ -891,21 +960,21 @@ def test_invite_preview_and_join_flow(client: TestClient) -> None:
     invalid_branch = client.post(
         "/companies/join",
         headers=employee_headers,
-        json={"invite_code": "COFFEE123", "branch_id": 999, "position_id": 1},
+        json={"invite_code": SEED_INVITE_CODE, "branch_id": 999, "position_id": 1},
     )
     assert invalid_branch.status_code == 400
 
     invalid_position = client.post(
         "/companies/join",
         headers=employee_headers,
-        json={"invite_code": "COFFEE123", "branch_id": 1, "position_id": 999},
+        json={"invite_code": SEED_INVITE_CODE, "branch_id": 1, "position_id": 999},
     )
     assert invalid_position.status_code == 400
 
     joined = client.post(
         "/companies/join",
         headers=employee_headers,
-        json={"invite_code": "COFFEE123", "branch_id": 1, "position_id": 2},
+        json={"invite_code": f"  {SEED_INVITE_CODE.lower()}  ", "branch_id": 1, "position_id": 2},
     )
     assert joined.status_code == 200, joined.text
     joined_json = joined.json()
@@ -918,11 +987,11 @@ def test_invite_preview_and_join_flow(client: TestClient) -> None:
     assert reloaded_profile.status_code == 200, reloaded_profile.text
     reloaded_json = reloaded_profile.json()
     assert reloaded_json["employee_id"] == joined_json["employee_id"]
-    assert reloaded_json["company"]["invite_code"] == "COFFEE123"
+    assert reloaded_json["company"]["invite_code"] == SEED_INVITE_CODE
     assert reloaded_json["branch"]["id"] == 1
     assert reloaded_json["position"]["id"] == 2
 
-    manager_join = client.post("/companies/join", headers=manager_headers, json={"invite_code": "COFFEE123"})
+    manager_join = client.post("/companies/join", headers=manager_headers, json={"invite_code": SEED_INVITE_CODE})
     assert manager_join.status_code == 403
 
 
@@ -1061,6 +1130,10 @@ def test_bulk_requirements_creation_and_permissions(client: TestClient) -> None:
 
 
 def test_calendar_summary_reports_and_exchange_flow(client: TestClient) -> None:
+    with psycopg.connect(PSYCOPG_DSN) as connection:
+        with connection.cursor() as cursor:
+            cursor.execute("UPDATE employees SET branch_id = 1, position_id = 1 WHERE id = 1")
+
     manager_headers = login_json(client, "manager@example.com", "manager123")
     employee_headers = login_json(client, "ivan@example.com", "employee123")
 
