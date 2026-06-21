@@ -732,10 +732,10 @@ def _save_result(
             text(
                 """
                 INSERT INTO schedule_assignment_slots (
-                    schedule_assignment_id, slot_time, availability_source
+                    schedule_assignment_id, slot_time, availability_status
                 )
                 VALUES (
-                    :schedule_assignment_id, :slot_time, :availability_source
+                    :schedule_assignment_id, :slot_time, :availability_status
                 )
                 """
             ),
@@ -743,7 +743,7 @@ def _save_result(
                 {
                     "schedule_assignment_id": assignment_id,
                     "slot_time": slot_time,
-                    "availability_source": source,
+                    "availability_status": source,
                 }
                 for slot_time, source in assignment.slots
             ],

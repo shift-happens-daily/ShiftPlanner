@@ -39,8 +39,8 @@ CREATE TABLE branches (
 
 CREATE INDEX idx_branches_company_id ON branches(company_id);
 
--- A position is a company-owned job classification referenced by employees
--- and staffing requirements.
+-- A position is a company-owned job classification.
+-- Examples: barista, cashier, cook.
 CREATE TABLE positions (
     id SERIAL PRIMARY KEY,
     company_id INTEGER NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
@@ -144,25 +144,36 @@ CREATE INDEX idx_staffing_requirements_lookup
 CREATE INDEX idx_staffing_requirements_position
     ON staffing_requirements(position_id);
 
--- Availability is concrete-date and slot based. The status controls whether a
--- slot is preferred, usable only as a fallback, or prohibited.
+-- Employee availability is date-based because availability may differ
+-- from week to week. Each row is one 30-minute slot on a concrete date.
+--
+-- availability_status:
+-- available   = employee is free and can be scheduled
+-- if_needed   = employee can be scheduled only if needed
+-- unavailable = employee is busy and must not be scheduled
 CREATE TABLE employee_availability (
     id SERIAL PRIMARY KEY,
     employee_id INTEGER NOT NULL REFERENCES employees(id) ON DELETE CASCADE,
     availability_date DATE NOT NULL,
     slot_time TIME NOT NULL,
-    availability_status VARCHAR(20) NOT NULL CHECK (
-        availability_status IN ('available', 'if_needed', 'unavailable')
-    ),
+    availability_status VARCHAR(20) NOT NULL
+        CHECK (availability_status IN ('available', 'if_needed', 'unavailable')),
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
     CONSTRAINT ck_employee_availability_slot CHECK (
         EXTRACT(MINUTE FROM slot_time) IN (0, 30)
         AND EXTRACT(SECOND FROM slot_time) = 0
     ),
+
     UNIQUE (employee_id, availability_date, slot_time)
 );
 
 CREATE INDEX idx_employee_availability_lookup
-    ON employee_availability(availability_date, slot_time, employee_id);
+    ON employee_availability(availability_date, slot_time, availability_status, employee_id);
+
+CREATE INDEX idx_employee_availability_employee_date
+    ON employee_availability(employee_id, availability_date);
 
 CREATE TABLE absences (
     id SERIAL PRIMARY KEY,
@@ -241,8 +252,8 @@ CREATE TABLE schedule_assignment_slots (
     schedule_assignment_id INTEGER NOT NULL
         REFERENCES schedule_assignments(id) ON DELETE CASCADE,
     slot_time TIME NOT NULL,
-    availability_source VARCHAR(20) NOT NULL
-        CHECK (availability_source IN ('available', 'if_needed')),
+    availability_status VARCHAR(20) NOT NULL
+        CHECK (availability_status IN ('available', 'if_needed')),
     CONSTRAINT ck_schedule_assignment_slots_time CHECK (
         EXTRACT(MINUTE FROM slot_time) IN (0, 30)
         AND EXTRACT(SECOND FROM slot_time) = 0
