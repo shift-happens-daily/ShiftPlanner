@@ -607,16 +607,13 @@ function InfoItem({ label, value }) {
 const styles = {
   page: {
     width: '100%',
-    minHeight: '100vh',
     boxSizing: 'border-box',
     padding: '22px',
-    overflowY: 'auto',
+    overflowX: 'hidden',
   },
 
   shell: {
     width: 'min(100%, 1200px)',
-    minHeight: '100%',
-    maxHeight: 'calc(100vh - 44px)',
     margin: '0 auto',
     boxSizing: 'border-box',
     padding: '26px',
@@ -624,10 +621,6 @@ const styles = {
     background: '#f4faff',
     border: '1px solid rgba(222, 231, 231, 0.95)',
     boxShadow: '0 22px 58px rgba(0, 38, 66, 0.18)',
-    display: 'flex',
-    flexDirection: 'column',
-    overflow: 'auto',
-    position: 'relative',
   },
 
   grid: {
@@ -636,12 +629,12 @@ const styles = {
     gridTemplateColumns: '1fr 1fr',
     gap: '18px',
     alignItems: 'start',
-    overflowY: 'auto',
-    padding: '4px',
   },
 
   card: {
     boxSizing: 'border-box',
+    width: '100%',
+    minWidth: 0,
     padding: '28px',
     borderRadius: '30px',
     background: '#ffffff',
@@ -722,13 +715,10 @@ const styles = {
 
   companyPanel: {
     width: '100%',
-    padding: '24px',
-    borderRadius: '24px',
-    background: '#ffffff',
-    border: '1px solid rgba(226, 232, 240, 0.95)',
+    minWidth: 0,
     display: 'flex',
     flexDirection: 'column',
-    gap: '22px',
+    gap: '18px',
     textAlign: 'left',
   },
 
@@ -750,16 +740,16 @@ const styles = {
 
   inviteCodeBox: {
     width: '100%',
-    minHeight: '100px',
-    padding: '18px 22px',
+    minWidth: 0,
+    boxSizing: 'border-box',
+    padding: '18px 20px',
     borderRadius: '24px',
     border: '1px solid rgba(203, 213, 225, 0.85)',
     background: '#f8fafc',
     display: 'flex',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    gap: '18px',
-    flexWrap: 'wrap',
+    flexDirection: 'column',
+    alignItems: 'stretch',
+    gap: '16px',
   },
 
   inviteActions: {
@@ -861,10 +851,11 @@ const styles = {
 
   inviteValue: {
     display: 'block',
-    fontSize: '28px',
+    fontSize: '24px',
     fontWeight: '900',
-    letterSpacing: '0.14em',
+    letterSpacing: '0.08em',
     color: '#102a43',
+    wordBreak: 'break-all',
   },
 
   copyButton: {
