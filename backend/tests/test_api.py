@@ -1568,6 +1568,100 @@ def test_manager_publishes_own_draft_and_employee_visibility_changes(client: Tes
     assert already_published.status_code == 400
 
 
+def test_manager_gets_latest_schedule_with_status_filters(client: TestClient) -> None:
+    manager_headers = login_json(client, "manager@example.com", "manager123")
+
+    latest_draft = client.get("/schedule/latest?status=draft", headers=manager_headers)
+    assert latest_draft.status_code == 200, latest_draft.text
+    assert latest_draft.json()["id"] == 1
+    assert latest_draft.json()["status"] == "draft"
+    assert len(latest_draft.json()["shifts"]) == 1
+
+    with psycopg.connect(PSYCOPG_DSN) as connection:
+        with connection.cursor() as cursor:
+            cursor.execute(
+                """
+                INSERT INTO schedules (company_id, start_date, end_date, status)
+                VALUES (1, '2026-07-01', '2026-07-07', 'published')
+                RETURNING id
+                """
+            )
+            published_id = cursor.fetchone()[0]
+            cursor.execute(
+                """
+                INSERT INTO schedules (company_id, start_date, end_date, status)
+                VALUES (1, '2026-08-01', '2026-08-07', 'archived')
+                RETURNING id
+                """
+            )
+            archived_id = cursor.fetchone()[0]
+
+    latest_published = client.get("/schedule/latest?status=published", headers=manager_headers)
+    assert latest_published.status_code == 200, latest_published.text
+    assert latest_published.json()["id"] == published_id
+    assert latest_published.json()["status"] == "published"
+
+    latest_archived = client.get("/schedule/latest?status=archived", headers=manager_headers)
+    assert latest_archived.status_code == 200, latest_archived.text
+    assert latest_archived.json()["id"] == archived_id
+    assert latest_archived.json()["status"] == "archived"
+
+    latest_any = client.get("/schedule/latest", headers=manager_headers)
+    assert latest_any.status_code == 200, latest_any.text
+    assert latest_any.json()["id"] == archived_id
+
+
+def test_latest_schedule_is_manager_company_scoped_and_manager_only(client: TestClient) -> None:
+    seed_second_company_scope_data()
+    manager_headers = login_json(client, "manager@example.com", "manager123")
+    employee_headers = login_json(client, "ivan@example.com", "employee123")
+
+    with psycopg.connect(PSYCOPG_DSN) as connection:
+        with connection.cursor() as cursor:
+            cursor.execute("SELECT id FROM companies WHERE invite_code = %s", (SECOND_COMPANY_INVITE_CODE,))
+            other_company_id = cursor.fetchone()[0]
+            cursor.execute(
+                """
+                INSERT INTO schedules (company_id, start_date, end_date, status)
+                VALUES (%s, '2026-09-01', '2026-09-07', 'draft')
+                RETURNING id
+                """,
+                (other_company_id,),
+            )
+            other_schedule_id = cursor.fetchone()[0]
+
+    latest = client.get("/schedule/latest", headers=manager_headers)
+    assert latest.status_code == 200, latest.text
+    assert latest.json()["id"] == 1
+    assert latest.json()["id"] != other_schedule_id
+    assert client.get("/schedule/latest", headers=employee_headers).status_code == 403
+    assert client.get("/schedule/latest").status_code == 401
+    assert client.get("/schedule/latest?status=invalid", headers=manager_headers).status_code == 422
+
+    registered = client.post(
+        "/auth/register",
+        json={
+            "full_name": "Latest Manager Without Company",
+            "email": "latest-no-company@example.com",
+            "password": "manager456",
+            "role": "manager",
+        },
+    )
+    assert registered.status_code == 201, registered.text
+    no_company_headers = login_json(client, "latest-no-company@example.com", "manager456")
+    assert client.get("/schedule/latest", headers=no_company_headers).status_code == 403
+
+
+def test_latest_schedule_returns_404_when_company_has_no_schedules(client: TestClient) -> None:
+    with psycopg.connect(PSYCOPG_DSN) as connection:
+        with connection.cursor() as cursor:
+            cursor.execute("DELETE FROM schedules WHERE company_id = 1")
+
+    manager_headers = login_json(client, "manager@example.com", "manager123")
+    missing = client.get("/schedule/latest", headers=manager_headers)
+    assert missing.status_code == 404
+
+
 def test_manager_generation_is_company_scoped_and_publishable(client: TestClient) -> None:
     seed_second_company_scope_data()
     with psycopg.connect(PSYCOPG_DSN) as connection:

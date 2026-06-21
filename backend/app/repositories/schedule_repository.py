@@ -130,6 +130,18 @@ def get_schedule(db: Session, schedule_id: int) -> Schedule | None:
     return db.get(Schedule, schedule_id)
 
 
+def get_latest_schedule(
+    db: Session,
+    *,
+    company_id: int,
+    schedule_status: str | None = None,
+) -> Schedule | None:
+    query = select(Schedule).where(Schedule.company_id == company_id)
+    if schedule_status is not None:
+        query = query.where(Schedule.status == schedule_status)
+    return db.scalars(query.order_by(Schedule.id.desc())).first()
+
+
 def list_schedule_shift_rows(db: Session, schedule_id: int) -> list[dict]:
     return list(
         db.execute(
