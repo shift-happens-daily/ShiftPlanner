@@ -10,6 +10,7 @@ export default function ProfileTab({ language, user }) {
   const texts = {
     ru: {
       title: 'Профиль',
+      subtitle: 'Основная информация о вас.',
       fullName: 'Полное имя',
       email: 'Email',
       role: 'Роль',
@@ -26,6 +27,7 @@ export default function ProfileTab({ language, user }) {
     },
     en: {
       title: 'Profile',
+      subtitle: 'Basic information about you.',
       fullName: 'Full name',
       email: 'Email',
       role: 'Role',
@@ -51,19 +53,8 @@ export default function ProfileTab({ language, user }) {
   const fullName = user?.fullName || user?.full_name || user?.name || t.empty;
   const email = user?.email || t.empty;
   const employeeId = user?.employeeId || user?.employee_id;
-  const managerCompanyStorageKey = `shiftplanner_manager_company_${user?.email || 'current'}`;
 
-  let savedManagerCompany = null;
-
-  try {
-    const rawCompany = localStorage.getItem(managerCompanyStorageKey);
-    savedManagerCompany = rawCompany ? JSON.parse(rawCompany) : null;
-  } catch {
-    savedManagerCompany = null;
-  }
-
-const fallbackCompany = user?.role === 'manager' ? savedManagerCompany : null;
-const companyName = user?.company?.name || fallbackCompany?.name;
+  const companyName = user?.company?.name;
   const branchName = user?.branch?.name;
   const positionName = user?.position?.name;
 
@@ -77,15 +68,24 @@ const companyName = user?.company?.name || fallbackCompany?.name;
       value: email,
     },
     {
-      label: t.role,
-      value: isManager ? t.manager : isEmployee ? t.employee : t.empty,
-    },
-    {
-      label: t.company,
-      value: companyName || t.noCompany,
-      muted: !companyName,
+      label: "User ID",
+      value: user?.publicId || user?.public_id || '-',
     },
   ];
+
+  // Добавляем "Роль" только для менеджера
+  if (isManager) {
+    rows.push({
+      label: t.role,
+      value: t.manager,
+    });
+  }
+
+  rows.push({
+    label: t.company,
+    value: companyName || t.noCompany,
+    muted: !companyName,
+  });
 
   if (isEmployee) {
     rows.push(
@@ -103,7 +103,7 @@ const companyName = user?.company?.name || fallbackCompany?.name;
         label: t.position,
         value: positionName || t.empty,
         muted: !positionName,
-      },
+      }
     );
   }
 
@@ -157,7 +157,7 @@ const companyName = user?.company?.name || fallbackCompany?.name;
 }
 
 const styles = {
-    page: {
+  page: {
     width: '100%',
     height: '100%',
     boxSizing: 'border-box',
@@ -165,7 +165,7 @@ const styles = {
     display: 'flex',
     justifyContent: 'center',
     alignItems: 'flex-start',
-    overflow: 'hidden',
+    overflow: 'auto',
   },
 
   card: {
@@ -179,7 +179,6 @@ const styles = {
     border: '1px solid rgba(222, 231, 231, 0.95)',
     boxShadow: '0 24px 60px rgba(0, 38, 66, 0.18)',
     overflow: 'hidden',
-
     display: 'flex',
     flexDirection: 'column',
   },
@@ -245,8 +244,10 @@ const styles = {
     display: 'grid',
     gridTemplateColumns: 'repeat(2, minmax(320px, 1fr))',
     gap: '34px 42px',
-    alignContent: 'center',
+    alignContent: 'flex-start',
     justifyContent: 'center',
+    overflow: 'auto',
+    minHeight: 0,
   },
 
   row: {
@@ -256,13 +257,11 @@ const styles = {
     borderRadius: '20px',
     background: '#ffffff',
     border: '1px solid rgba(79, 100, 111, 0.12)',
-
     display: 'flex',
     flexDirection: 'column',
     justifyContent: 'center',
     alignItems: 'center',
     textAlign: 'center',
-
     gap: '8px',
   },
 

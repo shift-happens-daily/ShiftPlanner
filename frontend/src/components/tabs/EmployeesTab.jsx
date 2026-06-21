@@ -1,3 +1,4 @@
+// frontend/src/components/tabs/EmployeesTab.jsx
 import { useEffect, useMemo, useState } from 'react';
 import {
   createEmployee,
@@ -8,10 +9,13 @@ import {
   listEmployeeAbsences,
   listEmployees,
   updateEmployeeAvailability,
+  updateEmployeeBranch,
+  updateEmployeePosition,
 } from '../../services/employeeService';
 import { extractApiErrorMessage, localizeBackendMessage } from '../../services/error';
 import { mapEmployeeCalendarSummary } from '../../services/mappers';
 import { createPosition, listPositions } from '../../services/positionService';
+import { listBranches, linkUserToCompany } from '../../services/companyService';
 
 const WEEKDAYS = [
   { value: 0, ru: 'Пн', en: 'Mon' },
@@ -33,11 +37,7 @@ function normalizeArray(value) {
 
 function normalizeError(error, fallback, language) {
   const message = extractApiErrorMessage(error, fallback, language);
-
-  if (!message) {
-    return fallback;
-  }
-
+  if (!message) return fallback;
   return message;
 }
 
@@ -49,6 +49,10 @@ function getEmployeePosition(employee) {
   return employee?.position_title || employee?.position?.title || employee?.position?.name || '';
 }
 
+function getEmployeeBranch(employee) {
+  return employee?.branch?.name || employee?.branch_name || employee?.branch_title || '';
+}
+
 function isValidEmail(email) {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
 }
@@ -58,9 +62,36 @@ function getCompanyId(company) {
 }
 
 export default function EmployeesTab({ language, userRole, user }) {
+  // Добавляем глобальные стили для полей ввода
+  useEffect(() => {
+    const styleSheet = document.createElement('style');
+    styleSheet.textContent = `
+      .employees-tab input,
+      .employees-tab select,
+      .employees-tab input:focus,
+      .employees-tab select:focus {
+        color: #002642 !important;
+        background-color: #ffffff !important;
+      }
+      .employees-tab input::placeholder {
+        color: #999 !important;
+        opacity: 1 !important;
+      }
+      .employees-tab input:-webkit-autofill {
+        -webkit-box-shadow: 0 0 0 30px #ffffff inset !important;
+        -webkit-text-fill-color: #002642 !important;
+        color: #002642 !important;
+      }
+    `;
+    document.head.appendChild(styleSheet);
+    return () => document.head.removeChild(styleSheet);
+  }, []);
+
   const [employees, setEmployees] = useState([]);
   const [positions, setPositions] = useState([]);
+  const [branches, setBranches] = useState([]);
   const [selectedEmployeeId, setSelectedEmployeeId] = useState('');
+  const [isViewingEmployee, setIsViewingEmployee] = useState(true);
 
   const [availabilityForm, setAvailabilityForm] = useState({
     weekly_availability: [],
@@ -76,7 +107,18 @@ export default function EmployeesTab({ language, userRole, user }) {
     position_id: '',
   });
 
+  const [selectedEmployeeDetails, setSelectedEmployeeDetails] = useState({
+    branch_id: '',
+    position_id: '',
+  });
+
+  const [selectedBranchId, setSelectedBranchId] = useState('');
+  const [selectedPositionId, setSelectedPositionId] = useState('');
+  const [searchQuery, setSearchQuery] = useState('');
+
   const [positionTitle, setPositionTitle] = useState('');
+  const [editingPositionId, setEditingPositionId] = useState('');
+  const [editingPositionTitle, setEditingPositionTitle] = useState('');
 
   const [absenceForm, setAbsenceForm] = useState({
     absence_type: 'vacation',
@@ -84,6 +126,11 @@ export default function EmployeesTab({ language, userRole, user }) {
     end_date: '',
     comment: '',
   });
+
+  // Для привязки по User ID
+  const [linkUserId, setLinkUserId] = useState('');
+  const [linkBranchId, setLinkBranchId] = useState('');
+  const [linkPositionId, setLinkPositionId] = useState('');
 
   const [isLoading, setIsLoading] = useState(true);
   const [isDetailsLoading, setIsDetailsLoading] = useState(false);
@@ -138,14 +185,39 @@ export default function EmployeesTab({ language, userRole, user }) {
       requiredEmployeeEmail: 'Введите email сотрудника.',
       invalidEmployeeEmail: 'Введите корректный email сотрудника.',
       requiredEmployeePosition: 'Выберите позицию сотрудника.',
-      duplicateEmployee:
-        'Пользователь или сотрудник с таким email уже существует. Используйте другой email или попросите сотрудника присоединиться по инвайт-коду.',
-      
+      duplicateEmployee: 'Пользователь или сотрудник с таким email уже существует. Используйте другой email или попросите сотрудника присоединиться по инвайт-коду.',
       positionCreated: 'Позиция создана.',
+      positionUpdated: 'Позиция обновлена локально.',
+      positionDeleted: 'Позиция удалена локально.',
       employeeCreated: 'Сотрудник создан.',
       availabilitySaved: 'Доступность сохранена.',
-      createEmployeeHint: 'Для уже зарегистрированного сотрудника лучше использовать инвайт-код.',
-      noCompanyForPosition: 'Сначала создайте компанию во вкладке «Компания». Компания должна прийти из /auth/me, localStorage больше не используется.',
+      assignmentsSaved: 'Данные сотрудника обновлены.',
+      assignmentsError: 'Не удалось обновить данные сотрудника.',
+      branch: 'Филиал',
+      selectBranch: 'Выберите филиал',
+      assignBranch: 'Назначить филиал',
+      assignPosition: 'Назначить позицию',
+      backToList: 'Назад к списку',
+      edit: 'Редактировать',
+      cancel: 'Отменить',
+      confirmDeletePosition: 'Удалить эту позицию? Это повлияет только на интерфейс.',
+      managePositionsHint: 'Редактируйте и удаляйте позиции для компании.',
+      noPositionsMessage: 'Позиции не найдены. Создайте одну слева.',
+      allBranches: 'Все филиалы',
+      allPositions: 'Все позиции',
+      searchEmployee: 'Поиск сотрудника...',
+      linkUserTitle: 'Привязать сотрудника по ID',
+      linkUserHint: 'Введите User ID сотрудника (16 символов), чтобы привязать его к компании',
+      userIdLabel: 'User ID',
+      userIdPlaceholder: 'Например: A1B2C3D4E5F6G7H8',
+      noBranchSelected: 'Без филиала',
+      noPositionSelected: 'Без позиции',
+      linkUserButton: 'Привязать',
+      linkSuccess: 'Пользователь привязан к компании!',
+      linkError: 'Ошибка привязки',
+      userIdRequired: 'Введите 16-значный User ID',
+      noCompanyForLink: 'У вас нет компании',
+      noCompanyForPosition: 'Сначала создайте компанию во вкладке «Компания».',
       noPositionsHint: 'Сначала создайте позицию, потом добавьте сотрудника.',
     },
     en: {
@@ -194,13 +266,39 @@ export default function EmployeesTab({ language, userRole, user }) {
       requiredEmployeeEmail: 'Enter employee email.',
       invalidEmployeeEmail: 'Enter a valid employee email.',
       requiredEmployeePosition: 'Select employee position.',
-      duplicateEmployee:
-        'A user or employee with this email already exists. Use another email or ask the employee to join by invite code.',
+      duplicateEmployee: 'A user or employee with this email already exists. Use another email or ask the employee to join by invite code.',
       positionCreated: 'Position created.',
+      positionUpdated: 'Position updated locally.',
+      positionDeleted: 'Position deleted locally.',
       employeeCreated: 'Employee created.',
       availabilitySaved: 'Availability saved.',
-      createEmployeeHint: 'For an already registered employee, use the invite code flow.',
-      noCompanyForPosition: 'Create a company in the Company tab first. The company must come from /auth/me; localStorage is no longer used.',
+      assignmentsSaved: 'Employee details updated.',
+      assignmentsError: 'Failed to update employee details.',
+      branch: 'Branch',
+      selectBranch: 'Select branch',
+      assignBranch: 'Assign branch',
+      assignPosition: 'Assign position',
+      backToList: 'Back to list',
+      edit: 'Edit',
+      cancel: 'Cancel',
+      confirmDeletePosition: 'Delete this position? This will only affect the UI.',
+      managePositionsHint: 'Edit and delete positions for the company.',
+      noPositionsMessage: 'No positions available. Create one on the left.',
+      allBranches: 'All branches',
+      allPositions: 'All positions',
+      searchEmployee: 'Search employee...',
+      linkUserTitle: 'Link employee by ID',
+      linkUserHint: 'Enter the employee\'s 16-character User ID to link them to the company',
+      userIdLabel: 'User ID',
+      userIdPlaceholder: 'e.g. A1B2C3D4E5F6G7H8',
+      noBranchSelected: 'No branch',
+      noPositionSelected: 'No position',
+      linkUserButton: 'Link',
+      linkSuccess: 'User linked to company!',
+      linkError: 'Failed to link user',
+      userIdRequired: 'Enter a 16-character User ID',
+      noCompanyForLink: 'You don\'t have a company',
+      noCompanyForPosition: 'Create a company in the Company tab first.',
       noPositionsHint: 'Create a position first, then add an employee.',
     },
   };
@@ -217,25 +315,17 @@ export default function EmployeesTab({ language, userRole, user }) {
 
     return positions.filter((position) => {
       const positionCompanyId = position.company_id || position.companyId;
-
-      if (!positionCompanyId) {
-        return false;
-      }
-
+      if (!positionCompanyId) return false;
       return String(positionCompanyId) === String(currentCompanyId);
     });
   }, [positions, currentCompanyId]);
 
   useEffect(() => {
-    if (!errorMessage && !successMessage) {
-      return undefined;
-    }
-
+    if (!errorMessage && !successMessage) return undefined;
     const timer = setTimeout(() => {
       setErrorMessage('');
       setSuccessMessage('');
     }, errorMessage ? 5000 : 2500);
-
     return () => clearTimeout(timer);
   }, [errorMessage, successMessage]);
 
@@ -245,11 +335,53 @@ export default function EmployeesTab({ language, userRole, user }) {
   );
 
   const selectedEmployeePosition = getEmployeePosition(selectedEmployee);
+  const selectedEmployeeBranch = getEmployeeBranch(selectedEmployee);
+
+  const filteredEmployees = useMemo(() => {
+    const query = searchQuery.trim().toLowerCase();
+
+    return employees.filter((employee) => {
+      if (selectedBranchId) {
+        const employeeBranchId = employee.branch?.id || employee.branch_id || employee.branchId;
+        if (String(employeeBranchId) !== String(selectedBranchId)) return false;
+      }
+
+      if (selectedPositionId) {
+        const employeePositionId = employee.position_id
+          || employee.position?.id
+          || employee.position?.position_id;
+        if (String(employeePositionId) !== String(selectedPositionId)) return false;
+      }
+
+      if (query) {
+        const name = (employee.full_name || employee.name || employee.fullName || '').toLowerCase();
+        const email = (employee.email || '').toLowerCase();
+        if (!name.includes(query) && !email.includes(query)) return false;
+      }
+
+      return true;
+    });
+  }, [employees, selectedBranchId, selectedPositionId, searchQuery]);
 
   useEffect(() => {
-    if (userRole !== 'manager') {
-      return undefined;
+    if (filteredEmployees.some((employee) => String(employee.id) === String(selectedEmployeeId))) return;
+
+    setSelectedEmployeeId(filteredEmployees[0] ? String(filteredEmployees[0].id) : '');
+  }, [filteredEmployees, selectedEmployeeId]);
+
+  useEffect(() => {
+    if (selectedEmployee) {
+      setSelectedEmployeeDetails({
+        branch_id: selectedEmployee.branch?.id || selectedEmployee.branch_id || '',
+        position_id: selectedEmployee.position_id || selectedEmployee.position?.id || selectedEmployee.position?.position_id || '',
+      });
+    } else {
+      setSelectedEmployeeDetails({ branch_id: '', position_id: '' });
     }
+  }, [selectedEmployee]);
+
+  useEffect(() => {
+    if (userRole !== 'manager') return undefined;
 
     let isMounted = true;
 
@@ -258,25 +390,34 @@ export default function EmployeesTab({ language, userRole, user }) {
       setErrorMessage('');
 
       try {
-        const [employeesData, positionsData] = await Promise.all([
-          listEmployees(),
-          listPositions(),
-        ]);
+        const [employeesData, positionsData] = await Promise.all([listEmployees(), listPositions()]);
 
-        if (!isMounted) {
-          return;
+        let branchesData = [];
+
+        if (currentCompanyId) {
+          try {
+            branchesData = await listBranches(currentCompanyId);
+          } catch {
+            branchesData = normalizeArray(currentCompany?.branches || []);
+          }
         }
+
+        if (!isMounted) return;
 
         const safeEmployees = normalizeArray(employeesData);
         const safePositions = normalizeArray(positionsData);
+        const safeBranches = normalizeArray(branchesData || []);
 
         setEmployees(safeEmployees);
         setPositions(safePositions);
+        setBranches(safeBranches);
 
         if (safeEmployees[0]) {
           setSelectedEmployeeId(String(safeEmployees[0].id));
+          setIsViewingEmployee(true);
         } else {
           setSelectedEmployeeId('');
+          setIsViewingEmployee(true);
         }
       } catch (error) {
         if (isMounted) {
@@ -294,7 +435,7 @@ export default function EmployeesTab({ language, userRole, user }) {
     return () => {
       isMounted = false;
     };
-  }, [language, t.empty, userRole]);
+  }, [language, t.empty, userRole, currentCompanyId]);
 
   useEffect(() => {
     if (!selectedEmployeeId || userRole !== 'manager') {
@@ -317,9 +458,7 @@ export default function EmployeesTab({ language, userRole, user }) {
           getEmployeeCalendarSummary(selectedEmployeeId),
         ]);
 
-        if (!isMounted) {
-          return;
-        }
+        if (!isMounted) return;
 
         const weeklyAvailability = normalizeArray(availabilityData?.weekly_availability);
         const desiredDaysOff = normalizeArray(availabilityData?.desired_days_off);
@@ -390,14 +529,48 @@ export default function EmployeesTab({ language, userRole, user }) {
       return;
     }
 
-    if (!employeesData.some((employee) => String(employee.id) === String(selectedEmployeeId))) {
-      setSelectedEmployeeId(employeesData[0] ? String(employeesData[0].id) : '');
+    const currentFiltered = employeesData.filter((employee) => {
+      if (!selectedBranchId) return true;
+      const employeeBranchId = employee.branch?.id || employee.branch_id || employee.branchId;
+      return String(employeeBranchId) === String(selectedBranchId);
+    });
+
+    if (!currentFiltered.some((employee) => String(employee.id) === String(selectedEmployeeId))) {
+      setSelectedEmployeeId(currentFiltered[0] ? String(currentFiltered[0].id) : '');
     }
   };
 
   const reloadPositions = async () => {
     const positionsData = normalizeArray(await listPositions());
     setPositions(positionsData);
+  };
+
+  const handleAssignDetails = async () => {
+    if (!selectedEmployee) return;
+
+    clearMessages();
+    setIsSubmitting(true);
+
+    try {
+      await updateEmployeePosition(selectedEmployee.id, {
+        position_id: selectedEmployeeDetails.position_id
+          ? Number(selectedEmployeeDetails.position_id)
+          : null,
+      });
+
+      await updateEmployeeBranch(selectedEmployee.id, {
+        branch_id: selectedEmployeeDetails.branch_id
+          ? Number(selectedEmployeeDetails.branch_id)
+          : null,
+      });
+
+      await reloadEmployees(selectedEmployee.id);
+      setSuccessMessage(t.assignmentsSaved);
+    } catch (error) {
+      setErrorMessage(getFriendlyError(error, t.assignmentsError));
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   const handleCreatePosition = async () => {
@@ -454,9 +627,7 @@ export default function EmployeesTab({ language, userRole, user }) {
   };
 
   const handleCreateEmployee = async () => {
-    if (!validateEmployeeForm()) {
-      return;
-    }
+    if (!validateEmployeeForm()) return;
 
     clearMessages();
     setIsSubmitting(true);
@@ -478,19 +649,60 @@ export default function EmployeesTab({ language, userRole, user }) {
     }
   };
 
+  const handleStartEditingPosition = (position) => {
+    setErrorMessage('');
+    setSuccessMessage('');
+    setEditingPositionId(String(position.id));
+    setEditingPositionTitle(getPositionLabel(position));
+  };
+
+  const handleCancelEditPosition = () => {
+    setEditingPositionId('');
+    setEditingPositionTitle('');
+  };
+
+  const handleSaveEditedPosition = () => {
+    if (!editingPositionTitle.trim()) {
+      setErrorMessage(t.requiredPosition);
+      return;
+    }
+
+    setPositions((prev) =>
+      prev.map((position) =>
+        String(position.id) === String(editingPositionId)
+          ? { ...position, title: editingPositionTitle.trim() }
+          : position
+      )
+    );
+
+    setEditingPositionId('');
+    setEditingPositionTitle('');
+    setSuccessMessage(t.positionUpdated);
+  };
+
+  const handleDeletePosition = (positionId) => {
+    if (!window.confirm(t.confirmDeletePosition)) return;
+
+    setPositions((prev) => prev.filter((position) => String(position.id) !== String(positionId)));
+
+    if (String(editingPositionId) === String(positionId)) {
+      handleCancelEditPosition();
+    }
+
+    setSuccessMessage(t.positionDeleted);
+  };
+
   const handleAvailabilityChange = (index, key, value) => {
     setAvailabilityForm((prev) => ({
       ...prev,
-      weekly_availability: prev.weekly_availability.map((item, itemIndex) => (
+      weekly_availability: prev.weekly_availability.map((item, itemIndex) =>
         itemIndex === index ? { ...item, [key]: value } : item
-      )),
+      ),
     }));
   };
 
   const handleSaveAvailability = async () => {
-    if (!selectedEmployeeId) {
-      return;
-    }
+    if (!selectedEmployeeId) return;
 
     clearMessages();
     setIsSubmitting(true);
@@ -546,9 +758,7 @@ export default function EmployeesTab({ language, userRole, user }) {
   };
 
   const handleDeleteAbsence = async (absenceId) => {
-    if (!selectedEmployeeId) {
-      return;
-    }
+    if (!selectedEmployeeId) return;
 
     clearMessages();
     setIsSubmitting(true);
@@ -571,6 +781,43 @@ export default function EmployeesTab({ language, userRole, user }) {
     }
   };
 
+  // ===== ПРИВЯЗКА ПО USER ID =====
+  const handleLinkUser = async () => {
+    const publicId = linkUserId.trim().toUpperCase();
+
+    if (publicId.length !== 16) {
+      setErrorMessage(t.userIdRequired);
+      return;
+    }
+
+    const companyId = user?.company?.id;
+    if (!companyId) {
+      setErrorMessage(t.noCompanyForLink);
+      return;
+    }
+
+    clearMessages();
+    setIsSubmitting(true);
+
+    try {
+      await linkUserToCompany({
+        user_public_id: publicId,
+        branch_id: linkBranchId ? Number(linkBranchId) : null,
+        position_id: linkPositionId ? Number(linkPositionId) : null,
+      });
+
+      setLinkUserId('');
+      setLinkBranchId('');
+      setLinkPositionId('');
+      setSuccessMessage(t.linkSuccess);
+      await reloadEmployees();
+    } catch (error) {
+      setErrorMessage(getFriendlyError(error, t.linkError));
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
   if (isLoading) {
     return (
       <section style={styles.page}>
@@ -580,7 +827,7 @@ export default function EmployeesTab({ language, userRole, user }) {
   }
 
   return (
-    <section style={styles.page}>
+    <section style={styles.page} className="employees-tab">
       <div style={styles.shell}>
         <header style={styles.header}>
           <div>
@@ -589,7 +836,7 @@ export default function EmployeesTab({ language, userRole, user }) {
           </div>
 
           <div style={styles.headerStats}>
-            <Metric label={t.employees} value={employees.length} />
+            <Metric label={t.employees} value={filteredEmployees.length} />
             <Metric label={t.positions} value={visiblePositions.length} />
           </div>
         </header>
@@ -643,322 +890,271 @@ export default function EmployeesTab({ language, userRole, user }) {
               </div>
             </div>
 
+            {/* Блок привязки по User ID */}
             <div style={styles.panel}>
-              <h3 style={styles.panelTitle}>{t.createEmployee}</h3>
-              <p style={styles.panelHint}>{t.createEmployeeHint}</p>
+              <h3 style={styles.panelTitle}>{t.linkUserTitle}</h3>
+              <p style={styles.panelHint}>{t.linkUserHint}</p>
 
               <div style={styles.stack}>
+                <label style={styles.label}>{t.userIdLabel}</label>
                 <input
-                  value={employeeForm.full_name}
-                  onChange={(event) =>
-                    setEmployeeForm((prev) => ({ ...prev, full_name: event.target.value }))
-                  }
-                  placeholder={t.fullName}
+                  type="text"
+                  value={linkUserId}
+                  onChange={(e) => setLinkUserId(e.target.value.toUpperCase())}
+                  placeholder={t.userIdPlaceholder}
+                  maxLength={16}
                   style={styles.input}
                 />
 
-                <input
-                  value={employeeForm.email}
-                  onChange={(event) =>
-                    setEmployeeForm((prev) => ({ ...prev, email: event.target.value }))
-                  }
-                  placeholder={t.email}
-                  style={styles.input}
-                />
+                <div style={styles.row}>
+                  <div style={styles.flex}>
+                    <label style={styles.label}>{t.branch}</label>
+                    <select
+                      value={linkBranchId}
+                      onChange={(e) => setLinkBranchId(e.target.value)}
+                      style={styles.select}
+                    >
+                      <option value="">{t.noBranchSelected}</option>
+                      {branches.map((branch) => (
+                        <option key={branch.id} value={branch.id}>
+                          {branch.name}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
 
-                <select
-                  value={employeeForm.position_id}
-                  onChange={(event) =>
-                    setEmployeeForm((prev) => ({ ...prev, position_id: event.target.value }))
-                  }
-                  style={styles.input}
-                  disabled={visiblePositions.length === 0}
-                >
-                  <option value="">{visiblePositions.length === 0 ? t.noPositionsHint : t.selectPosition}</option>
-                  {visiblePositions.map((position) => (
-                    <option key={position.id} value={position.id}>
-                      {getPositionLabel(position)}
-                    </option>
-                  ))}
-                </select>
+                  <div style={styles.flex}>
+                    <label style={styles.label}>{t.position}</label>
+                    <select
+                      value={linkPositionId}
+                      onChange={(e) => setLinkPositionId(e.target.value)}
+                      style={styles.select}
+                    >
+                      <option value="">{t.noPositionSelected}</option>
+                      {visiblePositions.map((position) => (
+                        <option key={position.id} value={position.id}>
+                          {getPositionLabel(position)}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
 
                 <button
                   type="button"
-                  onClick={handleCreateEmployee}
-                  style={isSubmitting || visiblePositions.length === 0 ? styles.primaryButtonDisabled : styles.primaryButton}
-                  disabled={isSubmitting || visiblePositions.length === 0}
+                  onClick={handleLinkUser}
+                  style={isSubmitting || !linkUserId ? styles.primaryButtonDisabled : styles.primaryButton}
+                  disabled={isSubmitting || !linkUserId}
                 >
-                  {t.save}
+                  {isSubmitting ? '...' : t.linkUserButton}
                 </button>
               </div>
             </div>
           </aside>
 
           <main style={styles.detailsPanel}>
-            <div style={styles.employeePicker}>
-              <div>
-                <h3 style={styles.panelTitle}>{t.employeeDetails}</h3>
-                <p style={styles.panelHint}>{selectedEmployee ? selectedEmployee.full_name : t.noEmployees}</p>
-              </div>
+            <div style={styles.detailsScroll}>
+              <section style={styles.innerSection}>
+                <div style={styles.listHeader}>
+                  <div>
+                    <h3 style={styles.panelTitle}>{t.employees}</h3>
+                    <p style={styles.panelHint}>{t.selectEmployee}</p>
+                  </div>
 
-              <select
-                value={selectedEmployeeId}
-                onChange={(event) => setSelectedEmployeeId(event.target.value)}
-                style={styles.select}
-              >
-                <option value="">{t.selectEmployee}</option>
-                {employees.map((employee) => (
-                  <option key={employee.id} value={employee.id}>
-                    {employee.full_name} {getEmployeePosition(employee) ? `(${getEmployeePosition(employee)})` : ''}
-                  </option>
-                ))}
-              </select>
-            </div>
-
-            {!selectedEmployee ? (
-              <div style={styles.emptyBox}>{t.noEmployees}</div>
-            ) : isDetailsLoading ? (
-              <div style={styles.emptyBox}>{t.loading}</div>
-            ) : (
-              <div style={styles.detailsScroll}>
-                <div style={styles.employeeCard}>
-                  <Info label={t.fullName} value={selectedEmployee.full_name} />
-                  <Info label={t.email} value={selectedEmployee.email} />
-                  <Info label={t.position} value={selectedEmployeePosition || t.empty} />
+                  <div style={styles.filterRow}>
+                    <input
+                      type="text"
+                      value={searchQuery}
+                      onChange={(event) => setSearchQuery(event.target.value)}
+                      placeholder={t.searchEmployee}
+                      style={styles.searchInput}
+                      aria-label={t.searchEmployee}
+                    />
+                    <select
+                      id="branch-filter-select"
+                      value={selectedBranchId}
+                      onChange={(event) => setSelectedBranchId(event.target.value)}
+                      style={styles.filterSelect}
+                      aria-label={t.branch}
+                    >
+                      <option value="">{t.allBranches}</option>
+                      {branches.map((branch) => (
+                        <option key={branch.id} value={branch.id}>
+                          {branch.name}
+                        </option>
+                      ))}
+                    </select>
+                    <select
+                      id="position-filter-select"
+                      value={selectedPositionId}
+                      onChange={(event) => setSelectedPositionId(event.target.value)}
+                      style={styles.filterSelect}
+                      aria-label={t.position}
+                    >
+                      <option value="">{t.allPositions}</option>
+                      {visiblePositions.map((position) => (
+                        <option key={position.id} value={position.id}>
+                          {getPositionLabel(position)}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
                 </div>
 
-                <section style={styles.innerSection}>
-                  <div style={styles.innerHeader}>
-                    <h4 style={styles.subTitle}>{t.availability}</h4>
-                    <button
-                      type="button"
-                      onClick={() =>
-                        setAvailabilityForm((prev) => ({
-                          ...prev,
-                          weekly_availability: [...prev.weekly_availability, createAvailabilityBlock()],
-                        }))
-                      }
-                      style={styles.secondaryButton}
-                    >
-                      {t.addRow}
-                    </button>
-                  </div>
-
-                  {availabilityForm.weekly_availability.length === 0 ? (
-                    <p style={styles.emptyText}>{t.noIntervals}</p>
-                  ) : (
-                    <div style={styles.availabilityList}>
-                      {availabilityForm.weekly_availability.map((block, index) => (
-                        <div key={`${block.weekday}-${index}`} style={styles.availabilityRow}>
-                          <select
-                            value={block.weekday}
-                            onChange={(event) =>
-                              handleAvailabilityChange(index, 'weekday', Number(event.target.value))
-                            }
-                            style={styles.input}
-                          >
-                            {WEEKDAYS.map((day) => (
-                              <option key={day.value} value={day.value}>
-                                {day[language] || day.ru}
-                              </option>
-                            ))}
-                          </select>
-
-                          <input
-                            type="time"
-                            value={String(block.start_time).slice(0, 5)}
-                            onChange={(event) =>
-                              handleAvailabilityChange(index, 'start_time', `${event.target.value}:00`)
-                            }
-                            style={styles.input}
-                          />
-
-                          <input
-                            type="time"
-                            value={String(block.end_time).slice(0, 5)}
-                            onChange={(event) =>
-                              handleAvailabilityChange(index, 'end_time', `${event.target.value}:00`)
-                            }
-                            style={styles.input}
-                          />
-
-                          <button
-                            type="button"
-                            onClick={() =>
-                              setAvailabilityForm((prev) => ({
-                                ...prev,
-                                weekly_availability: prev.weekly_availability.filter(
-                                  (_, itemIndex) => itemIndex !== index
-                                ),
-                              }))
-                            }
-                            style={styles.deleteButton}
-                          >
-                            {t.delete}
-                          </button>
+                {filteredEmployees.length === 0 ? (
+                  <div style={styles.emptyBox}>{t.noEmployees}</div>
+                ) : (
+                  <div style={styles.employeeList}>
+                    {filteredEmployees.map((employee) => (
+                      <button
+                        key={employee.id}
+                        type="button"
+                        style={styles.listButton}
+                        onClick={() => {
+                          setSelectedEmployeeId(String(employee.id));
+                          setIsViewingEmployee(false);
+                        }}
+                      >
+                        <div style={styles.listButtonContent}>
+                          <strong>{employee.full_name || employee.name || employee.fullName || '—'}</strong>
+                          <span style={styles.listButtonMeta}>
+                            {employee.email || '—'}
+                          </span>
                         </div>
-                      ))}
-                    </div>
-                  )}
-
-                  <div style={styles.daysOff}>
-                    <span style={styles.cardLabel}>{t.desiredDaysOff}</span>
-                    <div style={styles.dayPills}>
-                      {WEEKDAYS.map((day) => {
-                        const checked = availabilityForm.desired_days_off.includes(day.value);
-
-                        return (
-                          <button
-                            key={day.value}
-                            type="button"
-                            onClick={() =>
-                              setAvailabilityForm((prev) => ({
-                                ...prev,
-                                desired_days_off: checked
-                                  ? prev.desired_days_off.filter((value) => value !== day.value)
-                                  : [...prev.desired_days_off, day.value].sort((a, b) => a - b),
-                              }))
-                            }
-                            style={checked ? styles.dayPillActive : styles.dayPill}
-                          >
-                            {day[language] || day.ru}
-                          </button>
-                        );
-                      })}
-                    </div>
+                      </button>
+                    ))}
                   </div>
+                )}
+              </section>
 
-                  <button
-                    type="button"
-                    onClick={handleSaveAvailability}
-                    style={isSubmitting ? styles.primaryButtonDisabled : styles.primaryButton}
-                    disabled={isSubmitting}
-                  >
-                    {t.save}
-                  </button>
-                </section>
-
-                <section style={styles.innerSection}>
-                  <h4 style={styles.subTitle}>{t.absences}</h4>
-
-                  <div style={styles.absenceForm}>
-                    <select
-                      value={absenceForm.absence_type}
-                      onChange={(event) =>
-                        setAbsenceForm((prev) => ({ ...prev, absence_type: event.target.value }))
-                      }
-                      style={styles.input}
-                    >
-                      <option value="vacation">{t.vacation}</option>
-                      <option value="sick_leave">{t.sick_leave}</option>
-                      <option value="other">{t.other}</option>
-                    </select>
-
-                    <input
-                      type="date"
-                      value={absenceForm.start_date}
-                      onChange={(event) =>
-                        setAbsenceForm((prev) => ({ ...prev, start_date: event.target.value }))
-                      }
-                      style={styles.input}
-                    />
-
-                    <input
-                      type="date"
-                      value={absenceForm.end_date}
-                      onChange={(event) =>
-                        setAbsenceForm((prev) => ({ ...prev, end_date: event.target.value }))
-                      }
-                      style={styles.input}
-                    />
-
-                    <input
-                      value={absenceForm.comment}
-                      onChange={(event) =>
-                        setAbsenceForm((prev) => ({ ...prev, comment: event.target.value }))
-                      }
-                      placeholder={t.comment}
-                      style={styles.input}
-                    />
-
-                    <button
-                      type="button"
-                      onClick={handleCreateAbsence}
-                      style={isSubmitting ? styles.primaryButtonDisabled : styles.primaryButton}
-                      disabled={isSubmitting}
-                    >
-                      {t.addAbsence}
-                    </button>
-                  </div>
-
-                  {employeeAbsences.length === 0 ? (
-                    <p style={styles.emptyText}>{t.noAbsences}</p>
-                  ) : (
-                    <div style={styles.list}>
-                      {employeeAbsences.map((absence) => (
-                        <div key={absence.id} style={styles.listItem}>
-                          <div>
-                            <strong style={styles.itemTitle}>
-                              {t[absence.absence_type] || absence.absence_type}
-                            </strong>
-                            <div style={styles.itemMeta}>
-                              {absence.start_date} — {absence.end_date}
-                            </div>
-                            {absence.comment && <div style={styles.itemMeta}>{absence.comment}</div>}
-                          </div>
-
-                          <button
-                            type="button"
-                            onClick={() => handleDeleteAbsence(absence.id)}
-                            style={styles.deleteButton}
-                          >
-                            {t.delete}
-                          </button>
-                        </div>
-                      ))}
+              {selectedEmployee && !isViewingEmployee && (
+                <div style={styles.modalOverlay}>
+                  <div style={styles.modalContent}>
+                    <div style={styles.actionBar}>
+                      <button
+                        type="button"
+                        onClick={() => setIsViewingEmployee(true)}
+                        style={styles.secondaryButton}
+                      >
+                        ← {t.backToList}
+                      </button>
                     </div>
-                  )}
-                </section>
 
-                <section style={styles.innerSection}>
-                  <h4 style={styles.subTitle}>{t.workload}</h4>
+                    <div style={styles.employeeCard}>
+                      <Info label={t.fullName} value={selectedEmployee?.full_name || selectedEmployee?.name || '—'} />
+                      <Info label={t.email} value={selectedEmployee?.email || '—'} />
+                      <Info label={t.position} value={selectedEmployeePosition || t.empty} />
+                      <Info label={t.branch} value={selectedEmployeeBranch || t.empty} />
+                    </div>
 
-                  {employeeSummary ? (
-                    <>
-                      <div style={styles.metricGrid}>
-                        <Metric label={t.totalShifts} value={employeeSummary.workload.total_shifts} />
-                        <Metric label={t.totalHours} value={employeeSummary.workload.total_hours} />
+                    <div style={styles.innerSection}>
+                      <div style={styles.innerHeader}>
+                        <h4 style={styles.subTitle}>{t.assignPosition}</h4>
                       </div>
 
-                      <h4 style={styles.subTitle}>{t.shifts}</h4>
-
-                      {employeeSummary.shifts.length === 0 ? (
-                        <p style={styles.emptyText}>{t.noShifts}</p>
-                      ) : (
-                        <div style={styles.list}>
-                          {employeeSummary.shifts.map((shift) => (
-                            <div key={`${shift.schedule_id}-${shift.shift_id}`} style={styles.listItem}>
-                              <div>
-                                <strong style={styles.itemTitle}>{shift.date}</strong>
-                                <div style={styles.itemMeta}>
-                                  {String(shift.start_time).slice(0, 5)} —{' '}
-                                  {String(shift.end_time).slice(0, 5)}
-                                </div>
-                                <div style={styles.itemMeta}>
-                                  {t[shift.status] || localizeBackendMessage(shift.status, language)}
-                                </div>
-                              </div>
-                            </div>
+                      <div style={styles.stack}>
+                        <label style={styles.label}>{t.position}</label>
+                        <select
+                          value={selectedEmployeeDetails.position_id}
+                          onChange={(event) =>
+                            setSelectedEmployeeDetails((prev) => ({ ...prev, position_id: event.target.value }))
+                          }
+                          style={styles.select}
+                        >
+                          <option value="">{t.selectPosition}</option>
+                          {visiblePositions.map((position) => (
+                            <option key={position.id} value={position.id}>
+                              {getPositionLabel(position)}
+                            </option>
                           ))}
-                        </div>
-                      )}
-                    </>
-                  ) : (
-                    <p style={styles.emptyText}>{t.empty}</p>
-                  )}
-                </section>
-              </div>
-            )}
+                        </select>
+                      </div>
+
+                      <div style={styles.stack}>
+                        <label style={styles.label}>{t.branch}</label>
+                        <select
+                          value={selectedEmployeeDetails.branch_id}
+                          onChange={(event) =>
+                            setSelectedEmployeeDetails((prev) => ({ ...prev, branch_id: event.target.value }))
+                          }
+                          style={styles.select}
+                        >
+                          <option value="">{t.selectBranch}</option>
+                          {branches.map((branch) => (
+                            <option key={branch.id} value={branch.id}>
+                              {branch.name}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+
+                      <button type="button" onClick={handleAssignDetails} style={styles.primaryButton}>
+                        {t.save}
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              <section style={styles.innerSection}>
+                <div style={styles.listHeader}>
+                  <div>
+                    <h3 style={styles.panelTitle}>{t.positions}</h3>
+                    <p style={styles.panelHint}>{t.managePositionsHint}</p>
+                  </div>
+                </div>
+
+                {visiblePositions.length === 0 ? (
+                  <div style={styles.emptyBox}>{t.noPositionsMessage}</div>
+                ) : (
+                  <div style={styles.list}>
+                    {visiblePositions.map((position) => (
+                      <div key={position.id} style={styles.listItem}>
+                        {String(editingPositionId) === String(position.id) ? (
+                          <>
+                            <input
+                              value={editingPositionTitle}
+                              onChange={(event) => setEditingPositionTitle(event.target.value)}
+                              style={styles.input}
+                            />
+                            <div style={styles.actionGroup}>
+                              <button type="button" onClick={handleSaveEditedPosition} style={styles.primaryButton}>
+                                {t.save}
+                              </button>
+                              <button type="button" onClick={handleCancelEditPosition} style={styles.secondaryButton}>
+                                {t.cancel}
+                              </button>
+                            </div>
+                          </>
+                        ) : (
+                          <>
+                            <div>
+                              <strong style={styles.itemTitle}>{getPositionLabel(position)}</strong>
+                            </div>
+                            <div style={styles.actionGroup}>
+                              <button
+                                type="button"
+                                onClick={() => handleStartEditingPosition(position)}
+                                style={styles.secondaryButton}
+                              >
+                                {t.edit}
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => handleDeletePosition(position.id)}
+                                style={styles.deleteButton}
+                              >
+                                {t.delete}
+                              </button>
+                            </div>
+                          </>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </section>
+            </div>
           </main>
         </div>
       </div>
@@ -1052,6 +1248,8 @@ const styles = {
     display: 'flex',
     flexDirection: 'column',
     gap: '14px',
+    overflowY: 'auto',
+    paddingRight: '4px',
   },
 
   panel: {
@@ -1080,6 +1278,20 @@ const styles = {
     display: 'flex',
     flexDirection: 'column',
     gap: '10px',
+  },
+
+  row: {
+    display: 'grid',
+    gridTemplateColumns: '1fr 1fr',
+    gap: '12px',
+    alignItems: 'end',
+  },
+
+  flex: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '6px',
+    flex: 1,
   },
 
   detailsPanel: {
@@ -1149,6 +1361,95 @@ const styles = {
     alignItems: 'center',
     justifyContent: 'space-between',
     gap: '12px',
+  },
+
+  actionBar: {
+    display: 'flex',
+    justifyContent: 'flex-start',
+    gap: '10px',
+    marginBottom: '14px',
+  },
+
+  listPanel: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '14px',
+    padding: '18px',
+  },
+
+  listHeader: {
+    display: 'flex',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    gap: '10px',
+    flexWrap: 'wrap',
+  },
+
+  filterRow: {
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'flex-end',
+    gap: '10px',
+    flexWrap: 'nowrap',
+  },
+
+  searchInput: {
+    height: '40px',
+    width: '170px',
+    flexShrink: 0,
+    boxSizing: 'border-box',
+    borderRadius: '13px',
+    border: '2px solid #dee7e7',
+    background: '#ffffff',
+    padding: '0 14px',
+    color: '#002642',
+    fontSize: '14px',
+    outline: 'none',
+  },
+
+  filterSelect: {
+    height: '40px',
+    width: 'auto',
+    minWidth: '130px',
+    flexShrink: 0,
+    boxSizing: 'border-box',
+    borderRadius: '13px',
+    border: '2px solid #dee7e7',
+    background: '#ffffff',
+    padding: '0 12px',
+    color: '#002642',
+    fontSize: '14px',
+    outline: 'none',
+  },
+
+  listButton: {
+    width: '100%',
+    padding: '14px 16px',
+    borderRadius: '18px',
+    border: '1px solid rgba(79, 100, 111, 0.12)',
+    background: '#ffffff',
+    textAlign: 'left',
+    cursor: 'pointer',
+  },
+
+  listButtonContent: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '6px',
+  },
+
+  listButtonMeta: {
+    color: '#4f646f',
+    fontSize: '13px',
+    fontWeight: '700',
+  },
+
+  label: {
+    display: 'block',
+    marginBottom: '8px',
+    color: '#4f646f',
+    fontSize: '13px',
+    fontWeight: '800',
   },
 
   subTitle: {
@@ -1253,6 +1554,13 @@ const styles = {
     whiteSpace: 'nowrap',
   },
 
+  actionGroup: {
+    display: 'flex',
+    gap: '8px',
+    alignItems: 'center',
+    flexShrink: 0,
+  },
+
   daysOff: {
     display: 'flex',
     flexDirection: 'column',
@@ -1322,6 +1630,15 @@ const styles = {
     gap: '10px',
   },
 
+  employeeList: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '10px',
+    maxHeight: '240px',
+    overflowY: 'auto',
+    paddingRight: '4px',
+  },
+
   listItem: {
     padding: '13px 14px',
     borderRadius: '16px',
@@ -1381,6 +1698,28 @@ const styles = {
     color: '#4f646f',
     fontSize: '14px',
     fontWeight: '650',
+  },
+
+  modalOverlay: {
+    position: 'fixed',
+    inset: 0,
+    zIndex: 30,
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    background: 'rgba(0, 0, 0, 0.35)',
+    padding: '20px',
+  },
+
+  modalContent: {
+    width: 'min(760px, 100%)',
+    maxHeight: '90vh',
+    overflowY: 'auto',
+    padding: '24px',
+    borderRadius: '24px',
+    background: '#ffffff',
+    boxShadow: '0 24px 64px rgba(0, 38, 66, 0.24)',
+    position: 'relative',
   },
 
   toastLayer: {
@@ -1473,5 +1812,4 @@ const styles = {
     cursor: 'pointer',
     lineHeight: 1,
   },
-
 };

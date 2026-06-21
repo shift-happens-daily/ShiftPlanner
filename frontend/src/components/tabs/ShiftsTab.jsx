@@ -1,3 +1,4 @@
+// frontend/src/components/tabs/ShiftsTab.jsx
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   createEmployeeAbsence,
@@ -27,13 +28,116 @@ const WEEKDAYS = [
   { value: 6, ru: 'Вс', en: 'Sun' },
 ];
 
-function createAvailabilityBlock() {
-  return { weekday: 0, start_time: '09:00:00', end_time: '18:00:00' };
+const SLOT_MINUTES = 30;
+const DAY_START_MINUTES = 6 * 60; // 06:00
+const DAY_END_MINUTES = 23 * 60; // 23:00 (exclusive end of the last slot)
+
+const TIME_SLOTS = Array.from(
+  { length: (DAY_END_MINUTES - DAY_START_MINUTES) / SLOT_MINUTES },
+  (_, index) => {
+    const total = DAY_START_MINUTES + (index * SLOT_MINUTES);
+    const hours = Math.floor(total / 60);
+    const minutes = total % 60;
+    return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}`;
+  },
+);
+
+function toDateKey(date) {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
+
+function startOfToday() {
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  return today;
+}
+
+function isPastDateKey(dateKey) {
+  const date = new Date(`${dateKey}T00:00:00`);
+  date.setHours(0, 0, 0, 0);
+  return date.getTime() < startOfToday().getTime();
+}
+
+function slotToMinutes(slot) {
+  const [hours, minutes] = String(slot).split(':').map(Number);
+  return (hours * 60) + (minutes || 0);
+}
+
+function minutesToTimeString(totalMinutes) {
+  const hours = Math.floor(totalMinutes / 60);
+  const minutes = totalMinutes % 60;
+  return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:00`;
+}
+
+function buildIntervalsForWeekday(weekday, slotStarts) {
+  const sorted = [...slotStarts].sort((a, b) => a - b);
+  const intervals = [];
+  let startMinutes = null;
+  let previousMinutes = null;
+
+  sorted.forEach((minutes) => {
+    if (startMinutes === null) {
+      startMinutes = minutes;
+      previousMinutes = minutes;
+      return;
+    }
+
+    if (minutes === previousMinutes + SLOT_MINUTES) {
+      previousMinutes = minutes;
+      return;
+    }
+
+    intervals.push({
+      weekday,
+      start_time: minutesToTimeString(startMinutes),
+      end_time: minutesToTimeString(previousMinutes + SLOT_MINUTES),
+    });
+
+    startMinutes = minutes;
+    previousMinutes = minutes;
+  });
+
+  if (startMinutes !== null) {
+    intervals.push({
+      weekday,
+      start_time: minutesToTimeString(startMinutes),
+      end_time: minutesToTimeString(previousMinutes + SLOT_MINUTES),
+    });
+  }
+
+  return intervals;
+}
+
+// Backend only stores a recurring weekly availability template, so when saving we
+// aggregate the per-date selections back into weekly intervals (Monday = 0).
+function convertDatesToWeeklyIntervals(availabilityByDate) {
+  const slotsByWeekday = {};
+
+  Object.entries(availabilityByDate).forEach(([dateKey, slotMap]) => {
+    const jsDay = new Date(`${dateKey}T00:00:00`).getDay();
+    const weekday = (jsDay + 6) % 7;
+
+    Object.entries(slotMap || {}).forEach(([slot, status]) => {
+      if (status === 'available' || status === 'maybe') {
+        if (!slotsByWeekday[weekday]) slotsByWeekday[weekday] = new Set();
+        slotsByWeekday[weekday].add(slotToMinutes(slot));
+      }
+    });
+  });
+
+  const intervals = [];
+  Object.entries(slotsByWeekday).forEach(([weekday, slotStarts]) => {
+    intervals.push(...buildIntervalsForWeekday(Number(weekday), slotStarts));
+  });
+
+  return intervals;
 }
 
 function defaultSingleRequirement() {
   const today = new Date().toISOString().slice(0, 10);
-
   return {
     position_id: '',
     date: today,
@@ -65,7 +169,6 @@ function defaultBulkRequirement() {
 
 function currentMonthFilters() {
   const today = new Date();
-
   return {
     start_date: new Date(today.getFullYear(), today.getMonth(), 1).toISOString().slice(0, 10),
     end_date: new Date(today.getFullYear(), today.getMonth() + 1, 0).toISOString().slice(0, 10),
@@ -73,26 +176,11 @@ function currentMonthFilters() {
 }
 
 function normalizeArray(value) {
-  if (Array.isArray(value)) {
-    return value;
-  }
-
-  if (Array.isArray(value?.items)) {
-    return value.items;
-  }
-
-  if (Array.isArray(value?.requirements)) {
-    return value.requirements;
-  }
-
-  if (Array.isArray(value?.data)) {
-    return value.data;
-  }
-
-  if (Array.isArray(value?.results)) {
-    return value.results;
-  }
-
+  if (Array.isArray(value)) return value;
+  if (Array.isArray(value?.items)) return value.items;
+  if (Array.isArray(value?.requirements)) return value.requirements;
+  if (Array.isArray(value?.data)) return value.data;
+  if (Array.isArray(value?.results)) return value.results;
   return [];
 }
 
@@ -109,9 +197,7 @@ function getRequirementId(requirement) {
 }
 
 function normalizeRequirement(requirement, positions = []) {
-  if (!requirement) {
-    return null;
-  }
+  if (!requirement) return null;
 
   const positionId = requirement.position_id || requirement.positionId;
   const position = positions.find((item) => String(item.id) === String(positionId));
@@ -121,13 +207,7 @@ function normalizeRequirement(requirement, positions = []) {
     id: getRequirementId(requirement),
     local_id: requirement.local_id,
     position_id: positionId,
-    position_title:
-      requirement.position_title ||
-      requirement.positionTitle ||
-      requirement.position?.title ||
-      requirement.position?.name ||
-      getPositionTitle(position) ||
-      'Position',
+    position_title: requirement.position_title || requirement.positionTitle || requirement.position?.title || requirement.position?.name || getPositionTitle(position) || 'Position',
     date: requirement.date,
     start_time: requirement.start_time || requirement.startTime,
     end_time: requirement.end_time || requirement.endTime,
@@ -137,10 +217,7 @@ function normalizeRequirement(requirement, positions = []) {
 }
 
 function isDateWithinRange(date, startDate, endDate) {
-  if (!date || !startDate || !endDate) {
-    return true;
-  }
-
+  if (!date || !startDate || !endDate) return true;
   return date >= startDate && date <= endDate;
 }
 
@@ -149,19 +226,10 @@ function mergeRequirements(serverRequirements, localRequirements) {
   const seen = new Set();
 
   [...serverRequirements, ...localRequirements].forEach((requirement) => {
-    if (!requirement) {
-      return;
-    }
-
+    if (!requirement) return;
     const id = getRequirementId(requirement);
-    const key = id
-      ? `id:${id}`
-      : `${requirement.position_id}-${requirement.date}-${requirement.start_time}-${requirement.end_time}-${requirement.min_staff}`;
-
-    if (seen.has(key)) {
-      return;
-    }
-
+    const key = id ? `id:${id}` : `${requirement.position_id}-${requirement.date}-${requirement.start_time}-${requirement.end_time}-${requirement.min_staff}`;
+    if (seen.has(key)) return;
     seen.add(key);
     merged.push(requirement);
   });
@@ -187,14 +255,12 @@ async function deleteRequirementRequest(requirementId) {
 
   if (!response.ok) {
     let detail = '';
-
     try {
       const payload = await response.json();
       detail = payload?.detail || payload?.message || '';
     } catch {
       detail = '';
     }
-
     throw new Error(detail || `Delete failed with status ${response.status}`);
   }
 }
@@ -215,22 +281,51 @@ export default function ShiftsTab({ language, userRole, user }) {
   const localRequirementsStorageKey = 'shiftplanner_local_requirements';
   const [localRequirements, setLocalRequirements] = useState(() => {
     const raw = localStorage.getItem(localRequirementsStorageKey);
-
-    if (!raw) {
-      return [];
-    }
-
-    try {
-      return JSON.parse(raw);
-    } catch {
-      return [];
-    }
+    if (!raw) return [];
+    try { return JSON.parse(raw); } catch { return []; }
   });
 
   const [availabilityForm, setAvailabilityForm] = useState({
     weekly_availability: [],
     desired_days_off: [],
   });
+
+  const availabilityStorageKey = employeeId
+    ? `shiftplanner_availability_by_date_${employeeId}`
+    : 'shiftplanner_availability_by_date_anon';
+
+  // Availability is tracked per calendar date: { 'YYYY-MM-DD': { [hour]: 'available' | 'maybe' } }
+  const [availabilityByDate, setAvailabilityByDate] = useState(() => {
+    try {
+      const raw = localStorage.getItem(availabilityStorageKey);
+      return raw ? JSON.parse(raw) : {};
+    } catch {
+      return {};
+    }
+  });
+
+  const [selectedDate, setSelectedDate] = useState(() => new Date().toISOString().slice(0, 10));
+
+  const weekDates = useMemo(() => {
+    const current = new Date(selectedDate);
+    const day = current.getDay();
+    const diff = current.getDate() - day + (day === 0 ? -6 : 1);
+    const monday = new Date(current.setDate(diff));
+
+    return Array.from({ length: 7 }, (_, i) => {
+      const d = new Date(monday);
+      d.setDate(monday.getDate() + i);
+      return d;
+    });
+  }, [selectedDate]);
+
+  const shiftWeek = (deltaDays) => {
+    setSelectedDate((prev) => {
+      const d = new Date(prev);
+      d.setDate(d.getDate() + deltaDays);
+      return d.toISOString().slice(0, 10);
+    });
+  };
 
   const [absenceForm, setAbsenceForm] = useState({
     absence_type: 'vacation',
@@ -310,6 +405,12 @@ export default function ShiftsTab({ language, userRole, user }) {
       bulkHint: 'Создаст одинаковые требования на выбранные дни недели внутри периода.',
       singleHint: 'Например: Barista, 15.06, 09:00–18:00, нужно 2 человека.',
       localOnly: 'локально',
+      available: 'Доступен',
+      maybe: 'Может быть',
+      unavailable: 'Недоступен',
+      prevWeek: 'Предыдущая неделя',
+      nextWeek: 'Следующая неделя',
+      locked: 'Прошедшие даты изменить нельзя',
     },
     en: {
       titleManager: 'Shift setup',
@@ -370,19 +471,34 @@ export default function ShiftsTab({ language, userRole, user }) {
       bulkHint: 'Creates the same requirements for selected weekdays within the period.',
       singleHint: 'Example: Barista, Jun 15, 09:00–18:00, need 2 people.',
       localOnly: 'local',
+      available: 'Available',
+      maybe: 'Maybe',
+      unavailable: 'Unavailable',
+      prevWeek: 'Previous week',
+      nextWeek: 'Next week',
+      locked: 'Past dates cannot be edited',
     },
   };
 
   const t = texts[language] || texts.ru;
 
-  const visibleRequirements = useMemo(() => {
-    const server = requirements
-      .map((requirement) => normalizeRequirement(requirement, positions))
-      .filter(Boolean);
-    const local = localRequirements
-      .map((requirement) => normalizeRequirement(requirement, positions))
-      .filter(Boolean);
+  const todayStr = useMemo(() => new Date().toLocaleDateString(language === 'ru' ? 'ru-RU' : 'en-US', {
+    day: 'numeric',
+    month: 'long',
+    year: 'numeric',
+    weekday: 'long'
+  }), [language]);
 
+  const isToday = (date) => {
+    const today = new Date();
+    return date.getDate() === today.getDate() &&
+      date.getMonth() === today.getMonth() &&
+      date.getFullYear() === today.getFullYear();
+  };
+
+  const visibleRequirements = useMemo(() => {
+    const server = requirements.map((requirement) => normalizeRequirement(requirement, positions)).filter(Boolean);
+    const local = localRequirements.map((requirement) => normalizeRequirement(requirement, positions)).filter(Boolean);
     return mergeRequirements(server, local).filter((requirement) =>
       isDateWithinRange(requirement.date, appliedFilters.start_date, appliedFilters.end_date)
     );
@@ -390,18 +506,23 @@ export default function ShiftsTab({ language, userRole, user }) {
 
   useEffect(() => {
     localStorage.setItem(localRequirementsStorageKey, JSON.stringify(localRequirements));
-  }, [localRequirements, localRequirementsStorageKey]);
+  }, [localRequirements]);
 
   useEffect(() => {
-    if (!errorMessage && !successMessage) {
-      return undefined;
+    if (isManager) return;
+    try {
+      localStorage.setItem(availabilityStorageKey, JSON.stringify(availabilityByDate));
+    } catch {
+      // ignore localStorage failures
     }
+  }, [availabilityByDate, availabilityStorageKey, isManager]);
 
+  useEffect(() => {
+    if (!errorMessage && !successMessage) return undefined;
     const timer = setTimeout(() => {
       setErrorMessage('');
       setSuccessMessage('');
     }, errorMessage ? 5000 : 2500);
-
     return () => clearTimeout(timer);
   }, [errorMessage, successMessage]);
 
@@ -411,9 +532,7 @@ export default function ShiftsTab({ language, userRole, user }) {
   };
 
   const loadManagerData = useCallback(async (filtersToUse = appliedFilters, options = {}) => {
-    if (options.silent) {
-      setIsRefreshingList(true);
-    }
+    if (options.silent) setIsRefreshingList(true);
 
     const [positionsData, requirementsData] = await Promise.all([
       listPositions(),
@@ -441,14 +560,13 @@ export default function ShiftsTab({ language, userRole, user }) {
       })),
     }));
 
-    if (options.silent) {
-      setIsRefreshingList(false);
-    }
+    if (options.silent) setIsRefreshingList(false);
   }, [appliedFilters]);
 
   const loadEmployeeData = useCallback(async () => {
     if (!employeeId) {
       setAvailabilityForm({ weekly_availability: [], desired_days_off: [] });
+      setAvailabilityByDate({});
       setAbsences([]);
       setSummary(null);
       return;
@@ -460,14 +578,25 @@ export default function ShiftsTab({ language, userRole, user }) {
       getMyCalendarSummary(),
     ]);
 
+    const normalizedAvailability = normalizeArray(availabilityData?.weekly_availability);
+
     setAvailabilityForm({
-      weekly_availability: normalizeArray(availabilityData?.weekly_availability),
+      weekly_availability: normalizedAvailability,
       desired_days_off: normalizeArray(availabilityData?.desired_days_off),
     });
 
+    let storedByDate = {};
+    try {
+      const raw = localStorage.getItem(availabilityStorageKey);
+      storedByDate = raw ? JSON.parse(raw) : {};
+    } catch {
+      storedByDate = {};
+    }
+    setAvailabilityByDate(storedByDate);
+
     setAbsences(normalizeArray(absencesData));
     setSummary(mapEmployeeCalendarSummary(summaryData));
-  }, [employeeId]);
+  }, [employeeId, availabilityStorageKey]);
 
   const loadData = useCallback(async () => {
     setIsLoading(true);
@@ -488,17 +617,13 @@ export default function ShiftsTab({ language, userRole, user }) {
   }, [appliedFilters, isManager, language, loadEmployeeData, loadManagerData, t.empty]);
 
   useEffect(() => {
-    const timer = setTimeout(() => {
-      void loadData();
-    }, 0);
-
+    const timer = setTimeout(() => void loadData(), 0);
     return () => clearTimeout(timer);
   }, [loadData]);
 
   const applyFilters = async () => {
     clearMessages();
     setAppliedFilters(filterForm);
-
     try {
       await loadManagerData(filterForm, { silent: true });
     } catch (error) {
@@ -506,6 +631,25 @@ export default function ShiftsTab({ language, userRole, user }) {
     } finally {
       setIsRefreshingList(false);
     }
+  };
+
+  const toggleAvailability = (dateKey, slot) => {
+    if (isPastDateKey(dateKey)) return;
+
+    setAvailabilityByDate((prev) => {
+      const dayMap = { ...(prev[dateKey] || {}) };
+      const currentStatus = dayMap[slot] || null;
+
+      if (currentStatus === null) {
+        dayMap[slot] = 'available';
+      } else if (currentStatus === 'available') {
+        dayMap[slot] = 'maybe';
+      } else {
+        delete dayMap[slot];
+      }
+
+      return { ...prev, [dateKey]: dayMap };
+    });
   };
 
   const submitManagerRequirement = async () => {
@@ -562,9 +706,7 @@ export default function ShiftsTab({ language, userRole, user }) {
   };
 
   const removeRequirement = async (requirementId) => {
-    if (!requirementId) {
-      return;
-    }
+    if (!requirementId) return;
 
     const target = visibleRequirements.find(
       (requirement) => String(getRequirementId(requirement)) === String(requirementId)
@@ -584,18 +726,15 @@ export default function ShiftsTab({ language, userRole, user }) {
 
     try {
       await deleteRequirementRequest(requirementId);
-
       setRequirements((prev) =>
         prev.filter((requirement) => String(getRequirementId(requirement)) !== String(requirementId))
       );
       setLocalRequirements((prev) =>
         prev.filter((requirement) => String(getRequirementId(requirement)) !== String(requirementId))
       );
-
       setSuccessMessage(t.requirementDeleted);
     } catch (error) {
       const message = String(error?.message || '');
-
       if (message.includes('404') || message.includes('405') || message.toLowerCase().includes('not found')) {
         setErrorMessage(t.deleteNotSupported);
       } else {
@@ -668,7 +807,6 @@ export default function ShiftsTab({ language, userRole, user }) {
 
     try {
       const result = await importRequirementsXlsx(selectedFile);
-
       setImportResult(result);
       await loadManagerData(appliedFilters, { silent: true });
       setSuccessMessage(t.importDone);
@@ -690,7 +828,16 @@ export default function ShiftsTab({ language, userRole, user }) {
     setIsSubmitting(true);
 
     try {
-      await updateEmployeeAvailability(employeeId, availabilityForm);
+      try {
+        localStorage.setItem(availabilityStorageKey, JSON.stringify(availabilityByDate));
+      } catch {
+        // ignore localStorage failures
+      }
+
+      await updateEmployeeAvailability(employeeId, {
+        desired_days_off: availabilityForm.desired_days_off,
+        weekly_availability: convertDatesToWeeklyIntervals(availabilityByDate),
+      });
       await loadEmployeeData();
       setSuccessMessage(t.availabilitySaved);
     } catch (error) {
@@ -716,7 +863,6 @@ export default function ShiftsTab({ language, userRole, user }) {
 
     try {
       await createEmployeeAbsence(employeeId, absenceForm);
-
       setAbsenceForm({ absence_type: 'vacation', start_date: '', end_date: '', comment: '' });
       await loadEmployeeData();
       setSuccessMessage(t.absenceAdded);
@@ -754,15 +900,10 @@ export default function ShiftsTab({ language, userRole, user }) {
           <span style={errorMessage ? styles.toastIconError : styles.toastIconSuccess}>
             {errorMessage ? '!' : '✓'}
           </span>
-
           <span style={styles.toastText}>{errorMessage || successMessage}</span>
-
           <button
             type="button"
-            onClick={() => {
-              setErrorMessage('');
-              setSuccessMessage('');
-            }}
+            onClick={() => { setErrorMessage(''); setSuccessMessage(''); }}
             style={styles.toastClose}
             aria-label="Close notification"
           >
@@ -789,12 +930,17 @@ export default function ShiftsTab({ language, userRole, user }) {
         {renderToast()}
 
         <header style={styles.header}>
-          <div>
-            <h2 style={styles.title}>{isManager ? t.titleManager : t.titleEmployee}</h2>
-            <p style={styles.subtitle}>{isManager ? t.subtitleManager : t.subtitleEmployee}</p>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', width: '100%' }}>
+            <div>
+              <h2 style={styles.title}>{isManager ? t.titleManager : t.titleEmployee}</h2>
+              <p style={styles.subtitle}>{isManager ? t.subtitleManager : t.subtitleEmployee}</p>
+            </div>
+            <div style={styles.todayBadge}>
+              <span style={styles.todayLabel}>{language === 'ru' ? 'Сегодня' : 'Today'}</span>
+              <span style={styles.todayDate}>{todayStr}</span>
+            </div>
           </div>
         </header>
-
         {isManager ? (
           <div style={styles.managerLayout}>
             <aside style={styles.sidebar}>
@@ -855,10 +1001,7 @@ export default function ShiftsTab({ language, userRole, user }) {
 
                 {importResult && (
                   <div style={styles.importBox}>
-                    <div>
-                      {t.create}: {importResult.created_count}
-                    </div>
-
+                    <div>{t.create}: {importResult.created_count}</div>
                     {normalizeArray(importResult.errors).length > 0 && (
                       <div style={styles.importErrors}>
                         <strong style={styles.itemTitle}>{t.importErrors}</strong>
@@ -902,9 +1045,7 @@ export default function ShiftsTab({ language, userRole, user }) {
                     <Field label={t.position}>
                       <select
                         value={singleRequirement.position_id}
-                        onChange={(event) =>
-                          setSingleRequirement((prev) => ({ ...prev, position_id: event.target.value }))
-                        }
+                        onChange={(event) => setSingleRequirement((prev) => ({ ...prev, position_id: event.target.value }))}
                         style={styles.input}
                       >
                         <option value="">{positions.length ? t.choosePosition : t.noPositions}</option>
@@ -920,9 +1061,7 @@ export default function ShiftsTab({ language, userRole, user }) {
                       <input
                         type="date"
                         value={singleRequirement.date}
-                        onChange={(event) =>
-                          setSingleRequirement((prev) => ({ ...prev, date: event.target.value }))
-                        }
+                        onChange={(event) => setSingleRequirement((prev) => ({ ...prev, date: event.target.value }))}
                         style={styles.input}
                       />
                     </Field>
@@ -932,9 +1071,7 @@ export default function ShiftsTab({ language, userRole, user }) {
                         type="number"
                         min="1"
                         value={singleRequirement.min_staff}
-                        onChange={(event) =>
-                          setSingleRequirement((prev) => ({ ...prev, min_staff: event.target.value }))
-                        }
+                        onChange={(event) => setSingleRequirement((prev) => ({ ...prev, min_staff: event.target.value }))}
                         style={styles.input}
                       />
                     </Field>
@@ -943,12 +1080,10 @@ export default function ShiftsTab({ language, userRole, user }) {
                       <input
                         type="time"
                         value={formatTime(singleRequirement.start_time)}
-                        onChange={(event) =>
-                          setSingleRequirement((prev) => ({
-                            ...prev,
-                            start_time: `${event.target.value}:00`,
-                          }))
-                        }
+                        onChange={(event) => setSingleRequirement((prev) => ({
+                          ...prev,
+                          start_time: `${event.target.value}:00`,
+                        }))}
                         style={styles.input}
                       />
                     </Field>
@@ -957,12 +1092,10 @@ export default function ShiftsTab({ language, userRole, user }) {
                       <input
                         type="time"
                         value={formatTime(singleRequirement.end_time)}
-                        onChange={(event) =>
-                          setSingleRequirement((prev) => ({
-                            ...prev,
-                            end_time: `${event.target.value}:00`,
-                          }))
-                        }
+                        onChange={(event) => setSingleRequirement((prev) => ({
+                          ...prev,
+                          end_time: `${event.target.value}:00`,
+                        }))}
                         style={styles.input}
                       />
                     </Field>
@@ -987,9 +1120,7 @@ export default function ShiftsTab({ language, userRole, user }) {
                       <input
                         type="date"
                         value={bulkRequirement.start_date}
-                        onChange={(event) =>
-                          setBulkRequirement((prev) => ({ ...prev, start_date: event.target.value }))
-                        }
+                        onChange={(event) => setBulkRequirement((prev) => ({ ...prev, start_date: event.target.value }))}
                         style={styles.input}
                       />
                     </Field>
@@ -998,9 +1129,7 @@ export default function ShiftsTab({ language, userRole, user }) {
                       <input
                         type="date"
                         value={bulkRequirement.end_date}
-                        onChange={(event) =>
-                          setBulkRequirement((prev) => ({ ...prev, end_date: event.target.value }))
-                        }
+                        onChange={(event) => setBulkRequirement((prev) => ({ ...prev, end_date: event.target.value }))}
                         style={styles.input}
                       />
                     </Field>
@@ -1008,12 +1137,10 @@ export default function ShiftsTab({ language, userRole, user }) {
                     <Field label={t.position}>
                       <select
                         value={bulkRequirement.requirements[0].position_id}
-                        onChange={(event) =>
-                          setBulkRequirement((prev) => ({
-                            ...prev,
-                            requirements: [{ ...prev.requirements[0], position_id: event.target.value }],
-                          }))
-                        }
+                        onChange={(event) => setBulkRequirement((prev) => ({
+                          ...prev,
+                          requirements: [{ ...prev.requirements[0], position_id: event.target.value }],
+                        }))}
                         style={styles.input}
                       >
                         <option value="">{positions.length ? t.choosePosition : t.noPositions}</option>
@@ -1030,12 +1157,10 @@ export default function ShiftsTab({ language, userRole, user }) {
                         type="number"
                         min="1"
                         value={bulkRequirement.requirements[0].min_staff}
-                        onChange={(event) =>
-                          setBulkRequirement((prev) => ({
-                            ...prev,
-                            requirements: [{ ...prev.requirements[0], min_staff: event.target.value }],
-                          }))
-                        }
+                        onChange={(event) => setBulkRequirement((prev) => ({
+                          ...prev,
+                          requirements: [{ ...prev.requirements[0], min_staff: event.target.value }],
+                        }))}
                         style={styles.input}
                       />
                     </Field>
@@ -1044,12 +1169,10 @@ export default function ShiftsTab({ language, userRole, user }) {
                       <input
                         type="time"
                         value={formatTime(bulkRequirement.requirements[0].start_time)}
-                        onChange={(event) =>
-                          setBulkRequirement((prev) => ({
-                            ...prev,
-                            requirements: [{ ...prev.requirements[0], start_time: `${event.target.value}:00` }],
-                          }))
-                        }
+                        onChange={(event) => setBulkRequirement((prev) => ({
+                          ...prev,
+                          requirements: [{ ...prev.requirements[0], start_time: `${event.target.value}:00` }],
+                        }))}
                         style={styles.input}
                       />
                     </Field>
@@ -1058,12 +1181,10 @@ export default function ShiftsTab({ language, userRole, user }) {
                       <input
                         type="time"
                         value={formatTime(bulkRequirement.requirements[0].end_time)}
-                        onChange={(event) =>
-                          setBulkRequirement((prev) => ({
-                            ...prev,
-                            requirements: [{ ...prev.requirements[0], end_time: `${event.target.value}:00` }],
-                          }))
-                        }
+                        onChange={(event) => setBulkRequirement((prev) => ({
+                          ...prev,
+                          requirements: [{ ...prev.requirements[0], end_time: `${event.target.value}:00` }],
+                        }))}
                         style={styles.input}
                       />
                     </Field>
@@ -1072,19 +1193,16 @@ export default function ShiftsTab({ language, userRole, user }) {
                   <div style={styles.dayPills}>
                     {WEEKDAYS.map((day) => {
                       const checked = bulkRequirement.weekdays.includes(day.value);
-
                       return (
                         <button
                           key={day.value}
                           type="button"
-                          onClick={() =>
-                            setBulkRequirement((prev) => ({
-                              ...prev,
-                              weekdays: checked
-                                ? prev.weekdays.filter((value) => value !== day.value)
-                                : [...prev.weekdays, day.value].sort((a, b) => a - b),
-                            }))
-                          }
+                          onClick={() => setBulkRequirement((prev) => ({
+                            ...prev,
+                            weekdays: checked
+                              ? prev.weekdays.filter((value) => value !== day.value)
+                              : [...prev.weekdays, day.value].sort((a, b) => a - b),
+                          }))}
                           style={checked ? styles.dayPillActive : styles.dayPill}
                         >
                           {day[language] || day.ru}
@@ -1153,123 +1271,144 @@ export default function ShiftsTab({ language, userRole, user }) {
               <div style={styles.panelHeader}>
                 <div>
                   <h3 style={styles.panelTitle}>{t.availability}</h3>
-                  <p style={styles.panelHint}>{t.desiredDaysOff}</p>
                 </div>
-
-                <button
-                  type="button"
-                  onClick={() =>
-                    setAvailabilityForm((prev) => ({
-                      ...prev,
-                      weekly_availability: [...prev.weekly_availability, createAvailabilityBlock()],
-                    }))
-                  }
-                  style={styles.secondaryButton}
-                >
-                  {t.addRow}
-                </button>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                  <button
+                    type="button"
+                    onClick={() => shiftWeek(-7)}
+                    style={styles.weekNavButton}
+                    aria-label={t.prevWeek}
+                    title={t.prevWeek}
+                  >
+                    {'\u2190'}
+                  </button>
+                  <input
+                    type="date"
+                    value={selectedDate}
+                    onChange={(e) => setSelectedDate(e.target.value)}
+                    style={{ ...styles.input, width: 'auto' }}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => shiftWeek(7)}
+                    style={styles.weekNavButton}
+                    aria-label={t.nextWeek}
+                    title={t.nextWeek}
+                  >
+                    {'\u2192'}
+                  </button>
+                </div>
               </div>
 
-              {availabilityForm.weekly_availability.length === 0 ? (
-                <p style={styles.emptyText}>{t.empty}</p>
-              ) : (
-                <div style={styles.availabilityList}>
-                  {availabilityForm.weekly_availability.map((block, index) => (
-                    <div key={`${block.weekday}-${index}`} style={styles.availabilityRow}>
-                      <select
-                        value={block.weekday}
-                        onChange={(event) =>
-                          setAvailabilityForm((prev) => ({
-                            ...prev,
-                            weekly_availability: prev.weekly_availability.map((item, itemIndex) => (
-                              itemIndex === index
-                                ? { ...item, weekday: Number(event.target.value) }
-                                : item
-                            )),
-                          }))
-                        }
-                        style={styles.input}
-                      >
-                        {WEEKDAYS.map((day) => (
-                          <option key={day.value} value={day.value}>
-                            {day[language] || day.ru}
-                          </option>
-                        ))}
-                      </select>
-
-                      <input
-                        type="time"
-                        value={formatTime(block.start_time)}
-                        onChange={(event) =>
-                          setAvailabilityForm((prev) => ({
-                            ...prev,
-                            weekly_availability: prev.weekly_availability.map((item, itemIndex) => (
-                              itemIndex === index
-                                ? { ...item, start_time: `${event.target.value}:00` }
-                                : item
-                            )),
-                          }))
-                        }
-                        style={styles.input}
-                      />
-
-                      <input
-                        type="time"
-                        value={formatTime(block.end_time)}
-                        onChange={(event) =>
-                          setAvailabilityForm((prev) => ({
-                            ...prev,
-                            weekly_availability: prev.weekly_availability.map((item, itemIndex) => (
-                              itemIndex === index
-                                ? { ...item, end_time: `${event.target.value}:00` }
-                                : item
-                            )),
-                          }))
-                        }
-                        style={styles.input}
-                      />
-
-                      <button
-                        type="button"
-                        onClick={() =>
-                          setAvailabilityForm((prev) => ({
-                            ...prev,
-                            weekly_availability: prev.weekly_availability.filter(
-                              (_, itemIndex) => itemIndex !== index
-                            ),
-                          }))
-                        }
-                        style={styles.deleteButton}
-                      >
-                        {t.delete}
-                      </button>
-                    </div>
-                  ))}
+              {/* Легенда */}
+              <div style={styles.legend}>
+                <div style={styles.legendItem}>
+                  <div style={{ ...styles.legendColor, background: '#4CAF50' }} />
+                  <span style={styles.legendText}>{t.available}</span>
                 </div>
-              )}
+                <div style={styles.legendItem}>
+                  <div style={{ ...styles.legendColor, background: '#FFC107' }} />
+                  <span style={styles.legendText}>{t.maybe}</span>
+                </div>
+                <div style={styles.legendItem}>
+                  <div style={{ ...styles.legendColor, background: '#eef3f6', border: '1px solid #ddd' }} />
+                  <span style={styles.legendText}>{t.unavailable}</span>
+                </div>
+              </div>
 
-              <div style={styles.dayPills}>
-                {WEEKDAYS.map((day) => {
-                  const checked = availabilityForm.desired_days_off.includes(day.value);
+              <div style={styles.availabilityGridWrapper}>
+                <div style={styles.availabilityGridHeader}>
+                  <div style={styles.gridCorner} />
+                  {WEEKDAYS.map((day, index) => {
+                    const itIsToday = isToday(weekDates[index]);
+                    return (
+                      <div
+                        key={day.value}
+                        style={{
+                          ...styles.gridHeaderCell,
+                          flexDirection: 'column',
+                          height: 'auto',
+                          padding: '8px 4px',
+                          background: itIsToday ? '#002642' : '#dee7e7',
+                          color: itIsToday ? '#ffffff' : '#002642',
+                          border: itIsToday ? 'none' : styles.gridHeaderCell.border
+                        }}
+                      >
+                        <span style={{ fontSize: '11px', opacity: itIsToday ? 0.9 : 0.8 }}>{day[language] || day.ru}</span>
+                        <span style={{ fontSize: '13px', fontWeight: '900', whiteSpace: 'nowrap' }}>
+                          {weekDates[index].toLocaleDateString(language === 'ru' ? 'ru-RU' : 'en-US', { day: 'numeric', month: 'short' })}
+                        </span>
+                      </div>
+                    );
+                  })}
+                </div>
+                <div style={styles.availabilityGridBody}>
+                  {TIME_SLOTS.map((time) => {
+                    return (
+                      <div key={time} style={styles.gridRow}>
+                        <div style={styles.gridTimeCell}>{time}</div>
+                        {WEEKDAYS.map((day, dayIndex) => {
+                          const cellDate = weekDates[dayIndex];
+                          const dateKey = toDateKey(cellDate);
+                          const past = isPastDateKey(dateKey);
+                          const status = availabilityByDate[dateKey]?.[time] || null;
 
-                  return (
-                    <button
-                      key={day.value}
-                      type="button"
-                      onClick={() =>
-                        setAvailabilityForm((prev) => ({
+                          const cellStyle = past
+                            ? styles.gridCellLocked
+                            : status === 'available'
+                              ? styles.gridCellAvailable
+                              : status === 'maybe'
+                                ? styles.gridCellMaybe
+                                : styles.gridCell;
+
+                          return (
+                            <button
+                              key={`${dateKey}-${time}`}
+                              type="button"
+                              onClick={past ? undefined : () => toggleAvailability(dateKey, time)}
+                              disabled={past}
+                              style={cellStyle}
+                              aria-pressed={status === 'available'}
+                              title={
+                                past
+                                  ? t.locked
+                                  : status === 'available'
+                                    ? t.available
+                                    : status === 'maybe'
+                                      ? t.maybe
+                                      : t.unavailable
+                              }
+                            />
+                          );
+                        })}
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+
+              <div style={styles.desiredDaysOffSection}>
+                <span style={styles.desiredDaysOffLabel}>{t.desiredDaysOff}</span>
+                <div style={styles.dayPills}>
+                  {WEEKDAYS.map((day) => {
+                    const checked = availabilityForm.desired_days_off.includes(day.value);
+                    return (
+                      <button
+                        key={day.value}
+                        type="button"
+                        onClick={() => setAvailabilityForm((prev) => ({
                           ...prev,
                           desired_days_off: checked
                             ? prev.desired_days_off.filter((value) => value !== day.value)
                             : [...prev.desired_days_off, day.value].sort((a, b) => a - b),
-                        }))
-                      }
-                      style={checked ? styles.dayPillActive : styles.dayPill}
-                    >
-                      {day[language] || day.ru}
-                    </button>
-                  );
-                })}
+                        }))}
+                        style={checked ? styles.dayPillActive : styles.dayPill}
+                      >
+                        {day[language] || day.ru}
+                      </button>
+                    );
+                  })}
+                </div>
               </div>
 
               <button
@@ -1288,9 +1427,7 @@ export default function ShiftsTab({ language, userRole, user }) {
               <div style={styles.absenceForm}>
                 <select
                   value={absenceForm.absence_type}
-                  onChange={(event) =>
-                    setAbsenceForm((prev) => ({ ...prev, absence_type: event.target.value }))
-                  }
+                  onChange={(event) => setAbsenceForm((prev) => ({ ...prev, absence_type: event.target.value }))}
                   style={styles.input}
                 >
                   <option value="vacation">{t.vacation}</option>
@@ -1301,26 +1438,20 @@ export default function ShiftsTab({ language, userRole, user }) {
                 <input
                   type="date"
                   value={absenceForm.start_date}
-                  onChange={(event) =>
-                    setAbsenceForm((prev) => ({ ...prev, start_date: event.target.value }))
-                  }
+                  onChange={(event) => setAbsenceForm((prev) => ({ ...prev, start_date: event.target.value }))}
                   style={styles.input}
                 />
 
                 <input
                   type="date"
                   value={absenceForm.end_date}
-                  onChange={(event) =>
-                    setAbsenceForm((prev) => ({ ...prev, end_date: event.target.value }))
-                  }
+                  onChange={(event) => setAbsenceForm((prev) => ({ ...prev, end_date: event.target.value }))}
                   style={styles.input}
                 />
 
                 <input
                   value={absenceForm.comment}
-                  onChange={(event) =>
-                    setAbsenceForm((prev) => ({ ...prev, comment: event.target.value }))
-                  }
+                  onChange={(event) => setAbsenceForm((prev) => ({ ...prev, comment: event.target.value }))}
                   placeholder={t.other}
                   style={styles.input}
                 />
@@ -1342,15 +1473,10 @@ export default function ShiftsTab({ language, userRole, user }) {
                   {absences.map((absence) => (
                     <div key={absence.id} style={styles.listItem}>
                       <div>
-                        <strong style={styles.itemTitle}>
-                          {t[absence.absence_type] || absence.absence_type}
-                        </strong>
-                        <div style={styles.itemMeta}>
-                          {absence.start_date} — {absence.end_date}
-                        </div>
+                        <strong style={styles.itemTitle}>{t[absence.absence_type] || absence.absence_type}</strong>
+                        <div style={styles.itemMeta}>{absence.start_date} — {absence.end_date}</div>
                         {absence.comment && <div style={styles.itemMeta}>{absence.comment}</div>}
                       </div>
-
                       <button type="button" onClick={() => removeAbsence(absence.id)} style={styles.deleteButton}>
                         {t.delete}
                       </button>
@@ -1458,12 +1584,67 @@ const styles = {
   },
 
   subtitle: {
-    maxWidth: '780px',
     margin: '6px 0 0',
     color: '#4f646f',
     fontSize: '14px',
     fontWeight: '600',
     lineHeight: 1.45,
+  },
+
+  todayBadge: {
+    background: '#ffffff',
+    padding: '10px 16px',
+    borderRadius: '16px',
+    border: '1px solid rgba(79, 100, 111, 0.15)',
+    display: 'flex',
+    flexDirection: 'column',
+    alignItems: 'flex-end',
+    boxShadow: '0 4px 12px rgba(0, 38, 66, 0.05)',
+  },
+
+  todayLabel: {
+    fontSize: '11px',
+    fontWeight: '800',
+    color: '#4f646f',
+    textTransform: 'uppercase',
+    letterSpacing: '0.05em',
+    marginBottom: '2px',
+  },
+
+  todayDate: {
+    fontSize: '14px',
+    fontWeight: '900',
+    color: '#002642',
+  },
+
+  legend: {
+    display: 'flex',
+    gap: '16px',
+    marginBottom: '12px',
+    flexWrap: 'wrap',
+    padding: '8px 12px',
+    background: '#ffffff',
+    borderRadius: '12px',
+    border: '1px solid rgba(79, 100, 111, 0.1)',
+  },
+
+  legendItem: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '8px',
+  },
+
+  legendColor: {
+    width: '20px',
+    height: '20px',
+    borderRadius: '6px',
+    flexShrink: 0,
+  },
+
+  legendText: {
+    fontSize: '13px',
+    color: '#4f646f',
+    fontWeight: '600',
   },
 
   managerLayout: {
@@ -1642,6 +1823,23 @@ const styles = {
     whiteSpace: 'nowrap',
   },
 
+  weekNavButton: {
+    width: '42px',
+    height: '42px',
+    flexShrink: 0,
+    background: '#dee7e7',
+    border: 'none',
+    borderRadius: '13px',
+    color: '#002642',
+    fontSize: '18px',
+    fontWeight: '900',
+    cursor: 'pointer',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    lineHeight: 1,
+  },
+
   deleteButton: {
     height: '38px',
     padding: '0 13px',
@@ -1791,18 +1989,119 @@ const styles = {
     gap: '16px',
   },
 
-  availabilityList: {
+  availabilityGridWrapper: {
     display: 'flex',
     flexDirection: 'column',
     gap: '10px',
-    marginBottom: '12px',
+    marginBottom: '16px',
+    overflowX: 'auto',
+    paddingBottom: '8px',
   },
 
-  availabilityRow: {
+  availabilityGridHeader: {
     display: 'grid',
-    gridTemplateColumns: '1.1fr 1fr 1fr auto',
-    gap: '10px',
+    gridTemplateColumns: '72px repeat(7, 80px)',
+    gap: '6px',
     alignItems: 'center',
+  },
+
+  availabilityGridBody: {
+    display: 'grid',
+    gap: '6px',
+  },
+
+  gridCorner: {
+    height: '34px',
+    borderRadius: '12px',
+    background: 'transparent',
+  },
+
+  gridHeaderCell: {
+    minHeight: '34px',
+    borderRadius: '12px',
+    background: '#dee7e7',
+    color: '#002642',
+    fontSize: '13px',
+    fontWeight: '800',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: '0 6px',
+    textAlign: 'center',
+    whiteSpace: 'nowrap',
+  },
+
+  gridRow: {
+    display: 'grid',
+    gridTemplateColumns: '72px repeat(7, 80px)',
+    gap: '6px',
+    alignItems: 'center',
+  },
+
+  gridTimeCell: {
+    height: '34px',
+    borderRadius: '12px',
+    background: '#f4faff',
+    color: '#4f646f',
+    fontSize: '13px',
+    fontWeight: '700',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: '0 8px',
+    whiteSpace: 'nowrap',
+  },
+
+  gridCell: {
+    width: '100%',
+    minHeight: '34px',
+    borderRadius: '12px',
+    background: '#eef3f6',
+    border: '1px solid transparent',
+    cursor: 'pointer',
+  },
+
+  gridCellAvailable: {
+    width: '100%',
+    minHeight: '34px',
+    borderRadius: '12px',
+    background: '#4CAF50',
+    border: '1px solid #388E3C',
+    cursor: 'pointer',
+    transition: 'all 0.15s ease',
+  },
+
+  gridCellMaybe: {
+    width: '100%',
+    minHeight: '34px',
+    borderRadius: '12px',
+    background: '#FFC107',
+    border: '1px solid #F57C00',
+    cursor: 'pointer',
+    transition: 'all 0.15s ease',
+  },
+
+  gridCellLocked: {
+    width: '100%',
+    minHeight: '34px',
+    borderRadius: '12px',
+    background: 'repeating-linear-gradient(45deg, #eef3f6, #eef3f6 6px, #e2e8ec 6px, #e2e8ec 12px)',
+    border: '1px solid #dde5ea',
+    cursor: 'not-allowed',
+    opacity: 0.6,
+  },
+
+  desiredDaysOffSection: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '10px',
+    marginBottom: '14px',
+  },
+
+  desiredDaysOffLabel: {
+    color: '#4f646f',
+    fontSize: '14px',
+    fontWeight: '800',
   },
 
   absenceForm: {

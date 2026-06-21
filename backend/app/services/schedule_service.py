@@ -297,6 +297,27 @@ def get_schedule(db: Session, schedule_id: int) -> ScheduleRead:
     return _build_schedule_read(db, schedule.id, schedule.status)
 
 
+def get_latest_schedule(
+    db: Session,
+    current_user: UserRead,
+    schedule_status: str | None = None,
+) -> ScheduleRead:
+    if current_user.company_id is None:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Manager is not linked to a company.",
+        )
+
+    schedule = schedule_repository.get_latest_schedule(
+        db,
+        company_id=current_user.company_id,
+        schedule_status=schedule_status,
+    )
+    if schedule is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Schedule was not found.")
+    return _build_schedule_read(db, schedule.id, schedule.status)
+
+
 def update_shift(db: Session, schedule_id: int, shift_id: int, payload: ScheduleShiftUpdate) -> ScheduleRead:
     schedule = schedule_repository.get_schedule(db, schedule_id)
     if schedule is None:
@@ -403,7 +424,12 @@ def _build_schedule_read(
 ) -> ScheduleRead:
     schedule = schedule_repository.get_schedule(db, schedule_id)
     rows = schedule_repository.list_schedule_shift_rows(db, schedule_id)
-    requirements = schedule_repository.list_requirements(db, schedule.start_date, schedule.end_date)
+    requirements = schedule_repository.list_requirements(
+        db,
+        schedule.start_date,
+        schedule.end_date,
+        company_id=schedule.company_id,
+    )
     unfilled = list(unfilled_override) if unfilled_override is not None else []
 
     if unfilled_override is None:
@@ -431,7 +457,7 @@ def _build_schedule_read(
                 )
     return ScheduleRead(
         id=schedule_id,
-        status="published" if status_value == "published" else "draft",
+        status=status_value,
         shifts=[_build_shift_read(row) for row in rows],
         conflicts=[],
         unfilled_requirements=[UnfilledRequirementRead(**item) for item in unfilled],
