@@ -88,7 +88,7 @@ struct CompanySetupView: View {
                 .themePrimaryAction(isEnabled: !viewModel.isSaving && viewModel.canCreateCompany)
                 .disabled(viewModel.isSaving || !viewModel.canCreateCompany)
             } footer: {
-                Text(languageManager.text("For now the backend accepts only the company name. The rest of the form is collected for the upcoming expansion.", "Пока бэкенд принимает только название компании. Остальные поля собираются под будущее расширение."))
+                Text(languageManager.text("The backend now saves the company name and address. Branch details are still collected for the upcoming expansion.", "Бэкенд теперь сохраняет название и адрес компании. Детали по филиалам пока собираются под будущее расширение."))
             }
 
             if let errorMessage = viewModel.errorMessage {

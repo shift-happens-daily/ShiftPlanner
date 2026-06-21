@@ -1,21 +1,13 @@
 
 import SwiftUI
 
-private struct EmployeeCardBoundsPreferenceKey: PreferenceKey {
-    static var defaultValue: [Int: Anchor<CGRect>] = [:]
-
-    static func reduce(value: inout [Int: Anchor<CGRect>], nextValue: () -> [Int: Anchor<CGRect>]) {
-        value.merge(nextValue(), uniquingKeysWith: { _, new in new })
-    }
-}
-
 struct EmployeeListView: View {
     @EnvironmentObject private var themeManager: ThemeManager
     @EnvironmentObject private var languageManager: LanguageManager
     @StateObject private var viewModel: EmployeeListViewModel
     @State private var employeePendingRemoval: ManagedEmployee?
     @State private var positionPendingRemoval: ManagedPosition?
-    @State private var expandedEmployeeId: Int?
+    @State private var rolePickerEmployee: ManagedEmployee?
 
     let user: AppUser
     let onUserUpdated: (AppUser) -> Void
@@ -37,23 +29,21 @@ struct EmployeeListView: View {
 
     var body: some View {
         NavigationStack {
-            ZStack(alignment: .topLeading) {
-                ScrollView(showsIndicators: false) {
-                    if user.hasCompany {
-                        companyEmployeesContent
+            ScrollView(showsIndicators: false) {
+                if user.hasCompany {
+                    companyEmployeesContent
+                    .padding()
+                } else {
+                    ManagerCompanyAccessContentView(user: user, onUserUpdated: onUserUpdated)
                         .padding()
-                    } else {
-                        ManagerCompanyAccessContentView(user: user, onUserUpdated: onUserUpdated)
-                            .padding()
-                    }
                 }
-            }
-            .overlayPreferenceValue(EmployeeCardBoundsPreferenceKey.self) { anchors in
-                employeePickerOverlay(anchors: anchors)
             }
             .background(themeManager.selectedTheme.screenBackground)
             .navigationTitle(languageManager.text("Employees", "Сотрудники"))
             .navigationBarTitleDisplayMode(.inline)
+            .sheet(item: $rolePickerEmployee) { employee in
+                rolePickerSheet(for: employee)
+            }
             .alert(languageManager.text("Remove employee?", "Удалить сотрудника?"), isPresented: employeeRemovalBinding) {
                 Button(languageManager.text("Cancel", "Отмена"), role: .cancel) {}
                 Button(languageManager.text("Remove", "Удалить"), role: .destructive) {
@@ -142,54 +132,16 @@ struct EmployeeListView: View {
         ManagedEmployeeCardView(
             employee: employee,
             positionTitle: viewModel.positionTitle(for: employee),
-            isPickerExpanded: expandedEmployeeId == employee.id,
+            isPickerExpanded: rolePickerEmployee?.id == employee.id,
             canDeleteEmployee: viewModel.capabilities.canRemoveEmployee,
             onToggleRolePicker: {
-                expandedEmployeeId = expandedEmployeeId == employee.id ? nil : employee.id
+                rolePickerEmployee = employee
             },
             onDelete: {
                 employeePendingRemoval = employee
             }
         )
-        .anchorPreference(
-            key: EmployeeCardBoundsPreferenceKey.self,
-            value: .bounds
-        ) { [employee.id: $0] }
-        .zIndex(expandedEmployeeId == employee.id ? 1000 : Double(viewModel.employees.count - index))
-    }
-
-    @ViewBuilder
-    private func employeePickerOverlay(anchors: [Int: Anchor<CGRect>]) -> some View {
-        GeometryReader { proxy in
-            if let pickerData = expandedPickerData(anchors: anchors, proxy: proxy) {
-                PositionPickerListView(
-                    positions: viewModel.positions,
-                    currentPositionTitle: pickerData.positionTitle,
-                    canAssignPosition: viewModel.capabilities.canAssignPosition,
-                    canDeletePosition: viewModel.capabilities.canRemovePosition,
-                    onAssignPosition: { positionId in
-                        Task {
-                            await viewModel.assignPosition(positionId, to: pickerData.employee)
-                            expandedEmployeeId = nil
-                        }
-                    },
-                    onCreatePosition: { title in
-                        Task {
-                            await viewModel.addPosition(title: title, assigningTo: pickerData.employee)
-                            expandedEmployeeId = nil
-                        }
-                    },
-                    onDeletePosition: { position in
-                        positionPendingRemoval = position
-                        expandedEmployeeId = nil
-                    }
-                )
-                .frame(width: 260)
-                .offset(x: pickerData.frame.maxX - 268, y: pickerData.frame.minY + 46)
-                .zIndex(2000)
-            }
-        }
-        .allowsHitTesting(expandedEmployeeId != nil)
+        .zIndex(rolePickerEmployee?.id == employee.id ? 1000 : Double(viewModel.employees.count - index))
     }
 
     private var emptyEmployeesView: some View {
@@ -227,21 +179,40 @@ struct EmployeeListView: View {
         )
     }
 
-    private func expandedPickerData(
-        anchors: [Int: Anchor<CGRect>],
-        proxy: GeometryProxy
-    ) -> (employee: ManagedEmployee, positionTitle: String, frame: CGRect)? {
-        guard let expandedEmployeeId,
-              let anchor = anchors[expandedEmployeeId],
-              let employee = viewModel.employees.first(where: { $0.id == expandedEmployeeId }) else {
-            return nil
-        }
+    private func rolePickerSheet(for employee: ManagedEmployee) -> some View {
+        NavigationStack {
+            VStack(spacing: 0) {
+                PositionPickerListView(
+                    positions: viewModel.positions,
+                    currentPositionTitle: viewModel.positionTitle(for: employee),
+                    canAssignPosition: viewModel.capabilities.canAssignPosition,
+                    canDeletePosition: viewModel.capabilities.canRemovePosition,
+                    onAssignPosition: { positionId in
+                        Task {
+                            await viewModel.assignPosition(positionId, to: employee)
+                            rolePickerEmployee = nil
+                        }
+                    },
+                    onCreatePosition: { title in
+                        Task {
+                            await viewModel.addPosition(title: title, assigningTo: employee)
+                            rolePickerEmployee = nil
+                        }
+                    },
+                    onDeletePosition: { position in
+                        positionPendingRemoval = position
+                        rolePickerEmployee = nil
+                    }
+                )
+                .padding()
 
-        return (
-            employee: employee,
-            positionTitle: viewModel.positionTitle(for: employee),
-            frame: proxy[anchor]
-        )
+                Spacer(minLength: 0)
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+            .background(themeManager.selectedTheme.screenBackground)
+            .navigationTitle(languageManager.text("Position", "Должность"))
+            .navigationBarTitleDisplayMode(.inline)
+        }
     }
 
     private var employeeRemovalBinding: Binding<Bool> {

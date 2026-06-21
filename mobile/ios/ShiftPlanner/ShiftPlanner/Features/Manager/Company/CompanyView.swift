@@ -19,15 +19,92 @@ struct CompanyView: View {
         return baseCompany.withBranches(viewModel.branches)
     }
 
+    private var shouldShowCompanyAddress: Bool {
+        (displayedCompany?.branches.isEmpty ?? true)
+    }
+
+    private var displayedAddress: String {
+        guard let address = displayedCompany?.address?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !address.isEmpty else {
+            return languageManager.text("Not added yet", "Пока не добавлен")
+        }
+
+        return address
+    }
+
     var body: some View {
         NavigationStack {
             ScrollView {
                 VStack(alignment: .leading, spacing: 20) {
                     if let company = displayedCompany {
                         VStack(alignment: .leading, spacing: 12) {
-                            Text(company.name)
-                                .font(.title2)
-                                .bold()
+                            HStack(alignment: .top, spacing: 12) {
+                                VStack(alignment: .leading, spacing: 8) {
+                                    if viewModel.isEditing {
+                                        TextField(languageManager.text("Company name", "Название компании"), text: $viewModel.companyName)
+                                            .themeInputField()
+
+                                        if shouldShowCompanyAddress {
+                                            TextField(languageManager.text("Company address", "Адрес компании"), text: $viewModel.companyAddress, axis: .vertical)
+                                                .lineLimit(2...4)
+                                                .themeInputField()
+                                        }
+                                    } else {
+                                        Text(company.name)
+                                            .font(.title2)
+                                            .bold()
+
+                                        if shouldShowCompanyAddress {
+                                            VStack(alignment: .leading, spacing: 4) {
+                                                Text(languageManager.text("Address", "Адрес"))
+                                                    .font(.subheadline)
+                                                    .foregroundStyle(themeManager.selectedTheme.secondaryTextColor)
+
+                                                Text(displayedAddress)
+                                                    .font(.body)
+                                                    .foregroundStyle(themeManager.selectedTheme.primaryTextColor)
+                                            }
+                                        }
+                                    }
+                                }
+
+                                Spacer()
+
+                                if viewModel.isEditing {
+                                    HStack(spacing: 8) {
+                                        Button(languageManager.text("Cancel", "Отмена")) {
+                                            viewModel.cancelEditing(with: company)
+                                        }
+                                        .buttonStyle(.plain)
+                                        .themeSecondaryAction()
+
+                                        Button {
+                                            Task {
+                                                if let updatedCompany = await viewModel.saveCompanyChanges(for: company) {
+                                                    companyOverride = updatedCompany
+                                                    onUserUpdated(user.withCompany(updatedCompany))
+                                                }
+                                            }
+                                        } label: {
+                                            if viewModel.isSaving {
+                                                ProgressView()
+                                                    .tint(themeManager.selectedTheme.primaryActionTextColor)
+                                            } else {
+                                                Text(languageManager.text("Save", "Сохранить"))
+                                            }
+                                        }
+                                        .buttonStyle(.plain)
+                                        .themePrimaryAction(isEnabled: viewModel.canSaveCompany)
+                                        .disabled(!viewModel.canSaveCompany)
+                                    }
+                                } else {
+                                    Button(languageManager.text("Edit", "Редактировать")) {
+                                        viewModel.startEditing(with: company)
+                                    }
+                                    .buttonStyle(.plain)
+                                    .themeSecondaryAction()
+                                }
+                            }
 
                             if viewModel.isLoading {
                                 ProgressView()
@@ -119,6 +196,7 @@ struct CompanyView: View {
             .navigationBarTitleDisplayMode(.inline)
             .task(id: displayedCompany?.id) {
                 if let company = displayedCompany {
+                    viewModel.configureForm(with: company)
                     await viewModel.loadBranches(for: company.id)
                 } else {
                     viewModel.reset()

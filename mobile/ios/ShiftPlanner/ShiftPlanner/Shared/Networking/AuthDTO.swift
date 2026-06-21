@@ -85,11 +85,13 @@ struct CurrentUserResponse: Codable {
 struct CurrentUserCompanyResponse: Codable {
     let id: Int
     let name: String
+    let address: String?
     let inviteCode: String
 
     enum CodingKeys: String, CodingKey {
         case id
         case name
+        case address
         case inviteCode = "invite_code"
     }
 }
@@ -116,6 +118,7 @@ extension CurrentUserResponse {
                 AppCompanySummary(
                     id: $0.id,
                     name: $0.name,
+                    address: $0.address,
                     inviteCode: $0.inviteCode,
                     branches: []
                 )

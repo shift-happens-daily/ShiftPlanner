@@ -18,7 +18,7 @@ final class CompanyInviteViewModel: ObservableObject {
     }
 
     var canJoinCompany: Bool {
-        !isLoading && preview != nil && selectedBranchId != nil && selectedPositionId != nil
+        !isLoading && preview != nil
     }
 
     func previewCompany() async {
@@ -34,8 +34,8 @@ final class CompanyInviteViewModel: ObservableObject {
         do {
             let loadedPreview = try await repository.previewInvite(code: code)
             preview = loadedPreview
-            selectedBranchId = loadedPreview.branches.first?.id
-            selectedPositionId = loadedPreview.positions.first?.id
+            selectedBranchId = nil
+            selectedPositionId = nil
         } catch {
             preview = nil
             selectedBranchId = nil
@@ -53,24 +53,14 @@ final class CompanyInviteViewModel: ObservableObject {
             return
         }
 
-        guard let branchId = selectedBranchId else {
-            errorMessage = localized("Please select a branch.", "Выберите филиал.")
-            return
-        }
-
-        guard let positionId = selectedPositionId else {
-            errorMessage = localized("Please select a position.", "Выберите должность.")
-            return
-        }
-
         isLoading = true
         errorMessage = nil
 
         do {
             joinedUser = try await repository.joinCompany(
                 inviteCode: code,
-                branchId: branchId,
-                positionId: positionId
+                branchId: selectedBranchId,
+                positionId: selectedPositionId
             )
         } catch {
             errorMessage = error.localizedDescription

@@ -4,6 +4,11 @@ struct CompanyCreateRequest: Codable {
     let name: String
 }
 
+struct CompanyUpdateRequest: Codable {
+    let name: String?
+    let address: String?
+}
+
 struct CompanyBranchCreateRequest: Codable {
     let name: String
 }
@@ -11,11 +16,13 @@ struct CompanyBranchCreateRequest: Codable {
 struct CompanyResponse: Codable {
     let id: Int
     let name: String
+    let address: String?
     let inviteCode: String
 
     enum CodingKeys: String, CodingKey {
         case id
         case name
+        case address
         case inviteCode = "invite_code"
     }
 }
@@ -72,7 +79,7 @@ struct CompanyJoinRequest: Codable {
 
 extension CompanyResponse {
     func asAppCompany() -> AppCompany {
-        AppCompany(id: id, name: name, inviteCode: inviteCode, branches: [])
+        AppCompany(id: id, name: name, address: address, inviteCode: inviteCode, branches: [])
     }
 }
 

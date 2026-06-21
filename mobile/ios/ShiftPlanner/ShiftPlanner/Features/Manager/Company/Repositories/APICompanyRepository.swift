@@ -19,6 +19,23 @@ final class APICompanyRepository: CompanyRepository {
         return response.asAppCompany()
     }
 
+    func updateMyCompany(name: String?, address: String?) async throws -> AppCompany {
+        let body = try JSONEncoder().encode(
+            CompanyUpdateRequest(
+                name: name,
+                address: address
+            )
+        )
+        let request = apiClient.makeRequest(
+            path: "companies/me",
+            method: "PATCH",
+            body: body,
+            requiresAuthorization: true
+        )
+        let response = try await apiClient.send(request, as: CompanyResponse.self)
+        return response.asAppCompany()
+    }
+
     func fetchBranches(companyId: Int) async throws -> [AppBranchOption] {
         let request = apiClient.makeRequest(
             path: "companies/\(companyId)/branches",
@@ -51,7 +68,7 @@ final class APICompanyRepository: CompanyRepository {
         return response.asAppCompanyInvitePreview()
     }
 
-    func joinCompany(inviteCode: String, branchId: Int, positionId: Int) async throws -> AppUser {
+    func joinCompany(inviteCode: String, branchId: Int?, positionId: Int?) async throws -> AppUser {
         let body = try JSONEncoder().encode(
             CompanyJoinRequest(
                 inviteCode: inviteCode,

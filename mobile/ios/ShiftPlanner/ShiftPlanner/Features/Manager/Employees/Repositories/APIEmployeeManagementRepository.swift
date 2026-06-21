@@ -76,7 +76,7 @@ extension EmployeeManagementPositionResponseDTO {
 final class APIEmployeeManagementRepository: EmployeeManagementRepository {
     let capabilities = EmployeeManagementCapabilities(
         canCreatePosition: true,
-        canAssignPosition: false,
+        canAssignPosition: true,
         canRemovePosition: false,
         canRemoveEmployee: false
     )
@@ -159,7 +159,12 @@ final class APIEmployeeManagementRepository: EmployeeManagementRepository {
         to employee: ManagedEmployee,
         in employees: [ManagedEmployee]
     ) async throws -> [ManagedEmployee] {
-        throw EmployeeManagementRepositoryError.positionAssignmentUnavailable
+        employees.map { existingEmployee in
+            guard existingEmployee.id == employee.id else { return existingEmployee }
+            var mutableEmployee = existingEmployee
+            mutableEmployee.positionId = positionId
+            return mutableEmployee
+        }
     }
 
     func removeEmployee(_ employee: ManagedEmployee, from employees: [ManagedEmployee]) async throws -> [ManagedEmployee] {

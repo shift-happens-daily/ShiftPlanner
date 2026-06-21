@@ -54,7 +54,15 @@ final class CompanySetupViewModel: ObservableObject {
         errorMessage = nil
 
         do {
-            let company = try await repository.createCompany(name: trimmedName)
+            let normalizedAddress = companyAddress.trimmingCharacters(in: .whitespacesAndNewlines)
+            var company = try await repository.createCompany(name: trimmedName)
+
+            if !normalizedAddress.isEmpty {
+                company = try await repository.updateMyCompany(
+                    name: trimmedName,
+                    address: normalizedAddress
+                )
+            }
 
             if hasBranches {
                 var createdBranches: [AppBranchOption] = []

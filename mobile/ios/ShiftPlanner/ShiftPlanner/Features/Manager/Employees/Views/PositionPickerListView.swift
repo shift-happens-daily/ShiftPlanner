@@ -28,92 +28,61 @@ struct PositionPickerListView: View {
                 }
                 .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
 
-            ScrollView(showsIndicators: false) {
-                VStack(alignment: .leading, spacing: 4) {
-                    if normalizedSearchText.isEmpty {
+            VStack(alignment: .leading, spacing: 4) {
+                if normalizedSearchText.isEmpty {
+                    pickerRow(
+                        title: languageManager.text("No role", "Без должности"),
+                        subtitle: currentPositionTitle == localized("No role assigned", "Без должности")
+                            ? languageManager.text("Currently selected", "Выбрано сейчас")
+                            : nil
+                    ) {
+                        if canAssignPosition {
+                            onAssignPosition(nil)
+                        }
+                    }
+
+                    ForEach(positions) { position in
                         pickerRow(
-                            title: languageManager.text("No role", "Без должности"),
-                            subtitle: currentPositionTitle == localized("No role assigned", "Без должности")
+                            title: position.title,
+                            subtitle: position.title == currentPositionTitle
                                 ? languageManager.text("Currently selected", "Выбрано сейчас")
-                                : nil
+                                : nil,
+                            trailingAction: canDeletePosition ? {
+                                onDeletePosition(position)
+                            } : nil
                         ) {
                             if canAssignPosition {
-                                onAssignPosition(nil)
+                                onAssignPosition(position.id)
                             }
                         }
+                    }
+                } else {
+                    ForEach(matchingPositions) { position in
+                        pickerRow(
+                            title: position.title,
+                            subtitle: position.title == currentPositionTitle
+                                ? languageManager.text("Currently selected", "Выбрано сейчас")
+                                : nil,
+                            trailingAction: canDeletePosition ? {
+                                onDeletePosition(position)
+                            } : nil
+                        ) {
+                            if canAssignPosition {
+                                onAssignPosition(position.id)
+                            }
+                        }
+                    }
 
-                        ForEach(positions) { position in
-                            pickerRow(
-                                title: position.title,
-                                subtitle: position.title == currentPositionTitle
-                                    ? languageManager.text("Currently selected", "Выбрано сейчас")
-                                    : nil,
-                                trailingAction: canDeletePosition ? {
-                                    onDeletePosition(position)
-                                } : nil
-                            ) {
-                                if canAssignPosition {
-                                    onAssignPosition(position.id)
-                                }
-                            }
-                        }
-                    } else {
-                        ForEach(matchingPositions) { position in
-                            pickerRow(
-                                title: position.title,
-                                subtitle: position.title == currentPositionTitle
-                                    ? languageManager.text("Currently selected", "Выбрано сейчас")
-                                    : nil,
-                                trailingAction: canDeletePosition ? {
-                                    onDeletePosition(position)
-                                } : nil
-                            ) {
-                                if canAssignPosition {
-                                    onAssignPosition(position.id)
-                                }
-                            }
-                        }
-
-                        if shouldShowCreate {
-                            Button {
-                                onCreatePosition(normalizedSearchText)
-                            } label: {
-                                HStack(spacing: 10) {
-                                    Text(languageManager.text("Create", "Создать"))
-                                        .fontWeight(.semibold)
-                                    Text(normalizedSearchText)
-                                        .padding(.horizontal, 10)
-                                        .padding(.vertical, 4)
-                                        .background(themeManager.selectedTheme.cardTint)
-                                        .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
-                                    Spacer()
-                                }
-                                .padding(.horizontal, 16)
-                                .padding(.vertical, 14)
-                                .frame(maxWidth: .infinity, alignment: .leading)
-                                .background(themeManager.selectedTheme.elevatedSurfaceColor)
-                                .overlay {
-                                    RoundedRectangle(cornerRadius: 16, style: .continuous)
-                                        .stroke(themeManager.selectedTheme.borderColor, lineWidth: 1)
-                                }
-                                .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
-                            }
-                            .buttonStyle(.plain)
-                            .foregroundStyle(themeManager.selectedTheme.primaryTextColor)
-                        }
+                    if shouldShowCreate {
+                        createRow
                     }
                 }
             }
-            .frame(maxHeight: 220)
+
+            Spacer(minLength: 0)
         }
         .padding(10)
-        .background(themeManager.selectedTheme.elevatedSurfaceColor)
-        .overlay {
-            RoundedRectangle(cornerRadius: 14, style: .continuous)
-                .stroke(themeManager.selectedTheme.borderColor, lineWidth: 1)
-        }
-        .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
-        .shadow(color: Color.black.opacity(0.04), radius: 6, x: 0, y: 2)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
     }
 
     private var normalizedSearchText: String {
@@ -130,6 +99,34 @@ struct PositionPickerListView: View {
         positions.contains(where: { $0.title.caseInsensitiveCompare(normalizedSearchText) == .orderedSame }) == false
     }
 
+    private var createRow: some View {
+        Button {
+            onCreatePosition(normalizedSearchText)
+        } label: {
+            HStack(spacing: 10) {
+                Text(languageManager.text("Create", "Создать"))
+                    .fontWeight(.semibold)
+                Text(normalizedSearchText)
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 4)
+                    .background(themeManager.selectedTheme.cardTint)
+                    .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+                Spacer()
+            }
+            .padding(.horizontal, 16)
+            .padding(.vertical, 14)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(themeManager.selectedTheme.elevatedSurfaceColor)
+            .overlay {
+                RoundedRectangle(cornerRadius: 16, style: .continuous)
+                    .stroke(themeManager.selectedTheme.borderColor, lineWidth: 1)
+            }
+            .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+        }
+        .buttonStyle(.plain)
+        .foregroundStyle(themeManager.selectedTheme.primaryTextColor)
+    }
+
     private func pickerRow(
         title: String,
         subtitle: String?,
@@ -137,22 +134,18 @@ struct PositionPickerListView: View {
         onTap: @escaping () -> Void
     ) -> some View {
         HStack(spacing: 10) {
-            Button(action: onTap) {
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(title)
-                        .font(.headline)
-                        .foregroundStyle(themeManager.selectedTheme.primaryTextColor)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(title)
+                    .font(.headline)
+                    .foregroundStyle(themeManager.selectedTheme.primaryTextColor)
 
-                    if let subtitle {
-                        Text(subtitle)
-                            .font(.caption)
-                            .foregroundStyle(themeManager.selectedTheme.secondaryTextColor)
-                    }
+                if let subtitle {
+                    Text(subtitle)
+                        .font(.caption)
+                        .foregroundStyle(themeManager.selectedTheme.secondaryTextColor)
                 }
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .contentShape(Rectangle())
             }
-            .buttonStyle(.plain)
+            .frame(maxWidth: .infinity, alignment: .leading)
 
             if let trailingAction {
                 Button(action: trailingAction) {
@@ -169,6 +162,10 @@ struct PositionPickerListView: View {
         .padding(.horizontal, 16)
         .padding(.vertical, 14)
         .frame(maxWidth: .infinity, alignment: .leading)
+        .contentShape(Rectangle())
+        .onTapGesture {
+            onTap()
+        }
         .background(themeManager.selectedTheme.elevatedSurfaceColor)
         .overlay {
             RoundedRectangle(cornerRadius: 16, style: .continuous)

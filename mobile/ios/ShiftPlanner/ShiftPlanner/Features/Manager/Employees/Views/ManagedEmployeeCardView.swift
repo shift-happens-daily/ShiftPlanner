@@ -26,7 +26,7 @@ struct ManagedEmployeeCardView: View {
             }
             .frame(maxWidth: .infinity, alignment: .leading)
 
-            HStack(spacing: 10) {
+            VStack(alignment: .trailing, spacing: 10) {
                 Button {
                     onToggleRolePicker()
                 } label: {
@@ -40,7 +40,7 @@ struct ManagedEmployeeCardView: View {
                         Image(systemName: isPickerExpanded ? "chevron.up" : "chevron.down")
                             .font(.caption)
                     }
-                    .frame(maxWidth: 140, alignment: .leading)
+                    .frame(maxWidth: 156, alignment: .leading)
                     .padding(.horizontal, 10)
                     .padding(.vertical, 9)
                     .background(themeManager.selectedTheme.cardTint)
@@ -52,7 +52,7 @@ struct ManagedEmployeeCardView: View {
                 }
                 .buttonStyle(.plain)
                 .foregroundStyle(themeManager.selectedTheme.primaryTextColor)
-                .fixedSize(horizontal: false, vertical: true)
+                .fixedSize()
 
                 if canDeleteEmployee {
                     Button {
