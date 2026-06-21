@@ -185,54 +185,9 @@ export default function ReportsTab({ language, userRole }) {
     [employeeReport]
   );
 
-  const demoManagerReport = useMemo(() => {
-    if (!isManager) return [];
-
-    return [
-      {
-        employee_id: 'demo-1',
-        full_name: language === 'ru' ? 'Иван Иванов' : 'John Doe',
-        position: language === 'ru' ? 'Супервайзер' : 'Supervisor',
-        branch: language === 'ru' ? 'Центральный' : 'Head Office',
-        total_hours: 138,
-        total_shifts: 16,
-        hourly_rate: 32,
-        total_salary: 4416,
-      },
-      {
-        employee_id: 'demo-2',
-        full_name: language === 'ru' ? 'Анна Смирнова' : 'Anna Smith',
-        position: language === 'ru' ? 'Кассир' : 'Cashier',
-        branch: language === 'ru' ? 'Западный' : 'West Branch',
-        total_hours: 121,
-        total_shifts: 14,
-        hourly_rate: 28,
-        total_salary: 3388,
-      },
-      {
-        employee_id: 'demo-3',
-        full_name: language === 'ru' ? 'Олег Петров' : 'Oleg Petrov',
-        position: language === 'ru' ? 'Курьер' : 'Courier',
-        branch: language === 'ru' ? 'Северный' : 'North Branch',
-        total_hours: 104,
-        total_shifts: 12,
-        hourly_rate: 25,
-        total_salary: 2600,
-      },
-    ];
-  }, [isManager, language]);
-
-  const displayManagerReport = useMemo(() => {
-    if (!isManager) return [];
-    if (filteredManagerReport.length > 0) return filteredManagerReport;
-    return demoManagerReport;
-  }, [isManager, filteredManagerReport, demoManagerReport]);
-
-  const showDemoReport = isManager && filteredManagerReport.length === 0 && !isLoading && !errorMessage;
-
   const totals = useMemo(() => {
     if (isManager) {
-      return displayManagerReport.reduce(
+      return filteredManagerReport.reduce(
         (acc, item) => ({
           total_hours: acc.total_hours + item.total_hours,
           total_shifts: acc.total_shifts + item.total_shifts,
@@ -328,7 +283,7 @@ export default function ReportsTab({ language, userRole }) {
 
   const exportToExcel = () => {
     const rows = isManager
-      ? displayManagerReport.map((item) => {
+      ? filteredManagerReport.map((item) => {
           const baseRow = {
             [t.employee]: item.full_name,
             [t.position]: item.position || t.unknownPosition,
@@ -411,7 +366,7 @@ export default function ReportsTab({ language, userRole }) {
     );
   }
 
-  const hasManagerRows = normalizedManagerReport.length > 0 || showDemoReport;
+  const hasManagerRows = filteredManagerReport.length > 0;
   const hasEmployeeReport = Boolean(normalizedEmployeeReport);
 
   return (
@@ -542,7 +497,7 @@ export default function ReportsTab({ language, userRole }) {
                   </div>
 
                   <div style={styles.tableBody}>
-                    {displayManagerReport.map((item) => (
+                    {filteredManagerReport.map((item) => (
                       <div key={item.employee_id} style={styles.tableRow}>
                         <strong style={styles.employeeName}>{item.full_name}</strong>
                         <span style={styles.tableCell}>{item.position || t.unknownPosition}</span>
