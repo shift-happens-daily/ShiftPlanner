@@ -92,7 +92,7 @@ export default function CompanyTab({ language, userRole, user }) {
     ru: {
       title: 'Компания',
       currentCompany: 'Текущая компания',
-      company: 'Компания',
+      company: '',
       branch: 'Филиал',
       branches: 'Филиалы',
       position: 'Позиция',
@@ -131,7 +131,7 @@ export default function CompanyTab({ language, userRole, user }) {
       noBranches: 'В компании пока нет филиалов.',
       noPositions: 'В компании пока нет позиций. Менеджеру нужно создать позицию во вкладке «Сотрудники».',
       createBranch: 'Создать филиал',
-      branchName: 'Название филиала',
+      branchName: '',
       branchPlaceholder: 'Например: Main Branch',
       branchCreated: 'Филиал создан.',
       createBranchError: 'Не удалось создать филиал.',
@@ -139,7 +139,7 @@ export default function CompanyTab({ language, userRole, user }) {
       branchRequired: 'Введите название филиала.',
       noBranchSelected: 'Без филиала',
       noPositionSelected: 'Без позиции',
-      positionsHint: 'Позиции создаются во вкладке «Сотрудники».',
+      positionsHint: '',
       employeeHint: 'После присоединения вкладки расписания и отчетов станут доступны.',
       managerHint: 'Скопируйте инвайт-код и отправьте его сотрудникам.',
       inviteFound: 'Инвайт-код найден.',
@@ -148,7 +148,7 @@ export default function CompanyTab({ language, userRole, user }) {
     en: {
       title: 'Company',
       currentCompany: 'Current company',
-      company: 'Company',
+      company: '',
       branch: 'Branch',
       branches: 'Branches',
       position: 'Position',
@@ -187,7 +187,7 @@ export default function CompanyTab({ language, userRole, user }) {
       noBranches: 'This company has no branches yet.',
       noPositions: 'This company has no positions yet. A manager needs to create a position in the Employees tab.',
       createBranch: 'Create branch',
-      branchName: 'Branch name',
+      branchName: '',
       branchPlaceholder: 'Example: Main Branch',
       branchCreated: 'Branch created.',
       createBranchError: 'Failed to create branch.',
@@ -195,7 +195,7 @@ export default function CompanyTab({ language, userRole, user }) {
       branchRequired: 'Enter branch name.',
       noBranchSelected: 'No branch selected',
       noPositionSelected: 'No position selected',
-      positionsHint: 'Positions are created in the Employees tab.',
+      positionsHint: '',
       employeeHint: 'After joining, schedule and reports tabs become available.',
       managerHint: 'Copy the invite code and send it to employees.',
       inviteFound: 'Invite found.',
@@ -382,9 +382,7 @@ export default function CompanyTab({ language, userRole, user }) {
           <div style={styles.card}>
           <div style={styles.cardHeader}>
             <h2 style={styles.title}>{t.title}</h2>
-            <span style={styles.rolePill}>{isManager ? 'Manager' : 'Employee'}</span>
           </div>
-
           {errorMessage && <div style={styles.error}>{errorMessage}</div>}
           {successMessage && <div style={styles.success}>{successMessage}</div>}
 
@@ -620,9 +618,8 @@ const styles = {
     borderRadius: '30px',
     background: '#f4faff',
     border: '1px solid rgba(222, 231, 231, 0.95)',
-    boxShadow: '0 22px 58px rgba(0, 38, 66, 0.18)',
+    boxShadow: 'none',
   },
-
   grid: {
     width: '100%',
     display: 'grid',
@@ -639,12 +636,11 @@ const styles = {
     borderRadius: '30px',
     background: '#ffffff',
     border: '1px solid rgba(226, 232, 240, 0.9)',
-    boxShadow: '0 22px 50px rgba(15, 23, 42, 0.08)',
+    boxShadow: 'none',
     display: 'flex',
     flexDirection: 'column',
     gap: '20px',
   },
-
   cardHeader: {
     display: 'flex',
     justifyContent: 'space-between',

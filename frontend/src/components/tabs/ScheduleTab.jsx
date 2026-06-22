@@ -737,13 +737,7 @@ export default function ScheduleTab({ language, userRole }) {
           <main style={styles.employeeArea}>
             <section style={styles.panel}>
               <div style={styles.panelHeader}>
-                <div>
-                  <h3 style={styles.panelTitle}>{t.titleEmployee}</h3>
-                  <p style={styles.panelHint}>{t.subtitleEmployee}</p>
-                </div>
-
-                <div style={styles.modeSegment}>
-                  {['day', 'week', 'month'].map((mode) => (
+                <div style={styles.modeSegment}>                  {['day', 'week', 'month'].map((mode) => (
                     <button
                       key={mode}
                       type="button"
@@ -864,13 +858,12 @@ const styles = {
     borderRadius: '30px',
     background: '#ffffff',
     border: '1px solid rgba(222, 231, 231, 0.95)',
-    boxShadow: '0 22px 58px rgba(0, 38, 66, 0.18)',
+    boxShadow: 'none',
     display: 'flex',
     flexDirection: 'column',
     overflow: 'hidden',
     position: 'relative',
-  },
-  header: {
+  },  header: {
     flexShrink: 0,
     display: 'flex',
     justifyContent: 'space-between',

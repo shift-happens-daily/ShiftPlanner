@@ -1563,13 +1563,12 @@ const styles = {
     borderRadius: '30px',
     background: '#f4faff',
     border: '1px solid rgba(222, 231, 231, 0.95)',
-    boxShadow: '0 22px 58px rgba(0, 38, 66, 0.18)',
+    boxShadow: 'none',
     display: 'flex',
     flexDirection: 'column',
     overflow: 'hidden',
     position: 'relative',
   },
-
   header: {
     flexShrink: 0,
     marginBottom: '18px',

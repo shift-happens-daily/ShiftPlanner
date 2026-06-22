@@ -232,9 +232,8 @@ const styles = {
   tabActive: {
     background: '#f4faff',
     color: '#002642',
-    boxShadow: '0 8px 22px rgba(0, 38, 66, 0.12)',
+    boxShadow: 'none',
   },
-
   headerRight: {
     display: 'flex',
     alignItems: 'center',
@@ -259,9 +258,8 @@ const styles = {
 
   profileButtonActive: {
     background: '#ffffff',
-    boxShadow: '0 8px 22px rgba(0, 38, 66, 0.12)',
+    boxShadow: 'none',
   },
-
   avatar: {
     flexShrink: 0,
     width: '40px',

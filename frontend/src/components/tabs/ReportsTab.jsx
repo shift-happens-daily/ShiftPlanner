@@ -419,17 +419,27 @@ export default function ReportsTab({ language, userRole }) {
                 </Field>
 
                 <Field label={t.reportType}>
-                  <select
-                    value={reportMode}
-                    onChange={(event) => setReportMode(event.target.value)}
-                    style={styles.select}
-                  >
-                    <option value="hours">{t.hoursReport}</option>
-                    <option value="shifts">{t.shiftsReport}</option>
-                    <option value="salary">{t.salaryReport}</option>
-                  </select>
+                  <div style={styles.modeSegment}>
+                    {[ 
+                      { id: 'hours', label: t.hoursReport },
+                      { id: 'shifts', label: t.shiftsReport },
+                      { id: 'salary', label: t.salaryReport }
+                    ].map((mode) => (
+                      <button
+                        key={mode.id}
+                        type="button"
+                        onClick={() => setReportMode(mode.id)}
+                        style={
+                          reportMode === mode.id
+                            ? { ...styles.modeButton, ...styles.modeButtonActive }
+                            : styles.modeButton
+                        }
+                      >
+                        {mode.label}
+                      </button>
+                    ))}
+                  </div>
                 </Field>
-
                 <Field label={t.employee}>
                   <input
                     type="text"
@@ -704,7 +714,32 @@ const styles = {
     outline: 'none',
   },
 
-  primaryButton: {
+  modeSegment: {
+    display: 'flex',
+    borderRadius: '14px',
+    background: '#eceff4',
+    padding: '4px',
+    gap: '4px',
+  },
+
+  modeButton: {
+    flex: 1,
+    border: 'none',
+    borderRadius: '11px',
+    background: 'transparent',
+    color: '#4f646f',
+    padding: '8px 4px',
+    fontSize: '12px',
+    fontWeight: '750',
+    cursor: 'pointer',
+    transition: 'all 0.2s ease',
+  },
+
+  modeButtonActive: {
+    background: '#ffffff',
+    color: '#002642',
+    boxShadow: 'none',
+  },  primaryButton: {
     height: '42px',
     padding: '0 18px',
     background: '#002642',
