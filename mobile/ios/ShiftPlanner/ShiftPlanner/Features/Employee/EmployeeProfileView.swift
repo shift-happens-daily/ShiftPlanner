@@ -3,8 +3,13 @@ import SwiftUI
 struct EmployeeProfileView: View {
     @EnvironmentObject private var themeManager: ThemeManager
     @EnvironmentObject private var languageManager: LanguageManager
-    let user: AppUser
+    @StateObject private var viewModel: EmployeeProfileViewModel
     let onLogout: () async -> Void
+
+    init(user: AppUser, onLogout: @escaping () async -> Void) {
+        _viewModel = StateObject(wrappedValue: EmployeeProfileViewModel(user: user))
+        self.onLogout = onLogout
+    }
 
     var body: some View {
         NavigationStack {
@@ -15,15 +20,15 @@ struct EmployeeProfileView: View {
                             .font(.system(size: 72))
                             .foregroundStyle(themeManager.selectedTheme.accentColor)
 
-                        Text(user.name)
+                        Text(viewModel.user.name)
                             .font(.title2)
                             .bold()
                             .foregroundStyle(themeManager.selectedTheme.primaryTextColor)
 
-                        Text(user.email)
+                        Text(viewModel.user.email)
                             .foregroundStyle(themeManager.selectedTheme.secondaryTextColor)
 
-                        Text(user.role.title)
+                        Text(viewModel.user.role.title)
                             .font(.subheadline)
                             .padding(.horizontal, 12)
                             .padding(.vertical, 6)
@@ -32,6 +37,45 @@ struct EmployeeProfileView: View {
                     }
                     .frame(maxWidth: .infinity)
                     .padding(24)
+                    .themeCard()
+
+                    VStack(alignment: .leading, spacing: 16) {
+                        Text(languageManager.text("Work Profile", "Рабочий профиль"))
+                            .font(.title3)
+                            .fontWeight(.bold)
+                            .foregroundStyle(themeManager.selectedTheme.primaryTextColor)
+
+                        profileInfoRow(
+                            title: languageManager.text("Company", "Компания"),
+                            value: viewModel.companyName ?? languageManager.text("Not joined yet", "Пока не присоединились")
+                        )
+
+                        if let companyAddress = viewModel.companyAddress {
+                            profileInfoRow(
+                                title: languageManager.text("Company address", "Адрес компании"),
+                                value: companyAddress
+                            )
+                        }
+
+                        profileInfoRow(
+                            title: languageManager.text("Branch", "Филиал"),
+                            value: viewModel.branchName ?? languageManager.text("Not assigned yet", "Пока не назначен")
+                        )
+
+                        if let branchAddress = viewModel.branchAddress {
+                            profileInfoRow(
+                                title: languageManager.text("Branch address", "Адрес филиала"),
+                                value: branchAddress
+                            )
+                        }
+
+                        profileInfoRow(
+                            title: languageManager.text("Position", "Должность"),
+                            value: viewModel.positionName ?? languageManager.text("Not assigned yet", "Пока не назначена")
+                        )
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(20)
                     .themeCard()
 
                     VStack(alignment: .leading, spacing: 16) {
@@ -112,6 +156,19 @@ struct EmployeeProfileView: View {
             .background(themeManager.selectedTheme.screenBackground.ignoresSafeArea())
             .navigationTitle(languageManager.text("Profile", "Профиль"))
             .navigationBarTitleDisplayMode(.inline)
+        }
+    }
+
+    @ViewBuilder
+    private func profileInfoRow(title: String, value: String) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text(title)
+                .font(.subheadline)
+                .foregroundStyle(themeManager.selectedTheme.secondaryTextColor)
+
+            Text(value)
+                .font(.body)
+                .foregroundStyle(themeManager.selectedTheme.primaryTextColor)
         }
     }
 }
