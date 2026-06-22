@@ -61,6 +61,13 @@ struct AvailabilityView: View {
                     .buttonStyle(.plain)
                     .disabled(!viewModel.canSave)
 
+                    if let backendSyncNote = viewModel.backendSyncNote {
+                        Text(backendSyncNote)
+                            .font(.footnote)
+                            .foregroundStyle(themeManager.selectedTheme.secondaryTextColor)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                    }
+
                     if let statusMessage = viewModel.statusMessage {
                         Text(statusMessage)
                             .font(.footnote)
