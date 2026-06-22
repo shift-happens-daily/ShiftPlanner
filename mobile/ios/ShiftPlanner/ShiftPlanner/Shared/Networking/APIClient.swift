@@ -2,6 +2,32 @@ import Foundation
 
 final class APIClient {
     static let shared = APIClient()
+    private static let iso8601FormatterWithFractionalSeconds: ISO8601DateFormatter = {
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        return formatter
+    }()
+    private static let iso8601Formatter: ISO8601DateFormatter = {
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime]
+        return formatter
+    }()
+    private static let backendDateFormatterWithFractionalSeconds: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.calendar = Calendar(identifier: .iso8601)
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.timeZone = TimeZone(secondsFromGMT: 0)
+        formatter.dateFormat = "yyyy-MM-dd'T'HH:mm:ss.SSSSSS"
+        return formatter
+    }()
+    private static let backendDateFormatter: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.calendar = Calendar(identifier: .iso8601)
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.timeZone = TimeZone(secondsFromGMT: 0)
+        formatter.dateFormat = "yyyy-MM-dd'T'HH:mm:ss"
+        return formatter
+    }()
 
     private init() {}
 
@@ -57,7 +83,7 @@ final class APIClient {
         }
 
         do {
-            return try JSONDecoder().decode(type, from: data)
+            return try Self.makeJSONDecoder().decode(type, from: data)
         } catch {
             throw APIClientError.decodingFailed
         }
@@ -151,6 +177,28 @@ final class APIClient {
         #else
         return "http://10.91.61.1:8000"
         #endif
+    }
+
+    private static func makeJSONDecoder() -> JSONDecoder {
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .custom { decoder in
+            let container = try decoder.singleValueContainer()
+            let value = try container.decode(String.self)
+
+            if let date =
+                iso8601FormatterWithFractionalSeconds.date(from: value) ??
+                iso8601Formatter.date(from: value) ??
+                backendDateFormatterWithFractionalSeconds.date(from: value) ??
+                backendDateFormatter.date(from: value) {
+                return date
+            }
+
+            throw DecodingError.dataCorruptedError(
+                in: container,
+                debugDescription: "Invalid ISO8601 date: \(value)"
+            )
+        }
+        return decoder
     }
 
     private func humanReadableValidationMessage(from error: APIValidationErrorItem) -> String {

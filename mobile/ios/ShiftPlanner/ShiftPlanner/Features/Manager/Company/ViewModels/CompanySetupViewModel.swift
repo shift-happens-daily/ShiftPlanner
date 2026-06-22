@@ -67,10 +67,15 @@ final class CompanySetupViewModel: ObservableObject {
             if hasBranches {
                 var createdBranches: [AppBranchOption] = []
 
-                for branchName in normalizedBranchNames {
+                for branch in branches {
+                    let branchName = branch.name.trimmingCharacters(in: .whitespacesAndNewlines)
+                    let branchAddress = branch.address.trimmingCharacters(in: .whitespacesAndNewlines)
+
+                    guard !branchName.isEmpty else { continue }
+
                     let createdBranch = try await repository.createBranch(
-                        companyId: company.id,
-                        name: branchName
+                        name: branchName,
+                        address: branchAddress.isEmpty ? nil : branchAddress
                     )
                     createdBranches.append(createdBranch)
                 }

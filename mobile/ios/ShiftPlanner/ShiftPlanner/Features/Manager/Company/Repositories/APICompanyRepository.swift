@@ -19,6 +19,16 @@ final class APICompanyRepository: CompanyRepository {
         return response.asAppCompany()
     }
 
+    func fetchMyCompany() async throws -> AppCompany {
+        let request = apiClient.makeRequest(
+            path: "companies/me",
+            method: "GET",
+            requiresAuthorization: true
+        )
+        let response = try await apiClient.send(request, as: CompanyResponse.self)
+        return response.asAppCompany()
+    }
+
     func updateMyCompany(name: String?, address: String?) async throws -> AppCompany {
         let body = try JSONEncoder().encode(
             CompanyUpdateRequest(
@@ -36,9 +46,19 @@ final class APICompanyRepository: CompanyRepository {
         return response.asAppCompany()
     }
 
-    func fetchBranches(companyId: Int) async throws -> [AppBranchOption] {
+    func regenerateInviteCode() async throws -> AppCompany {
         let request = apiClient.makeRequest(
-            path: "companies/\(companyId)/branches",
+            path: "companies/me/invite-code/regenerate",
+            method: "POST",
+            requiresAuthorization: true
+        )
+        let response = try await apiClient.send(request, as: CompanyResponse.self)
+        return response.asAppCompany()
+    }
+
+    func fetchBranches() async throws -> [AppBranchOption] {
+        let request = apiClient.makeRequest(
+            path: "companies/branches",
             method: "GET",
             requiresAuthorization: true
         )
@@ -46,16 +66,47 @@ final class APICompanyRepository: CompanyRepository {
         return response.map { $0.asAppBranchOption() }
     }
 
-    func createBranch(companyId: Int, name: String) async throws -> AppBranchOption {
-        let body = try JSONEncoder().encode(CompanyBranchCreateRequest(name: name))
+    func createBranch(name: String, address: String?) async throws -> AppBranchOption {
+        let body = try JSONEncoder().encode(
+            CompanyBranchCreateRequest(
+                name: name,
+                address: address
+            )
+        )
         let request = apiClient.makeRequest(
-            path: "companies/\(companyId)/branches",
+            path: "companies/branches",
             method: "POST",
             body: body,
             requiresAuthorization: true
         )
         let response = try await apiClient.send(request, as: CompanyBranchResponse.self)
         return response.asAppBranchOption()
+    }
+
+    func updateBranch(branchId: Int, name: String?, address: String?) async throws -> AppBranchOption {
+        let body = try JSONEncoder().encode(
+            CompanyBranchUpdateRequest(
+                name: name,
+                address: address
+            )
+        )
+        let request = apiClient.makeRequest(
+            path: "companies/branches/\(branchId)",
+            method: "PATCH",
+            body: body,
+            requiresAuthorization: true
+        )
+        let response = try await apiClient.send(request, as: CompanyBranchResponse.self)
+        return response.asAppBranchOption()
+    }
+
+    func deleteBranch(branchId: Int) async throws {
+        let request = apiClient.makeRequest(
+            path: "companies/branches/\(branchId)",
+            method: "DELETE",
+            requiresAuthorization: true
+        )
+        try await apiClient.sendWithoutResponseBody(request)
     }
 
     func previewInvite(code: String) async throws -> AppCompanyInvitePreview {

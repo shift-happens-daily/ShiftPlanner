@@ -87,18 +87,23 @@ struct CurrentUserCompanyResponse: Codable {
     let name: String
     let address: String?
     let inviteCode: String
+    let inviteCodeGeneratedAt: Date?
+    let inviteCodeExpiresAt: Date?
 
     enum CodingKeys: String, CodingKey {
         case id
         case name
         case address
         case inviteCode = "invite_code"
+        case inviteCodeGeneratedAt = "invite_code_generated_at"
+        case inviteCodeExpiresAt = "invite_code_expires_at"
     }
 }
 
 struct CurrentUserBranchResponse: Codable {
     let id: Int
     let name: String
+    let address: String?
 }
 
 struct CurrentUserPositionResponse: Codable {
@@ -120,11 +125,13 @@ extension CurrentUserResponse {
                     name: $0.name,
                     address: $0.address,
                     inviteCode: $0.inviteCode,
+                    inviteCodeGeneratedAt: $0.inviteCodeGeneratedAt,
+                    inviteCodeExpiresAt: $0.inviteCodeExpiresAt,
                     branches: []
                 )
             },
             branch: branch.map {
-                AppBranchOption(id: $0.id, name: $0.name)
+                AppBranchOption(id: $0.id, name: $0.name, address: $0.address)
             },
             position: position.map {
                 AppPositionOption(id: $0.id, name: $0.name)
