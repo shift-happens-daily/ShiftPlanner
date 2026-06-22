@@ -242,7 +242,6 @@ final class AvailabilityViewModel: ObservableObject {
             _ = try await repository.saveAvailability(employeeId: employeeId, payload: payload)
             weekStorage[currentWeekStart] = weeklyStates
             localStore.saveWeeks(weekStorage, employeeId: employeeId)
-            remoteTemplateStates = applyServerCompatibleStates(from: weeklyStates)
             statusMessage = localized(
                 "Availability saved. 'Prefer not' stays only on this device until the backend supports it.",
                 "Доступность сохранена. 'Нежелательно' пока хранится только на этом устройстве, пока бэкенд это не поддерживает."
@@ -266,10 +265,15 @@ final class AvailabilityViewModel: ObservableObject {
     }
 
     func resetWeek() {
-        weeklyStates = remoteTemplateStates
+        weeklyStates = Self.makeDefaultWeek(slotCount: timeSlots.count)
         weekStorage[currentWeekStart] = weeklyStates
         lastPaintedCell = nil
         persistLocallyIfPossible()
+        statusMessage = localized(
+            "This week was cleared locally. Tap Save to overwrite the shared weekly availability on the backend.",
+            "Эта неделя очищена локально. Нажмите Сохранить, чтобы перезаписать общее недельное расписание на бэкенде."
+        )
+        errorMessage = nil
     }
 
     private func moveWeek(by dayOffset: Int) {

@@ -24,7 +24,9 @@ struct EmployeeMainView: View {
                     Label(languageManager.text("Availability", "Доступность"), systemImage: "clock.badge.checkmark")
                 }
             
-            EmployeeScheduleView()
+            EmployeeScheduleView(user: user) {
+                isShowingInviteSheet = true
+            }
                 .tabItem {
                     Label(languageManager.text("Schedule", "График"), systemImage: "calendar")
                 }
