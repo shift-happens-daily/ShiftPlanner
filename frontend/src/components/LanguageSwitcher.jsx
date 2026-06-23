@@ -1,16 +1,13 @@
 // frontend/src/components/LanguageSwitcher.jsx
-import { useState, useEffect } from 'react';
+import { useEffect, useState } from 'react';
+import { getStoredLanguage } from '../services/language';
 
 export default function LanguageSwitcher({ onLanguageChange, variant = 'light' }) {
-  const [language, setLanguage] = useState('ru');
+  const [language, setLanguage] = useState(getStoredLanguage);
 
   useEffect(() => {
-    const savedLang = localStorage.getItem('language');
-    if (savedLang) {
-      setLanguage(savedLang);
-      if (onLanguageChange) onLanguageChange(savedLang);
-    }
-  }, []);
+    if (onLanguageChange) onLanguageChange(language);
+  }, [language, onLanguageChange]);
 
   const toggleLanguage = () => {
     const newLang = language === 'ru' ? 'en' : 'ru';
@@ -23,38 +20,40 @@ export default function LanguageSwitcher({ onLanguageChange, variant = 'light' }
   const styles = {
     light: {
       langBtn: {
-        background: '#DEE7E7',
-        border: '1px solid #B7ADCF',
+        background: '#F4FAFF',
+        border: '2px solid #002642',
         padding: '8px 16px',
         borderRadius: '20px',
         color: '#002642',
         fontSize: '14px',
-        fontWeight: '500',
+        fontWeight: '700',
         cursor: 'pointer',
-        transition: 'all 0.3s ease'
-      }
+        transition: 'all 0.2s ease',
+        boxShadow: '0 2px 8px rgba(0, 38, 66, 0.08)',
+      },
     },
     dark: {
       langBtn: {
         background: 'rgba(244,250,255,0.2)',
         backdropFilter: 'blur(10px)',
-        border: '1px solid rgba(244,250,255,0.3)',
+        border: '2px solid rgba(244, 250, 255, 0.75)',
         padding: '8px 16px',
         borderRadius: '20px',
         color: '#F4FAFF',
         fontSize: '14px',
-        fontWeight: '500',
+        fontWeight: '700',
         cursor: 'pointer',
-        transition: 'all 0.3s ease'
-      }
-    }
+        transition: 'all 0.2s ease',
+        boxShadow: '0 2px 10px rgba(0, 0, 0, 0.12)',
+      },
+    },
   };
 
   const currentStyle = styles[variant] || styles.dark;
 
   return (
-    <button onClick={toggleLanguage} style={currentStyle.langBtn}>
-      🌐 {language === 'ru' ? 'RU' : 'EN'}
+    <button type="button" onClick={toggleLanguage} style={currentStyle.langBtn}>
+      {language === 'ru' ? 'RU' : 'EN'}
     </button>
   );
 }

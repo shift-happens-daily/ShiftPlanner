@@ -21,10 +21,17 @@ router = APIRouter()
 def get_employee_report(
     start_date: date | None = Query(default=None),
     end_date: date | None = Query(default=None),
-    _: UserRead = Depends(require_role("manager")),
+    current_user: UserRead = Depends(require_role("manager")),
     db: Session = Depends(get_db),
 ) -> list[EmployeeReportRead]:
-    return report_service.list_employee_reports(db, start_date=start_date, end_date=end_date)
+    if current_user.company_id is None:
+        return []
+    return report_service.list_employee_reports(
+        db,
+        start_date=start_date,
+        end_date=end_date,
+        company_id=current_user.company_id,
+    )
 
 
 @router.get(

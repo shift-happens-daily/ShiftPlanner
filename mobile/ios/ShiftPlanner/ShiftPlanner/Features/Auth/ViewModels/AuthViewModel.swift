@@ -47,7 +47,7 @@ final class AuthViewModel: ObservableObject {
     func signUp() async {
         
         if !passwordsMatch {
-            errorMessage = "Passwords do not match"
+            errorMessage = localized("Passwords do not match.", "Пароли не совпадают.")
             return
         }
         
@@ -82,5 +82,12 @@ final class AuthViewModel: ObservableObject {
         errorMessage = nil
         
     }
-}
 
+    func loadCurrentUser() async {
+        currentUser = await repository.getCurrentUser()
+    }
+
+    func updateCurrentUser(_ user: AppUser) {
+        currentUser = user
+    }
+}

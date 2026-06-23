@@ -1,6 +1,6 @@
 from datetime import UTC, date, datetime
 
-from sqlalchemy import delete, select
+from sqlalchemy import delete, select, update
 from sqlalchemy.orm import Session
 
 from app.models import Employee, Position, Schedule, Shift, ShiftAssignment, ShiftExchangeRequest, ShiftRequirement, User
@@ -10,6 +10,7 @@ def create_requirement(
     db: Session,
     *,
     company_id: int,
+    branch_id: int | None = None,
     position_id: int,
     shift_date: date,
     start_time,
@@ -18,6 +19,7 @@ def create_requirement(
 ) -> ShiftRequirement:
     requirement = ShiftRequirement(
         company_id=company_id,
+        branch_id=branch_id,
         position_id=position_id,
         shift_date=shift_date,
         start_time=start_time,
@@ -30,13 +32,43 @@ def create_requirement(
     return requirement
 
 
+def update_requirement(
+    db: Session,
+    requirement: ShiftRequirement,
+    *,
+    branch_id: int,
+    position_id: int,
+    shift_date: date,
+    start_time,
+    end_time,
+    required_employees: int,
+) -> ShiftRequirement:
+    requirement.branch_id = branch_id
+    requirement.position_id = position_id
+    requirement.shift_date = shift_date
+    requirement.start_time = start_time
+    requirement.end_time = end_time
+    requirement.required_employees = required_employees
+
+    db.add(requirement)
+    db.commit()
+    db.refresh(requirement)
+    return requirement
+
+
 def list_requirements(
     db: Session,
     start_date: date | None = None,
     end_date: date | None = None,
     position_id: int | None = None,
+    company_id: int | None = None,
+    branch_id: int | None = None,
 ) -> list[ShiftRequirement]:
     query = select(ShiftRequirement).order_by(ShiftRequirement.shift_date, ShiftRequirement.id)
+    if company_id is not None:
+        query = query.where(ShiftRequirement.company_id == company_id)
+    if branch_id is not None:
+        query = query.where(ShiftRequirement.branch_id == branch_id)
     if start_date is not None:
         query = query.where(ShiftRequirement.shift_date >= start_date)
     if end_date is not None:
@@ -50,6 +82,7 @@ def create_requirements_bulk(db: Session, items: list[dict]) -> list[ShiftRequir
     requirements = [
         ShiftRequirement(
             company_id=item["company_id"],
+            branch_id=item.get("branch_id"),
             position_id=item["position_id"],
             shift_date=item["shift_date"],
             start_time=item["start_time"],
@@ -71,6 +104,20 @@ def create_schedule(
     end_date: date,
     generated_shifts: list[dict],
 ) -> Schedule:
+    existing_drafts = list(
+        db.scalars(
+            select(Schedule).where(
+                Schedule.company_id == company_id,
+                Schedule.start_date == start_date,
+                Schedule.end_date == end_date,
+                Schedule.status == "draft",
+            )
+        )
+    )
+    for existing_draft in existing_drafts:
+        db.delete(existing_draft)
+    db.flush()
+
     schedule = Schedule(company_id=company_id, start_date=start_date, end_date=end_date, status="draft")
     db.add(schedule)
     db.flush()
@@ -97,6 +144,18 @@ def get_schedule(db: Session, schedule_id: int) -> Schedule | None:
     return db.get(Schedule, schedule_id)
 
 
+def get_latest_schedule(
+    db: Session,
+    *,
+    company_id: int,
+    schedule_status: str | None = None,
+) -> Schedule | None:
+    query = select(Schedule).where(Schedule.company_id == company_id)
+    if schedule_status is not None:
+        query = query.where(Schedule.status == schedule_status)
+    return db.scalars(query.order_by(Schedule.id.desc())).first()
+
+
 def list_schedule_shift_rows(db: Session, schedule_id: int) -> list[dict]:
     return list(
         db.execute(
@@ -108,6 +167,7 @@ def list_schedule_shift_rows(db: Session, schedule_id: int) -> list[dict]:
                 Position.id.label("position_id"),
                 Position.name.label("position_name"),
                 Employee.id.label("employee_id"),
+                Employee.branch_id.label("employee_branch_id"),
                 User.full_name.label("employee_name"),
                 ShiftAssignment.id.label("assignment_id"),
             )
@@ -121,8 +181,18 @@ def list_schedule_shift_rows(db: Session, schedule_id: int) -> list[dict]:
     )
 
 
-def publish_schedule(db: Session, schedule_id: int) -> Schedule:
-    schedule = db.get(Schedule, schedule_id)
+def publish_schedule(db: Session, schedule: Schedule) -> Schedule:
+    db.execute(
+        update(Schedule)
+        .where(
+            Schedule.company_id == schedule.company_id,
+            Schedule.id != schedule.id,
+            Schedule.status == "published",
+            Schedule.start_date <= schedule.end_date,
+            Schedule.end_date >= schedule.start_date,
+        )
+        .values(status="archived")
+    )
     schedule.status = "published"
     db.add(schedule)
     db.commit()
@@ -321,7 +391,12 @@ def update_exchange_request_status(db: Session, exchange_request_id: int, status
     return exchange_request
 
 
-def list_published_shift_rows(db: Session, start_date: date | None = None, end_date: date | None = None) -> list[dict]:
+def list_published_shift_rows(
+    db: Session,
+    start_date: date | None = None,
+    end_date: date | None = None,
+    company_id: int | None = None,
+) -> list[dict]:
     query = (
         select(
             Employee.id.label("employee_id"),
@@ -342,4 +417,17 @@ def list_published_shift_rows(db: Session, start_date: date | None = None, end_d
         query = query.where(Shift.shift_date >= start_date)
     if end_date is not None:
         query = query.where(Shift.shift_date <= end_date)
+    if company_id is not None:
+        query = query.where(Schedule.company_id == company_id)
     return list(db.execute(query).mappings())
+
+
+def get_requirement_by_id(db: Session, requirement_id: int):
+    return db.query(ShiftRequirement).filter(
+        ShiftRequirement.id == requirement_id
+    ).first()
+
+
+def delete_requirement(db: Session, requirement):
+    db.delete(requirement)
+    db.commit()

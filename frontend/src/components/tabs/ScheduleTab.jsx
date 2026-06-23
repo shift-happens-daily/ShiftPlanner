@@ -1,703 +1,1531 @@
-// frontend/src/components/tabs/ScheduleTab.jsx
-import { useState, useEffect } from 'react';
-import { useAuth } from '../../context/AuthContext';
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import * as XLSX from 'xlsx';
+import { listEmployees } from '../../services/employeeService';
+import { extractApiErrorMessage, localizeBackendMessage } from '../../services/error';
+import {
+  createExchangeRequest,
+  defaultSchedulePeriod,
+  generateSchedule,
+  getMySchedule,
+  mergePublishedSchedule,
+  publishSchedule,
+  updateShift,
+} from '../../services/scheduleService';
 
-export default function ScheduleTab({ language }) {
-  const { user } = useAuth();
-  const isManager = user?.role === 'manager';
-  
-  const [selectedDate, setSelectedDate] = useState(new Date());
-  const [currentMonth, setCurrentMonth] = useState(new Date());
-  const [shifts, setShifts] = useState([]);
-  const [editingShift, setEditingShift] = useState(null);
-  const [editForm, setEditForm] = useState({ employee: '', position: '', startTime: '', endTime: '' });
-  const [showAddShift, setShowAddShift] = useState(false);
-  const [newShift, setNewShift] = useState({ employee: '', position: '', startTime: '09:00', endTime: '17:00' });
+function defaultPeriod() {
+  return defaultSchedulePeriod();
+}
 
-  // Моковые данные сотрудников и позиций
-  const employees = [
-    { id: 1, name: 'Иван Петров', position: 'Бармен' },
-    { id: 2, name: 'Анна Сидорова', position: 'Официант' },
-    { id: 3, name: 'Петр Иванов', position: 'Повар' },
-    { id: 4, name: 'Мария Кузнецова', position: 'Администратор' },
-    { id: 5, name: 'Дмитрий Соколов', position: 'Бармен' },
-    { id: 6, name: 'Елена Волкова', position: 'Официант' },
-  ];
+function normalizeArray(value) {
+  if (Array.isArray(value)) return value;
+  if (Array.isArray(value?.items)) return value.items;
+  if (Array.isArray(value?.data)) return value.data;
+  if (Array.isArray(value?.shifts)) return value.shifts;
+  return [];
+}
 
-  // Моковые данные расписания
-  useEffect(() => {
-    const mockShifts = [
-      { id: 1, date: '2026-06-15', employee: 'Иван Петров', position: 'Бармен', startTime: '09:00', endTime: '17:00', status: 'draft' },
-      { id: 2, date: '2026-06-15', employee: 'Анна Сидорова', position: 'Официант', startTime: '14:00', endTime: '22:00', status: 'draft' },
-      { id: 3, date: '2026-06-16', employee: 'Петр Иванов', position: 'Повар', startTime: '10:00', endTime: '18:00', status: 'published' },
-      { id: 4, date: '2026-06-16', employee: 'Мария Кузнецова', position: 'Администратор', startTime: '09:00', endTime: '17:00', status: 'published' },
-      { id: 5, date: '2026-06-17', employee: 'Дмитрий Соколов', position: 'Бармен', startTime: '12:00', endTime: '20:00', status: 'draft' },
-      { id: 6, date: '2026-06-17', employee: 'Елена Волкова', position: 'Официант', startTime: '11:00', endTime: '19:00', status: 'draft' },
-    ];
-    setShifts(mockShifts);
-  }, []);
+function formatTime(value) {
+  return String(value || '').slice(0, 5);
+}
 
-  // Добавляем глобальные стили для адаптива
-  useEffect(() => {
-    const styleSheet = document.createElement('style');
-    styleSheet.textContent = `
-      @media (max-width: 768px) {
-        .schedule-main-container {
-          flex-direction: column !important;
-          padding: 8px !important;
-          gap: 12px !important;
-        }
-        .schedule-calendar-section, .schedule-right-section {
-          min-width: 100% !important;
-          width: 100% !important;
-          max-width: 100% !important;
-          padding: 12px !important;
-          margin: 0 !important;
-          box-sizing: border-box !important;
-        }
-        .schedule-calendar-days {
-          gap: 2px !important;
-        }
-        .schedule-calendar-day {
-          padding: 6px 0 !important;
-          font-size: 12px !important;
-        }
-        .schedule-week-day {
-          font-size: 10px !important;
-          padding: 4px 0 !important;
-        }
-        .schedule-table th, .schedule-table td {
-          padding: 6px 4px !important;
-          font-size: 10px !important;
-        }
-        .schedule-header {
-          flex-direction: column !important;
-          align-items: flex-start !important;
-        }
-        .schedule-action-buttons {
-          flex-direction: column !important;
-          width: 100% !important;
-        }
-        .schedule-action-buttons button {
-          width: 100% !important;
-        }
-        .schedule-modal {
-          width: 95% !important;
-          margin: 10px !important;
-          padding: 16px !important;
-        }
-      }
-    `;
-    document.head.appendChild(styleSheet);
-    return () => document.head.removeChild(styleSheet);
-  }, []);
+function parseTimeToHours(value) {
+  if (!value) return 0;
+  const parts = String(value).split(':');
+  const hours = Number(parts[0] || 0);
+  const minutes = Number(parts[1] || 0);
+  return hours + minutes / 60;
+}
+
+function formatDate(value) {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return '';
+  }
+
+  const iso = date.toISOString().slice(0, 10);
+  return iso;
+}
+
+function formatDisplayDate(value) {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return value;
+  }
+
+  return date.toLocaleDateString('en-US', {
+    weekday: 'short',
+    month: 'short',
+    day: 'numeric',
+  });
+}
+
+function getShiftId(shift) {
+  return shift?.id || shift?.shift_id;
+}
+
+function getShiftPosition(shift) {
+  return shift?.position || shift?.position_title || shift?.position_name || shift?.position?.title || shift?.position?.name || '—';
+}
+
+function getShiftEmployeeName(shift) {
+  return shift?.employee_name || shift?.employee?.full_name || shift?.full_name || '—';
+}
+
+function getShiftCompany(shift) {
+  return shift?.company_name || shift?.company?.name || shift?.company || '—';
+}
+
+function getEmployeePositionId(employee) {
+  return employee?.position_id || employee?.position?.id;
+}
+
+function getShiftPositionId(shift) {
+  return shift?.position_id || shift?.position?.id;
+}
+
+function getScheduleStatus(schedule) {
+  return schedule?.status || 'draft';
+}
+
+function countFilledShifts(schedule) {
+  return normalizeArray(schedule?.shifts).filter((shift) => getShiftEmployeeName(shift) !== '—').length;
+}
+
+function countUnfilled(schedule) {
+  return normalizeArray(schedule?.unfilled_requirements).reduce(
+    (sum, item) => sum + Number(item?.missing_staff || 0),
+    0
+  );
+}
+
+function exportScheduleDraftToXlsx(schedule, translations) {
+  if (!schedule) {
+    return;
+  }
+
+  const shifts = normalizeArray(schedule.shifts).map((shift) => ({
+    schedule_id: schedule.id || '',
+    schedule_status: getScheduleStatus(schedule),
+    shift_id: getShiftId(shift) || '',
+    date: shift.date || '',
+    position: getShiftPosition(shift),
+    employee: getShiftEmployeeName(shift),
+    start_time: formatTime(shift.start_time),
+    end_time: formatTime(shift.end_time),
+  }));
+
+  const unfilled = normalizeArray(schedule.unfilled_requirements).map((item) => ({
+    requirement_id: item.requirement_id || '',
+    date: item.date || '',
+    position: item.position_title || item.position || '',
+    start_time: formatTime(item.start_time),
+    end_time: formatTime(item.end_time),
+    missing_staff: item.missing_staff || 0,
+  }));
+
+  const conflicts = normalizeArray(schedule.conflicts).map((conflict) => ({
+    employee_id: conflict.employee_id || '',
+    employee: conflict.employee_name || '',
+    date: conflict.date || '',
+    message: conflict.message || '',
+  }));
+
+  const workbook = XLSX.utils.book_new();
+
+  XLSX.utils.book_append_sheet(
+    workbook,
+    XLSX.utils.json_to_sheet(shifts.length ? shifts : [{ info: translations.empty }]),
+    'Shifts'
+  );
+
+  XLSX.utils.book_append_sheet(
+    workbook,
+    XLSX.utils.json_to_sheet(unfilled.length ? unfilled : [{ info: translations.empty }]),
+    'Unfilled'
+  );
+
+  XLSX.utils.book_append_sheet(
+    workbook,
+    XLSX.utils.json_to_sheet(conflicts.length ? conflicts : [{ info: translations.empty }]),
+    'Conflicts'
+  );
+
+  const start = schedule.start_date || schedule.period_start || 'schedule';
+  const end = schedule.end_date || schedule.period_end || 'draft';
+  const fileName = `shiftplanner_schedule_${start}_${end}.xlsx`;
+
+  XLSX.writeFile(workbook, fileName);
+}
+
+export default function ScheduleTab({ language, userRole }) {
+  const isManager = userRole === 'manager';
+
+  const [periodForm, setPeriodForm] = useState(defaultPeriod);
+
+  const scheduleStorageKey = 'shiftplanner_manager_draft_schedule';
+  const [schedule, setSchedule] = useState(() => {
+    const rawSchedule = localStorage.getItem(scheduleStorageKey);
+
+    if (!rawSchedule) {
+      return null;
+    }
+
+    try {
+      return JSON.parse(rawSchedule);
+    } catch {
+      localStorage.removeItem(scheduleStorageKey);
+      return null;
+    }
+  });
+
+  const [mySchedule, setMySchedule] = useState([]);
+  const [employeeViewMode, setEmployeeViewMode] = useState('day');
+  const [employees, setEmployees] = useState([]);
+  const [exchangeNotes, setExchangeNotes] = useState({});
+  const [reassignEmployeeIds, setReassignEmployeeIds] = useState({});
+  const [isLoading, setIsLoading] = useState(true);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [errorMessage, setErrorMessage] = useState('');
+  const [successMessage, setSuccessMessage] = useState('');
 
   const texts = {
     ru: {
-      title: 'Расписание',
-      selectDate: 'Выберите дату',
-      employee: 'Сотрудник',
-      position: 'Позиция',
-      startTime: 'Начало',
-      endTime: 'Конец',
-      actions: 'Действия',
-      edit: 'Изменить',
-      delete: 'Удалить',
-      save: 'Сохранить',
+      titleManager: 'Расписание',
+      titleEmployee: 'Мое расписание',
+      subtitleEmployee: 'Здесь отображаются опубликованные смены.',
+      day: 'День',
+      week: 'Неделя',
+      month: 'Месяц',
+      startDate: 'Начало периода',
+      endDate: 'Конец периода',
+      generate: 'Сгенерировать черновик',
       publish: 'Опубликовать',
-      addShift: '+ Добавить смену',
-      cancel: 'Отмена',
-      editShift: 'Редактирование смены',
-      addNewShift: 'Новая смена',
-      selectEmployee: 'Выберите сотрудника',
-      selectPosition: 'Выберите позицию',
-      noShifts: 'Нет смен на выбранную дату',
+      status: 'Статус',
+      reassign: 'Переназначить',
+      remove: 'Убрать сотрудника',
+      noSchedule: 'Расписание ещё не сгенерировано',
+      noScheduleHint: 'Выберите неделю (Пн–Вс) и нажмите «Сгенерировать черновик».',
+      noScheduleRequirements: 'Перед генерацией должны быть настроены шаблоны потребности, часы филиала и availability сотрудников.',
+      loading: 'Загрузка...',
+      unfilled: 'Незаполненные требования',
+      shifts: 'Смены',
+      note: 'Комментарий',
+      conflicts: 'Конфликты',
+      empty: 'Нет данных',
+      generated: 'Черновик расписания создан.',
+      exportDraft: 'Скачать XLSX',
+      exportDone: 'Черновик скачан в XLSX.',
+      clearSchedule: 'Очистить черновик',
+      scheduleCleared: 'Черновик очищен.',
+      publishedDone: 'Расписание опубликовано.',
+      shiftUpdated: 'Смена обновлена.',
+      missingStaff: 'Не хватает',
+      draft: 'Черновик',
       published: 'Опубликовано',
-      draft: 'Черновик'
+      filledShifts: 'Назначено смен',
+      unfilledCount: 'Не хватает людей',
+      period: 'Период генерации',
+      schedulePreview: 'Предпросмотр расписания',
+      chooseEmployee: 'Выберите сотрудника',
+      noEmployeesForPosition: 'Нет сотрудников этой позиции',
+      noPublishedScheduleTitle: 'Пока нет опубликованных смен',
+      noPublishedScheduleHint: 'Когда менеджер опубликует расписание, ваши смены появятся здесь.',
+      noPublishedScheduleStep1: 'Дождитесь публикации от менеджера',
+      noPublishedScheduleStep2: 'Обновите страницу, если расписание уже опубликовали',
+      sectionHowItWorks: 'Как это работает',
+      howOne: '1. «Настройки смен» задают спрос: сколько людей нужно.',
+      howTwo: '2. «Сгенерировать» создает черновик смен.',
+      howThree: '3. «Опубликовать» делает расписание видимым сотрудникам.',
+      company: 'Компания',
     },
     en: {
-      title: 'Schedule',
-      selectDate: 'Select date',
-      employee: 'Employee',
-      position: 'Position',
-      startTime: 'Start',
-      endTime: 'End',
-      actions: 'Actions',
-      edit: 'Edit',
-      delete: 'Delete',
-      save: 'Save',
+      titleManager: 'Schedule',
+      titleEmployee: 'My schedule',
+      subtitleEmployee: 'Published shifts appear here.',
+      day: 'Day',
+      week: 'Week',
+      month: 'Month',
+      startDate: 'Start date',
+      endDate: 'End date',
+      generate: 'Generate draft',
       publish: 'Publish',
-      addShift: '+ Add Shift',
-      cancel: 'Cancel',
-      editShift: 'Edit Shift',
-      addNewShift: 'New Shift',
-      selectEmployee: 'Select employee',
-      selectPosition: 'Select position',
-      noShifts: 'No shifts for selected date',
+      status: 'Status',
+      reassign: 'Reassign',
+      remove: 'Remove employee',
+      noSchedule: 'Schedule has not been generated yet',
+      noScheduleHint: 'Pick a Mon–Sun week and click Generate draft.',
+      noScheduleRequirements: 'Before generating, set up staffing templates, branch hours, and employee availability.',
+      loading: 'Loading...',
+      unfilled: 'Unfilled requirements',
+      shifts: 'Shifts',
+      note: 'Note',
+      conflicts: 'Conflicts',
+      empty: 'No data',
+      generated: 'Draft schedule generated.',
+      exportDraft: 'Download XLSX',
+      exportDone: 'Draft downloaded as XLSX.',
+      clearSchedule: 'Clear draft',
+      scheduleCleared: 'Draft cleared.',
+      publishedDone: 'Schedule published.',
+      shiftUpdated: 'Shift updated.',
+      missingStaff: 'Missing',
+      draft: 'Draft',
       published: 'Published',
-      draft: 'Draft'
-    }
+      filledShifts: 'Assigned shifts',
+      unfilledCount: 'Missing staff',
+      period: 'Generation period',
+      schedulePreview: 'Schedule preview',
+      chooseEmployee: 'Choose employee',
+      noEmployeesForPosition: 'No employees for this position',
+      noPublishedScheduleTitle: 'No published shifts yet',
+      noPublishedScheduleHint: 'When your manager publishes the schedule, your shifts will appear here.',
+      noPublishedScheduleStep1: 'Wait for the manager to publish the schedule',
+      noPublishedScheduleStep2: 'Refresh the page if it was already published',
+      sectionHowItWorks: 'How it works',
+      howOne: '1. Shift setup defines demand: how many people are needed.',
+      howTwo: '2. Generate creates a draft shift schedule.',
+      howThree: '3. Publish makes the schedule visible to employees.',
+      company: 'Company',
+    },
   };
 
   const t = texts[language] || texts.ru;
 
-  // Форматирование даты
-  const formatDate = (date) => {
-    return date.toISOString().split('T')[0];
+  const scheduleShifts = useMemo(() => normalizeArray(schedule?.shifts), [schedule]);
+  const unfilledRequirements = useMemo(() => normalizeArray(schedule?.unfilled_requirements), [schedule]);
+  const conflicts = useMemo(() => normalizeArray(schedule?.conflicts), [schedule]);
+
+  const employeeSchedule = mySchedule;
+
+  const groupedMySchedule = useMemo(
+    () => normalizeArray(employeeSchedule).reduce((acc, shift) => {
+      const key = formatDate(shift.date || new Date()) || '—';
+      acc[key] = acc[key] || [];
+      acc[key].push(shift);
+      return acc;
+    }, {}),
+    [employeeSchedule]
+  );
+  const employeeDates = useMemo(() => {
+    const dates = [...new Set(normalizeArray(employeeSchedule).map((shift) => formatDate(shift.date || new Date())))];
+    return dates.sort();
+  }, [employeeSchedule]);
+
+  const employeeTimelineDates = useMemo(() => {
+    if (employeeViewMode === 'day') return employeeDates.slice(0, 1);
+    if (employeeViewMode === 'week') return employeeDates.slice(0, 7);
+    return employeeDates.slice(0, 30);
+  }, [employeeDates, employeeViewMode]);
+
+  useEffect(() => {
+    if (!errorMessage && !successMessage) return undefined;
+
+    const timer = setTimeout(() => {
+      setErrorMessage('');
+      setSuccessMessage('');
+    }, errorMessage ? 5000 : 2500);
+
+    return () => clearTimeout(timer);
+  }, [errorMessage, successMessage]);
+
+  const clearMessages = () => {
+    setErrorMessage('');
+    setSuccessMessage('');
   };
 
-  // Получение смен для выбранной даты
-  const getShiftsForDate = () => {
-    const dateStr = formatDate(selectedDate);
-    return shifts.filter(shift => shift.date === dateStr);
-  };
-
-  // Получение дней в месяце для календаря
-  const getDaysInMonth = (date) => {
-    const year = date.getFullYear();
-    const month = date.getMonth();
-    const lastDay = new Date(year, month + 1, 0);
-    const days = [];
-    for (let i = 1; i <= lastDay.getDate(); i++) {
-      days.push(new Date(year, month, i));
+  useEffect(() => {
+    if (!isManager) {
+      return;
     }
-    return days;
-  };
 
-  const days = getDaysInMonth(currentMonth);
-  const weekDays = ['Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Вс'];
+    if (schedule) {
+      localStorage.setItem(scheduleStorageKey, JSON.stringify(schedule));
+    } else {
+      localStorage.removeItem(scheduleStorageKey);
+    }
+  }, [isManager, schedule, scheduleStorageKey]);
 
-  // Смена месяца
-  const prevMonth = () => {
-    setCurrentMonth(new Date(currentMonth.getFullYear(), currentMonth.getMonth() - 1, 1));
-  };
+  const loadManagerData = useCallback(async () => {
+    const employeesData = await listEmployees();
+    setEmployees(normalizeArray(employeesData));
+  }, []);
 
-  const nextMonth = () => {
-    setCurrentMonth(new Date(currentMonth.getFullYear(), currentMonth.getMonth() + 1, 1));
-  };
+  const loadEmployeeData = useCallback(async () => {
+    const shifts = await getMySchedule();
+    setMySchedule(normalizeArray(shifts));
+  }, []);
 
-  // Получение статуса дня (есть ли смены)
-  const getDayStatus = (day) => {
-    const dateStr = formatDate(day);
-    const dayShifts = shifts.filter(shift => shift.date === dateStr);
-    if (dayShifts.length === 0) return '';
-    if (dayShifts.some(shift => shift.status === 'published')) return 'published';
-    return 'draft';
-  };
+  const loadData = useCallback(async () => {
+    setIsLoading(true);
+    setErrorMessage('');
 
-  // Редактирование смены
-  const handleEdit = (shift) => {
-    setEditingShift(shift.id);
-    setEditForm({
-      employee: shift.employee,
-      position: shift.position,
-      startTime: shift.startTime,
-      endTime: shift.endTime
-    });
-  };
+    try {
+      if (isManager) {
+        await loadManagerData();
+      } else {
+        await loadEmployeeData();
+      }
+    } catch (error) {
+      setErrorMessage(extractApiErrorMessage(error, t.empty, language));
+    } finally {
+      setIsLoading(false);
+    }
+  }, [isManager, language, loadEmployeeData, loadManagerData, t.empty]);
 
-  const handleSaveEdit = () => {
-    setShifts(shifts.map(shift => 
-      shift.id === editingShift 
-        ? { ...shift, ...editForm }
-        : shift
-    ));
-    setEditingShift(null);
-    setEditForm({ employee: '', position: '', startTime: '', endTime: '' });
-  };
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      void loadData();
+    }, 0);
 
-  const handleCancelEdit = () => {
-    setEditingShift(null);
-    setEditForm({ employee: '', position: '', startTime: '', endTime: '' });
-  };
+    return () => clearTimeout(timer);
+  }, [loadData]);
 
-  // Удаление смены
-  const handleDelete = (id) => {
-    if (window.confirm('Вы уверены, что хотите удалить эту смену?')) {
-      setShifts(shifts.filter(shift => shift.id !== id));
+  const handleGenerate = async () => {
+    clearMessages();
+    setIsSubmitting(true);
+
+    try {
+      const generated = await generateSchedule(periodForm);
+      setSchedule(generated);
+      setReassignEmployeeIds({});
+      setSuccessMessage(t.generated);
+    } catch (error) {
+      setErrorMessage(extractApiErrorMessage(error, t.noScheduleHint, language));
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
-  // Добавление новой смены
-  const handleAddShift = () => {
-    if (newShift.employee && newShift.startTime && newShift.endTime) {
-      const newId = Math.max(...shifts.map(s => s.id), 0) + 1;
-      setShifts([...shifts, {
-        id: newId,
-        date: formatDate(selectedDate),
-        employee: newShift.employee,
-        position: employees.find(e => e.name === newShift.employee)?.position || '',
-        startTime: newShift.startTime,
-        endTime: newShift.endTime,
-        status: 'draft'
-      }]);
-      setShowAddShift(false);
-      setNewShift({ employee: '', position: '', startTime: '09:00', endTime: '17:00' });
+  const handlePublish = async () => {
+    if (!schedule?.id) return;
+
+    clearMessages();
+    setIsSubmitting(true);
+
+    try {
+      const publishedSchedule = await publishSchedule(schedule.id);
+      setSchedule((prev) => mergePublishedSchedule(prev, publishedSchedule));
+      setSuccessMessage(t.publishedDone);
+    } catch (error) {
+      setErrorMessage(extractApiErrorMessage(error, null, language));
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
-  // Сохранение всех изменений
-  const handleSaveAll = () => {
-    alert('Все изменения сохранены!');
+  const handleExportDraft = () => {
+    if (!schedule) {
+      return;
+    }
+
+    clearMessages();
+
+    try {
+      exportScheduleDraftToXlsx(schedule, t);
+      setSuccessMessage(t.exportDone);
+    } catch (error) {
+      setErrorMessage(extractApiErrorMessage(error, t.exportDraft, language));
+    }
   };
 
-  // Публикация расписания
-  const handlePublish = () => {
-    const dateStr = formatDate(selectedDate);
-    setShifts(shifts.map(shift => 
-      shift.date === dateStr ? { ...shift, status: 'published' } : shift
-    ));
-    alert('Расписание опубликовано!');
+  const handleClearSchedule = () => {
+    setSchedule(null);
+    setReassignEmployeeIds({});
+    setSuccessMessage(t.scheduleCleared);
   };
 
-  const currentShifts = getShiftsForDate();
+  const handleShiftAction = async (shiftId, action) => {
+    if (!schedule?.id) return;
 
-  const inputStyle = {
-    padding: '8px 12px',
-    fontSize: '14px',
-    color: '#002642',
-    backgroundColor: '#FFFFFF',
-    border: '2px solid #DEE7E7',
-    borderRadius: '8px',
-    outline: 'none',
-    transition: 'all 0.3s ease',
-    width: '100%',
-    boxSizing: 'border-box'
+    clearMessages();
+    setIsSubmitting(true);
+
+    try {
+      const payload = action === 'remove'
+        ? { action }
+        : { action, employee_id: Number(reassignEmployeeIds[shiftId]) };
+
+      const updatedSchedule = await updateShift(schedule.id, shiftId, payload);
+      setSchedule(updatedSchedule);
+      setSuccessMessage(t.shiftUpdated);
+    } catch (error) {
+      setErrorMessage(extractApiErrorMessage(error, null, language));
+    } finally {
+      setIsSubmitting(false);
+    }
   };
+
+  const renderToast = () => (
+    (errorMessage || successMessage) && (
+      <div style={styles.toastLayer}>
+        <div style={errorMessage ? styles.toastError : styles.toastSuccess}>
+          <span style={errorMessage ? styles.toastIconError : styles.toastIconSuccess}>
+            {errorMessage ? '!' : '✓'}
+          </span>
+
+          <span style={styles.toastText}>{errorMessage || successMessage}</span>
+
+          <button
+            type="button"
+            onClick={() => {
+              setErrorMessage('');
+              setSuccessMessage('');
+            }}
+            style={styles.toastClose}
+            aria-label="Close notification"
+          >
+            ×
+          </button>
+        </div>
+      </div>
+    )
+  );
+
+  if (isLoading) {
+    return (
+      <section style={styles.page}>
+        <div style={styles.shell}>
+          <div style={styles.emptyBox}>{t.loading}</div>
+        </div>
+      </section>
+    );
+  }
 
   return (
-    <div className="schedule-main-container" style={styles.container}>
-      {/* Календарь */}
-      <div className="schedule-calendar-section" style={styles.calendarSection}>
-        <div style={styles.calendarHeader}>
-          <button onClick={prevMonth} style={styles.monthNavBtn}>←</button>
-          <h3 style={styles.calendarTitle}>
-            {currentMonth.toLocaleDateString(language === 'ru' ? 'ru-RU' : 'en-US', { month: 'long', year: 'numeric' })}
-          </h3>
-          <button onClick={nextMonth} style={styles.monthNavBtn}>→</button>
-        </div>
-        <div style={styles.weekDays}>
-          {weekDays.map(day => (
-            <div key={day} className="schedule-week-day" style={styles.weekDay}>{day}</div>
-          ))}
-        </div>
-        <div className="schedule-calendar-days" style={styles.calendarDays}>
-          {days.map((day, index) => {
-            const dayStatus = getDayStatus(day);
-            const isSelected = formatDate(day) === formatDate(selectedDate);
-            return (
-              <div
-                key={index}
-                onClick={() => setSelectedDate(day)}
-                className="schedule-calendar-day"
-                style={{
-                  ...styles.calendarDay,
-                  // Выбранный день всегда синий (самый высокий приоритет)
-                  ...(isSelected && styles.calendarDaySelected),
-                  // Только если день НЕ выбран, показываем его статус
-                  ...(!isSelected && dayStatus === 'published' && styles.calendarDayPublished),
-                  ...(!isSelected && dayStatus === 'draft' && styles.calendarDayDraft)
-                }}
-              >
-                {day.getDate()}
-              </div>
-            );
-          })}
-        </div>
-      </div>
+    <section style={styles.page}>
+      <div style={styles.shell}>
+        {renderToast()}
 
-      {/* Таблица расписания */}
-      <div className="schedule-right-section" style={styles.scheduleSection}>
-        <div className="schedule-header" style={styles.scheduleHeader}>
-          <h3 style={styles.scheduleTitle}>
-            {t.title} — {selectedDate.toLocaleDateString(language === 'ru' ? 'ru-RU' : 'en-US')}
-          </h3>
-          {isManager && (
-            <button onClick={() => setShowAddShift(true)} style={styles.addShiftBtn}>
-              {t.addShift}
-            </button>
-          )}
-        </div>
-
-        <div style={styles.tableWrapper}>
-          <table className="schedule-table" style={styles.table}>
-            <thead>
-              <tr>
-                <th style={styles.th}>{t.employee}</th>
-                <th style={styles.th}>{t.position}</th>
-                <th style={styles.th}>{t.startTime}</th>
-                <th style={styles.th}>{t.endTime}</th>
-                {isManager && <th style={styles.th}>{t.actions}</th>}
-              </tr>
-            </thead>
-            <tbody>
-              {currentShifts.length === 0 ? (
-                <tr>
-                  <td colSpan={isManager ? 5 : 4} style={styles.emptyCell}>
-                    {t.noShifts}
-                  </td>
-                </tr>
-              ) : (
-                currentShifts.map(shift => (
-                  <tr key={shift.id}>
-                    {editingShift === shift.id ? (
-                      <>
-                        <td style={styles.td}>
-                          <select
-                            value={editForm.employee}
-                            onChange={(e) => setEditForm({ ...editForm, employee: e.target.value })}
-                            style={inputStyle}
-                          >
-                            {employees.map(emp => (
-                              <option key={emp.id} value={emp.name}>{emp.name}</option>
-                            ))}
-                          </select>
-                        </td>
-                        <td style={styles.td}>
-                          <input
-                            type="text"
-                            value={editForm.position}
-                            onChange={(e) => setEditForm({ ...editForm, position: e.target.value })}
-                            style={inputStyle}
-                          />
-                        </td>
-                        <td style={styles.td}>
-                          <input
-                            type="time"
-                            value={editForm.startTime}
-                            onChange={(e) => setEditForm({ ...editForm, startTime: e.target.value })}
-                            style={inputStyle}
-                          />
-                        </td>
-                        <td style={styles.td}>
-                          <input
-                            type="time"
-                            value={editForm.endTime}
-                            onChange={(e) => setEditForm({ ...editForm, endTime: e.target.value })}
-                            style={inputStyle}
-                          />
-                        </td>
-                        {isManager && (
-                          <td style={styles.td}>
-                            <button onClick={handleSaveEdit} style={styles.saveBtn}>✓</button>
-                            <button onClick={handleCancelEdit} style={styles.cancelBtn}>✗</button>
-                          </td>
-                        )}
-                      </>
-                    ) : (
-                      <>
-                        <td style={styles.td}>{shift.employee}</td>
-                        <td style={styles.td}>{shift.position}</td>
-                        <td style={styles.td}>{shift.startTime}</td>
-                        <td style={styles.td}>{shift.endTime}</td>
-                        {isManager && (
-                          <td style={styles.td}>
-                            <button onClick={() => handleEdit(shift)} style={styles.editBtn}>✏️</button>
-                            <button onClick={() => handleDelete(shift.id)} style={styles.deleteBtn}>🗑️</button>
-                          </td>
-                        )}
-                      </>
-                    )}
-                  </tr>
-                ))
-              )}
-            </tbody>
-          </table>
-        </div>
-
-        {/* Кнопки для менеджера */}
-        {isManager && (
-          <div className="schedule-action-buttons" style={styles.actionButtons}>
-            <button onClick={handleSaveAll} style={styles.saveAllBtn}>
-              {t.save}
-            </button>
-            <button onClick={handlePublish} style={styles.publishBtn}>
-              {t.publish}
-            </button>
+        <header style={styles.header}>
+          <div>
+            <h2 style={styles.title}>{isManager ? t.titleManager : t.titleEmployee}</h2>
+            <p style={styles.subtitle}>{isManager ? t.subtitleManager : t.subtitleEmployee}</p>
           </div>
+
+          {isManager && schedule && (
+            <div style={styles.headerStats}>
+              <Metric label={t.filledShifts} value={countFilledShifts(schedule)} />
+              <Metric label={t.unfilledCount} value={countUnfilled(schedule)} />
+            </div>
+          )}
+        </header>
+
+        {isManager ? (
+          <div style={styles.managerLayout}>
+            <aside style={styles.sidebar}>
+              <section style={styles.panel}>
+                <h3 style={styles.panelTitle}>{t.period}</h3>
+
+                <div style={styles.stack}>
+                  <Field label={t.startDate}>
+                    <input
+                      type="date"
+                      value={periodForm.start_date}
+                      onChange={(event) =>
+                        setPeriodForm((prev) => ({ ...prev, start_date: event.target.value }))
+                      }
+                      style={styles.input}
+                    />
+                  </Field>
+
+                  <Field label={t.endDate}>
+                    <input
+                      type="date"
+                      value={periodForm.end_date}
+                      onChange={(event) =>
+                        setPeriodForm((prev) => ({ ...prev, end_date: event.target.value }))
+                      }
+                      style={styles.input}
+                    />
+                  </Field>
+
+                  <button
+                    type="button"
+                    onClick={handleGenerate}
+                    style={isSubmitting ? styles.primaryButtonDisabled : styles.primaryButton}
+                    disabled={isSubmitting}
+                  >
+                    {t.generate}
+                  </button>
+
+                  {schedule && (
+                    <button
+                      type="button"
+                      onClick={handleExportDraft}
+                      style={styles.secondaryButton}
+                      disabled={isSubmitting}
+                    >
+                      {t.exportDraft}
+                    </button>
+                  )}
+
+                  {schedule && (
+                    <button
+                      type="button"
+                      onClick={handleClearSchedule}
+                      style={styles.smallSecondaryButton}
+                      disabled={isSubmitting}
+                    >
+                      {t.clearSchedule}
+                    </button>
+                  )}
+
+                  {schedule && getScheduleStatus(schedule) === 'draft' && (
+                    <button
+                      type="button"
+                      onClick={handlePublish}
+                      style={isSubmitting ? styles.secondaryButtonDisabled : styles.secondaryButton}
+                      disabled={isSubmitting}
+                    >
+                      {t.publish}
+                    </button>
+                  )}
+                </div>
+              </section>
+
+              <section style={styles.helpBox}>
+                <h3 style={styles.helpTitle}>{t.sectionHowItWorks}</h3>
+                <span>{t.howOne}</span>
+                <span>{t.howTwo}</span>
+                <span>{t.howThree}</span>
+              </section>
+            </aside>
+
+            <main style={styles.previewArea}>
+              {!schedule ? (
+                <div style={styles.emptyHero}>
+                  <div style={styles.emptyHeroInner}>
+                    <div style={styles.emptyIcon}>📅</div>
+                    <h3 style={styles.emptyTitle}>{t.noSchedule}</h3>
+                    <p style={styles.emptySubtitle}>{t.noScheduleHint}</p>
+                    <p style={styles.emptyNote}>{t.noScheduleRequirements}</p>
+                  </div>
+                </div>
+              ) : (
+                <>
+                  <section style={styles.panel}>
+                    <div style={styles.panelHeader}>
+                      <div>
+                        <h3 style={styles.panelTitle}>{t.schedulePreview}</h3>
+                        <p style={styles.panelHint}>
+                          {t.status}: {getScheduleStatus(schedule) === 'published' ? t.published : t.draft}
+                        </p>
+                      </div>
+
+                      <span style={getScheduleStatus(schedule) === 'published' ? styles.statusPublished : styles.statusDraft}>
+                        {getScheduleStatus(schedule) === 'published' ? t.published : t.draft}
+                      </span>
+                    </div>
+
+                    {scheduleShifts.length === 0 ? (
+                      <p style={styles.emptyText}>{t.empty}</p>
+                    ) : (
+                      <div style={styles.shiftList}>
+                        {scheduleShifts.map((shift) => {
+                          const shiftId = getShiftId(shift);
+                          const shiftPositionId = getShiftPositionId(shift);
+                          const availableEmployees = employees.filter((employee) => (
+                            String(getEmployeePositionId(employee)) === String(shiftPositionId)
+                          ));
+
+                          return (
+                            <div key={shiftId} style={styles.shiftCard}>
+                              <div style={styles.shiftMain}>
+                                <strong style={styles.itemTitle}>{getShiftEmployeeName(shift)}</strong>
+                                <span style={styles.itemMeta}>{getShiftPosition(shift)}</span>
+                                <span style={styles.itemMeta}>{shift.date}</span>
+                                <span style={styles.timeBadge}>
+                                  {formatTime(shift.start_time)} — {formatTime(shift.end_time)}
+                                </span>
+                              </div>
+
+                              <div style={styles.shiftActions}>
+                                <select
+                                  value={reassignEmployeeIds[shiftId] || ''}
+                                  onChange={(event) =>
+                                    setReassignEmployeeIds((prev) => ({
+                                      ...prev,
+                                      [shiftId]: event.target.value,
+                                    }))
+                                  }
+                                  style={styles.select}
+                                >
+                                  <option value="">
+                                    {availableEmployees.length ? t.chooseEmployee : t.noEmployeesForPosition}
+                                  </option>
+                                  {availableEmployees.map((employee) => (
+                                    <option key={employee.id} value={employee.id}>
+                                      {employee.full_name}
+                                    </option>
+                                  ))}
+                                </select>
+
+                                <button
+                                  type="button"
+                                  onClick={() => handleShiftAction(shiftId, 'reassign')}
+                                  style={styles.smallPrimaryButton}
+                                  disabled={!reassignEmployeeIds[shiftId] || isSubmitting}
+                                >
+                                  {t.reassign}
+                                </button>
+
+                                <button
+                                  type="button"
+                                  onClick={() => handleShiftAction(shiftId, 'remove')}
+                                  style={styles.smallSecondaryButton}
+                                  disabled={isSubmitting}
+                                >
+                                  {t.remove}
+                                </button>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </section>
+
+                  <div style={styles.bottomGrid}>
+                    <section style={styles.panel}>
+                      <h3 style={styles.panelTitle}>{t.unfilled}</h3>
+
+                      {unfilledRequirements.length === 0 ? (
+                        <p style={styles.emptyText}>{t.empty}</p>
+                      ) : (
+                        <div style={styles.compactList}>
+                          {unfilledRequirements.map((item) => (
+                            <div key={item.requirement_id} style={styles.compactItem}>
+                              <strong style={styles.itemTitle}>{item.position_title}</strong>
+                              <span style={styles.itemMeta}>{item.date}</span>
+                              <span style={styles.itemMeta}>
+                                {formatTime(item.start_time)} — {formatTime(item.end_time)}
+                              </span>
+                              <span style={styles.staffBadge}>
+                                {t.missingStaff}: {item.missing_staff}
+                              </span>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </section>
+
+                    <section style={styles.panel}>
+                      <h3 style={styles.panelTitle}>{t.conflicts}</h3>
+
+                      {conflicts.length === 0 ? (
+                        <p style={styles.emptyText}>{t.empty}</p>
+                      ) : (
+                        <div style={styles.compactList}>
+                          {conflicts.map((conflict) => (
+                            <div key={`${conflict.employee_id}-${conflict.date}`} style={styles.compactItem}>
+                              <strong style={styles.itemTitle}>{conflict.employee_name}</strong>
+                              <span style={styles.itemMeta}>{conflict.date}</span>
+                              <span style={styles.itemMeta}>
+                                {localizeBackendMessage(conflict.message, language)}
+                              </span>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </section>
+                  </div>
+                </>
+              )}
+            </main>
+          </div>
+        ) : (
+          <main style={styles.employeeArea}>
+            <section style={styles.panel}>
+              <div style={styles.panelHeader}>
+                <div>
+                  <h3 style={styles.panelTitle}>{t.titleEmployee}</h3>
+                  <p style={styles.panelHint}>{t.subtitleEmployee}</p>
+                </div>
+
+                <div style={styles.modeSegment}>
+                  {['day', 'week', 'month'].map((mode) => (
+                    <button
+                      key={mode}
+                      type="button"
+                      onClick={() => setEmployeeViewMode(mode)}
+                      style={
+                        employeeViewMode === mode
+                          ? { ...styles.modeButton, ...styles.modeButtonActive }
+                          : styles.modeButton
+                      }
+                    >
+                      {t[mode] || mode}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {employeeSchedule.length === 0 ? (
+                <div style={styles.emptyHero}>
+                  <div style={styles.emptyHeroInner}>
+                    <div style={styles.emptyIcon}>🕒</div>
+                    <h3 style={styles.emptyTitle}>{t.noPublishedScheduleTitle}</h3>
+                    <p style={styles.emptySubtitle}>{t.noPublishedScheduleHint}</p>
+                    <ul style={styles.emptySteps}>
+                      {[t.noPublishedScheduleStep1, t.noPublishedScheduleStep2].map((step, index) => (
+                        <li key={step} style={styles.emptyStepRow}>
+                          <span style={styles.emptyStepBadge}>{index + 1}</span>
+                          <span style={styles.emptyStepText}>{step}</span>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                </div>
+              ) : (
+                <div style={styles.employeeTimelineScroll}>
+                  <div style={styles.employeeTimeline}>
+                    {employeeTimelineDates.map((date) => {
+                      const shiftsForDate = normalizeArray(employeeSchedule).filter(
+                        (shift) => formatDate(shift.date || '') === date
+                      );
+
+                      return (
+                        <section key={date} style={styles.timelineDay}>
+                          <div style={styles.timelineDayHeader}>
+                            <strong style={styles.itemTitle}>{formatDisplayDate(date)}</strong>
+                            <span style={styles.itemMeta}>{date}</span>
+                          </div>
+
+                          {shiftsForDate.length === 0 ? (
+                            <p style={styles.emptyText}>{t.empty}</p>
+                          ) : (
+                            <div style={styles.shiftList}>
+                              {shiftsForDate.map((shift) => {
+                                const shiftId = getShiftId(shift);
+
+                                return (
+                                  <div key={shiftId} style={styles.shiftCard}>
+                                    <div style={styles.shiftMain}>
+                                      <div style={styles.shiftRow}>
+                                        <strong style={styles.itemTitle}>{getShiftPosition(shift)}</strong>
+                                        <span style={styles.itemMeta}>· {getShiftCompany(shift)}</span>
+                                        <span style={styles.timeBadge}>
+                                          {formatTime(shift.start_time)} — {formatTime(shift.end_time)}
+                                        </span>
+                                      </div>
+                                    </div>
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          )}
+                        </section>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+            </section>
+          </main>
         )}
       </div>
+    </section>
+  );
+}
 
-      {/* Модальное окно для добавления смены */}
-      {showAddShift && (
-        <div style={styles.modalOverlay} onClick={() => setShowAddShift(false)}>
-          <div className="schedule-modal" style={styles.modal} onClick={(e) => e.stopPropagation()}>
-            <h3 style={styles.modalTitle}>{t.addNewShift}</h3>
-            <div style={styles.modalForm}>
-              <select
-                value={newShift.employee}
-                onChange={(e) => setNewShift({ ...newShift, employee: e.target.value })}
-                style={inputStyle}
-              >
-                <option value="">{t.selectEmployee}</option>
-                {employees.map(emp => (
-                  <option key={emp.id} value={emp.name}>{emp.name}</option>
-                ))}
-              </select>
-              <input
-                type="time"
-                value={newShift.startTime}
-                onChange={(e) => setNewShift({ ...newShift, startTime: e.target.value })}
-                style={inputStyle}
-              />
-              <input
-                type="time"
-                value={newShift.endTime}
-                onChange={(e) => setNewShift({ ...newShift, endTime: e.target.value })}
-                style={inputStyle}
-              />
-              <div style={styles.modalActions}>
-                <button onClick={handleAddShift} style={styles.primaryBtn}>{t.save}</button>
-                <button onClick={() => setShowAddShift(false)} style={styles.cancelBtn}>{t.cancel}</button>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
+function Field({ label, children }) {
+  return (
+    <label style={styles.field}>
+      <span style={styles.label}>{label}</span>
+      {children}
+    </label>
+  );
+}
+
+function Metric({ label, value }) {
+  return (
+    <div style={styles.metric}>
+      <span style={styles.metricLabel}>{label}</span>
+      <strong style={styles.metricValue}>{value}</strong>
     </div>
   );
 }
 
 const styles = {
-  container: {
-    display: 'flex',
-    gap: '24px',
-    flexWrap: 'wrap',
-    background: '#F4FAFF',
-    borderRadius: '24px',
-    padding: '20px',
-    maxWidth: '1400px',
-    margin: '0 auto'
-  },
-  calendarSection: {
-    flex: '1',
-    minWidth: '280px',
-    maxWidth: '100%',
-    background: '#FFFFFF',
-    borderRadius: '16px',
-    padding: '16px',
-    boxShadow: '0 2px 8px rgba(0,0,0,0.05)',
-    boxSizing: 'border-box'
-  },
-  calendarHeader: {
-    display: 'flex',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: '16px'
-  },
-  monthNavBtn: {
-    padding: '8px 12px',
-    backgroundColor: '#DEE7E7',
-    border: 'none',
-    borderRadius: '8px',
-    cursor: 'pointer',
-    fontSize: '16px'
-  },
-  calendarTitle: {
-    fontSize: '16px',
-    fontWeight: '600',
-    color: '#002642',
-    margin: 0
-  },
-  weekDays: {
-    display: 'grid',
-    gridTemplateColumns: 'repeat(7, 1fr)',
-    gap: '4px',
-    marginBottom: '8px'
-  },
-  weekDay: {
-    textAlign: 'center',
-    fontSize: '12px',
-    fontWeight: '600',
-    color: '#4F646F',
-    padding: '8px 0'
-  },
-  calendarDays: {
-    display: 'grid',
-    gridTemplateColumns: 'repeat(7, 1fr)',
-    gap: '4px'
-  },
-  calendarDay: {
-    textAlign: 'center',
-    padding: '10px 0',
-    fontSize: '14px',
-    borderRadius: '8px',
-    cursor: 'pointer',
-    transition: 'all 0.2s ease',
-    backgroundColor: '#F4FAFF'
-  },
-  calendarDaySelected: {
-    backgroundColor: '#002642',
-    color: '#F4FAFF'
-  },
-  calendarDayPublished: {
-    backgroundColor: '#B7ADCF',
-    color: '#002642'
-  },
-  calendarDayDraft: {
-    border: '2px solid #B7ADCF'
-  },
-  scheduleSection: {
-    flex: '2',
-    minWidth: '400px',
-    maxWidth: '100%',
-    background: '#FFFFFF',
-    borderRadius: '16px',
-    padding: '16px',
-    boxShadow: '0 2px 8px rgba(0,0,0,0.05)',
-    boxSizing: 'border-box'
-  },
-  scheduleHeader: {
-    display: 'flex',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: '16px',
-    flexWrap: 'wrap',
-    gap: '12px'
-  },
-  scheduleTitle: {
-    fontSize: '18px',
-    fontWeight: '600',
-    color: '#002642',
-    margin: 0
-  },
-  addShiftBtn: {
-    padding: '8px 16px',
-    backgroundColor: '#002642',
-    border: 'none',
-    borderRadius: '8px',
-    color: '#F4FAFF',
-    fontWeight: '500',
-    cursor: 'pointer'
-  },
-  tableWrapper: {
-    overflowX: 'auto',
-    marginBottom: '20px'
-  },
-  table: {
+  page: {
     width: '100%',
-    borderCollapse: 'collapse',
-    minWidth: '500px'
+    height: '100%',
+    boxSizing: 'border-box',
+    padding: '22px',
+    overflow: 'hidden',
   },
-  th: {
-    padding: '12px',
-    backgroundColor: '#002642',
-    color: '#F4FAFF',
-    fontWeight: '600',
-    fontSize: '13px',
-    textAlign: 'center',
-    borderBottom: '2px solid #B7ADCF'
-  },
-  td: {
-    padding: '10px 12px',
-    fontSize: '13px',
-    color: '#002642',
-    borderBottom: '1px solid #DEE7E7',
-    textAlign: 'center'
-  },
-  emptyCell: {
-    padding: '40px',
-    textAlign: 'center',
-    color: '#4F646F'
-  },
-  editBtn: {
-    padding: '4px 8px',
-    backgroundColor: '#DEE7E7',
-    border: 'none',
-    borderRadius: '6px',
-    cursor: 'pointer',
-    marginRight: '4px'
-  },
-  deleteBtn: {
-    padding: '4px 8px',
-    backgroundColor: '#FFEBEE',
-    border: 'none',
-    borderRadius: '6px',
-    cursor: 'pointer'
-  },
-  saveBtn: {
-    padding: '4px 8px',
-    backgroundColor: '#002642',
-    border: 'none',
-    borderRadius: '6px',
-    color: '#F4FAFF',
-    cursor: 'pointer',
-    marginRight: '4px'
-  },
-  cancelBtn: {
-    padding: '4px 8px',
-    backgroundColor: '#DEE7E7',
-    border: 'none',
-    borderRadius: '6px',
-    cursor: 'pointer'
-  },
-  actionButtons: {
+
+  shell: {
+    width: 'min(100%, 1280px)',
+    height: '100%',
+    margin: '0 auto',
+    boxSizing: 'border-box',
+    padding: '26px',
+    borderRadius: '30px',
+    background: '#ffffff',
+    border: '1px solid rgba(222, 231, 231, 0.95)',
+    boxShadow: '0 22px 58px rgba(0, 38, 66, 0.18)',
     display: 'flex',
-    justifyContent: 'flex-end',
-    gap: '12px',
-    marginTop: '16px'
+    flexDirection: 'column',
+    overflow: 'hidden',
+    position: 'relative',
   },
-  saveAllBtn: {
-    padding: '10px 20px',
-    backgroundColor: '#002642',
-    border: 'none',
-    borderRadius: '8px',
-    color: '#F4FAFF',
-    fontWeight: '500',
-    cursor: 'pointer'
+  header: {
+    flexShrink: 0,
+    display: 'flex',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    gap: '18px',
+    marginBottom: '18px',
   },
-  publishBtn: {
-    padding: '10px 20px',
-    backgroundColor: '#B7ADCF',
-    border: 'none',
-    borderRadius: '8px',
+
+  title: {
+    margin: 0,
     color: '#002642',
-    fontWeight: '500',
-    cursor: 'pointer'
+    fontSize: '28px',
+    fontWeight: '900',
+    letterSpacing: '-0.03em',
   },
-  modalOverlay: {
-    position: 'fixed',
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
-    backgroundColor: 'rgba(0,0,0,0.5)',
+
+  subtitle: {
+    maxWidth: '820px',
+    margin: '6px 0 0',
+    color: '#4f646f',
+    fontSize: '14px',
+    fontWeight: '600',
+    lineHeight: 1.45,
+  },
+
+  headerStats: {
+    display: 'flex',
+    gap: '10px',
+  },
+
+  managerLayout: {
+    flex: '1 1 auto',
+    minHeight: 0,
+    display: 'grid',
+    gridTemplateColumns: '300px minmax(0, 1fr)',
+    gap: '18px',
+    overflow: 'hidden',
+  },
+
+  sidebar: {
+    minHeight: 0,
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '14px',
+    overflowY: 'auto',
+  },
+
+  previewArea: {
+    minHeight: 0,
+    display: 'grid',
+    gridTemplateRows: 'minmax(0, 1fr) auto',
+    gap: '16px',
+    overflow: 'hidden',
+  },
+
+  employeeArea: {
+    minHeight: 0,
+    overflow: 'hidden',
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '16px',
+  },
+
+  panel: {
+    padding: '18px',
+    borderRadius: '22px',
+    background: '#f4faff',
+    border: '1px solid rgba(79, 100, 111, 0.12)',
+    overflow: 'hidden',
+    display: 'flex',
+    flexDirection: 'column',
+    flex: 1,
+  },
+
+  panelHeader: {
+    display: 'flex',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    gap: '14px',
+    marginBottom: '14px',
+    flexShrink: 0,
+  },
+
+  panelTitle: {
+    margin: 0,
+    color: '#002642',
+    fontSize: '18px',
+    fontWeight: '850',
+  },
+
+  panelHint: {
+    margin: '4px 0 0',
+    color: '#4f646f',
+    fontSize: '13px',
+    fontWeight: '650',
+  },
+
+  modeSegment: {
+    display: 'inline-flex',
+    borderRadius: '999px',
+    background: '#eceff4',
+    padding: '4px',
+    gap: '6px',
+    flexShrink: 0,
+  },
+
+  modeButton: {
+    minWidth: '70px',
+    border: 'none',
+    borderRadius: '999px',
+    background: 'transparent',
+    color: '#4f646f',
+    padding: '10px 14px',
+    fontSize: '13px',
+    fontWeight: '700',
+    cursor: 'pointer',
+  },
+
+  modeButtonActive: {
+    background: '#002642',
+    color: '#f4faff',
+  },
+
+  employeeTimelineScroll: {
+    flex: 1,
+    overflowY: 'auto',
+    paddingRight: '4px',
+  },
+
+  employeeTimeline: {
+    display: 'grid',
+    gap: '16px',
+    marginTop: '10px',
+  },
+
+  timelineDay: {
+    padding: '16px',
+    borderRadius: '20px',
+    background: '#ffffff',
+    border: '1px solid rgba(222, 231, 231, 0.95)',
+    boxShadow: '0 8px 18px rgba(0, 38, 66, 0.08)',
+  },
+
+  timelineDayHeader: {
+    display: 'flex',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    gap: '12px',
+    marginBottom: '14px',
+  },
+
+  stack: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '12px',
+  },
+
+  field: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '6px',
+  },
+
+  label: {
+    color: '#4f646f',
+    fontSize: '12px',
+    fontWeight: '850',
+  },
+
+  input: {
+    width: '100%',
+    height: '42px',
+    boxSizing: 'border-box',
+    borderRadius: '13px',
+    border: '2px solid #dee7e7',
+    background: '#ffffff',
+    padding: '0 13px',
+    color: '#002642',
+    fontSize: '14px',
+    outline: 'none',
+  },
+
+  select: {
+    width: '210px',
+    height: '38px',
+    boxSizing: 'border-box',
+    borderRadius: '12px',
+    border: '2px solid #dee7e7',
+    background: '#ffffff',
+    padding: '0 12px',
+    color: '#002642',
+    fontSize: '13px',
+    outline: 'none',
+  },
+
+  textarea: {
+    width: '100%',
+    minHeight: '58px',
+    boxSizing: 'border-box',
+    borderRadius: '13px',
+    border: '2px solid #dee7e7',
+    background: '#ffffff',
+    padding: '10px 12px',
+    color: '#002642',
+    fontSize: '14px',
+    resize: 'vertical',
+    outline: 'none',
+  },
+
+  primaryButton: {
+    height: '42px',
+    padding: '0 18px',
+    background: '#002642',
+    border: 'none',
+    borderRadius: '13px',
+    color: '#f4faff',
+    fontWeight: '850',
+    cursor: 'pointer',
+    whiteSpace: 'nowrap',
+  },
+
+  primaryButtonDisabled: {
+    height: '42px',
+    padding: '0 18px',
+    background: '#4f646f',
+    border: 'none',
+    borderRadius: '13px',
+    color: '#f4faff',
+    fontWeight: '850',
+    cursor: 'default',
+    opacity: 0.65,
+    whiteSpace: 'nowrap',
+  },
+
+  secondaryButton: {
+    height: '42px',
+    padding: '0 18px',
+    background: '#d7adcf',
+    border: 'none',
+    borderRadius: '13px',
+    color: '#002642',
+    fontWeight: '850',
+    cursor: 'pointer',
+    whiteSpace: 'nowrap',
+  },
+
+  secondaryButtonDisabled: {
+    height: '42px',
+    padding: '0 18px',
+    background: '#d7adcf',
+    border: 'none',
+    borderRadius: '13px',
+    color: '#002642',
+    fontWeight: '850',
+    cursor: 'default',
+    opacity: 0.65,
+    whiteSpace: 'nowrap',
+  },
+
+  smallPrimaryButton: {
+    height: '36px',
+    padding: '0 13px',
+    background: '#002642',
+    border: 'none',
+    borderRadius: '12px',
+    color: '#f4faff',
+    fontSize: '13px',
+    fontWeight: '850',
+    cursor: 'pointer',
+    whiteSpace: 'nowrap',
+  },
+
+  smallSecondaryButton: {
+    height: '36px',
+    padding: '0 13px',
+    background: 'rgba(215, 173, 207, 0.42)',
+    border: 'none',
+    borderRadius: '12px',
+    color: '#002642',
+    fontSize: '13px',
+    fontWeight: '850',
+    cursor: 'pointer',
+    whiteSpace: 'nowrap',
+  },
+
+  helpBox: {
+    padding: '18px',
+    borderRadius: '22px',
+    background: '#dee7e7',
+    color: '#002642',
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '8px',
+    fontSize: '14px',
+    fontWeight: '750',
+    lineHeight: 1.35,
+  },
+
+  helpTitle: {
+    margin: '0 0 4px',
+    fontSize: '17px',
+    fontWeight: '900',
+  },
+
+  metric: {
+    minWidth: '110px',
+    padding: '11px 14px',
+    borderRadius: '16px',
+    background: '#dee7e7',
+    color: '#002642',
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '3px',
+  },
+
+  metricLabel: {
+    fontSize: '12px',
+    color: '#4f646f',
+    fontWeight: '800',
+  },
+
+  metricValue: {
+    fontSize: '19px',
+    fontWeight: '900',
+    color: '#002642',
+  },
+
+  statusDraft: {
+    padding: '8px 12px',
+    borderRadius: '999px',
+    background: '#dee7e7',
+    color: '#002642',
+    fontSize: '13px',
+    fontWeight: '850',
+  },
+
+  statusPublished: {
+    padding: '8px 12px',
+    borderRadius: '999px',
+    background: 'rgba(215, 173, 207, 0.55)',
+    color: '#002642',
+    fontSize: '13px',
+    fontWeight: '850',
+  },
+
+  shiftList: {
+    maxHeight: '100%',
+    overflowY: 'auto',
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '10px',
+  },
+
+  shiftCard: {
+    padding: '14px 16px',
+    borderRadius: '18px',
+    background: '#f4faff',
+    border: '1px solid rgba(79, 100, 111, 0.1)',
+    display: 'flex',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    gap: '14px',
+  },
+
+  shiftMain: {
+    minWidth: 0,
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '4px',
+  },
+
+  shiftRow: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '8px',
+    flexWrap: 'wrap',
+  },
+
+  shiftActions: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '8px',
+    flexWrap: 'wrap',
+    justifyContent: 'flex-end',
+  },
+
+  timeBadge: {
+    padding: '4px 10px',
+    borderRadius: '999px',
+    background: '#dee7e7',
+    color: '#002642',
+    border: '1px solid rgba(79, 100, 111, 0.1)',
+    fontSize: '12px',
+    fontWeight: '700',
+    whiteSpace: 'nowrap',
+  },
+
+  bottomGrid: {
+    minHeight: '160px',
+    display: 'grid',
+    gridTemplateColumns: '1fr 1fr',
+    gap: '16px',
+  },
+
+  compactList: {
+    marginTop: '12px',
+    maxHeight: '180px',
+    overflowY: 'auto',
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '10px',
+  },
+
+  compactItem: {
+    padding: '12px 13px',
+    borderRadius: '16px',
+    background: '#f4faff',
+    border: '1px solid rgba(79, 100, 111, 0.1)',
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '3px',
+  },
+
+  itemTitle: {
+    color: '#002642',
+    fontWeight: '850',
+    overflowWrap: 'anywhere',
+  },
+
+  itemMeta: {
+    color: '#4f646f',
+    fontSize: '13px',
+    fontWeight: '650',
+  },
+
+  staffBadge: {
+    width: 'fit-content',
+    padding: '7px 11px',
+    borderRadius: '999px',
+    background: 'rgba(215, 173, 207, 0.45)',
+    color: '#002642',
+    fontSize: '13px',
+    fontWeight: '850',
+  },
+
+  emptyHero: {
+    flex: 1,
+    display: 'flex',
+    flexDirection: 'column',
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: '48px 32px',
+    background: 'linear-gradient(180deg, #f8fbff 0%, #f4faff 100%)',
+    borderRadius: '22px',
+    border: '1px solid rgba(79, 100, 111, 0.12)',
+  },
+
+  emptyHeroInner: {
+    maxWidth: '420px',
+    display: 'flex',
+    flexDirection: 'column',
+    alignItems: 'center',
+    textAlign: 'center',
+    gap: '12px',
+  },
+
+  emptyIcon: {
+    width: '56px',
+    height: '56px',
+    borderRadius: '18px',
+    background: '#ffffff',
+    border: '1px solid rgba(203, 213, 225, 0.9)',
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'center',
-    zIndex: 1000
+    fontSize: '24px',
+    marginBottom: '4px',
+    boxShadow: '0 8px 20px rgba(0, 38, 66, 0.06)',
   },
-  modal: {
-    background: '#FFFFFF',
-    borderRadius: '16px',
-    padding: '24px',
-    width: '90%',
-    maxWidth: '400px'
-  },
-  modalTitle: {
-    fontSize: '18px',
-    fontWeight: '600',
+
+  emptyTitle: {
+    margin: 0,
     color: '#002642',
-    margin: '0 0 20px 0'
+    fontSize: '22px',
+    fontWeight: '900',
   },
-  modalForm: {
+
+  emptySubtitle: {
+    margin: 0,
+    color: '#4f646f',
+    fontSize: '15px',
+    fontWeight: '650',
+    lineHeight: 1.5,
+  },
+
+  emptyNote: {
+    margin: '4px 0 0',
+    padding: '12px 14px',
+    borderRadius: '14px',
+    background: '#ffffff',
+    border: '1px solid rgba(203, 213, 225, 0.85)',
+    color: '#64748b',
+    fontSize: '13px',
+    fontWeight: '600',
+    lineHeight: 1.45,
+  },
+
+  emptySteps: {
+    margin: '8px 0 0',
+    padding: '14px 18px',
+    listStyle: 'none',
+    width: '100%',
+    boxSizing: 'border-box',
+    borderRadius: '16px',
+    background: '#ffffff',
+    border: '1px solid rgba(203, 213, 225, 0.85)',
     display: 'flex',
     flexDirection: 'column',
-    gap: '16px'
+    gap: '10px',
+    textAlign: 'left',
   },
-  modalActions: {
+
+  emptyStepRow: {
     display: 'flex',
+    alignItems: 'flex-start',
     gap: '12px',
-    justifyContent: 'flex-end',
-    marginTop: '8px'
   },
-  primaryBtn: {
-    padding: '8px 16px',
-    backgroundColor: '#002642',
+
+  emptyStepBadge: {
+    flexShrink: 0,
+    width: '24px',
+    height: '24px',
+    borderRadius: '999px',
+    background: '#dee7e7',
+    color: '#002642',
+    fontSize: '12px',
+    fontWeight: '800',
+    display: 'inline-flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+
+  emptyStepText: {
+    color: '#334155',
+    fontSize: '14px',
+    fontWeight: '650',
+    lineHeight: 1.45,
+    textAlign: 'left',
+  },
+
+  emptyBox: {
+    padding: '26px',
+    borderRadius: '20px',
+    background: '#f4faff',
+    color: '#4f646f',
+    fontWeight: '800',
+    textAlign: 'center',
+  },
+
+  emptyText: {
+    margin: 0,
+    color: '#4f646f',
+    fontSize: '14px',
+    fontWeight: '650',
+    lineHeight: 1.45,
+  },
+
+  toastLayer: {
+    position: 'absolute',
+    top: '22px',
+    right: '26px',
+    zIndex: 20,
+    width: 'min(420px, calc(100% - 52px))',
+    pointerEvents: 'none',
+  },
+
+  toastSuccess: {
+    minHeight: '44px',
+    boxSizing: 'border-box',
+    padding: '10px 12px',
+    borderRadius: '16px',
+    background: '#ffffff',
+    color: '#002642',
+    fontSize: '14px',
+    fontWeight: '750',
+    display: 'grid',
+    gridTemplateColumns: '26px minmax(0, 1fr) 28px',
+    alignItems: 'center',
+    gap: '10px',
+    border: '1px solid rgba(79, 100, 111, 0.12)',
+    boxShadow: '0 16px 36px rgba(0, 38, 66, 0.16)',
+    pointerEvents: 'auto',
+  },
+
+  toastError: {
+    minHeight: '44px',
+    boxSizing: 'border-box',
+    padding: '10px 12px',
+    borderRadius: '16px',
+    background: '#ffffff',
+    color: '#8d1d1d',
+    fontSize: '14px',
+    fontWeight: '750',
+    display: 'grid',
+    gridTemplateColumns: '26px minmax(0, 1fr) 28px',
+    alignItems: 'center',
+    gap: '10px',
+    border: '1px solid rgba(215, 173, 207, 0.6)',
+    boxShadow: '0 16px 36px rgba(0, 38, 66, 0.16)',
+    pointerEvents: 'auto',
+  },
+
+  toastIconSuccess: {
+    width: '26px',
+    height: '26px',
+    borderRadius: '999px',
+    background: '#dee7e7',
+    color: '#002642',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    fontSize: '14px',
+    fontWeight: '900',
+  },
+
+  toastIconError: {
+    width: '26px',
+    height: '26px',
+    borderRadius: '999px',
+    background: 'rgba(215, 173, 207, 0.5)',
+    color: '#8d1d1d',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    fontSize: '14px',
+    fontWeight: '900',
+  },
+
+  toastText: {
+    minWidth: 0,
+    overflow: 'hidden',
+    textOverflow: 'ellipsis',
+    whiteSpace: 'nowrap',
+  },
+
+  toastClose: {
+    width: '28px',
+    height: '28px',
     border: 'none',
-    borderRadius: '8px',
-    color: '#F4FAFF',
-    fontWeight: '500',
-    cursor: 'pointer'
-  }
+    borderRadius: '999px',
+    background: 'transparent',
+    color: '#4f646f',
+    fontSize: '18px',
+    fontWeight: '900',
+    cursor: 'pointer',
+    lineHeight: 1,
+  },
 };

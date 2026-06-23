@@ -1,7 +1,14 @@
-from sqlalchemy import select
+import secrets
+import string
+
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session, joinedload
 
 from app.models import Employee, User
+
+PUBLIC_ID_LENGTH = 16
+PUBLIC_ID_GENERATION_ATTEMPTS = 20
+PUBLIC_ID_ALPHABET = string.ascii_uppercase + string.digits
 
 
 def get_user_by_email(db: Session, email: str) -> User | None:
@@ -20,6 +27,14 @@ def get_user_by_id(db: Session, user_id: int) -> User | None:
     ).first()
 
 
+def get_user_by_public_id(db: Session, public_id: str) -> User | None:
+    return db.scalars(
+        select(User)
+        .options(joinedload(User.employee))
+        .where(func.upper(User.public_id) == public_id.upper())
+    ).first()
+
+
 def create_user(
     db: Session,
     *,
@@ -30,6 +45,7 @@ def create_user(
     is_registration_complete: bool = True,
 ) -> User:
     user = User(
+        public_id=_generate_unique_public_id(db),
         full_name=full_name,
         email=email,
         password_hash=password_hash,
@@ -59,3 +75,21 @@ def update_registration(
 
 def get_employee_for_user(db: Session, user_id: int) -> Employee | None:
     return db.scalars(select(Employee).where(Employee.user_id == user_id)).first()
+
+
+def _generate_public_id() -> str:
+    return "".join(secrets.choice(PUBLIC_ID_ALPHABET) for _ in range(PUBLIC_ID_LENGTH))
+
+
+def _generate_unique_public_id(db: Session) -> str:
+    for _ in range(PUBLIC_ID_GENERATION_ATTEMPTS):
+        public_id = _generate_public_id()
+        existing_user_id = db.scalar(
+            select(User.id)
+            .where(User.public_id == public_id)
+            .limit(1)
+        )
+        if existing_user_id is None:
+            return public_id
+
+    raise RuntimeError("Unable to generate a unique user public ID after 20 attempts.")

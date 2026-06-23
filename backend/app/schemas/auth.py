@@ -12,10 +12,12 @@ class LoginRequest(BaseModel):
 
 class UserRead(BaseModel):
     id: int
+    public_id: str
     full_name: str
     email: str
     role: Role
     employee_id: int | None = None
+    company_id: int | None = None
 
 
 class LoginResponse(BaseModel):
@@ -52,6 +54,8 @@ class CurrentUserPositionRead(BaseModel):
 
 
 class CurrentUserResponse(UserRead):
+    branch_id: int | None = None
+    position_id: int | None = None
     company: CurrentUserCompanyRead | None = None
     branch: CurrentUserBranchRead | None = None
     position: CurrentUserPositionRead | None = None

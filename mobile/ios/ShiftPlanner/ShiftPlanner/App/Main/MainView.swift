@@ -2,18 +2,19 @@ import SwiftUI
 
 
 struct MainView: View {
+    @EnvironmentObject private var languageManager: LanguageManager
     let user: AppUser
     let onLogout: () -> Void
     
     var body: some View {
         VStack(spacing: 16) {
-            Text("Welcome, \(user.name)")
+            Text(languageManager.text("Welcome", "Добро пожаловать") + ", \(user.name)")
                 .font(.title)
                 .bold()
-            Text("Email: \(user.email), role: \(user.role.title)")
+            Text("\(languageManager.text("Email", "Почта")): \(user.email), \(languageManager.text("role", "роль")): \(user.role.title)")
                 .foregroundColor(.secondary)
             
-            Button("Logout") {
+            Button(languageManager.text("Logout", "Выйти")) {
                 onLogout()
             }
             .buttonStyle(.bordered)

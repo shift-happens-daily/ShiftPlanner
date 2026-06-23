@@ -38,12 +38,29 @@ class EmployeeCreate(BaseModel):
     position_id: int = Field(ge=1)
 
 
+class EmployeePositionRead(BaseModel):
+    id: int
+    name: str
+
+
+class EmployeePositionUpdate(BaseModel):
+    position_id: int | None = Field(ge=1)
+
+
+class EmployeeBranchUpdate(BaseModel):
+    branch_id: int | None = Field(ge=1)
+
+
 class EmployeeRead(BaseModel):
     id: int
+    public_id: str
     full_name: str
     email: str
-    position_id: int
+    role: Literal["manager", "employee"]
+    branch_id: int | None
+    position_id: int | None
     position_title: str
+    position: EmployeePositionRead | None = None
     availability: AvailabilityRead | None = None
 
 

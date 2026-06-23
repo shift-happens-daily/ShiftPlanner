@@ -1,172 +1,302 @@
+````md
 # ShiftPlanner Frontend
 
 ## Overview
 
-This is the React + Vite frontend for the ShiftPlanner application. The current UI implements the login/register flow, role-based dashboards for employee and manager, and mock screens for profile, company info, employees, shifts, schedule, and reports.
+React + Vite client for ShiftPlanner.
 
-The frontend is not yet fully integrated with the backend API. It currently uses mocked auth state and mock data in UI components.
+The frontend is connected to the real FastAPI backend and supports:
 
-## Tech stack
+- authentication
+- role-based routing
+- company creation
+- company invite join flow
+- database-based company membership
+- manager employee/position management
+- availability and absences
+- schedule requirements
+- schedule generation and publishing
+- reports
+- XLSX requirement import
+
+## Tech Stack
 
 - React 19
 - Vite
 - React Router DOM
 - Axios
-- date-fns
-- xlsx
+- `xlsx`
 
-## Run locally
+## Environment
 
-From `frontend/`:
+Create `frontend/.env` from `frontend/.env.example`:
+
+```env
+VITE_API_URL=http://localhost:8000
+````
+
+The backend must be reachable from the browser at that URL.
+
+## Run Locally
+
+1. Start the backend on `http://localhost:8000`.
+2. In `frontend/` run:
 
 ```bash
 npm install
 npm run dev
 ```
 
-Open the app at `http://localhost:5173`.
+Frontend URL:
 
-## Environment
-
-Create `frontend/.env` with:
-
-```env
-VITE_API_URL=http://localhost:8000
+```text
+http://localhost:5173
 ```
 
-This value should point to the backend API.
+## Language
 
-## Current frontend state
+The UI language can be switched between Russian and English.
 
-- `frontend/src/context/AuthContext.jsx` currently mocks `login`, `register`, and `logout`.
-- `frontend/src/services/` is empty and should contain API service wrappers.
-- `Auth` page and the dashboard routes are ready for integration, but they do not call real backend endpoints yet.
-- Several tabs use hard-coded mock data for employees, requirements, shifts, and reports.
+The selected language is persisted in `localStorage` under:
 
-## Expected backend contract
-
-The frontend should work with the backend endpoints described below.
-
-### Authentication
-
-- `POST /auth/login`
-  - accepts `{ email, password }`
-  - returns `{ access_token, token_type, role }`
-- `POST /auth/register`
-  - accepts `{ name, email, password, role }`
-  - returns a token or user info
-- `GET /auth/me`
-  - returns current user profile and context
-- `POST /auth/logout`
-  - invalidates current token
-
-### User profile
-
-The frontend expects `/auth/me` to return a user object with:
-
-```json
-{
-  "id": 1,
-  "email": "ivan@example.com",
-  "role": "employee",
-  "employee_id": 5,
-  "company": {
-    "id": 1,
-    "name": "Coffee Bar Barnaul",
-    "invite_code": "COFFEE123"
-  },
-  "branch": { "id": 1, "name": "Main Branch" },
-  "position": { "id": 2, "name": "Barista" }
-}
+```text
+language
 ```
 
-### Company and invite flow
+The selected language is used across:
 
-Expected endpoints:
+* auth screens
+* dashboard pages
+* backend-integrated tabs
+* common API error messages
 
-- `GET /companies/`
-- `POST /companies/`
-- `GET /companies/invite/{invite_code}`
-- `POST /companies/join`
+## Authentication
 
-### Employees and positions
+Authentication is handled through the backend API.
 
-Expected endpoints:
+Used endpoints:
 
-- `GET /employees/`
-- `POST /employees/`
-- `GET /employees/{employee_id}/availability`
-- `POST /employees/{employee_id}/availability`
-- `GET /employees/{employee_id}/absences`
-- `POST /employees/{employee_id}/absences`
-- `DELETE /employees/{employee_id}/absences/{absence_id}`
-- `GET /employees/{employee_id}/calendar-summary`
-- `GET /employees/me/absences`
-- `POST /employees/me/absences`
-- `GET /employees/me/calendar-summary`
-- `GET /employees/me/schedule`
+* `POST /auth/login`
+* `POST /auth/register`
+* `GET /auth/me`
+* `POST /auth/logout`
 
-### Scheduling
+Behavior:
 
-Expected endpoints:
+* bearer token is stored in `localStorage` under `shiftplanner_token`
+* protected API requests attach `Authorization: Bearer <token>`
+* app startup restores the session through `GET /auth/me`
+* `401` clears local auth state and redirects the user to login
 
-- `GET /schedule/requirements`
-- `POST /schedule/requirements`
-- `POST /schedule/requirements/bulk`
-- `POST /schedule/generate`
-- `GET /schedule/{schedule_id}`
-- `PATCH /schedule/{schedule_id}/shifts/{shift_id}`
-- `POST /schedule/{schedule_id}/publish`
-- `GET /schedule/my`
-- `POST /schedule/exchange-requests`
-- `GET /schedule/exchange-requests`
-- `PATCH /schedule/exchange-requests/{exchange_request_id}`
+## Company Data Source
 
-### Reports and imports
+Company data is no longer stored or restored from frontend `localStorage`.
 
-Expected endpoints:
+The frontend uses `GET /auth/me` as the source of truth for the current user's company data.
 
-- `GET /reports/employees`
-- `GET /reports/me`
-- `POST /imports/requirements/xlsx`
+For managers:
 
-## How frontend expects to use backend data
+```text
+/auth/me -> company
+```
 
-### Auth flow
+The manager company is stored in the database through `companies.manager_user_id`.
 
-1. User logs in or registers.
-2. Save the returned bearer token in browser storage.
-3. Call `GET /auth/me` and use the returned profile for UI state.
-4. Use `role`, `employee_id`, `company`, `branch`, and `position` for navigation and permissions.
+For employees:
 
-### Role-based UI
+```text
+/auth/me -> company, branch, position
+```
 
-- Employee sees: Profile, Company, Shifts, Schedule.
-- Manager sees: Profile, Company, Employees, Shifts, Schedule, Reports.
+The employee company membership is stored in the database through the `employees` table.
 
-### Frontend integration points
+This means:
 
-- Replace `AuthContext` mock logic with real API calls.
-- Implement `frontend/src/services/api.js` or similar service layer.
-- Use `axios` with `Authorization: Bearer <token>` for protected routes.
-- Load profile and role once after login, then keep it in context.
-- Fetch list data for company, employees, requirements, shifts, and reports from backend endpoints.
+* manager company survives page reloads because it is stored in the database
+* employee company/branch/position survives page reloads because it is stored in the database
+* after database reset, old companies do not reappear from frontend storage
+* if `/auth/me` returns no company, the frontend does not fake one
 
-## Notes for backend integration
+## Demo Accounts
 
-- The frontend currently uses mock data and local storage in several screens. The backend should provide real data for these views.
-- The app expects `VITE_API_URL` to be available at runtime.
-- UI labels support Russian and English.
-- The current design includes role-based pages at `/employee` and `/manager`.
+Demo accounts are available only if the backend seed data is applied.
 
-## Development checklist
+Default seed accounts:
 
-- [ ] Connect `AuthContext` to actual backend auth endpoints.
-- [ ] Implement token storage and refresh handling if needed.
-- [ ] Load `/auth/me` after login to populate user data.
-- [ ] Replace mock employees and positions with backend responses.
-- [ ] Replace mock schedule and shift data with real schedule endpoints.
-- [ ] Replace reports mock data with `GET /reports/employees` and `GET /reports/me`.
-- [ ] Add error handling for 401/403 responses.
+* `manager@example.com / manager123`
+* `ivan@example.com / employee123`
 
+Default invite flow demo data:
 
+* company: `Coffee Bar Barnaul`
+* invite code: `COFFEE123`
+
+If the database was reset without applying `seed.sql`, create new users and a new company manually through the UI.
+
+## Integrated Pages
+
+### Auth
+
+The auth pages support:
+
+* login
+* registration
+* logout
+* session restore through `GET /auth/me`
+
+### Employee Dashboard
+
+Employee dashboard tabs:
+
+* `Profile`: current user data from `GET /auth/me`
+* `Company`: joined company, branch, position, invite-code join flow
+* `Shift Setup`: self availability, desired days off, absences, calendar summary
+* `Schedule`: personal published shifts from `GET /schedule/my`, shift exchange request creation
+* `Reports`: self workload from `GET /reports/me`
+
+### Manager Dashboard
+
+Manager dashboard tabs:
+
+* `Profile`: current user data from `GET /auth/me`
+* `Company`: current company from `GET /auth/me`, company creation, invite code, branch creation
+* `Employees`: position creation, employee creation, availability, absences, employee summary
+* `Shift Setup`: requirements list, single requirement creation, bulk requirement creation, XLSX import
+* `Schedule`: generate draft schedule, reassign/remove shifts, publish schedule
+* `Reports`: employee workload report for a selected date range
+
+## Backend Endpoints Used
+
+### Company
+
+* `GET /companies/`
+* `POST /companies/`
+* `GET /companies/invite/{invite_code}`
+* `POST /companies/join`
+* `GET /companies/{company_id}/branches`
+* `POST /companies/{company_id}/branches`
+* `DELETE /companies/{company_id}`
+
+Company visibility rules:
+
+* current company is loaded from `GET /auth/me`
+* manager company is attached through `companies.manager_user_id`
+* employee company is attached through the `employees` table
+* employees do not load or see the general company list
+* `GET /companies/` is treated as a manager company-management list
+* invite details are shown only after explicit preview through `GET /companies/invite/{invite_code}`
+
+### Positions and Employees
+
+* `GET /positions/`
+* `POST /positions/`
+* `GET /employees/`
+* `POST /employees/`
+* `GET /employees/{employee_id}/availability`
+* `POST /employees/{employee_id}/availability`
+* `GET /employees/{employee_id}/absences`
+* `POST /employees/{employee_id}/absences`
+* `DELETE /employees/{employee_id}/absences/{absence_id}`
+* `GET /employees/{employee_id}/calendar-summary`
+* `GET /employees/me/absences`
+* `GET /employees/me/calendar-summary`
+
+Position behavior:
+
+* manager-created positions are attached to the current manager company
+* the current company is taken from `GET /auth/me`
+* positions are filtered by `company_id` on the frontend
+
+### Schedule
+
+* `GET /schedule/requirements`
+* `POST /schedule/requirements`
+* `POST /schedule/requirements/bulk`
+* `POST /schedule/generate`
+* `PATCH /schedule/{schedule_id}/shifts/{shift_id}`
+* `POST /schedule/{schedule_id}/publish`
+* `GET /schedule/my`
+* `POST /schedule/exchange-requests`
+
+### Reports and Import
+
+* `GET /reports/employees`
+* `GET /reports/me`
+* `POST /imports/requirements/xlsx`
+
+## Error Handling
+
+Common API errors are normalized and localized.
+
+Behavior:
+
+* `401`: token is cleared and the app returns to login
+* `403`: shown as a localized permission error
+* `404`: shown as a localized not-found error, including invalid invite code cases
+* `422`: validation details are normalized into readable text
+* network error: shown as a localized backend unavailable message
+* common backend detail strings are mapped to localized frontend messages instead of being rendered raw
+
+## Database Reset Notes
+
+After backend schema changes, reset the database from the project root:
+
+```bash
+docker exec shiftplanner_postgres psql -U shiftplanner_user -d shiftplanner -c "DROP SCHEMA IF EXISTS public CASCADE; CREATE SCHEMA public;"
+```
+
+Then apply schema:
+
+```bash
+Get-Content backend/db/schema.sql | docker exec -i shiftplanner_postgres psql -U shiftplanner_user -d shiftplanner
+```
+
+Apply seed data only if demo accounts are needed:
+
+```bash
+Get-Content backend/db/seed.sql | docker exec -i shiftplanner_postgres psql -U shiftplanner_user -d shiftplanner
+```
+
+Frontend local storage can be cleared during debugging:
+
+```js
+localStorage.clear()
+```
+
+This clears token and UI language as well, so the user will need to log in again.
+
+## Known Limitations
+
+* Manager schedule screen works with the schedule returned by the current generation flow; it does not yet provide a separate UI to load an arbitrary historical schedule by ID.
+* Exchange request approval endpoints exist in the backend, but the manager approval UI is not implemented yet.
+* The frontend depends on `GET /auth/me` for current company state. If `/auth/me` does not return a company for a manager or employee, the frontend will show the account as not attached to a company.
+* Demo accounts and demo invite codes exist only when backend seed data is applied.
+
+## Verification
+
+Frontend commands:
+
+```bash
+cd frontend
+npm install
+npm run lint
+npm run build
+```
+
+Backend commands:
+
+```bash
+cd backend
+python -m compileall app
+python -m pytest
+```
+
+Expected results:
+
+* `npm run lint`: passed
+* `npm run build`: passed
+* `python -m compileall app`: passed
+* `python -m pytest`: may depend on the local environment and database state
+
+```
+```
