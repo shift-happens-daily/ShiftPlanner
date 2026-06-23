@@ -11,6 +11,8 @@ mobile/android/local.properties
 mobile/ios/**/xcuserdata/
 mobile/ios/**/*.xcuserstate
 mobile/ios/**/DerivedData/
+mobile/ios/**/.derivedData*/
+.derivedData*/
 # Python
 __pycache__/
 *.py[cod]
