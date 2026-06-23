@@ -21,6 +21,7 @@ from app.schemas.schedule import (
     ShiftRead,
     UnfilledRequirementRead,
 )
+from . import schedule_solver
 
 
 def list_requirements(
@@ -231,63 +232,35 @@ def generate_schedule(
         company_id=current_user.company_id,
     )
 
-    generated_shifts: list[dict] = []
-    unfilled: list[dict] = []
-
-    for requirement in requirements:
-        employee = next(iter(employee_repository.list_employees_by_position(db, requirement.position_id)), None)
-        position = position_repository.get_position_by_id(db, requirement.position_id)
-        position_title = position.name if position else ""
-
-        if employee is None:
-            unfilled.append(
-                {
-                    "requirement_id": requirement.id,
-                    "position_id": requirement.position_id,
-                    "position_title": position_title,
-                    "date": requirement.shift_date,
-                    "start_time": requirement.start_time,
-                    "end_time": requirement.end_time,
-                    "missing_staff": requirement.required_employees,
-                }
-            )
-            continue
-
-        generated_shifts.append(
-            {
-                "employee_id": employee.id,
-                "employee_name": employee.user.full_name,
-                "position_id": requirement.position_id,
-                "position_name": position_title,
-                "date": requirement.shift_date,
-                "start_time": requirement.start_time,
-                "end_time": requirement.end_time,
-            }
-        )
-
-        if requirement.required_employees > 1:
-            unfilled.append(
-                {
-                    "requirement_id": requirement.id,
-                    "position_id": requirement.position_id,
-                    "position_title": position_title,
-                    "date": requirement.shift_date,
-                    "start_time": requirement.start_time,
-                    "end_time": requirement.end_time,
-                    "missing_staff": requirement.required_employees - 1,
-                }
-            )
-
     schedule_start = start_date or (min((item.shift_date for item in requirements), default=date.today()))
     schedule_end = end_date or (max((item.shift_date for item in requirements), default=schedule_start))
-    schedule = schedule_repository.create_schedule(
-        db,
-        company_id=current_user.company_id,
-        start_date=schedule_start,
-        end_date=schedule_end,
-        generated_shifts=generated_shifts,
-    )
-    return _build_schedule_read(db, schedule.id, schedule.status, unfilled)
+
+    if not requirements:
+        schedule = schedule_repository.create_schedule(
+            db,
+            company_id=current_user.company_id,
+            start_date=schedule_start,
+            end_date=schedule_end,
+            generated_shifts=[],
+        )
+        return _build_schedule_read(db, schedule.id, schedule.status)
+
+    try:
+        result = schedule_solver.generate_schedule(
+            db,
+            company_id=current_user.company_id,
+            start_date=schedule_start,
+            end_date=schedule_end,
+            commit=True,
+        )
+    except schedule_solver.ScheduleDataError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(exc),
+        ) from exc
+
+    schedule = schedule_repository.get_schedule(db, result.schedule_id)
+    return _build_schedule_read(db, result.schedule_id, schedule.status)
 
 
 def get_schedule(db: Session, schedule_id: int) -> ScheduleRead:
@@ -438,6 +411,10 @@ def _build_schedule_read(
                 1
                 for row in rows
                 if row["position_id"] == requirement.position_id
+                and _matches_requirement_branch(
+                    row["employee_branch_id"],
+                    requirement.branch_id,
+                )
                 and row["shift_date"] == requirement.shift_date
                 and row["start_time"] == requirement.start_time
                 and row["end_time"] == requirement.end_time
@@ -474,6 +451,17 @@ def _build_shift_read(row: dict) -> ShiftRead:
         date=row["shift_date"],
         start_time=row["start_time"],
         end_time=row["end_time"],
+    )
+
+
+def _matches_requirement_branch(
+    employee_branch_id: int | None,
+    requirement_branch_id: int | None,
+) -> bool:
+    return (
+        employee_branch_id is None
+        or requirement_branch_id is None
+        or employee_branch_id == requirement_branch_id
     )
 
 

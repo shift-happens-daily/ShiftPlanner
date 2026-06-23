@@ -22,6 +22,7 @@ PSYCOPG_DSN = DATABASE_URL.replace("postgresql+psycopg://", "postgresql://", 1)
 SEED_INVITE_CODE = "A7K9P2X4M8Q1L5R3"
 SECOND_COMPANY_INVITE_CODE = "B8L0Q3Y5N9R2M6S4"
 OTHER_REQUIREMENTS_INVITE_CODE = "C9M1R4Z6P0S3N7T5"
+EMPLOYEE_PASSWORD_HASH = "$2b$12$uSYcqEdeSEBbX1C4vnns9.33t2QvChgi0eQ5RxJBGg8jCHGqu3w8a"
 
 
 def _execute_script(cursor, script: str) -> None:
@@ -71,7 +72,6 @@ def build_requirements_workbook(rows: list[list[object]]) -> bytes:
 
 def seed_second_company_scope_data() -> None:
     manager_password_hash = "$2b$12$oo5ryRPAlz/TOfenPoE3JuFYJsdljzAhv.FLXcvx6vrvCPcCA1kTm"
-    employee_password_hash = "$2b$12$uSYcqEdeSEBbX1C4vnns9.33t2QvChgi0eQ5RxJBGg8jCHGqu3w8a"
 
     with psycopg.connect(PSYCOPG_DSN) as connection:
         with connection.cursor() as cursor:
@@ -118,7 +118,7 @@ def seed_second_company_scope_data() -> None:
                 VALUES ('Other Employee', 'other-employee@example.com', %s, 'employee')
                 RETURNING id
                 """,
-                (employee_password_hash,),
+                (EMPLOYEE_PASSWORD_HASH,),
             )
             second_employee_user_id = cursor.fetchone()[0]
             cursor.execute(
@@ -128,6 +128,50 @@ def seed_second_company_scope_data() -> None:
                 """,
                 (second_employee_user_id, second_company_id, second_branch_id, second_position_id),
             )
+
+
+def seed_company_employee(
+    *,
+    full_name: str,
+    email: str,
+    branch_id: int | None,
+    position_id: int,
+    availability_blocks: list[tuple[int, str, str, str]] | None = None,
+) -> int:
+    with psycopg.connect(PSYCOPG_DSN) as connection:
+        with connection.cursor() as cursor:
+            cursor.execute(
+                """
+                INSERT INTO users (full_name, email, password_hash, role)
+                VALUES (%s, %s, %s, 'employee')
+                RETURNING id
+                """,
+                (full_name, email, EMPLOYEE_PASSWORD_HASH),
+            )
+            user_id = cursor.fetchone()[0]
+            cursor.execute(
+                """
+                INSERT INTO employees (user_id, company_id, branch_id, position_id, max_hours_per_week)
+                VALUES (%s, 1, %s, %s, 40)
+                RETURNING id
+                """,
+                (user_id, branch_id, position_id),
+            )
+            employee_id = cursor.fetchone()[0]
+            if availability_blocks:
+                cursor.executemany(
+                    """
+                    INSERT INTO employee_availability (
+                        employee_id, weekday, start_time, end_time, availability_status
+                    )
+                    VALUES (%s, %s, %s, %s, %s)
+                    """,
+                    [
+                        (employee_id, weekday, start_time, end_time, availability_status)
+                        for weekday, start_time, end_time, availability_status in availability_blocks
+                    ],
+                )
+            return employee_id
 
 
 def test_auth_token_and_profile_endpoints(client: TestClient) -> None:
@@ -1714,6 +1758,123 @@ def test_manager_generation_is_company_scoped_and_publishable(client: TestClient
     visible = client.get("/schedule/my", headers=employee_headers)
     assert visible.status_code == 200, visible.text
     assert len(visible.json()) == 1
+
+
+def test_generate_schedule_uses_solver_and_skips_unavailable_employee(client: TestClient) -> None:
+    with psycopg.connect(PSYCOPG_DSN) as connection:
+        with connection.cursor() as cursor:
+            cursor.execute("UPDATE employees SET branch_id = 1, position_id = 1 WHERE id = 1")
+            cursor.execute(
+                """
+                UPDATE employee_availability
+                SET availability_status = 'unavailable'
+                WHERE employee_id = 1
+                  AND weekday = 0
+                  AND start_time = '10:00'
+                  AND end_time = '18:00'
+                """
+            )
+
+    replacement_employee_id = seed_company_employee(
+        full_name="Available Barista",
+        email="available-barista@example.com",
+        branch_id=1,
+        position_id=1,
+        availability_blocks=[(0, "10:00", "18:00", "available")],
+    )
+
+    manager_headers = login_json(client, "manager@example.com", "manager123")
+    generated = client.post(
+        "/schedule/generate",
+        headers=manager_headers,
+        json={"start_date": "2026-06-15", "end_date": "2026-06-15"},
+    )
+    assert generated.status_code == 200, generated.text
+    generated_json = generated.json()
+
+    assert [shift["employee_id"] for shift in generated_json["shifts"]] == [replacement_employee_id]
+    assert generated_json["unfilled_requirements"] == []
+
+
+def test_generate_schedule_skips_absent_employee(client: TestClient) -> None:
+    with psycopg.connect(PSYCOPG_DSN) as connection:
+        with connection.cursor() as cursor:
+            cursor.execute("UPDATE employees SET branch_id = 1, position_id = 1 WHERE id = 1")
+            cursor.execute(
+                """
+                INSERT INTO absences (employee_id, absence_type, start_date, end_date, comment)
+                VALUES (1, 'vacation', '2026-06-15', '2026-06-15', 'Out')
+                """
+            )
+
+    replacement_employee_id = seed_company_employee(
+        full_name="Backup Barista",
+        email="backup-barista@example.com",
+        branch_id=1,
+        position_id=1,
+        availability_blocks=[(0, "10:00", "18:00", "available")],
+    )
+
+    manager_headers = login_json(client, "manager@example.com", "manager123")
+    generated = client.post(
+        "/schedule/generate",
+        headers=manager_headers,
+        json={"start_date": "2026-06-15", "end_date": "2026-06-15"},
+    )
+    assert generated.status_code == 200, generated.text
+    generated_json = generated.json()
+
+    assert [shift["employee_id"] for shift in generated_json["shifts"]] == [replacement_employee_id]
+    assert generated_json["unfilled_requirements"] == []
+
+
+def test_generate_schedule_uses_if_needed_only_when_needed_and_can_assign_multiple_staff(
+    client: TestClient,
+) -> None:
+    with psycopg.connect(PSYCOPG_DSN) as connection:
+        with connection.cursor() as cursor:
+            cursor.execute("UPDATE employees SET branch_id = 1, position_id = 1 WHERE id = 1")
+
+    if_needed_employee_id = seed_company_employee(
+        full_name="If Needed Barista",
+        email="if-needed-barista@example.com",
+        branch_id=1,
+        position_id=1,
+        availability_blocks=[(0, "10:00", "18:00", "if_needed")],
+    )
+
+    manager_headers = login_json(client, "manager@example.com", "manager123")
+
+    first_generated = client.post(
+        "/schedule/generate",
+        headers=manager_headers,
+        json={"start_date": "2026-06-15", "end_date": "2026-06-15"},
+    )
+    assert first_generated.status_code == 200, first_generated.text
+    assert [shift["employee_id"] for shift in first_generated.json()["shifts"]] == [1]
+
+    with psycopg.connect(PSYCOPG_DSN) as connection:
+        with connection.cursor() as cursor:
+            cursor.execute(
+                """
+                UPDATE shift_requirements
+                SET required_employees = 2
+                WHERE company_id = 1
+                  AND shift_date = '2026-06-15'
+                  AND start_time = '10:00'
+                  AND end_time = '18:00'
+                """
+            )
+
+    second_generated = client.post(
+        "/schedule/generate",
+        headers=manager_headers,
+        json={"start_date": "2026-06-15", "end_date": "2026-06-15"},
+    )
+    assert second_generated.status_code == 200, second_generated.text
+    employee_ids = sorted(shift["employee_id"] for shift in second_generated.json()["shifts"])
+    assert employee_ids == [1, if_needed_employee_id]
+    assert second_generated.json()["unfilled_requirements"] == []
 
 
 def test_repeated_generation_does_not_stack_shifts_or_reported_hours(client: TestClient) -> None:
