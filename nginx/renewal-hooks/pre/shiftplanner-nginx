@@ -1,0 +1,9 @@
+#!/bin/sh
+set -eu
+
+marker=/run/shiftplanner-nginx-certbot-stopped
+
+if docker ps --format '{{.Names}}' | grep -qx shiftplanner_nginx; then
+    docker stop shiftplanner_nginx
+    touch "$marker"
+fi
