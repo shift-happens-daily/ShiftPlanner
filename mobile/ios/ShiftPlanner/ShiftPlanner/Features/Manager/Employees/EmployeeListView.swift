@@ -7,8 +7,7 @@ struct EmployeeListView: View {
     @StateObject private var viewModel: EmployeeListViewModel
     @State private var employeePendingRemoval: ManagedEmployee?
     @State private var positionPendingRemoval: ManagedPosition?
-    @State private var branchPickerEmployee: ManagedEmployee?
-    @State private var rolePickerEmployee: ManagedEmployee?
+    @State private var activeSheet: EmployeeListActiveSheet?
 
     let user: AppUser
     let onUserUpdated: (AppUser) -> Void
@@ -42,11 +41,15 @@ struct EmployeeListView: View {
             .background(themeManager.selectedTheme.screenBackground)
             .navigationTitle(languageManager.text("Employees", "Сотрудники"))
             .navigationBarTitleDisplayMode(.inline)
-            .sheet(item: $branchPickerEmployee) { employee in
-                branchPickerSheet(for: employee)
-            }
-            .sheet(item: $rolePickerEmployee) { employee in
-                rolePickerSheet(for: employee)
+            .sheet(item: $activeSheet) { sheet in
+                switch sheet {
+                case .branch(let employee):
+                    branchPickerSheet(for: employee)
+                case .position(let employee):
+                    rolePickerSheet(for: employee)
+                case .create:
+                    createEmployeeSheet
+                }
             }
             .alert(languageManager.text("Remove employee?", "Удалить сотрудника?"), isPresented: employeeRemovalBinding) {
                 Button(languageManager.text("Cancel", "Отмена"), role: .cancel) {}
@@ -105,10 +108,38 @@ struct EmployeeListView: View {
     @ViewBuilder
     private var employeesSection: some View {
         VStack(alignment: .leading, spacing: 14) {
-            Text(languageManager.text("Employees", "Сотрудники"))
-                .font(.title3)
-                .fontWeight(.bold)
+            HStack(alignment: .center, spacing: 12) {
+                Text(languageManager.text("Employees", "Сотрудники"))
+                    .font(.title3)
+                    .fontWeight(.bold)
+                    .foregroundStyle(themeManager.selectedTheme.primaryTextColor)
+
+                Spacer()
+
+                Button {
+                    activeSheet = .create
+                } label: {
+                    HStack(spacing: 4) {
+                        Image(systemName: "plus")
+                            .font(.caption)
+                        Text(languageManager.text("Add", "Добавить"))
+                            .font(.caption)
+                            .fontWeight(.semibold)
+                    }
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 7)
+                    .background(themeManager.selectedTheme.elevatedSurfaceColor)
+                    .overlay {
+                        RoundedRectangle(cornerRadius: 12, style: .continuous)
+                            .stroke(themeManager.selectedTheme.borderColor, lineWidth: 1)
+                    }
+                    .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                }
+                .buttonStyle(.plain)
                 .foregroundStyle(themeManager.selectedTheme.primaryTextColor)
+                .disabled(!viewModel.canCreateEmployee)
+                .opacity(viewModel.canCreateEmployee ? 1 : 0.5)
+            }
 
             if viewModel.isLoading {
                 loadingView
@@ -142,20 +173,20 @@ struct EmployeeListView: View {
             employee: employee,
             branchTitle: viewModel.branchTitle(for: employee),
             positionTitle: viewModel.positionTitle(for: employee),
-            isBranchPickerExpanded: branchPickerEmployee?.id == employee.id,
-            isRolePickerExpanded: rolePickerEmployee?.id == employee.id,
+            isBranchPickerExpanded: activeSheet?.employee?.id == employee.id && activeSheet?.kind == .branch,
+            isRolePickerExpanded: activeSheet?.employee?.id == employee.id && activeSheet?.kind == .position,
             canDeleteEmployee: true,
             onToggleBranchPicker: {
-                branchPickerEmployee = employee
+                activeSheet = .branch(employee)
             },
             onToggleRolePicker: {
-                rolePickerEmployee = employee
+                activeSheet = .position(employee)
             },
             onDelete: {
                 employeePendingRemoval = employee
             }
         )
-        .zIndex(rolePickerEmployee?.id == employee.id ? 1000 : Double(viewModel.employees.count - index))
+        .zIndex(activeSheet?.employee?.id == employee.id ? 1000 : Double(viewModel.employees.count - index))
     }
 
     private var emptyEmployeesView: some View {
@@ -184,15 +215,30 @@ struct EmployeeListView: View {
         if viewModel.capabilities.canAssignPosition &&
             viewModel.capabilities.canRemovePosition {
             return languageManager.text(
-                "Roles and positions are synced with the backend. Employee removal is still local-only for now.",
-                "Роли и должности синхронизируются с бэкендом. Удаление сотрудника пока работает только локально."
+                "Managers can add employees before registration. Roles and positions are synced with the backend. Employee removal is still local-only for now.",
+                "Менеджер может добавлять сотрудников до регистрации. Роли и должности синхронизируются с бэкендом. Удаление сотрудника пока работает только локально."
             )
         }
 
         return languageManager.text(
-            "Employee, branch, and role lists are loaded from the backend. Some management actions may still work only locally.",
-            "Списки сотрудников, филиалов и должностей загружаются с бэкенда. Часть действий управления пока может работать только локально."
+            "Employee, branch, and role lists are loaded from the backend. Managers can also add employees before they register.",
+            "Списки сотрудников, филиалов и должностей загружаются с бэкенда. Менеджер также может добавить сотрудника еще до его регистрации."
         )
+    }
+
+    private var createEmployeeSheet: some View {
+        CreateEmployeeSheet(
+            draft: viewModel.makeEmployeeDraft(),
+            positions: viewModel.positions,
+            branches: viewModel.branches,
+            isSubmitting: viewModel.isCreatingEmployee,
+            errorMessage: viewModel.errorMessage,
+            statusMessage: viewModel.statusMessage,
+            onSave: { draft in
+                await viewModel.createEmployee(from: draft)
+            }
+        )
+        .presentationDetents([.medium, .large])
     }
 
     private func branchPickerSheet(for employee: ManagedEmployee) -> some View {
@@ -204,7 +250,7 @@ struct EmployeeListView: View {
                     onAssignBranch: { branchId in
                         Task {
                             await viewModel.assignBranch(branchId, to: employee)
-                            branchPickerEmployee = nil
+                            activeSheet = nil
                         }
                     }
                 )
@@ -230,18 +276,18 @@ struct EmployeeListView: View {
                     onAssignPosition: { positionId in
                         Task {
                             await viewModel.assignPosition(positionId, to: employee)
-                            rolePickerEmployee = nil
+                            activeSheet = nil
                         }
                     },
                     onCreatePosition: { title in
                         Task {
                             await viewModel.addPosition(title: title, assigningTo: employee)
-                            rolePickerEmployee = nil
+                            activeSheet = nil
                         }
                     },
                     onDeletePosition: { position in
                         positionPendingRemoval = position
-                        rolePickerEmployee = nil
+                        activeSheet = nil
                     }
                 )
                 .padding()
@@ -275,5 +321,48 @@ struct EmployeeListView: View {
                 }
             }
         )
+    }
+}
+
+private enum EmployeeListSheetKind {
+    case branch
+    case position
+    case create
+}
+
+private enum EmployeeListActiveSheet: Identifiable {
+    case branch(ManagedEmployee)
+    case position(ManagedEmployee)
+    case create
+
+    var id: String {
+        switch self {
+        case .branch(let employee):
+            return "branch-\(employee.id)"
+        case .position(let employee):
+            return "position-\(employee.id)"
+        case .create:
+            return "create"
+        }
+    }
+
+    var kind: EmployeeListSheetKind {
+        switch self {
+        case .branch:
+            return .branch
+        case .position:
+            return .position
+        case .create:
+            return .create
+        }
+    }
+
+    var employee: ManagedEmployee? {
+        switch self {
+        case .branch(let employee), .position(let employee):
+            return employee
+        case .create:
+            return nil
+        }
     }
 }

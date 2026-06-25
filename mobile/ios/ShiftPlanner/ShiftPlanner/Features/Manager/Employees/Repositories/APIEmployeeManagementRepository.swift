@@ -14,6 +14,18 @@ enum EmployeeManagementRepositoryError: LocalizedError {
     }
 }
 
+private struct EmployeeManagementEmployeeCreateRequestDTO: Encodable {
+    let fullName: String
+    let email: String
+    let positionId: Int
+
+    enum CodingKeys: String, CodingKey {
+        case fullName = "full_name"
+        case email
+        case positionId = "position_id"
+    }
+}
+
 private struct EmployeeManagementEmployeeResponseDTO: Decodable {
     let id: Int
     let publicId: String
@@ -133,6 +145,7 @@ extension EmployeeManagementBranchResponseDTO {
 
 final class APIEmployeeManagementRepository: EmployeeManagementRepository {
     let capabilities = EmployeeManagementCapabilities(
+        canCreateEmployee: true,
         canCreatePosition: true,
         canAssignPosition: true,
         canRemovePosition: true,
@@ -183,6 +196,53 @@ final class APIEmployeeManagementRepository: EmployeeManagementRepository {
             .filter { $0.companyId == companyId }
             .map { $0.asManagedPosition() }
             .sorted { $0.title.localizedCaseInsensitiveCompare($1.title) == .orderedAscending }
+    }
+
+    func createEmployee(
+        fullName: String,
+        email: String,
+        positionId: Int,
+        branchId: Int?,
+        existingEmployees: [ManagedEmployee]
+    ) async throws -> [ManagedEmployee] {
+        let body = try JSONEncoder().encode(
+            EmployeeManagementEmployeeCreateRequestDTO(
+                fullName: fullName,
+                email: email,
+                positionId: positionId
+            )
+        )
+
+        let request = apiClient.makeRequest(
+            path: "employees/",
+            method: "POST",
+            body: body,
+            requiresAuthorization: true
+        )
+        var createdEmployee = try await apiClient.send(
+            request,
+            as: EmployeeManagementEmployeeResponseDTO.self
+        ).asManagedEmployee()
+
+        if let branchId {
+            let body = try JSONEncoder().encode(
+                EmployeeManagementBranchUpdateRequestDTO(branchId: branchId)
+            )
+            let branchRequest = apiClient.makeRequest(
+                path: "employees/\(createdEmployee.id)/branch",
+                method: "PATCH",
+                body: body,
+                requiresAuthorization: true
+            )
+            createdEmployee = try await apiClient.send(
+                branchRequest,
+                as: EmployeeManagementEmployeeResponseDTO.self
+            ).asManagedEmployee()
+        }
+
+        return (existingEmployees + [createdEmployee]).sorted {
+            $0.fullName.localizedCaseInsensitiveCompare($1.fullName) == .orderedAscending
+        }
     }
 
     func addPosition(title: String, currentPositions: [ManagedPosition]) async throws -> [ManagedPosition] {

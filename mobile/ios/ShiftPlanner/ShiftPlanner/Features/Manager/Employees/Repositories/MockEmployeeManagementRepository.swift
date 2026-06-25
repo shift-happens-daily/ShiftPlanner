@@ -2,6 +2,7 @@ import Foundation
 
 struct MockEmployeeManagementRepository: EmployeeManagementRepository {
     let capabilities = EmployeeManagementCapabilities(
+        canCreateEmployee: true,
         canCreatePosition: true,
         canAssignPosition: true,
         canRemovePosition: true,
@@ -59,6 +60,34 @@ struct MockEmployeeManagementRepository: EmployeeManagementRepository {
             ManagedPosition(id: 2, title: "Waiter"),
             ManagedPosition(id: 3, title: "Shift Lead")
         ]
+    }
+
+    func createEmployee(
+        fullName: String,
+        email: String,
+        positionId: Int,
+        branchId: Int?,
+        existingEmployees: [ManagedEmployee]
+    ) async throws -> [ManagedEmployee] {
+        let branches = try await fetchBranches()
+        let positions = try await fetchPositions()
+        let nextID = (existingEmployees.map(\.id).max() ?? 0) + 1
+
+        let newEmployee = ManagedEmployee(
+            id: nextID,
+            publicId: "EMPLOYEE\(String(format: "%08d", nextID))",
+            fullName: fullName,
+            email: email,
+            role: .employee,
+            branchId: branchId,
+            branchName: branches.first(where: { $0.id == branchId })?.name,
+            positionId: positionId,
+            positionTitle: positions.first(where: { $0.id == positionId })?.title
+        )
+
+        return (existingEmployees + [newEmployee]).sorted {
+            $0.fullName.localizedCaseInsensitiveCompare($1.fullName) == .orderedAscending
+        }
     }
 
     func addPosition(title: String, currentPositions: [ManagedPosition]) async throws -> [ManagedPosition] {

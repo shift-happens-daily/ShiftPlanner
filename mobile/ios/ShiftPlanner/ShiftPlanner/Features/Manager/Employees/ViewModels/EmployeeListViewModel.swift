@@ -9,6 +9,7 @@ final class EmployeeListViewModel: ObservableObject {
     @Published var errorMessage: String?
     @Published var statusMessage: String?
     @Published var isLoading = false
+    @Published var isCreatingEmployee = false
 
     private let repository: EmployeeManagementRepository
 
@@ -26,6 +27,10 @@ final class EmployeeListViewModel: ObservableObject {
 
     var hasPositions: Bool {
         !positions.isEmpty
+    }
+
+    var canCreateEmployee: Bool {
+        capabilities.canCreateEmployee && !isCreatingEmployee
     }
 
     func loadData() async {
@@ -132,6 +137,61 @@ final class EmployeeListViewModel: ObservableObject {
         } catch {
             errorMessage = error.localizedDescription
             statusMessage = nil
+        }
+    }
+
+    func makeEmployeeDraft() -> EmployeeCreationDraft {
+        EmployeeCreationDraft(
+            positionId: positions.first?.id,
+            branchId: branches.first?.id
+        )
+    }
+
+    func createEmployee(from draft: EmployeeCreationDraft) async -> Bool {
+        let trimmedName = draft.fullName.trimmingCharacters(in: .whitespacesAndNewlines)
+        let trimmedEmail = draft.email.trimmingCharacters(in: .whitespacesAndNewlines)
+
+        guard !trimmedName.isEmpty else {
+            errorMessage = localized("Employee name is required.", "Введите имя сотрудника.")
+            statusMessage = nil
+            return false
+        }
+
+        guard !trimmedEmail.isEmpty else {
+            errorMessage = localized("Employee email is required.", "Введите email сотрудника.")
+            statusMessage = nil
+            return false
+        }
+
+        guard let positionId = draft.positionId else {
+            errorMessage = localized("Position is required.", "Выберите должность.")
+            statusMessage = nil
+            return false
+        }
+
+        isCreatingEmployee = true
+        errorMessage = nil
+        statusMessage = nil
+
+        do {
+            employees = try await repository.createEmployee(
+                fullName: trimmedName,
+                email: trimmedEmail,
+                positionId: positionId,
+                branchId: draft.branchId,
+                existingEmployees: employees
+            )
+            statusMessage = localized(
+                "Employee added. They can complete registration later.",
+                "Сотрудник добавлен. Он сможет завершить регистрацию позже."
+            )
+            isCreatingEmployee = false
+            return true
+        } catch {
+            errorMessage = error.localizedDescription
+            statusMessage = nil
+            isCreatingEmployee = false
+            return false
         }
     }
 
