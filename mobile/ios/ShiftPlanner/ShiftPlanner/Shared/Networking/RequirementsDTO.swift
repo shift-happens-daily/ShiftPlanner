@@ -21,16 +21,40 @@ struct ScheduleRequirementResponseDTO: Codable {
 }
 
 struct ScheduleRequirementCreateDTO: Codable {
+    let branchId: Int?
     let positionId: Int
     let date: String
     let minStaff: Int
+    let requiredCount: Int
     let startTime: String
     let endTime: String
 
     enum CodingKeys: String, CodingKey {
+        case branchId = "branch_id"
         case positionId = "position_id"
         case date
         case minStaff = "min_staff"
+        case requiredCount = "required_count"
+        case startTime = "start_time"
+        case endTime = "end_time"
+    }
+}
+
+struct ScheduleRequirementUpdateDTO: Codable {
+    let branchId: Int?
+    let positionId: Int
+    let date: String
+    let minStaff: Int
+    let requiredCount: Int
+    let startTime: String
+    let endTime: String
+
+    enum CodingKeys: String, CodingKey {
+        case branchId = "branch_id"
+        case positionId = "position_id"
+        case date
+        case minStaff = "min_staff"
+        case requiredCount = "required_count"
         case startTime = "start_time"
         case endTime = "end_time"
     }

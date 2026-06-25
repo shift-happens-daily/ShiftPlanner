@@ -44,6 +44,65 @@ final class APIRequirementsRepository: RequirementsRepository {
         return try response.map(asOccurrence)
     }
 
+    func createRequirement(
+        date: Date,
+        branchId: Int?,
+        positionId: Int,
+        quantity: Int,
+        startSlot: Int,
+        endSlot: Int
+    ) async throws -> RequirementOccurrence {
+        let payload = ScheduleRequirementCreateDTO(
+            branchId: branchId,
+            positionId: positionId,
+            date: dateString(from: date),
+            minStaff: quantity,
+            requiredCount: quantity,
+            startTime: timeString(for: startSlot),
+            endTime: timeString(for: endSlot)
+        )
+
+        let body = try JSONEncoder().encode(payload)
+        let request = apiClient.makeRequest(
+            path: "schedule/requirements",
+            method: "POST",
+            body: body,
+            requiresAuthorization: true
+        )
+        let response = try await apiClient.send(request, as: ScheduleRequirementResponseDTO.self)
+        return try asOccurrence(response)
+    }
+
+    func updateRequirement(
+        id: Int,
+        date: Date,
+        branchId: Int?,
+        positionId: Int,
+        quantity: Int,
+        startSlot: Int,
+        endSlot: Int
+    ) async throws -> RequirementOccurrence {
+        let payload = ScheduleRequirementUpdateDTO(
+            branchId: branchId,
+            positionId: positionId,
+            date: dateString(from: date),
+            minStaff: quantity,
+            requiredCount: quantity,
+            startTime: timeString(for: startSlot),
+            endTime: timeString(for: endSlot)
+        )
+
+        let body = try JSONEncoder().encode(payload)
+        let request = apiClient.makeRequest(
+            path: "schedule/requirements/\(id)",
+            method: "PATCH",
+            body: body,
+            requiresAuthorization: true
+        )
+        let response = try await apiClient.send(request, as: ScheduleRequirementResponseDTO.self)
+        return try asOccurrence(response)
+    }
+
     func createRequirementsBulk(
         startDate: Date,
         endDate: Date,

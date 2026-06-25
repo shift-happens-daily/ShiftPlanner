@@ -23,6 +23,16 @@ final class APIScheduleRepository: ScheduleRepository {
         return try mapSchedule(response)
     }
 
+    func fetchSchedule(scheduleId: Int) async throws -> AppSchedule {
+        let request = apiClient.makeRequest(
+            path: "schedule/\(scheduleId)",
+            method: "GET",
+            requiresAuthorization: true
+        )
+        let response = try await apiClient.send(request, as: ScheduleResponseDTO.self)
+        return try mapSchedule(response)
+    }
+
     func fetchLatestSchedule(status: AppScheduleStatus?) async throws -> AppSchedule? {
         let baseURL = apiClient.baseURL.appendingPathComponent("schedule/latest")
         var components = URLComponents(url: baseURL, resolvingAgainstBaseURL: false)
@@ -100,6 +110,36 @@ final class APIScheduleRepository: ScheduleRepository {
         )
         let response = try await apiClient.send(request, as: [ScheduleShiftResponseDTO].self)
         return try response.map(mapShift)
+    }
+
+    func updateShift(
+        scheduleId: Int,
+        shiftId: Int,
+        action: ScheduleShiftUpdateAction
+    ) async throws -> AppSchedule {
+        let payload: ScheduleShiftUpdateRequestDTO
+        switch action {
+        case .reassign(let employeeId):
+            payload = ScheduleShiftUpdateRequestDTO(
+                action: "reassign",
+                employeeId: employeeId
+            )
+        case .remove:
+            payload = ScheduleShiftUpdateRequestDTO(
+                action: "remove",
+                employeeId: nil
+            )
+        }
+
+        let body = try JSONEncoder().encode(payload)
+        let request = apiClient.makeRequest(
+            path: "schedule/\(scheduleId)/shifts/\(shiftId)",
+            method: "PATCH",
+            body: body,
+            requiresAuthorization: true
+        )
+        let response = try await apiClient.send(request, as: ScheduleResponseDTO.self)
+        return try mapSchedule(response)
     }
 
     private func mapSchedule(_ dto: ScheduleResponseDTO) throws -> AppSchedule {

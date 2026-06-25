@@ -10,6 +10,16 @@ struct ScheduleGenerateRequestDTO: Codable {
     }
 }
 
+struct ScheduleShiftUpdateRequestDTO: Codable {
+    let action: String
+    let employeeId: Int?
+
+    enum CodingKeys: String, CodingKey {
+        case action
+        case employeeId = "employee_id"
+    }
+}
+
 struct ScheduleResponseDTO: Codable {
     let id: Int
     let status: String

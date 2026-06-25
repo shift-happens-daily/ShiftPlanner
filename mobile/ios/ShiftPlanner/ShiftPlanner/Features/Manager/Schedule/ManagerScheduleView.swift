@@ -9,6 +9,9 @@ struct ManagerScheduleView: View {
     let onUserUpdated: (AppUser) -> Void
     @State private var selectedTab: ScheduleContentTab = .assigned
     @State private var selectedPresentationMode: SchedulePresentationMode = .list
+    @State private var editingShift: AppScheduledShift?
+    @State private var editingRequirementDraft: ScheduleRequirementEditorDraft?
+    @State private var requirementPendingDeletion: AppUnfilledRequirement?
 
     init(user: AppUser, onUserUpdated: @escaping (AppUser) -> Void) {
         self.user = user
@@ -93,6 +96,70 @@ struct ManagerScheduleView: View {
             .navigationBarTitleDisplayMode(.inline)
             .task {
                 await viewModel.loadScheduleIfNeeded()
+            }
+            .sheet(item: $editingShift) { shift in
+                ShiftEditorSheet(
+                    shift: shift,
+                    employees: viewModel.employees,
+                    isSubmitting: viewModel.isUpdatingShift,
+                    onAssign: { employee in
+                        Task {
+                            await viewModel.updateShift(
+                                shift,
+                                action: .reassign(employeeId: employee.id)
+                            )
+                            if viewModel.errorMessage == nil {
+                                editingShift = nil
+                            }
+                        }
+                    },
+                    onRemove: {
+                        Task {
+                            await viewModel.updateShift(
+                                shift,
+                                action: .remove
+                            )
+                            if viewModel.errorMessage == nil {
+                                editingShift = nil
+                            }
+                        }
+                    }
+                )
+            }
+            .sheet(item: $editingRequirementDraft) { draft in
+                ScheduleRequirementEditorSheet(
+                    draft: draft,
+                    availablePositions: viewModel.availablePositions,
+                    isSubmitting: viewModel.isSavingRequirement,
+                    onSave: { updatedDraft in
+                        await viewModel.saveRequirement(updatedDraft)
+                    }
+                )
+            }
+            .confirmationDialog(
+                languageManager.text("Delete this shift?", "Удалить эту смену?"),
+                isPresented: requirementDeleteBinding,
+                titleVisibility: .visible
+            ) {
+                Button(languageManager.text("Delete", "Удалить"), role: .destructive) {
+                    guard let requirement = requirementPendingDeletion else { return }
+                    Task {
+                        let didDelete = await viewModel.deleteRequirement(requirement)
+                        if didDelete {
+                            requirementPendingDeletion = nil
+                        }
+                    }
+                }
+                Button(languageManager.text("Cancel", "Отмена"), role: .cancel) {
+                    requirementPendingDeletion = nil
+                }
+            } message: {
+                Text(
+                    languageManager.text(
+                        "The unfilled shift will be removed from the schedule.",
+                        "Незаполненная смена будет удалена из расписания."
+                    )
+                )
             }
         }
     }
@@ -287,8 +354,14 @@ struct ManagerScheduleView: View {
                 .font(.headline)
                 .foregroundStyle(themeManager.selectedTheme.primaryTextColor)
 
-            ForEach(items) { item in
-                unfilledRequirementRow(item)
+            ForEach(groupedRequirementSections(from: items), id: \.date) { section in
+                VStack(alignment: .leading, spacing: 10) {
+                    dayHeader(date: section.date)
+
+                    ForEach(section.items) { item in
+                        unfilledRequirementRow(item)
+                    }
+                }
             }
         }
         .padding(18)
@@ -303,10 +376,7 @@ struct ManagerScheduleView: View {
 
             ForEach(groupedShiftSections(from: shifts), id: \.date) { section in
                 VStack(alignment: .leading, spacing: 10) {
-                    Text(formattedDate(section.date))
-                        .font(.subheadline)
-                        .fontWeight(.bold)
-                        .foregroundStyle(themeManager.selectedTheme.primaryTextColor)
+                    dayHeader(date: section.date)
 
                     ForEach(section.shifts) { shift in
                         shiftRow(shift)
@@ -385,24 +455,37 @@ struct ManagerScheduleView: View {
                         .font(.subheadline)
                         .fontWeight(.semibold)
                         .foregroundStyle(themeManager.selectedTheme.primaryTextColor)
-
-                    Text(formattedDate(item.date))
-                        .font(.footnote)
-                        .foregroundStyle(themeManager.selectedTheme.secondaryTextColor)
                 }
 
                 Spacer()
 
-                Text(
-                    languageManager.format(
-                        "Missing: %d",
-                        "Не хватает: %d",
-                        item.missingStaff
+                HStack(spacing: 8) {
+                    Text(
+                        languageManager.format(
+                            "Missing: %d",
+                            "Не хватает: %d",
+                            item.missingStaff
+                        )
                     )
-                )
-                .font(.footnote)
-                .fontWeight(.semibold)
-                .foregroundStyle(themeManager.selectedTheme.destructiveColor)
+                    .font(.footnote)
+                    .fontWeight(.semibold)
+                    .foregroundStyle(themeManager.selectedTheme.destructiveColor)
+
+                    actionPill(
+                        title: languageManager.text("Edit", "Изменить"),
+                        systemImage: "square.and.pencil"
+                    ) {
+                        editingRequirementDraft = viewModel.makeRequirementDraft(for: item)
+                    }
+
+                    actionPill(
+                        title: languageManager.text("Delete", "Удалить"),
+                        systemImage: "trash",
+                        foregroundColor: themeManager.selectedTheme.destructiveColor
+                    ) {
+                        requirementPendingDeletion = item
+                    }
+                }
             }
 
             Text(formattedTimeRange(startMinutes: item.startMinutes, endMinutes: item.endMinutes))
@@ -430,10 +513,34 @@ struct ManagerScheduleView: View {
 
                 Spacer()
 
-                Text(formattedTimeRange(startMinutes: shift.startMinutes, endMinutes: shift.endMinutes))
-                    .font(.footnote)
-                    .fontWeight(.semibold)
-                    .foregroundStyle(themeManager.selectedTheme.accentColor)
+                VStack(alignment: .trailing, spacing: 8) {
+                    Text(formattedTimeRange(startMinutes: shift.startMinutes, endMinutes: shift.endMinutes))
+                        .font(.footnote)
+                        .fontWeight(.semibold)
+                        .foregroundStyle(themeManager.selectedTheme.accentColor)
+
+                    Button {
+                        editingShift = shift
+                    } label: {
+                        HStack(spacing: 4) {
+                            Image(systemName: "square.and.pencil")
+                                .font(.caption)
+                            Text(languageManager.text("Edit", "Изменить"))
+                                .font(.caption)
+                                .fontWeight(.semibold)
+                        }
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 6)
+                        .background(themeManager.selectedTheme.elevatedSurfaceColor)
+                        .overlay {
+                            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                                .stroke(themeManager.selectedTheme.borderColor, lineWidth: 1)
+                        }
+                        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                    }
+                    .buttonStyle(.plain)
+                    .foregroundStyle(themeManager.selectedTheme.primaryTextColor)
+                }
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -450,6 +557,94 @@ struct ManagerScheduleView: View {
                 shifts: grouped[date]?.sorted { $0.startMinutes < $1.startMinutes } ?? []
             )
         }
+    }
+
+    private func groupedRequirementSections(from items: [AppUnfilledRequirement]) -> [RequirementSection] {
+        let grouped = Dictionary(grouping: items, by: \.date)
+        return grouped.keys.sorted().map { date in
+            RequirementSection(
+                date: date,
+                items: grouped[date]?.sorted { lhs, rhs in
+                    if lhs.startMinutes == rhs.startMinutes {
+                        return lhs.positionTitle < rhs.positionTitle
+                    }
+                    return lhs.startMinutes < rhs.startMinutes
+                } ?? []
+            )
+        }
+    }
+
+    private func dayHeader(date: Date) -> some View {
+        HStack(alignment: .center, spacing: 12) {
+            Text(formattedDate(date))
+                .font(.subheadline)
+                .fontWeight(.bold)
+                .foregroundStyle(themeManager.selectedTheme.primaryTextColor)
+
+            Spacer()
+
+            Button {
+                editingRequirementDraft = viewModel.makeRequirementDraft(for: date)
+            } label: {
+                HStack(spacing: 4) {
+                    Image(systemName: "plus")
+                        .font(.caption)
+                    Text(languageManager.text("Add shift", "Добавить смену"))
+                        .font(.caption)
+                        .fontWeight(.semibold)
+                        .lineLimit(1)
+                }
+                .padding(.horizontal, 10)
+                .padding(.vertical, 6)
+                .background(themeManager.selectedTheme.elevatedSurfaceColor)
+                .overlay {
+                    RoundedRectangle(cornerRadius: 12, style: .continuous)
+                        .stroke(themeManager.selectedTheme.borderColor, lineWidth: 1)
+                }
+                .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+            }
+            .buttonStyle(.plain)
+            .foregroundStyle(themeManager.selectedTheme.primaryTextColor)
+        }
+    }
+
+    private func actionPill(
+        title: String,
+        systemImage: String,
+        foregroundColor: Color? = nil,
+        action: @escaping () -> Void
+    ) -> some View {
+        Button(action: action) {
+            HStack(spacing: 4) {
+                Image(systemName: systemImage)
+                    .font(.caption)
+                Text(title)
+                    .font(.caption)
+                    .fontWeight(.semibold)
+                    .lineLimit(1)
+            }
+            .padding(.horizontal, 10)
+            .padding(.vertical, 6)
+            .background(themeManager.selectedTheme.elevatedSurfaceColor)
+            .overlay {
+                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    .stroke(themeManager.selectedTheme.borderColor, lineWidth: 1)
+            }
+            .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+        }
+        .buttonStyle(.plain)
+        .foregroundStyle(foregroundColor ?? themeManager.selectedTheme.primaryTextColor)
+    }
+
+    private var requirementDeleteBinding: Binding<Bool> {
+        Binding(
+            get: { requirementPendingDeletion != nil },
+            set: { isPresented in
+                if !isPresented {
+                    requirementPendingDeletion = nil
+                }
+            }
+        )
     }
 
     private func formattedDate(_ date: Date) -> String {
@@ -478,4 +673,9 @@ private enum ScheduleContentTab: Hashable {
 private struct ShiftSection {
     let date: Date
     let shifts: [AppScheduledShift]
+}
+
+private struct RequirementSection {
+    let date: Date
+    let items: [AppUnfilledRequirement]
 }
