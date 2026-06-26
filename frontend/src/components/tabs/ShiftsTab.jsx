@@ -18,6 +18,7 @@ import {
   deleteRequirement,
   listRequirements,
 } from '../../services/scheduleService';
+import { useTabResponsive } from '../../utils/tabResponsive';
 
 const WEEKDAYS = [
   { value: 0, ru: 'Пн', en: 'Mon' },
@@ -243,6 +244,7 @@ function normalizeError(error, fallback, language) {
 }
 
 export default function ShiftsTab({ language, userRole, user }) {
+  const r = useTabResponsive(1280);
   const isManager = userRole === 'manager';
   const employeeId = user?.employeeId || user?.employee_id;
 
@@ -891,8 +893,8 @@ export default function ShiftsTab({ language, userRole, user }) {
 
   if (isLoading) {
     return (
-      <section style={styles.page}>
-        <div style={styles.shell}>
+      <section style={{ ...styles.page, ...r.page }}>
+        <div style={{ ...styles.shell, ...r.shell }}>
           <div style={styles.emptyBox}>{t.loading}</div>
         </div>
       </section>
@@ -900,17 +902,17 @@ export default function ShiftsTab({ language, userRole, user }) {
   }
 
   return (
-    <section style={styles.page}>
-      <div style={styles.shell}>
+    <section style={{ ...styles.page, ...r.page }}>
+      <div style={{ ...styles.shell, ...r.shell }}>
         {renderToast()}
 
-        <header style={styles.header}>
+        <header style={{ ...styles.header, ...r.header }}>
           <div>
-            <h2 style={styles.title}>{isManager ? t.titleManager : t.titleEmployee}</h2>
+            <h2 style={{ ...styles.title, ...r.title }}>{isManager ? t.titleManager : t.titleEmployee}</h2>
             <p style={styles.subtitle}>{isManager ? t.subtitleManager : t.subtitleEmployee}</p>
           </div>
         </header>        {isManager ? (
-          <div style={styles.managerLayout}>
+          <div style={{ ...styles.managerLayout, ...r.splitLayout('290px minmax(0, 1fr)') }}>
             <aside style={styles.sidebar}>
               <div style={styles.helpBox}>
                 <strong>{t.stepOne}</strong>
@@ -1009,7 +1011,7 @@ export default function ShiftsTab({ language, userRole, user }) {
                   <h3 style={styles.panelTitle}>{t.single}</h3>
                   <p style={styles.panelHint}>{t.singleHint}</p>
 
-                  <div style={styles.formGrid}>
+                  <div style={{ ...styles.formGrid, gridTemplateColumns: r.gridCols('repeat(3, minmax(0, 1fr))') }}>
                     <Field label={t.position}>
                       <select
                         value={singleRequirement.position_id}
@@ -1083,7 +1085,7 @@ export default function ShiftsTab({ language, userRole, user }) {
                   <h3 style={styles.panelTitle}>{t.bulk}</h3>
                   <p style={styles.panelHint}>{t.bulkHint}</p>
 
-                  <div style={styles.formGrid}>
+                  <div style={{ ...styles.formGrid, gridTemplateColumns: r.gridCols('repeat(3, minmax(0, 1fr))') }}>
                     <Field label={t.startDate}>
                       <input
                         type="date"
@@ -1201,7 +1203,11 @@ export default function ShiftsTab({ language, userRole, user }) {
                 ) : (
                   <div style={styles.requirementsList}>
                     {visibleRequirements.map((requirement) => (
-                      <div key={getRequirementId(requirement)} style={styles.requirementItem}>
+                      <div key={getRequirementId(requirement)} style={{
+                        ...styles.requirementItem,
+                        gridTemplateColumns: r.gridCols('1.2fr 1fr auto auto'),
+                        ...(r.isMobile ? { gap: 12 } : {}),
+                      }}>
                         <div>
                           <strong style={styles.itemTitle}>{requirement.position_title}</strong>
                           <div style={styles.itemMeta}>
@@ -1236,8 +1242,15 @@ export default function ShiftsTab({ language, userRole, user }) {
         ) : (
           <div style={styles.employeeGrid}>
             <section style={styles.panel}>
-                <div style={styles.panelHeader}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '20px' }}>
+                <div style={{ ...styles.panelHeader, ...r.panelHeader }}>
+                  <div style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: r.isMobile ? 12 : 20,
+                    flexWrap: 'wrap',
+                    width: r.isMobile ? '100%' : undefined,
+                  }}
+                  >
                     <h3 style={styles.panelTitle}>{t.availability}</h3>
                     
                     <div style={styles.brushPicker}>
@@ -1272,7 +1285,14 @@ export default function ShiftsTab({ language, userRole, user }) {
                         title={t.unavailable}
                       />
                     </div>
-                  </div>                <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                  </div>                <div style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '10px',
+                  flexWrap: 'wrap',
+                  width: r.isMobile ? '100%' : undefined,
+                }}
+                >
                   <button
                     type="button"
                     onClick={() => shiftWeek(-7)}
@@ -1286,7 +1306,7 @@ export default function ShiftsTab({ language, userRole, user }) {
                     type="date"
                     value={selectedDate}
                     onChange={(e) => setSelectedDate(e.target.value)}
-                    style={{ ...styles.input, width: 'auto' }}
+                    style={{ ...styles.input, ...(r.isMobile ? r.fullWidth : { width: 'auto' }) }}
                   />
                   <button
                     type="button"
@@ -1317,7 +1337,7 @@ export default function ShiftsTab({ language, userRole, user }) {
               </div>
 
               <div style={styles.availabilityGridWrapper}>
-                <div style={styles.availabilityGridHeader}>
+                <div style={{ ...styles.availabilityGridHeader, ...r.availabilityGrid }}>
                   <div style={styles.gridCorner} />
                   {WEEKDAYS.map((day, index) => {
                     const itIsToday = isToday(weekDates[index]);
@@ -1345,7 +1365,7 @@ export default function ShiftsTab({ language, userRole, user }) {
                 <div style={styles.availabilityGridBody}>
                   {TIME_SLOTS.map((time) => {
                     return (
-                      <div key={time} style={styles.gridRow}>
+                      <div key={time} style={{ ...styles.gridRow, ...r.availabilityGrid }}>
                         <div style={styles.gridTimeCell}>{time}</div>
                         {WEEKDAYS.map((day, dayIndex) => {
                           const cellDate = weekDates[dayIndex];
@@ -1424,7 +1444,11 @@ export default function ShiftsTab({ language, userRole, user }) {
             <section style={styles.panel}>
               <h3 style={styles.panelTitle}>{t.absences}</h3>
 
-              <div style={styles.absenceForm}>
+              <div style={{
+                ...styles.absenceForm,
+                gridTemplateColumns: r.gridCols('1.1fr 1fr 1fr 1.4fr auto'),
+              }}
+              >
                 <select
                   value={absenceForm.absence_type}
                   onChange={(event) => setAbsenceForm((prev) => ({ ...prev, absence_type: event.target.value }))}

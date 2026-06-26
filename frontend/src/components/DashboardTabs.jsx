@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useAuth } from '../context/useAuth';
+import { useIsMobile } from '../hooks/useMediaQuery';
 import CompanyTab from './tabs/CompanyTab';
 import EmployeesTab from './tabs/EmployeesTab';
 import ProfileTab from './tabs/ProfileTab';
@@ -8,7 +9,42 @@ import ScheduleTab from './tabs/ScheduleTab';
 import ScheduleReview from './tabs/ScheduleReview';
 import ShiftsTab from './tabs/ShiftsTab';
 
+const TAB_ICONS = {
+  schedule: (
+    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <rect x="3" y="5" width="18" height="16" rx="3" stroke="currentColor" strokeWidth="2" />
+      <path d="M8 3V7M16 3V7M3 10H21" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+    </svg>
+  ),
+  company: (
+    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <path d="M4 20V8L12 4L20 8V20H4Z" stroke="currentColor" strokeWidth="2" strokeLinejoin="round" />
+      <path d="M9 20V13H15V20" stroke="currentColor" strokeWidth="2" strokeLinejoin="round" />
+    </svg>
+  ),
+  employees: (
+    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <circle cx="9" cy="9" r="3" stroke="currentColor" strokeWidth="2" />
+      <path d="M4 19C4 16 6.2 14 9 14C11.8 14 14 16 14 19" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+      <circle cx="17" cy="10" r="2.5" stroke="currentColor" strokeWidth="2" />
+      <path d="M15.5 19C15.8 16.8 17.2 15 19 15C20.1 15 21 15.4 21.7 16" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+    </svg>
+  ),
+  shifts: (
+    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <circle cx="12" cy="12" r="8" stroke="currentColor" strokeWidth="2" />
+      <path d="M12 8V12L15 14" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+    </svg>
+  ),
+  reports: (
+    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <path d="M5 19V11M12 19V5M19 19V14" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+    </svg>
+  ),
+};
+
 export default function DashboardTabs({ userRole, language, title, rightSlot }) {
+  const isMobile = useIsMobile();
   const activeTabStorageKey = `shiftplanner_active_tab_${userRole || 'default'}`;
   const [activeTab, setActiveTab] = useState(() => (
     localStorage.getItem(activeTabStorageKey) || 'schedule'
@@ -21,7 +57,7 @@ export default function DashboardTabs({ userRole, language, title, rightSlot }) 
       profile: 'Профиль',
       company: 'Компания',
       employees: 'Сотрудники',
-      shifts: 'Настройки смен',
+      shifts: 'Смены',
       schedule: 'Расписание',
       reports: 'Отчеты',
       manager: 'Менеджер',
@@ -32,7 +68,7 @@ export default function DashboardTabs({ userRole, language, title, rightSlot }) 
       profile: 'Profile',
       company: 'Company',
       employees: 'Employees',
-      shifts: 'Shift setup',
+      shifts: 'Shifts',
       schedule: 'Schedule',
       reports: 'Reports',
       manager: 'Manager',
@@ -60,7 +96,6 @@ export default function DashboardTabs({ userRole, language, title, rightSlot }) 
       ]
   ), [t, userRole]);
 
-  // 'profile' is reachable via the header profile section, not the nav tabs.
   const isValidTab = (tabId) => tabId === 'profile' || tabs.some((tab) => tab.id === tabId);
   const safeActiveTab = isValidTab(activeTab) ? activeTab : 'schedule';
 
@@ -120,54 +155,107 @@ export default function DashboardTabs({ userRole, language, title, rightSlot }) 
     }
   };
 
+  const renderTabButton = (tab, compact = false) => {
+    const isActive = safeActiveTab === tab.id;
+
+    return (
+      <button
+        key={tab.id}
+        type="button"
+        onClick={() => handleTabClick(tab.id)}
+        style={{
+          ...styles.tab,
+          ...(compact ? styles.tabCompact : {}),
+          ...(isActive ? styles.tabActive : {}),
+        }}
+      >
+        {compact ? (
+          <>
+            <span style={styles.tabIcon}>{TAB_ICONS[tab.id]}</span>
+            <span style={{
+              ...styles.tabCompactLabel,
+              ...(isActive ? styles.tabCompactLabelActive : {}),
+            }}
+            >
+              {tab.label}
+            </span>
+          </>
+        ) : tab.label}
+      </button>
+    );
+  };
+
   return (
     <div style={styles.container}>
-      <header style={styles.topBar}>
-        <h1 style={styles.brand}>{title || 'ShiftPlanner'}</h1>
+      <header style={{
+        ...styles.topBar,
+        ...(isMobile ? styles.topBarMobile : {}),
+      }}
+      >
+        <h1 style={{
+          ...styles.brand,
+          ...(isMobile ? styles.brandMobile : {}),
+        }}
+        >
+          {title || 'ShiftPlanner'}
+        </h1>
 
-        <nav style={styles.tabsContainer} aria-label="Dashboard navigation">
-          {tabs.map((tab) => {
-            const isActive = safeActiveTab === tab.id;
+        {!isMobile && (
+          <nav style={styles.tabsContainer} aria-label="Dashboard navigation">
+            {tabs.map((tab) => renderTabButton(tab))}
+          </nav>
+        )}
 
-            return (
-              <button
-                key={tab.id}
-                type="button"
-                onClick={() => handleTabClick(tab.id)}
-                style={{
-                  ...styles.tab,
-                  ...(isActive ? styles.tabActive : {}),
-                }}
-              >
-                {tab.label}
-              </button>
-            );
-          })}
-        </nav>
-
-        <div style={styles.headerRight}>
+        <div style={{
+          ...styles.headerRight,
+          ...(isMobile ? styles.headerRightMobile : {}),
+        }}
+        >
           <button
             type="button"
             onClick={() => handleTabClick('profile')}
             style={{
               ...styles.profileButton,
+              ...(isMobile ? styles.profileButtonMobile : {}),
               ...(safeActiveTab === 'profile' ? styles.profileButtonActive : {}),
             }}
             aria-label={t.openProfile}
             title={t.openProfile}
           >
             <span style={styles.avatar}>{avatarInitials}</span>
-            <span style={styles.profileInfo}>
-              <span style={styles.profileName}>{fullName || t.profile}</span>
-              <span style={styles.profilePosition}>{positionName}</span>
-            </span>
+            {!isMobile && (
+              <span style={styles.profileInfo}>
+                <span style={styles.profileName}>{fullName || t.profile}</span>
+                <span style={styles.profilePosition}>{positionName}</span>
+              </span>
+            )}
           </button>
 
-          {rightSlot && <div style={styles.rightSlot}>{rightSlot}</div>}
+          {rightSlot && (
+            <div style={{
+              ...styles.rightSlot,
+              ...(isMobile ? styles.rightSlotMobile : {}),
+            }}
+            >
+              {rightSlot}
+            </div>
+          )}
         </div>
       </header>
 
-      <main style={styles.content}>{renderContent()}</main>
+      <main style={{
+        ...styles.content,
+        ...(isMobile ? styles.contentMobile : {}),
+      }}
+      >
+        {renderContent()}
+      </main>
+
+      {isMobile && (
+        <nav style={styles.bottomNav} aria-label="Mobile dashboard navigation">
+          {tabs.map((tab) => renderTabButton(tab, true))}
+        </nav>
+      )}
     </div>
   );
 }
@@ -180,6 +268,7 @@ const styles = {
     display: 'flex',
     flexDirection: 'column',
     overflow: 'hidden',
+    textAlign: 'left',
   },
 
   topBar: {
@@ -195,6 +284,16 @@ const styles = {
     borderBottom: '1px solid rgba(79, 100, 111, 0.16)',
   },
 
+  topBarMobile: {
+    height: 'auto',
+    minHeight: '58px',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: '10px',
+    padding: '10px 12px',
+  },
+
   brand: {
     margin: 0,
     color: '#002642',
@@ -202,6 +301,15 @@ const styles = {
     fontWeight: '900',
     letterSpacing: '-0.05em',
     whiteSpace: 'nowrap',
+  },
+
+  brandMobile: {
+    fontSize: '18px',
+    overflow: 'hidden',
+    textOverflow: 'ellipsis',
+    whiteSpace: 'nowrap',
+    minWidth: 0,
+    flex: '1 1 auto',
   },
 
   tabsContainer: {
@@ -229,11 +337,49 @@ const styles = {
     whiteSpace: 'nowrap',
   },
 
+  tabCompact: {
+    flex: '1 1 0',
+    minWidth: 0,
+    display: 'flex',
+    flexDirection: 'column',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: '4px',
+    padding: '8px 4px',
+    borderRadius: '12px',
+    fontSize: '11px',
+    background: 'transparent',
+  },
+
+  tabIcon: {
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    lineHeight: 0,
+  },
+
+  tabCompactLabel: {
+    fontSize: '10px',
+    fontWeight: '700',
+    color: '#4f646f',
+    lineHeight: 1.1,
+    textAlign: 'center',
+    maxWidth: '100%',
+    overflow: 'hidden',
+    textOverflow: 'ellipsis',
+    whiteSpace: 'nowrap',
+  },
+
+  tabCompactLabelActive: {
+    color: '#002642',
+  },
+
   tabActive: {
     background: '#f4faff',
     color: '#002642',
     boxShadow: 'none',
   },
+
   headerRight: {
     display: 'flex',
     alignItems: 'center',
@@ -241,6 +387,11 @@ const styles = {
     gap: '16px',
     flexShrink: 0,
     minWidth: 'fit-content',
+  },
+
+  headerRightMobile: {
+    gap: '8px',
+    flexShrink: 0,
   },
 
   profileButton: {
@@ -256,10 +407,16 @@ const styles = {
     maxWidth: '240px',
   },
 
+  profileButtonMobile: {
+    padding: '4px',
+    maxWidth: 'none',
+  },
+
   profileButtonActive: {
     background: '#ffffff',
     boxShadow: 'none',
   },
+
   avatar: {
     flexShrink: 0,
     width: '40px',
@@ -312,9 +469,34 @@ const styles = {
     flexShrink: 0,
     minWidth: 'fit-content',
   },
+
+  rightSlotMobile: {
+    gap: '6px',
+  },
+
   content: {
     flex: '1 1 auto',
     minHeight: 0,
     overflow: 'auto',
+  },
+
+  contentMobile: {
+    paddingBottom: 'calc(72px + env(safe-area-inset-bottom, 0px))',
+  },
+
+  bottomNav: {
+    position: 'fixed',
+    left: 0,
+    right: 0,
+    bottom: 0,
+    zIndex: 100,
+    display: 'flex',
+    alignItems: 'stretch',
+    justifyContent: 'space-around',
+    gap: '2px',
+    padding: '6px 6px calc(6px + env(safe-area-inset-bottom, 0px))',
+    background: '#dee7e7',
+    borderTop: '1px solid rgba(79, 100, 111, 0.16)',
+    boxShadow: '0 -8px 24px rgba(0, 38, 66, 0.08)',
   },
 };

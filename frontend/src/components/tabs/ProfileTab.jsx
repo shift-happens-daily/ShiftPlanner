@@ -5,12 +5,14 @@ import { deleteAccountRequest } from '../../services/authService';
 import { leaveCompany, updateMyPosition } from '../../services/employeeService';
 import { extractApiErrorMessage } from '../../services/error';
 import { createPosition, listPositions } from '../../services/positionService';
+import { useTabResponsive } from '../../utils/tabResponsive';
 
 function getPositionLabel(position) {
   return position?.title || position?.name || position?.position_title || '';
 }
 
 export default function ProfileTab({ language, user }) {
+  const r = useTabResponsive(1040);
   const navigate = useNavigate();
   const { refreshUser, clearAuth } = useAuth();
   const [isRefreshing, setIsRefreshing] = useState(false);
@@ -56,7 +58,6 @@ export default function ProfileTab({ language, user }) {
       requiredPosition: 'Введите название позиции.',
       positionSection: 'Моя позиция',
       positionSectionHint: 'Выберите позицию или добавьте новую для компании.',
-      dangerZone: 'Опасная зона',
     },
     en: {
       title: 'Profile',
@@ -92,7 +93,6 @@ export default function ProfileTab({ language, user }) {
       requiredPosition: 'Enter position title.',
       positionSection: 'My position',
       positionSectionHint: 'Select a position or add a new one for your company.',
-      dangerZone: 'Danger zone',
     },
   };
 
@@ -297,18 +297,33 @@ export default function ProfileTab({ language, user }) {
   };
 
   return (
-    <section style={styles.page}>
-      <div style={styles.card}>
-        <div style={styles.header}>
+    <section style={{
+      ...styles.page,
+      padding: r.isMobile ? 10 : styles.page.padding,
+    }}
+    >
+      <div style={{
+        ...styles.card,
+        width: '100%',
+        padding: r.isMobile ? 16 : styles.card.padding,
+        borderRadius: r.isMobile ? 18 : styles.card.borderRadius,
+        boxShadow: r.isMobile ? 'none' : styles.card.boxShadow,
+        gap: r.isMobile ? 16 : styles.card.gap,
+      }}
+      >
+        <div style={{ ...styles.header, ...r.header }}>
           <div>
-            <h2 style={styles.title}>{t.title}</h2>
+            <h2 style={{ ...styles.title, ...r.title }}>{t.title}</h2>
             <p style={styles.subtitle}>{t.subtitle}</p>
           </div>
 
           <button
             type="button"
             onClick={handleRefresh}
-            style={isRefreshing ? styles.refreshButtonDisabled : styles.refreshButton}
+            style={{
+              ...(isRefreshing ? styles.refreshButtonDisabled : styles.refreshButton),
+              ...r.fullWidth,
+            }}
             disabled={isRefreshing || isSubmitting}
           >
             {isRefreshing ? '...' : t.refresh}
@@ -318,11 +333,27 @@ export default function ProfileTab({ language, user }) {
         {errorMessage && <div style={styles.error}>{errorMessage}</div>}
         {successMessage && <div style={styles.success}>{successMessage}</div>}
 
-        <div style={styles.rows}>
+        <div style={{
+          ...styles.rows,
+          gridTemplateColumns: r.gridCols('repeat(2, minmax(320px, 1fr))'),
+          gap: r.isMobile ? 12 : styles.rows.gap,
+        }}
+        >
           {rows.map((row) => (
-            <div key={row.label} style={styles.row}>
+            <div
+              key={row.label}
+              style={{
+                ...styles.row,
+                minHeight: r.isMobile ? 88 : styles.row.minHeight,
+                padding: r.isMobile ? '16px 14px' : styles.row.padding,
+              }}
+            >
               <span style={styles.label}>{row.label}</span>
-              <span style={row.muted ? styles.valueMuted : styles.value}>
+              <span style={{
+                ...(row.muted ? styles.valueMuted : styles.value),
+                fontSize: r.isMobile ? 17 : undefined,
+              }}
+              >
                 {row.value || t.empty}
               </span>
             </div>
@@ -330,7 +361,11 @@ export default function ProfileTab({ language, user }) {
         </div>
 
         {isEmployee && hasCompany && (
-          <div style={styles.section}>
+          <div style={{
+            ...styles.section,
+            padding: r.isMobile ? '16px 14px' : styles.section.padding,
+          }}
+          >
             <h3 style={styles.sectionTitle}>{t.positionSection}</h3>
             <p style={styles.sectionHint}>{t.positionSectionHint}</p>
 
@@ -339,7 +374,7 @@ export default function ProfileTab({ language, user }) {
               <select
                 value={selectedPositionId}
                 onChange={(event) => setSelectedPositionId(event.target.value)}
-                style={styles.select}
+                style={{ ...styles.select, ...r.fullWidth }}
                 disabled={isSubmitting}
               >
                 <option value="">{t.selectPosition}</option>
@@ -353,24 +388,35 @@ export default function ProfileTab({ language, user }) {
               <button
                 type="button"
                 onClick={handleSavePosition}
-                style={isSubmitting ? styles.primaryButtonDisabled : styles.primaryButton}
+                style={{
+                  ...(isSubmitting ? styles.primaryButtonDisabled : styles.primaryButton),
+                  ...(r.isMobile ? { alignSelf: 'stretch', width: '100%' } : {}),
+                }}
                 disabled={isSubmitting}
               >
                 {t.savePosition}
               </button>
 
-              <div style={styles.addPositionRow}>
+              <div style={{
+                ...styles.addPositionRow,
+                flexDirection: r.isMobile ? 'column' : styles.addPositionRow.flexDirection,
+              }}
+              >
                 <input
                   value={newPositionTitle}
                   onChange={(event) => setNewPositionTitle(event.target.value)}
                   placeholder={t.positionPlaceholder}
-                  style={styles.input}
+                  style={{ ...styles.input, ...(r.isMobile ? r.fullWidth : {}) }}
                   disabled={isSubmitting}
                 />
                 <button
                   type="button"
                   onClick={handleAddPosition}
-                  style={isSubmitting ? styles.secondaryButtonDisabled : styles.secondaryButton}
+                  style={{
+                    ...(isSubmitting ? styles.secondaryButtonDisabled : styles.secondaryButton),
+                    ...r.fullWidth,
+                    whiteSpace: r.isMobile ? 'normal' : 'nowrap',
+                  }}
                   disabled={isSubmitting}
                 >
                   {t.addPosition}
@@ -380,14 +426,20 @@ export default function ProfileTab({ language, user }) {
           </div>
         )}
 
-        <div style={styles.dangerZone}>
-          <h3 style={styles.dangerTitle}>{t.dangerZone}</h3>
-
+        <div style={{
+          ...styles.dangerZone,
+          padding: r.isMobile ? '16px 14px' : styles.dangerZone.padding,
+          alignItems: r.isMobile ? 'stretch' : styles.dangerZone.alignItems,
+        }}
+        >
           {isEmployee && hasCompany && (
             <button
               type="button"
               onClick={handleLeaveCompany}
-              style={isSubmitting ? styles.warningButtonDisabled : styles.warningButton}
+              style={{
+                ...(isSubmitting ? styles.warningButtonDisabled : styles.warningButton),
+                ...r.fullWidth,
+              }}
               disabled={isSubmitting}
             >
               {t.leaveCompany}
@@ -397,7 +449,10 @@ export default function ProfileTab({ language, user }) {
           <button
             type="button"
             onClick={handleDeleteAccount}
-            style={isSubmitting ? styles.dangerButtonDisabled : styles.dangerButton}
+            style={{
+              ...(isSubmitting ? styles.dangerButtonDisabled : styles.dangerButton),
+              ...r.fullWidth,
+            }}
             disabled={isSubmitting}
           >
             {t.deleteAccount}
@@ -411,26 +466,21 @@ export default function ProfileTab({ language, user }) {
 const styles = {
   page: {
     width: '100%',
-    height: '100%',
     boxSizing: 'border-box',
-    padding: '56px 24px',
+    padding: '24px',
     display: 'flex',
     justifyContent: 'center',
     alignItems: 'flex-start',
-    overflow: 'auto',
   },
 
   card: {
     width: 'min(100%, 1040px)',
-    minHeight: '520px',
-    maxHeight: '100%',
     boxSizing: 'border-box',
     padding: '36px 44px',
     borderRadius: '28px',
     background: '#f4faff',
     border: '1px solid rgba(222, 231, 231, 0.95)',
     boxShadow: '0 24px 60px rgba(0, 38, 66, 0.18)',
-    overflow: 'hidden',
     display: 'flex',
     flexDirection: 'column',
     gap: '24px',
@@ -652,7 +702,6 @@ const styles = {
   },
 
   dangerZone: {
-    marginTop: 'auto',
     padding: '22px 24px',
     borderRadius: '20px',
     background: 'rgba(215, 173, 207, 0.12)',
@@ -661,13 +710,6 @@ const styles = {
     flexDirection: 'column',
     gap: '12px',
     alignItems: 'flex-start',
-  },
-
-  dangerTitle: {
-    margin: 0,
-    color: '#8d1d1d',
-    fontSize: '16px',
-    fontWeight: '800',
   },
 
   warningButton: {

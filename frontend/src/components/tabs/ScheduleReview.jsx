@@ -10,6 +10,7 @@ import {
 import { filterRealEmployees, listEmployees } from '../../services/employeeService';
 import { useAuth } from '../../context/useAuth';
 import { extractApiErrorMessage } from '../../services/error';
+import { useIsMobile } from '../../hooks/useMediaQuery';
 
 function formatTimeForApi(value) {
   const raw = String(value || '').trim();
@@ -143,6 +144,33 @@ function mergeScheduleDates(scheduleRead, unfilledItems) {
     .map((date) => byDate[date]);
 }
 
+function buildDayScheduleEntries(dateKey, displaySchedule, unfilledNotFoundRequirements) {
+  const shiftEntries = normalizeArray(displaySchedule?.shifts)
+    .filter((shift) => formatDate(shift.date) === dateKey)
+    .map((shift) => ({
+      key: `shift-${shift.id}`,
+      kind: 'shift',
+      sortTime: parseTimeToHours(shift.start_time),
+      position: shift.position || shift.position_title || '—',
+      employee: shift.employee_name || '—',
+      startTime: shift.start_time,
+      endTime: shift.end_time,
+    }));
+
+  const unfilledEntries = unfilledNotFoundRequirements
+    .filter((item) => formatDate(item.date) === dateKey)
+    .map((item) => ({
+      key: `unfilled-${item.requirement_id}`,
+      kind: 'unfilled',
+      sortTime: parseTimeToHours(item.start_time),
+      position: item.position_title || '—',
+      startTime: item.start_time,
+      endTime: item.end_time,
+    }));
+
+  return [...shiftEntries, ...unfilledEntries].sort((a, b) => a.sortTime - b.sortTime);
+}
+
 function renderTimeSlotBlock({
   startTime,
   endTime,
@@ -237,6 +265,7 @@ function getStatusBadgeStyle(status) {
 }
 
 export default function ScheduleReview({ language }) {
+  const isMobile = useIsMobile();
   const { user, isLoading: isAuthLoading } = useAuth();
   const hasCompany = Boolean(user?.company);
   const [viewMode, setViewMode] = useState('day');
@@ -271,6 +300,7 @@ export default function ScheduleReview({ language }) {
       viewDraft: 'Черновик',
       viewPublished: 'Опубликовано',
       noShiftsInVersion: 'В этой версии расписания нет назначенных смен.',
+      noShiftsThisDay: 'На этот день смен нет.',
       notFound: 'Не найдено',
       noSchedule: 'Расписание ещё не сгенерировано.',
       noScheduleHint: 'Алгоритму нужны шаблоны потребности, часы филиала и доступность сотрудников.',
@@ -307,6 +337,7 @@ export default function ScheduleReview({ language }) {
       viewDraft: 'Draft',
       viewPublished: 'Published',
       noShiftsInVersion: 'This schedule version has no assigned shifts.',
+      noShiftsThisDay: 'No shifts on this day.',
       notFound: 'Not found',
       noSchedule: 'Schedule has not been generated yet.',
       noScheduleHint: 'The solver needs staffing templates, branch hours, and employee availability.',
@@ -370,6 +401,12 @@ export default function ScheduleReview({ language }) {
     [displaySchedule, unfilledNotFoundRequirements]
   );
   const dates = useMemo(() => schedules.map((s) => s.date), [schedules]);
+
+  const currentDateKey = dates[selectedDateIndex] || dates[0] || '';
+  const mobileDayEntries = useMemo(
+    () => buildDayScheduleEntries(currentDateKey, displaySchedule, unfilledNotFoundRequirements),
+    [currentDateKey, displaySchedule, unfilledNotFoundRequirements],
+  );
 
   const pageSize = viewMode === 'day' ? 1 : viewMode === '3day' ? 3 : 30;
 
@@ -591,15 +628,34 @@ export default function ScheduleReview({ language }) {
     { id: 'draft', label: t.viewDraft, schedule: scheduleVersions.draft },
     { id: 'published', label: t.viewPublished, schedule: scheduleVersions.published },
   ];
+  const shellPadding = isMobile ? 10 : 18;
+  const cardPadding = isMobile ? 14 : 24;
+  const actionButtonStyle = isMobile ? { flex: '1 1 calc(50% - 6px)', minWidth: '140px' } : {};
 
   return (
-    <section style={{ padding: 18 }}>
-      <div style={{ background: '#ffffff', borderRadius: '22px', boxShadow: '0 22px 58px rgba(0, 38, 66, 0.16)', padding: 24 }}>
+    <section style={{ padding: shellPadding }}>
+      <div style={{
+        background: '#ffffff',
+        borderRadius: isMobile ? '18px' : '22px',
+        boxShadow: '0 22px 58px rgba(0, 38, 66, 0.16)',
+        padding: cardPadding,
+      }}
+      >
         <div style={{ marginBottom: 12, display: 'flex', flexDirection: 'column', gap: 8 }}>
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}>
-            <div>
-              <h2 style={{ margin: 0, color: '#002642' }}>{t.title}</h2>
-              <p style={{ margin: '8px 0 0', color: '#4f646f', fontSize: 14, maxWidth: 680 }}>{t.subtitle}</p>
+          <div style={{
+            display: 'flex',
+            alignItems: isMobile ? 'flex-start' : 'center',
+            justifyContent: 'space-between',
+            gap: 12,
+            flexWrap: 'wrap',
+            flexDirection: isMobile ? 'column' : 'row',
+          }}
+          >
+            <div style={{ width: isMobile ? '100%' : 'auto' }}>
+              <h2 style={{ margin: 0, color: '#002642', fontSize: isMobile ? 20 : undefined }}>{t.title}</h2>
+              {!isMobile && (
+                <p style={{ margin: '8px 0 0', color: '#4f646f', fontSize: 14, maxWidth: 680 }}>{t.subtitle}</p>
+              )}
             </div>
 
             <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
@@ -661,24 +717,70 @@ export default function ScheduleReview({ language }) {
           </div>
         )}
 
-        <div style={{ display: 'flex', gap: 12, alignItems: 'flex-end', marginBottom: 20, flexWrap: 'wrap' }}>
-          <label style={{ display: 'flex', flexDirection: 'column', gap: 4, color: '#4f646f', fontSize: 12, fontWeight: 800 }}>
+        <div style={{
+          display: 'flex',
+          gap: 12,
+          alignItems: 'flex-end',
+          marginBottom: 20,
+          flexWrap: 'wrap',
+          flexDirection: isMobile ? 'column' : 'row',
+        }}
+        >
+          <label style={{
+            display: 'flex',
+            flexDirection: 'column',
+            gap: 4,
+            color: '#4f646f',
+            fontSize: 12,
+            fontWeight: 800,
+            width: isMobile ? '100%' : 'auto',
+          }}
+          >
             {t.startDate}
             <input
               type="date"
               value={periodForm.start_date}
               onChange={(e) => setPeriodForm((prev) => ({ ...prev, start_date: e.target.value }))}
-              style={{ height: 40, borderRadius: 12, border: '2px solid #dee7e7', padding: '0 12px', background: '#ffffff', color: '#002642', colorScheme: 'light' }}
+              style={{
+                width: isMobile ? '100%' : 'auto',
+                height: 40,
+                borderRadius: 12,
+                border: '2px solid #dee7e7',
+                padding: '0 12px',
+                background: '#ffffff',
+                color: '#002642',
+                colorScheme: 'light',
+                boxSizing: 'border-box',
+              }}
             />
           </label>
 
-          <label style={{ display: 'flex', flexDirection: 'column', gap: 4, color: '#4f646f', fontSize: 12, fontWeight: 800 }}>
+          <label style={{
+            display: 'flex',
+            flexDirection: 'column',
+            gap: 4,
+            color: '#4f646f',
+            fontSize: 12,
+            fontWeight: 800,
+            width: isMobile ? '100%' : 'auto',
+          }}
+          >
             {t.endDate}
             <input
               type="date"
               value={periodForm.end_date}
               onChange={(e) => setPeriodForm((prev) => ({ ...prev, end_date: e.target.value }))}
-              style={{ height: 40, borderRadius: 12, border: '2px solid #dee7e7', padding: '0 12px', background: '#ffffff', color: '#002642', colorScheme: 'light' }}
+              style={{
+                width: isMobile ? '100%' : 'auto',
+                height: 40,
+                borderRadius: 12,
+                border: '2px solid #dee7e7',
+                padding: '0 12px',
+                background: '#ffffff',
+                color: '#002642',
+                colorScheme: 'light',
+                boxSizing: 'border-box',
+              }}
             />
           </label>
 
@@ -695,6 +797,8 @@ export default function ScheduleReview({ language }) {
               cursor: isSubmitting ? 'default' : 'pointer',
               fontWeight: 700,
               opacity: isSubmitting ? 0.65 : 1,
+              width: isMobile ? '100%' : 'auto',
+              ...actionButtonStyle,
             }}
           >
             {isSubmitting ? t.generating : t.generate}
@@ -714,6 +818,8 @@ export default function ScheduleReview({ language }) {
                 cursor: isSubmitting || !hasShifts ? 'default' : 'pointer',
                 fontWeight: 700,
                 opacity: isSubmitting || !hasShifts ? 0.65 : 1,
+                width: isMobile ? '100%' : 'auto',
+                ...actionButtonStyle,
               }}
             >
               {t.publish}
@@ -735,6 +841,8 @@ export default function ScheduleReview({ language }) {
                 cursor: isSubmitting ? 'default' : 'pointer',
                 fontWeight: 700,
                 opacity: isSubmitting ? 0.65 : 1,
+                width: isMobile ? '100%' : 'auto',
+                ...actionButtonStyle,
               }}
             >
               {t.deletePublished}
@@ -824,34 +932,63 @@ export default function ScheduleReview({ language }) {
           </div>
         )}
 
-        <div style={{ display: 'flex', gap: 12, alignItems: 'center', marginBottom: 20, flexWrap: 'wrap' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10, background: '#f4faff', border: '1px solid #dee7e7', borderRadius: 12, padding: '10px 14px' }}>
+        <div style={{
+          display: 'flex',
+          gap: 12,
+          alignItems: 'center',
+          marginBottom: 20,
+          flexWrap: 'wrap',
+          flexDirection: isMobile ? 'column' : 'row',
+        }}
+        >
+          <div style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: 10,
+            background: '#f4faff',
+            border: '1px solid #dee7e7',
+            borderRadius: 12,
+            padding: '10px 14px',
+            width: isMobile ? '100%' : 'auto',
+            justifyContent: 'center',
+            boxSizing: 'border-box',
+          }}
+          >
             <button onClick={() => setSelectedDateIndex((i) => Math.max(0, i - 1))} style={{ border: 'none', background: 'transparent', cursor: 'pointer', fontSize: 18 }}>&larr;</button>
             <strong style={{ color: '#002642' }}>{dates[selectedDateIndex] || '—'}</strong>
             <button onClick={() => setSelectedDateIndex((i) => Math.min(dates.length - 1, i + 1))} style={{ border: 'none', background: 'transparent', cursor: 'pointer', fontSize: 18 }}>&rarr;</button>
           </div>
 
-          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-            {['day', '3day', 'month'].map((mode) => (
-              <button
-                key={mode}
-                onClick={() => setViewMode(mode)}
-                style={{
-                  fontWeight: viewMode === mode ? 700 : 400,
-                  padding: '6px 12px',
-                  borderRadius: '6px',
-                  background: viewMode === mode ? '#002642' : '#dee7e7',
-                  color: viewMode === mode ? '#fff' : '#002642',
-                  border: '1px solid #dee7e7',
-                  cursor: 'pointer',
-                }}
-              >
-                {mode === 'day' ? t.day : mode === '3day' ? t.threeDay : t.month}
-              </button>
-            ))}
-          </div>
+          {!isMobile && (
+            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+              {['day', '3day', 'month'].map((mode) => (
+                <button
+                  key={mode}
+                  onClick={() => setViewMode(mode)}
+                  style={{
+                    fontWeight: viewMode === mode ? 700 : 400,
+                    padding: '6px 12px',
+                    borderRadius: '6px',
+                    background: viewMode === mode ? '#002642' : '#dee7e7',
+                    color: viewMode === mode ? '#fff' : '#002642',
+                    border: '1px solid #dee7e7',
+                    cursor: 'pointer',
+                  }}
+                >
+                  {mode === 'day' ? t.day : mode === '3day' ? t.threeDay : t.month}
+                </button>
+              ))}
+            </div>
+          )}
 
-          <div style={{ marginLeft: 'auto', display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+          <div style={{
+            marginLeft: isMobile ? 0 : 'auto',
+            display: 'flex',
+            gap: 8,
+            flexWrap: 'wrap',
+            width: isMobile ? '100%' : 'auto',
+          }}
+          >
             <button onClick={exportCSV} disabled={!hasShifts} style={{
               padding: '10px 14px',
               borderRadius: '12px',
@@ -861,6 +998,7 @@ export default function ScheduleReview({ language }) {
               cursor: hasShifts ? 'pointer' : 'default',
               fontWeight: 600,
               opacity: hasShifts ? 1 : 0.5,
+              width: isMobile ? '100%' : 'auto',
             }}>{t.exportCSV}</button>
           </div>
         </div>
@@ -874,6 +1012,52 @@ export default function ScheduleReview({ language }) {
           <div style={{ padding: '48px 24px', textAlign: 'center', background: '#f4faff', borderRadius: 18, border: '1px solid #dee7e7' }}>
             <h3 style={{ margin: 0, color: '#002642' }}>{getStatusLabel(scheduleStatus, t)}</h3>
             <p style={{ margin: '8px 0 0', color: '#4f646f', fontSize: 14 }}>{t.noShiftsInVersion}</p>
+          </div>
+        ) : isMobile ? (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+            {mobileDayEntries.length === 0 ? (
+              <div style={{
+                padding: '32px 18px',
+                textAlign: 'center',
+                background: '#f4faff',
+                borderRadius: 16,
+                border: '1px solid #dee7e7',
+                color: '#4f646f',
+                fontWeight: 600,
+              }}
+              >
+                {t.noShiftsThisDay}
+              </div>
+            ) : (
+              mobileDayEntries.map((entry) => {
+                const isUnfilled = entry.kind === 'unfilled';
+                const timeLabel = `${String(entry.startTime || '').slice(0, 5)} - ${String(entry.endTime || '').slice(0, 5)}`;
+
+                return (
+                  <div
+                    key={entry.key}
+                    style={{
+                      padding: '14px 16px',
+                      borderRadius: 14,
+                      background: isUnfilled
+                        ? 'linear-gradient(135deg, #ffd6a5 0%, #ffb085 100%)'
+                        : 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+                      color: isUnfilled ? '#5a1a1a' : '#fff',
+                      border: isUnfilled ? '2px dashed #8d1d1d' : '1px solid rgba(255,255,255,0.12)',
+                      boxShadow: isUnfilled
+                        ? '0 2px 8px rgba(141, 29, 29, 0.12)'
+                        : '0 2px 8px rgba(102,126,234,0.25)',
+                    }}
+                  >
+                    <div style={{ fontWeight: 800, fontSize: 15, marginBottom: 4 }}>{entry.position}</div>
+                    <div style={{ fontSize: 14, marginBottom: 4 }}>
+                      {isUnfilled ? t.notFound : entry.employee}
+                    </div>
+                    <div style={{ fontSize: 13, opacity: 0.92 }}>{timeLabel}</div>
+                  </div>
+                );
+              })
+            )}
           </div>
         ) : (
           <div style={{ overflowX: 'auto' }}>

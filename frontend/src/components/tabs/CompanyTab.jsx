@@ -10,6 +10,7 @@ import {
   regenerateInviteCode,
 } from '../../services/companyService';
 import { extractApiErrorMessage } from '../../services/error';
+import { useTabResponsive } from '../../utils/tabResponsive';
 
 function normalizeArray(value) {
   if (Array.isArray(value)) return value;
@@ -72,6 +73,7 @@ function getInviteCode(company) {
 }
 
 export default function CompanyTab({ language, userRole, user }) {
+  const r = useTabResponsive(1200);
   const { refreshUser } = useAuth();
 
   const [inviteCode, setInviteCode] = useState('');
@@ -376,12 +378,12 @@ export default function CompanyTab({ language, userRole, user }) {
   };
 
   return (
-    <section style={styles.page}>
-      <div style={styles.shell}>
-        <div style={styles.grid}>
-          <div style={styles.card}>
+    <section style={{ ...styles.page, ...r.page }}>
+      <div style={{ ...styles.shell, ...r.shell }}>
+        <div style={{ ...styles.grid, gridTemplateColumns: r.gridCols('1fr 1fr') }}>
+          <div style={{ ...styles.card, ...r.card }}>
           <div style={styles.cardHeader}>
-            <h2 style={styles.title}>{t.title}</h2>
+            <h2 style={{ ...styles.title, ...r.title }}>{t.title}</h2>
           </div>
           {errorMessage && <div style={styles.error}>{errorMessage}</div>}
           {successMessage && <div style={styles.success}>{successMessage}</div>}
@@ -423,7 +425,7 @@ export default function CompanyTab({ language, userRole, user }) {
                 )}
 
                 {isEmployee && (
-                  <div style={styles.infoGrid}>
+                  <div style={{ ...styles.infoGrid, gridTemplateColumns: r.gridCols('1fr 1fr') }}>
                     <InfoItem label={t.branch} value={getName(currentBranch)} />
                     <InfoItem label={t.position} value={getName(currentPosition)} />
                   </div>
@@ -441,7 +443,7 @@ export default function CompanyTab({ language, userRole, user }) {
         </div>
 
         {isManager && !currentCompany && (
-          <div style={styles.card}>
+          <div style={{ ...styles.card, ...r.card }}>
             <div style={styles.section}>
               <h3 style={styles.sectionTitle}>{t.createCompany}</h3>
 
@@ -468,7 +470,7 @@ export default function CompanyTab({ language, userRole, user }) {
         )}
 
         {isManager && currentCompany && (
-          <div style={styles.card}>
+          <div style={{ ...styles.card, ...r.card }}>
             <div style={styles.section}>
               <h3 style={styles.sectionTitle}>{t.branches}</h3>
               <p style={styles.hint}>{t.positionsHint}</p>
@@ -508,7 +510,7 @@ export default function CompanyTab({ language, userRole, user }) {
         )}
 
         {isEmployee && !currentCompany && (
-          <div style={styles.card}>
+          <div style={{ ...styles.card, ...r.card }}>
             <div style={styles.section}>
               <h3 style={styles.sectionTitle}>{t.joinCompany}</h3>
               <p style={styles.hint}>{t.previewHint}</p>

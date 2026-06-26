@@ -17,6 +17,7 @@ import { extractApiErrorMessage, localizeBackendMessage } from '../../services/e
 import { mapEmployeeCalendarSummary } from '../../services/mappers';
 import { createPosition, deletePosition, listPositions } from '../../services/positionService';
 import { listBranches, linkUserToCompany } from '../../services/companyService';
+import { useTabResponsive } from '../../utils/tabResponsive';
 
 const WEEKDAYS = [
   { value: 0, ru: 'Пн', en: 'Mon' },
@@ -72,6 +73,7 @@ function getCompanyId(company) {
 }
 
 export default function EmployeesTab({ language, userRole, user }) {
+  const r = useTabResponsive(1380);
   // Добавляем глобальные стили для полей ввода
   useEffect(() => {
     const styleSheet = document.createElement('style');
@@ -868,22 +870,22 @@ export default function EmployeesTab({ language, userRole, user }) {
 
   if (isLoading) {
     return (
-      <section style={styles.page}>
+      <section style={{ ...styles.page, ...r.page }}>
         <div style={styles.card}>{t.loading}</div>
       </section>
     );
   }
 
   return (
-    <section style={styles.page} className="employees-tab">
-      <div style={styles.shell}>
-        <header style={styles.header}>
+    <section style={{ ...styles.page, ...r.page }} className="employees-tab">
+      <div style={{ ...styles.shell, ...r.shell }}>
+        <header style={{ ...styles.header, ...r.header }}>
           <div>
-            <h2 style={styles.title}>{t.title}</h2>
+            <h2 style={{ ...styles.title, ...r.title }}>{t.title}</h2>
             <p style={styles.subtitle}>{t.subtitle}</p>
           </div>
 
-          <div style={styles.headerStats}>
+          <div style={{ ...styles.headerStats, ...r.headerStats }}>
             <Metric label={t.employees} value={filteredEmployees.length} />
             <Metric label={t.positions} value={visiblePositions.length} />
           </div>
@@ -913,7 +915,7 @@ export default function EmployeesTab({ language, userRole, user }) {
           </div>
         )}
 
-        <div style={styles.mainGrid}>
+        <div style={{ ...styles.mainGrid, ...r.splitLayout('340px minmax(0, 1fr)') }}>
           <aside style={styles.sidePanel}>
             <div style={styles.panel}>
               <h3 style={styles.panelTitle}>{t.createPosition}</h3>
@@ -930,7 +932,10 @@ export default function EmployeesTab({ language, userRole, user }) {
                 <button
                   type="button"
                   onClick={handleCreatePosition}
-                  style={isSubmitting || !currentCompanyId ? styles.primaryButtonDisabled : styles.primaryButton}
+                  style={{
+                    ...(isSubmitting || !currentCompanyId ? styles.primaryButtonDisabled : styles.primaryButton),
+                    ...r.fullWidth,
+                  }}
                   disabled={isSubmitting || !currentCompanyId}
                 >
                   {t.save}
@@ -954,7 +959,7 @@ export default function EmployeesTab({ language, userRole, user }) {
                   style={styles.input}
                 />
 
-                <div style={styles.row}>
+                <div style={{ ...styles.row, gridTemplateColumns: r.gridCols('1fr 1fr') }}>
                   <div style={styles.flex}>
                     <label style={styles.label}>{t.branch}</label>
                     <select
@@ -991,7 +996,10 @@ export default function EmployeesTab({ language, userRole, user }) {
                 <button
                   type="button"
                   onClick={handleLinkUser}
-                  style={isSubmitting || !linkUserId ? styles.primaryButtonDisabled : styles.primaryButton}
+                  style={{
+                    ...(isSubmitting || !linkUserId ? styles.primaryButtonDisabled : styles.primaryButton),
+                    ...r.fullWidth,
+                  }}
                   disabled={isSubmitting || !linkUserId}
                 >
                   {isSubmitting ? '...' : t.linkUserButton}
@@ -1000,29 +1008,37 @@ export default function EmployeesTab({ language, userRole, user }) {
             </div>
           </aside>
 
-          <main style={styles.detailsPanel}>
-            <div style={styles.detailsScroll}>
+          <main style={{
+            ...styles.detailsPanel,
+            ...(r.isMobile ? { overflow: 'visible' } : {}),
+          }}
+          >
+            <div style={{
+              ...styles.detailsScroll,
+              ...(r.isMobile ? { overflowY: 'visible', minHeight: 'auto', padding: 14 } : {}),
+            }}
+            >
               <section style={styles.innerSection}>
-                <div style={styles.listHeader}>
+                <div style={{ ...styles.listHeader, ...r.listHeader }}>
                   <div>
                     <h3 style={styles.panelTitle}>{t.employees}</h3>
                     <p style={styles.panelHint}>{t.selectEmployee}</p>
                   </div>
 
-                  <div style={styles.filterRow}>
+                  <div style={{ ...styles.filterRow, ...r.filterRow }}>
                     <input
                       type="text"
                       value={searchQuery}
                       onChange={(event) => setSearchQuery(event.target.value)}
                       placeholder={t.searchEmployee}
-                      style={styles.searchInput}
+                      style={{ ...styles.searchInput, ...r.searchInput }}
                       aria-label={t.searchEmployee}
                     />
                     <select
                       id="branch-filter-select"
                       value={selectedBranchId}
                       onChange={(event) => setSelectedBranchId(event.target.value)}
-                      style={styles.filterSelect}
+                      style={{ ...styles.filterSelect, ...r.filterSelect }}
                       aria-label={t.branch}
                     >
                       <option value="">{t.allBranches}</option>
@@ -1036,7 +1052,7 @@ export default function EmployeesTab({ language, userRole, user }) {
                       id="position-filter-select"
                       value={selectedPositionId}
                       onChange={(event) => setSelectedPositionId(event.target.value)}
-                      style={styles.filterSelect}
+                      style={{ ...styles.filterSelect, ...r.filterSelect }}
                       aria-label={t.position}
                     >
                       <option value="">{t.allPositions}</option>
@@ -1088,7 +1104,7 @@ export default function EmployeesTab({ language, userRole, user }) {
                       </button>
                     </div>
 
-                    <div style={styles.employeeCard}>
+                    <div style={{ ...styles.employeeCard, gridTemplateColumns: r.gridCols('repeat(3, minmax(0, 1fr))') }}>
                       <Info label={t.fullName} value={selectedEmployee?.full_name || selectedEmployee?.name || '—'} />
                       <Info label={t.email} value={selectedEmployee?.email || '—'} />
                       <Info label={t.position} value={selectedEmployeePosition || t.empty} />
@@ -1154,7 +1170,7 @@ export default function EmployeesTab({ language, userRole, user }) {
               )}
 
               <section style={styles.innerSection}>
-                <div style={styles.listHeader}>
+                <div style={{ ...styles.listHeader, ...r.listHeader }}>
                   <div>
                     <h3 style={styles.panelTitle}>{t.positions}</h3>
                     <p style={styles.panelHint}>{t.managePositionsHint}</p>
@@ -1166,40 +1182,48 @@ export default function EmployeesTab({ language, userRole, user }) {
                 ) : (
                   <div style={styles.list}>
                     {visiblePositions.map((position) => (
-                      <div key={position.id} style={styles.listItem}>
+                      <div key={position.id} style={{ ...styles.listItem, ...r.listItem }}>
                         {String(editingPositionId) === String(position.id) ? (
                           <>
                             <input
                               value={editingPositionTitle}
                               onChange={(event) => setEditingPositionTitle(event.target.value)}
-                              style={styles.input}
+                              style={{ ...styles.input, ...r.fullWidth }}
                             />
-                            <div style={styles.actionGroup}>
-                              <button type="button" onClick={handleSaveEditedPosition} style={styles.primaryButton}>
+                            <div style={{ ...styles.actionGroup, ...r.actionGroup }}>
+                              <button
+                                type="button"
+                                onClick={handleSaveEditedPosition}
+                                style={{ ...styles.primaryButton, ...r.fullWidth }}
+                              >
                                 {t.save}
                               </button>
-                              <button type="button" onClick={handleCancelEditPosition} style={styles.secondaryButton}>
+                              <button
+                                type="button"
+                                onClick={handleCancelEditPosition}
+                                style={{ ...styles.secondaryButton, ...r.fullWidth }}
+                              >
                                 {t.cancel}
                               </button>
                             </div>
                           </>
                         ) : (
                           <>
-                            <div>
+                            <div style={r.isMobile ? { width: '100%' } : undefined}>
                               <strong style={styles.itemTitle}>{getPositionLabel(position)}</strong>
                             </div>
-                            <div style={styles.actionGroup}>
+                            <div style={{ ...styles.actionGroup, ...r.actionGroup }}>
                               <button
                                 type="button"
                                 onClick={() => handleStartEditingPosition(position)}
-                                style={styles.secondaryButton}
+                                style={{ ...styles.secondaryButton, ...r.fullWidth }}
                               >
                                 {t.edit}
                               </button>
                               <button
                                 type="button"
                                 onClick={() => handleDeletePosition(position.id)}
-                                style={styles.deleteButton}
+                                style={{ ...styles.deleteButton, ...r.fullWidth }}
                               >
                                 {t.delete}
                               </button>
