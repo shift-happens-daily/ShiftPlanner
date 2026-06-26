@@ -38,12 +38,34 @@ function normalizeArray(value) {
   return [];
 }
 
+const SCHEDULE_SLOT_MINUTES = 30;
+const SCHEDULE_SLOTS_PER_DAY = (24 * 60) / SCHEDULE_SLOT_MINUTES;
+const SCHEDULE_CELL_WIDTH = 24;
+
 function parseTimeToHours(t) {
   if (!t) return 0;
   const parts = String(t).split(':');
   const h = Number(parts[0] || 0);
   const m = Number(parts[1] || 0);
   return h + m / 60;
+}
+
+function timeToSlotOffset(time) {
+  return parseTimeToHours(time) * (60 / SCHEDULE_SLOT_MINUTES);
+}
+
+function formatScheduleSlotLabel(slotIndex) {
+  const hour = Math.floor(slotIndex / 2);
+  const minutes = (slotIndex % 2) * SCHEDULE_SLOT_MINUTES;
+  return `${String(hour).padStart(2, '0')}:${String(minutes).padStart(2, '0')}`;
+}
+
+function scheduleSlotGridStyle(cellWidth, background) {
+  return {
+    backgroundImage: `repeating-linear-gradient(to right, rgba(79, 100, 111, 0.14) 0, rgba(79, 100, 111, 0.14) 1px, transparent 1px, transparent ${cellWidth}px)`,
+    backgroundSize: `${cellWidth}px 100%`,
+    backgroundColor: background,
+  };
 }
 
 function downloadCSV(filename, rows) {
@@ -181,11 +203,10 @@ function renderTimeSlotBlock({
   color,
   border,
 }) {
-  const start = parseTimeToHours(startTime);
-  const end = parseTimeToHours(endTime || startTime);
-  const duration = end - start;
-  const leftPx = start * cellWidth;
-  const widthPx = Math.max(duration * cellWidth, 20);
+  const startSlots = timeToSlotOffset(startTime);
+  const endSlots = timeToSlotOffset(endTime || startTime);
+  const leftPx = startSlots * cellWidth;
+  const widthPx = Math.max((endSlots - startSlots) * cellWidth, 20);
 
   return (
     <div
@@ -360,7 +381,8 @@ export default function ScheduleReview({ language }) {
 
   const t = texts[language] || texts.ru;
 
-  const cellWidth = 48;
+  const cellWidth = SCHEDULE_CELL_WIDTH;
+  const slotsPerDay = SCHEDULE_SLOTS_PER_DAY;
 
   const schedule = scheduleVersions[activeVersion] || null;
   const scheduleStatus = schedule?.status || activeVersion;
@@ -621,7 +643,7 @@ export default function ScheduleReview({ language }) {
 
   if (isLoading || isAuthLoading) return <div style={{ padding: 20 }}>{t.loading}</div>;
 
-  const totalWidth = visibleDates.length * 24 * cellWidth;
+  const totalWidth = visibleDates.length * slotsPerDay * cellWidth;
   const hasShifts = normalizeArray(displaySchedule?.shifts).length > 0 && employeesForView.length > 0;
   const hasGridContent = hasShifts || unfilledNotFoundRequirements.length > 0;
   const versionOptions = [
@@ -1098,9 +1120,9 @@ export default function ScheduleReview({ language }) {
                       fontWeight: '600',
                       color: '#4f646f',
                       background: '#f4faff',
-                      width: 24 * cellWidth,
-                      minWidth: 24 * cellWidth,
-                      maxWidth: 24 * cellWidth,
+                      width: slotsPerDay * cellWidth,
+                      minWidth: slotsPerDay * cellWidth,
+                      maxWidth: slotsPerDay * cellWidth,
                     }}>
                       {d}
                     </th>
@@ -1125,17 +1147,26 @@ export default function ScheduleReview({ language }) {
                       background: '#f4faff',
                     }}>
                       <div style={{ display: 'flex', gap: 0 }}>
-                        {Array.from({ length: 24 }).map((_, h) => (
-                          <div key={h} style={{
+                        {Array.from({ length: slotsPerDay }).map((_, slotIndex) => {
+                          const isHalfHour = slotIndex % 2 === 1;
+                          return (
+                          <div key={slotIndex} style={{
                             flex: `0 0 ${cellWidth}px`,
+                            boxSizing: 'border-box',
+                            borderRight: isHalfHour
+                              ? '1px solid rgba(79, 100, 111, 0.12)'
+                              : '1px solid rgba(79, 100, 111, 0.28)',
                             textAlign: 'center',
-                            fontSize: 11,
-                            color: '#4f646f',
-                            fontWeight: '500',
+                            fontSize: isHalfHour ? 8 : 9,
+                            color: isHalfHour ? '#8a9aa3' : '#4f646f',
+                            fontWeight: isHalfHour ? 500 : 600,
+                            lineHeight: 1.1,
+                            paddingTop: 1,
                           }}>
-                            {`${String(h).padStart(2, '0')}:00`}
+                            {formatScheduleSlotLabel(slotIndex)}
                           </div>
-                        ))}
+                          );
+                        })}
                       </div>
                     </th>
                   ))}
@@ -1168,10 +1199,10 @@ export default function ScheduleReview({ language }) {
                           padding: 0,
                           borderBottom: '1px solid #f0f0f0',
                           height: 72,
-                          background: rowIndex % 2 === 0 ? '#ffffff' : '#f8faff',
-                          width: 24 * cellWidth,
-                          minWidth: 24 * cellWidth,
-                          maxWidth: 24 * cellWidth,
+                          ...scheduleSlotGridStyle(cellWidth, rowIndex % 2 === 0 ? '#ffffff' : '#f8faff'),
+                          width: slotsPerDay * cellWidth,
+                          minWidth: slotsPerDay * cellWidth,
+                          maxWidth: slotsPerDay * cellWidth,
                         }} />;
                       }
 
@@ -1186,19 +1217,18 @@ export default function ScheduleReview({ language }) {
                           borderBottom: '1px solid #f0f0f0',
                           height: 72,
                           position: 'relative',
-                          background: rowIndex % 2 === 0 ? '#ffffff' : '#f8faff',
-                          width: 24 * cellWidth,
-                          minWidth: 24 * cellWidth,
-                          maxWidth: 24 * cellWidth,
+                          ...scheduleSlotGridStyle(cellWidth, rowIndex % 2 === 0 ? '#ffffff' : '#f8faff'),
+                          width: slotsPerDay * cellWidth,
+                          minWidth: slotsPerDay * cellWidth,
+                          maxWidth: slotsPerDay * cellWidth,
                         }}>
                           <div style={{ position: 'relative', width: '100%', height: '100%' }}>
                             {myShifts.map((shift) => {
-                              const start = parseTimeToHours(shift.start_time);
-                              const end = parseTimeToHours(shift.end_time || shift.start_time);
-                              const duration = end - start;
+                              const startSlots = timeToSlotOffset(shift.start_time);
+                              const endSlots = timeToSlotOffset(shift.end_time || shift.start_time);
                               const minWidthPx = 20;
-                              const leftPx = start * cellWidth;
-                              const widthPx = Math.max(duration * cellWidth, minWidthPx);
+                              const leftPx = startSlots * cellWidth;
+                              const widthPx = Math.max((endSlots - startSlots) * cellWidth, minWidthPx);
                               return (
                                 <div
                                   key={shift.id}
@@ -1265,10 +1295,10 @@ export default function ScheduleReview({ language }) {
                             borderBottom: '1px solid #f0f0f0',
                             height: 72,
                             position: 'relative',
-                            background: rowBg,
-                            width: 24 * cellWidth,
-                            minWidth: 24 * cellWidth,
-                            maxWidth: 24 * cellWidth,
+                            ...scheduleSlotGridStyle(cellWidth, rowBg),
+                            width: slotsPerDay * cellWidth,
+                            minWidth: slotsPerDay * cellWidth,
+                            maxWidth: slotsPerDay * cellWidth,
                           }}
                         >
                           {d === itemDate ? (
