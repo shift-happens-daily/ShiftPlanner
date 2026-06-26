@@ -77,11 +77,46 @@ export async function updateShift(scheduleId, shiftId, payload) {
   return response.data;
 }
 
+export async function deleteShift(scheduleId, shiftId) {
+  await api.delete(`/schedule/${scheduleId}/shifts/${shiftId}`);
+}
+
+export async function createManualShift(scheduleId, payload) {
+  const response = await api.post(`/schedule/${scheduleId}/shifts`, payload);
+  return response.data;
+}
+
+export async function listAvailableEmployees(scheduleId, params) {
+  const response = await api.get(`/schedule/${scheduleId}/employees/available`, { params });
+  return response.data;
+}
+
+export async function assignRequirement(scheduleId, requirementId, payload) {
+  const response = await api.post(
+    `/schedule/${scheduleId}/requirements/${requirementId}/assign`,
+    payload,
+  );
+  return response.data;
+}
+
+export async function updateScheduleRequirement(scheduleId, requirementId, payload) {
+  const response = await api.patch(
+    `/schedule/${scheduleId}/requirements/${requirementId}`,
+    payload,
+  );
+  return response.data;
+}
+
+export async function deleteRequirement(requirementId) {
+  await api.delete(`/schedule/requirements/${requirementId}`);
+}
+
 export async function publishSchedule(scheduleId) {
   const response = await api.post(`/schedule/${scheduleId}/publish`);
   return response.data;
 }
 
+/** Whole schedule delete — wire when backend adds DELETE /schedule/{id}. */
 export async function deleteSchedule(scheduleId) {
   const response = await api.delete(`/schedule/${scheduleId}`);
   return response.data;

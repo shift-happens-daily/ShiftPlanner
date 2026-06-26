@@ -15,7 +15,7 @@ import {
 } from '../../services/employeeService';
 import { extractApiErrorMessage, localizeBackendMessage } from '../../services/error';
 import { mapEmployeeCalendarSummary } from '../../services/mappers';
-import { createPosition, listPositions } from '../../services/positionService';
+import { createPosition, deletePosition, listPositions } from '../../services/positionService';
 import { listBranches, linkUserToCompany } from '../../services/companyService';
 
 const WEEKDAYS = [
@@ -50,8 +50,17 @@ function getEmployeePosition(employee) {
   return employee?.position_title || employee?.position?.title || employee?.position?.name || '';
 }
 
-function getEmployeeBranch(employee) {
-  return employee?.branch?.name || employee?.branch_name || employee?.branch_title || '';
+function getEmployeeBranch(employee, branches = []) {
+  if (!employee) return '';
+
+  const directName = employee?.branch?.name || employee?.branch_name || employee?.branch_title;
+  if (directName) return directName;
+
+  const branchId = employee?.branch?.id || employee?.branch_id || employee?.branchId;
+  if (!branchId) return '';
+
+  const matchedBranch = branches.find((branch) => String(branch.id) === String(branchId));
+  return matchedBranch?.name || matchedBranch?.title || '';
 }
 
 function isValidEmail(email) {
@@ -189,7 +198,7 @@ export default function EmployeesTab({ language, userRole, user }) {
       duplicateEmployee: 'Пользователь или сотрудник с таким email уже существует. Используйте другой email или попросите сотрудника присоединиться по инвайт-коду.',
       positionCreated: 'Позиция создана.',
       positionUpdated: 'Позиция обновлена локально.',
-      positionDeleted: 'Позиция удалена локально.',
+      positionDeleted: 'Позиция удалена.',
       employeeCreated: 'Сотрудник создан.',
       availabilitySaved: 'Доступность сохранена.',
       assignmentsSaved: 'Данные сотрудника обновлены.',
@@ -201,7 +210,7 @@ export default function EmployeesTab({ language, userRole, user }) {
       backToList: 'Назад к списку',
       edit: 'Редактировать',
       cancel: 'Отменить',
-      confirmDeletePosition: 'Удалить эту позицию? Это повлияет только на интерфейс.',
+      confirmDeletePosition: 'Удалить эту позицию?',
       managePositionsHint: 'Редактируйте и удаляйте позиции для компании.',
       noPositionsMessage: 'Позиции не найдены. Создайте одну слева.',
       allBranches: 'Все филиалы',
@@ -274,7 +283,7 @@ export default function EmployeesTab({ language, userRole, user }) {
       duplicateEmployee: 'A user or employee with this email already exists. Use another email or ask the employee to join by invite code.',
       positionCreated: 'Position created.',
       positionUpdated: 'Position updated locally.',
-      positionDeleted: 'Position deleted locally.',
+      positionDeleted: 'Position deleted.',
       employeeCreated: 'Employee created.',
       availabilitySaved: 'Availability saved.',
       assignmentsSaved: 'Employee details updated.',
@@ -286,7 +295,7 @@ export default function EmployeesTab({ language, userRole, user }) {
       backToList: 'Back to list',
       edit: 'Edit',
       cancel: 'Cancel',
-      confirmDeletePosition: 'Delete this position? This will only affect the UI.',
+      confirmDeletePosition: 'Delete this position?',
       managePositionsHint: 'Edit and delete positions for the company.',
       noPositionsMessage: 'No positions available. Create one on the left.',
       allBranches: 'All branches',
@@ -344,7 +353,7 @@ export default function EmployeesTab({ language, userRole, user }) {
   );
 
   const selectedEmployeePosition = getEmployeePosition(selectedEmployee);
-  const selectedEmployeeBranch = getEmployeeBranch(selectedEmployee);
+  const selectedEmployeeBranch = getEmployeeBranch(selectedEmployee, branches);
 
   const filteredEmployees = useMemo(() => {
     const query = searchQuery.trim().toLowerCase();
@@ -689,16 +698,26 @@ export default function EmployeesTab({ language, userRole, user }) {
     setSuccessMessage(t.positionUpdated);
   };
 
-  const handleDeletePosition = (positionId) => {
+  const handleDeletePosition = async (positionId) => {
     if (!window.confirm(t.confirmDeletePosition)) return;
 
-    setPositions((prev) => prev.filter((position) => String(position.id) !== String(positionId)));
+    clearMessages();
+    setIsSubmitting(true);
 
-    if (String(editingPositionId) === String(positionId)) {
-      handleCancelEditPosition();
+    try {
+      await deletePosition(positionId);
+      await reloadPositions();
+
+      if (String(editingPositionId) === String(positionId)) {
+        handleCancelEditPosition();
+      }
+
+      setSuccessMessage(t.positionDeleted);
+    } catch (error) {
+      setErrorMessage(normalizeError(error, t.requiredPosition, language));
+    } finally {
+      setIsSubmitting(false);
     }
-
-    setSuccessMessage(t.positionDeleted);
   };
 
   const handleAvailabilityChange = (index, key, value) => {

@@ -15,6 +15,7 @@ import { listPositions } from '../../services/positionService';
 import {
   createBulkRequirements,
   createRequirement,
+  deleteRequirement,
   listRequirements,
 } from '../../services/scheduleService';
 
@@ -239,30 +240,6 @@ function mergeRequirements(serverRequirements, localRequirements) {
 
 function normalizeError(error, fallback, language) {
   return extractApiErrorMessage(error, fallback, language) || fallback;
-}
-
-async function deleteRequirementRequest(requirementId) {
-  const baseUrl = import.meta.env.VITE_API_URL || 'http://localhost:8000';
-  const token = localStorage.getItem('shiftplanner_token');
-
-  const response = await fetch(`${baseUrl}/schedule/requirements/${requirementId}`, {
-    method: 'DELETE',
-    headers: {
-      Accept: 'application/json',
-      ...(token ? { Authorization: `Bearer ${token}` } : {}),
-    },
-  });
-
-  if (!response.ok) {
-    let detail = '';
-    try {
-      const payload = await response.json();
-      detail = payload?.detail || payload?.message || '';
-    } catch {
-      detail = '';
-    }
-    throw new Error(detail || `Delete failed with status ${response.status}`);
-  }
 }
 
 export default function ShiftsTab({ language, userRole, user }) {
@@ -723,7 +700,7 @@ export default function ShiftsTab({ language, userRole, user }) {
     setIsSubmitting(true);
 
     try {
-      await deleteRequirementRequest(requirementId);
+      await deleteRequirement(requirementId);
       setRequirements((prev) =>
         prev.filter((requirement) => String(getRequirementId(requirement)) !== String(requirementId))
       );

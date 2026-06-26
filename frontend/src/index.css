@@ -54,6 +54,14 @@ body {
   margin: 0;
 }
 
+input[type='date'],
+input[type='time'],
+input[type='datetime-local'] {
+  color-scheme: light;
+  background-color: #ffffff;
+  color: #002642;
+}
+
 
 
 html,

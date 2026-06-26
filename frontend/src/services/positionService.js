@@ -9,3 +9,7 @@ export async function createPosition(payload) {
   const response = await api.post('/positions/', payload);
   return response.data;
 }
+
+export async function deletePosition(positionId) {
+  await api.delete(`/positions/${positionId}`);
+}

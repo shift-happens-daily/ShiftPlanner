@@ -4,12 +4,20 @@ import {
   deleteSchedule,
   generateSchedule,
   getLatestSchedule,
-  mergePublishedSchedule,
   publishSchedule,
+  assignRequirement,
 } from '../../services/scheduleService';
 import { filterRealEmployees, listEmployees } from '../../services/employeeService';
 import { useAuth } from '../../context/useAuth';
 import { extractApiErrorMessage } from '../../services/error';
+
+function formatTimeForApi(value) {
+  const raw = String(value || '').trim();
+  if (!raw) return raw;
+  if (/^\d{2}:\d{2}:\d{2}$/.test(raw)) return raw;
+  if (/^\d{2}:\d{2}$/.test(raw)) return `${raw}:00`;
+  return raw.slice(0, 8);
+}
 
 function formatDate(d) {
   const date = new Date(d);
@@ -103,9 +111,129 @@ function countVisibleShifts(scheduleRead, realEmployeeIds) {
   )).length;
 }
 
+function matchesRequirementSlot(shift, requirement) {
+  return (
+    formatDate(shift.date) === formatDate(requirement.date)
+    && Number(shift.position_id) === Number(requirement.position_id)
+    && formatTimeForApi(shift.start_time) === formatTimeForApi(requirement.start_time)
+    && formatTimeForApi(shift.end_time) === formatTimeForApi(requirement.end_time)
+  );
+}
+
+function getCompletelyUnfilledRequirements(schedule) {
+  const shifts = normalizeArray(schedule?.shifts);
+  return normalizeArray(schedule?.unfilled_requirements).filter(
+    (item) => !shifts.some((shift) => matchesRequirementSlot(shift, item) && shift.employee_id),
+  );
+}
+
+function mergeScheduleDates(scheduleRead, unfilledItems) {
+  const byDate = {};
+  groupShiftsByDate(scheduleRead).forEach((day) => {
+    byDate[day.date] = day;
+  });
+  unfilledItems.forEach((item) => {
+    const dateKey = formatDate(item.date);
+    if (!byDate[dateKey]) {
+      byDate[dateKey] = { date: dateKey, shifts: [] };
+    }
+  });
+  return Object.keys(byDate)
+    .sort()
+    .map((date) => byDate[date]);
+}
+
+function renderTimeSlotBlock({
+  startTime,
+  endTime,
+  title,
+  subtitle,
+  cellWidth,
+  background,
+  color,
+  border,
+}) {
+  const start = parseTimeToHours(startTime);
+  const end = parseTimeToHours(endTime || startTime);
+  const duration = end - start;
+  const leftPx = start * cellWidth;
+  const widthPx = Math.max(duration * cellWidth, 20);
+
+  return (
+    <div
+      style={{
+        position: 'absolute',
+        left: `${leftPx}px`,
+        width: `${widthPx}px`,
+        top: 12,
+        height: 48,
+        background,
+        color,
+        borderRadius: 8,
+        padding: '4px 6px',
+        fontSize: 11,
+        overflow: 'hidden',
+        whiteSpace: 'nowrap',
+        textOverflow: 'ellipsis',
+        boxShadow: '0 2px 8px rgba(141, 29, 29, 0.12)',
+        border,
+        boxSizing: 'border-box',
+      }}
+    >
+      <div style={{ fontWeight: 700, fontSize: 11 }}>{title}</div>
+      {subtitle ? (
+        <div style={{ fontSize: 10, opacity: 0.9 }}>{subtitle}</div>
+      ) : null}
+    </div>
+  );
+}
+
 function hasStaffingRequirements(scheduleRead) {
   return normalizeArray(scheduleRead?.shifts).length > 0
     || normalizeArray(scheduleRead?.unfilled_requirements).length > 0;
+}
+
+const EMPTY_SCHEDULE_VERSIONS = { draft: null, published: null };
+
+async function fetchScheduleByStatus(status) {
+  try {
+    return await getLatestSchedule(status);
+  } catch (error) {
+    if (error?.response?.status === 404 || isMissingCompanyError(error)) {
+      return null;
+    }
+    throw error;
+  }
+}
+
+async function loadScheduleVersions() {
+  const [draft, published] = await Promise.all([
+    fetchScheduleByStatus('draft'),
+    fetchScheduleByStatus('published'),
+  ]);
+
+  return { draft, published };
+}
+
+function pickActiveVersion(versions, current) {
+  if (current && versions[current]) {
+    return current;
+  }
+  if (versions.draft) return 'draft';
+  if (versions.published) return 'published';
+  return 'draft';
+}
+
+function getStatusLabel(status, t) {
+  if (status === 'published') return t.published;
+  return t.draft;
+}
+
+function getStatusBadgeStyle(status) {
+  if (status === 'published') {
+    return { background: 'rgba(215, 173, 207, 0.55)', color: '#002642' };
+  }
+  return { background: '#dee7e7', color: '#002642' };
 }
 
 export default function ScheduleReview({ language }) {
@@ -113,8 +241,9 @@ export default function ScheduleReview({ language }) {
   const hasCompany = Boolean(user?.company);
   const [viewMode, setViewMode] = useState('day');
   const [periodForm, setPeriodForm] = useState(defaultPeriod);
-  const [schedule, setSchedule] = useState(null);
-  const [archivedSchedule, setArchivedSchedule] = useState(null);
+  const [scheduleVersions, setScheduleVersions] = useState(EMPTY_SCHEDULE_VERSIONS);
+  const [activeVersion, setActiveVersion] = useState('draft');
+  const [assignEmployeeIds, setAssignEmployeeIds] = useState({});
   const [realEmployeeIds, setRealEmployeeIds] = useState(new Set());
   const [employeesLoaded, setEmployeesLoaded] = useState(false);
   const [selectedDateIndex, setSelectedDateIndex] = useState(0);
@@ -139,19 +268,26 @@ export default function ScheduleReview({ language }) {
       status: 'Статус',
       draft: 'Черновик',
       published: 'Опубликовано',
-      unfilled: 'Не хватает людей',
+      viewDraft: 'Черновик',
+      viewPublished: 'Опубликовано',
+      noShiftsInVersion: 'В этой версии расписания нет назначенных смен.',
+      notFound: 'Не найдено',
       noSchedule: 'Расписание ещё не сгенерировано.',
-      noScheduleHint: 'Алгоритму нужны шаблоны потребности, часы филиала и availability сотрудников.',
+      noScheduleHint: 'Алгоритму нужны шаблоны потребности, часы филиала и доступность сотрудников.',
       noEmployeesAndRequirements: 'Нет сотрудников и требований для генерации расписания.',
       generating: 'Генерация...',
       loading: 'Загрузка...',
       generated: 'Черновик расписания создан.',
       publishedDone: 'Расписание опубликовано.',
-      previousVersion: 'Прошлая версия',
-      deletePrevious: 'Удалить прошлую версию',
-      confirmDeletePrevious: 'Удалить прошлую версию расписания?',
-      previousDeleted: 'Прошлая версия расписания удалена.',
-      deletePreviousError: 'Не удалось удалить прошлую версию.',
+      deletePublished: 'Удалить',
+      confirmDeletePublished: 'Вы точно хотите удалить опубликованное расписание?',
+      publishedDeleted: 'Опубликованное расписание удалено.',
+      deletePublishedError: 'Не удалось удалить опубликованное расписание.',
+      unfilledTitle: 'Незаполненные смены',
+      assign: 'Назначить',
+      chooseEmployee: 'Выберите сотрудника',
+      assigned: 'Сотрудник назначен на смену.',
+      assignError: 'Не удалось назначить сотрудника.',
     },
     en: {
       title: 'Generated Schedule Review',
@@ -168,7 +304,10 @@ export default function ScheduleReview({ language }) {
       status: 'Status',
       draft: 'Draft',
       published: 'Published',
-      unfilled: 'Missing staff',
+      viewDraft: 'Draft',
+      viewPublished: 'Published',
+      noShiftsInVersion: 'This schedule version has no assigned shifts.',
+      notFound: 'Not found',
       noSchedule: 'Schedule has not been generated yet.',
       noScheduleHint: 'The solver needs staffing templates, branch hours, and employee availability.',
       noEmployeesAndRequirements: 'No employees or staffing requirements to generate a schedule.',
@@ -176,11 +315,15 @@ export default function ScheduleReview({ language }) {
       loading: 'Loading...',
       generated: 'Draft schedule generated.',
       publishedDone: 'Schedule published.',
-      previousVersion: 'Previous version',
-      deletePrevious: 'Delete previous version',
-      confirmDeletePrevious: 'Delete the previous schedule version?',
-      previousDeleted: 'Previous schedule version deleted.',
-      deletePreviousError: 'Failed to delete previous version.',
+      deletePublished: 'Delete',
+      confirmDeletePublished: 'Are you sure you want to delete the published schedule?',
+      publishedDeleted: 'Published schedule deleted.',
+      deletePublishedError: 'Failed to delete published schedule.',
+      unfilledTitle: 'Unfilled shifts',
+      assign: 'Assign',
+      chooseEmployee: 'Choose employee',
+      assigned: 'Employee assigned to shift.',
+      assignError: 'Failed to assign employee.',
     },
   };
 
@@ -188,12 +331,18 @@ export default function ScheduleReview({ language }) {
 
   const cellWidth = 48;
 
-  const scheduleStatus = schedule?.status === 'published' ? 'published' : 'draft';
-  const unfilledCount = useMemo(
-    () => normalizeArray(schedule?.unfilled_requirements).reduce(
-      (sum, item) => sum + Number(item?.missing_staff || 0),
-      0
-    ),
+  const schedule = scheduleVersions[activeVersion] || null;
+  const scheduleStatus = schedule?.status || activeVersion;
+  const hasAnySchedule = Boolean(
+    scheduleVersions.draft || scheduleVersions.published
+  );
+  const unfilledRequirements = useMemo(
+    () => normalizeArray(schedule?.unfilled_requirements),
+    [schedule]
+  );
+
+  const unfilledNotFoundRequirements = useMemo(
+    () => getCompletelyUnfilledRequirements(schedule),
     [schedule]
   );
 
@@ -208,13 +357,18 @@ export default function ScheduleReview({ language }) {
 
     return {
       ...schedule,
-      shifts: normalizeArray(schedule.shifts).filter((shift) => (
-        realEmployeeIds.has(String(shift.employee_id))
-      )),
+      shifts: normalizeArray(schedule.shifts).filter((shift) => {
+        if (!shift?.employee_id) return false;
+        if (!employeesLoaded) return false;
+        return realEmployeeIds.size === 0 || realEmployeeIds.has(String(shift.employee_id));
+      }),
     };
   }, [schedule, employeesLoaded, realEmployeeIds]);
 
-  const schedules = useMemo(() => groupShiftsByDate(displaySchedule), [displaySchedule]);
+  const schedules = useMemo(
+    () => mergeScheduleDates(displaySchedule, unfilledNotFoundRequirements),
+    [displaySchedule, unfilledNotFoundRequirements]
+  );
   const dates = useMemo(() => schedules.map((s) => s.date), [schedules]);
 
   const pageSize = viewMode === 'day' ? 1 : viewMode === '3day' ? 3 : 30;
@@ -235,35 +389,28 @@ export default function ScheduleReview({ language }) {
     return out;
   }, [schedules, selectedDateIndex, pageSize]);
 
-  const employeesForView = useMemo(
-    () => buildEmployeeListFromIndexes(schedules, dateIndexForVisible),
-    [schedules, dateIndexForVisible]
-  );
-
-  const loadLatestSchedule = useCallback(async () => {
-    for (const status of ['draft', 'published']) {
-      try {
-        return await getLatestSchedule(status);
-      } catch (error) {
-        if (error?.response?.status === 404 || isMissingCompanyError(error)) {
-          continue;
-        }
-        throw error;
-      }
+  const employeesForView = useMemo(() => {
+    const fromGrid = buildEmployeeListFromIndexes(schedules, dateIndexForVisible);
+    if (fromGrid.length > 0) {
+      return fromGrid;
     }
 
-    return null;
-  }, []);
+    const empMap = {};
+    normalizeArray(displaySchedule?.shifts).forEach((shift) => {
+      if (!shift?.employee_id) return;
+      empMap[String(shift.employee_id)] = {
+        id: shift.employee_id,
+        full_name: shift.employee_name || `#${shift.employee_id}`,
+      };
+    });
+    return Object.values(empMap);
+  }, [schedules, dateIndexForVisible, displaySchedule]);
 
-  const loadArchivedSchedule = useCallback(async () => {
-    try {
-      return await getLatestSchedule('archived');
-    } catch (error) {
-      if (error?.response?.status === 404 || isMissingCompanyError(error)) {
-        return null;
-      }
-      throw error;
-    }
+  const reloadScheduleVersions = useCallback(async (preferredVersion) => {
+    const versions = await loadScheduleVersions();
+    setScheduleVersions(versions);
+    setActiveVersion((current) => pickActiveVersion(versions, preferredVersion || current));
+    return versions;
   }, []);
 
   const runGenerate = useCallback(async (period) => {
@@ -275,11 +422,8 @@ export default function ScheduleReview({ language }) {
       const generated = await generateSchedule(period);
       const visibleShiftCount = countVisibleShifts(generated, realEmployeeIds);
 
-      setSchedule(generated);
+      await reloadScheduleVersions('draft');
       setSelectedDateIndex(0);
-
-      const archived = await loadArchivedSchedule();
-      setArchivedSchedule(archived);
 
       if (visibleShiftCount > 0) {
         setSuccess(t.generated);
@@ -293,7 +437,7 @@ export default function ScheduleReview({ language }) {
     } finally {
       setIsSubmitting(false);
     }
-  }, [language, loadArchivedSchedule, realEmployeeIds, t.generated, t.noEmployeesAndRequirements, t.noScheduleHint]);
+  }, [language, realEmployeeIds, reloadScheduleVersions, t.generated, t.noEmployeesAndRequirements, t.noScheduleHint]);
 
   useEffect(() => {
     if (isAuthLoading) {
@@ -309,8 +453,8 @@ export default function ScheduleReview({ language }) {
       if (!hasCompany) {
         if (cancelled) return;
         setRealEmployeeIds(new Set());
-        setSchedule(null);
-        setArchivedSchedule(null);
+        setScheduleVersions(EMPTY_SCHEDULE_VERSIONS);
+        setActiveVersion('draft');
         setSelectedDateIndex(0);
         setEmployeesLoaded(true);
         setIsLoading(false);
@@ -318,10 +462,9 @@ export default function ScheduleReview({ language }) {
       }
 
       try {
-        const [employees, latestSchedule, archived] = await Promise.all([
+        const [employees, versions] = await Promise.all([
           listEmployees().catch(() => []),
-          loadLatestSchedule(),
-          loadArchivedSchedule(),
+          loadScheduleVersions(),
         ]);
 
         if (cancelled) return;
@@ -329,13 +472,13 @@ export default function ScheduleReview({ language }) {
         setRealEmployeeIds(new Set(
           filterRealEmployees(employees).map((employee) => String(employee.id))
         ));
-        setSchedule(latestSchedule);
-        setArchivedSchedule(archived);
+        setScheduleVersions(versions);
+        setActiveVersion((current) => pickActiveVersion(versions, current));
         setSelectedDateIndex(0);
       } catch (error) {
         if (!cancelled && !isMissingCompanyError(error)) {
           setError(extractApiErrorMessage(error, t.noScheduleHint, language));
-          setSchedule(null);
+          setScheduleVersions(EMPTY_SCHEDULE_VERSIONS);
         }
       } finally {
         if (!cancelled) {
@@ -350,7 +493,7 @@ export default function ScheduleReview({ language }) {
     return () => {
       cancelled = true;
     };
-  }, [hasCompany, isAuthLoading, language, loadArchivedSchedule, loadLatestSchedule, t.noScheduleHint]);
+  }, [hasCompany, isAuthLoading, language, t.noScheduleHint]);
 
   useEffect(() => {
     if (!error && !success) return undefined;
@@ -362,16 +505,14 @@ export default function ScheduleReview({ language }) {
   }, [error, success]);
 
   const handlePublish = async () => {
-    if (!schedule?.id) return;
+    if (!schedule?.id || activeVersion !== 'draft') return;
     setIsSubmitting(true);
     setError('');
     setSuccess('');
 
     try {
-      const published = await publishSchedule(schedule.id);
-      setSchedule((prev) => mergePublishedSchedule(prev, published));
-      const archived = await loadArchivedSchedule();
-      setArchivedSchedule(archived);
+      await publishSchedule(schedule.id);
+      await reloadScheduleVersions('published');
       setSuccess(t.publishedDone);
     } catch (e) {
       setError(extractApiErrorMessage(e, null, language));
@@ -380,29 +521,50 @@ export default function ScheduleReview({ language }) {
     }
   };
 
-  const handleDeletePreviousSchedule = async () => {
-    if (!archivedSchedule?.id) return;
-    if (!window.confirm(t.confirmDeletePrevious)) return;
+  const handleDeletePublishedSchedule = async () => {
+    const publishedSchedule = scheduleVersions.published;
+    if (!publishedSchedule?.id) return;
+    if (!window.confirm(t.confirmDeletePublished)) return;
 
     setIsSubmitting(true);
     setError('');
     setSuccess('');
 
     try {
-      await deleteSchedule(archivedSchedule.id);
-      setArchivedSchedule(null);
-      setSuccess(t.previousDeleted);
+      await deleteSchedule(publishedSchedule.id);
+      await reloadScheduleVersions('draft');
+      setSuccess(t.publishedDeleted);
     } catch (e) {
-      setError(extractApiErrorMessage(e, t.deletePreviousError, language));
+      setError(extractApiErrorMessage(e, t.deletePublishedError, language));
     } finally {
       setIsSubmitting(false);
     }
   };
 
-  const showDeletePrevious = Boolean(
-    archivedSchedule?.id
-    && String(archivedSchedule.id) !== String(schedule?.id)
-  );
+  const showDeletePublished = activeVersion === 'published' && Boolean(scheduleVersions.published?.id);
+  const canEditDraft = activeVersion === 'draft' && Boolean(schedule);
+
+  const handleAssignRequirement = async (requirementId) => {
+    const employeeId = assignEmployeeIds[requirementId];
+    if (!schedule?.id || !requirementId || !employeeId) return;
+
+    setIsSubmitting(true);
+    setError('');
+    setSuccess('');
+
+    try {
+      await assignRequirement(schedule.id, requirementId, {
+        employee_id: Number(employeeId),
+      });
+      await reloadScheduleVersions('draft');
+      setAssignEmployeeIds((prev) => ({ ...prev, [requirementId]: '' }));
+      setSuccess(t.assigned);
+    } catch (e) {
+      setError(extractApiErrorMessage(e, t.assignError, language));
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
 
   const exportCSV = () => {
     const rows = [['date', 'position', 'employee', 'start_time', 'end_time']];
@@ -423,7 +585,12 @@ export default function ScheduleReview({ language }) {
   if (isLoading || isAuthLoading) return <div style={{ padding: 20 }}>{t.loading}</div>;
 
   const totalWidth = visibleDates.length * 24 * cellWidth;
-  const hasShifts = schedules.length > 0 && employeesForView.length > 0;
+  const hasShifts = normalizeArray(displaySchedule?.shifts).length > 0 && employeesForView.length > 0;
+  const hasGridContent = hasShifts || unfilledNotFoundRequirements.length > 0;
+  const versionOptions = [
+    { id: 'draft', label: t.viewDraft, schedule: scheduleVersions.draft },
+    { id: 'published', label: t.viewPublished, schedule: scheduleVersions.published },
+  ];
 
   return (
     <section style={{ padding: 18 }}>
@@ -435,21 +602,51 @@ export default function ScheduleReview({ language }) {
               <p style={{ margin: '8px 0 0', color: '#4f646f', fontSize: 14, maxWidth: 680 }}>{t.subtitle}</p>
             </div>
 
-            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
               <span style={{
                 padding: '8px 12px',
                 borderRadius: 999,
-                background: scheduleStatus === 'published' ? 'rgba(215, 173, 207, 0.55)' : '#dee7e7',
-                color: '#002642',
                 fontWeight: 800,
                 fontSize: 13,
+                ...getStatusBadgeStyle(scheduleStatus),
               }}>
-                {t.status}: {scheduleStatus === 'published' ? t.published : t.draft}
-              </span>
-              <span style={{ color: '#8d1d1d', fontWeight: 800, fontSize: 13 }}>
-                {t.unfilled}: {unfilledCount}
+                {t.status}: {getStatusLabel(scheduleStatus, t)}
               </span>
             </div>
+          </div>
+
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+            {versionOptions.map(({ id, label, schedule: versionSchedule }) => {
+              const isActive = activeVersion === id;
+              const isDisabled = !versionSchedule;
+
+              return (
+                <button
+                  key={id}
+                  type="button"
+                  disabled={isDisabled}
+                  onClick={() => {
+                    setActiveVersion(id);
+                    setSelectedDateIndex(0);
+                    setError('');
+                    setSuccess('');
+                  }}
+                  style={{
+                    padding: '8px 14px',
+                    borderRadius: 999,
+                    border: isActive ? '2px solid #002642' : '1px solid #dee7e7',
+                    background: isActive ? '#002642' : '#f4faff',
+                    color: isDisabled ? 'rgba(79, 100, 111, 0.45)' : (isActive ? '#fff' : '#002642'),
+                    fontWeight: 700,
+                    fontSize: 13,
+                    cursor: isDisabled ? 'default' : 'pointer',
+                    opacity: isDisabled ? 0.55 : 1,
+                  }}
+                >
+                  {label}
+                </button>
+              );
+            })}
           </div>
         </div>
 
@@ -471,7 +668,7 @@ export default function ScheduleReview({ language }) {
               type="date"
               value={periodForm.start_date}
               onChange={(e) => setPeriodForm((prev) => ({ ...prev, start_date: e.target.value }))}
-              style={{ height: 40, borderRadius: 12, border: '2px solid #dee7e7', padding: '0 12px', color: '#002642' }}
+              style={{ height: 40, borderRadius: 12, border: '2px solid #dee7e7', padding: '0 12px', background: '#ffffff', color: '#002642', colorScheme: 'light' }}
             />
           </label>
 
@@ -481,7 +678,7 @@ export default function ScheduleReview({ language }) {
               type="date"
               value={periodForm.end_date}
               onChange={(e) => setPeriodForm((prev) => ({ ...prev, end_date: e.target.value }))}
-              style={{ height: 40, borderRadius: 12, border: '2px solid #dee7e7', padding: '0 12px', color: '#002642' }}
+              style={{ height: 40, borderRadius: 12, border: '2px solid #dee7e7', padding: '0 12px', background: '#ffffff', color: '#002642', colorScheme: 'light' }}
             />
           </label>
 
@@ -503,7 +700,7 @@ export default function ScheduleReview({ language }) {
             {isSubmitting ? t.generating : t.generate}
           </button>
 
-          {schedule?.id && scheduleStatus === 'draft' && (
+          {canEditDraft && schedule?.id && (
             <button
               onClick={handlePublish}
               disabled={isSubmitting || !hasShifts}
@@ -523,10 +720,10 @@ export default function ScheduleReview({ language }) {
             </button>
           )}
 
-          {showDeletePrevious && (
+          {showDeletePublished && (
             <button
               type="button"
-              onClick={handleDeletePreviousSchedule}
+              onClick={handleDeletePublishedSchedule}
               disabled={isSubmitting}
               style={{
                 height: 40,
@@ -540,25 +737,90 @@ export default function ScheduleReview({ language }) {
                 opacity: isSubmitting ? 0.65 : 1,
               }}
             >
-              {t.deletePrevious}
+              {t.deletePublished}
             </button>
           )}
         </div>
 
-        {showDeletePrevious && (
+        {schedule?.id && canEditDraft && unfilledRequirements.length > 0 && (
           <div style={{
-            marginBottom: 16,
-            padding: '10px 14px',
-            borderRadius: 12,
+            marginBottom: 20,
+            padding: '16px 18px',
+            borderRadius: 16,
             background: '#f4faff',
             border: '1px solid #dee7e7',
-            color: '#4f646f',
-            fontSize: 13,
-            fontWeight: 600,
           }}>
-            {t.previousVersion}: {archivedSchedule.start_date || archivedSchedule.period_start || '—'}
-            {' — '}
-            {archivedSchedule.end_date || archivedSchedule.period_end || '—'}
+            <h3 style={{ margin: '0 0 12px', color: '#002642', fontSize: 16 }}>{t.unfilledTitle}</h3>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+              {unfilledRequirements.map((item) => {
+                const requirementId = item.requirement_id;
+
+                return (
+                  <div
+                    key={requirementId}
+                    style={{
+                      display: 'flex',
+                      gap: 12,
+                      alignItems: 'center',
+                      flexWrap: 'wrap',
+                      padding: '10px 12px',
+                      borderRadius: 12,
+                      background: '#fff',
+                      border: '1px solid rgba(79, 100, 111, 0.12)',
+                    }}
+                  >
+                    <div style={{ minWidth: 180 }}>
+                      <strong style={{ color: '#002642' }}>{item.position_title}</strong>
+                      <div style={{ color: '#4f646f', fontSize: 13 }}>
+                        {formatDate(item.date)} · {String(item.start_time || '').slice(0, 5)}–{String(item.end_time || '').slice(0, 5)}
+                      </div>
+                      {unfilledNotFoundRequirements.some((entry) => entry.requirement_id === requirementId) && (
+                        <div style={{ color: '#8d1d1d', fontSize: 12, fontWeight: 700 }}>
+                          {t.notFound}
+                        </div>
+                      )}
+                    </div>
+
+                    <select
+                      value={assignEmployeeIds[requirementId] || ''}
+                      onChange={(event) => setAssignEmployeeIds((prev) => ({
+                        ...prev,
+                        [requirementId]: event.target.value,
+                      }))}
+                      style={{
+                        minWidth: 200,
+                        height: 36,
+                        borderRadius: 10,
+                        border: '2px solid #dee7e7',
+                        padding: '0 10px',
+                      }}
+                      disabled={isSubmitting}
+                    >
+                      <option value="">{t.chooseEmployee}</option>
+                    </select>
+
+                    <button
+                      type="button"
+                      onClick={() => handleAssignRequirement(requirementId)}
+                      disabled={isSubmitting || !assignEmployeeIds[requirementId]}
+                      style={{
+                        height: 36,
+                        padding: '0 14px',
+                        borderRadius: 10,
+                        border: 'none',
+                        background: '#002642',
+                        color: '#fff',
+                        fontWeight: 700,
+                        cursor: isSubmitting || !assignEmployeeIds[requirementId] ? 'default' : 'pointer',
+                        opacity: isSubmitting || !assignEmployeeIds[requirementId] ? 0.6 : 1,
+                      }}
+                    >
+                      {t.assign}
+                    </button>
+                  </div>
+                );
+              })}
+            </div>
           </div>
         )}
 
@@ -603,10 +865,15 @@ export default function ScheduleReview({ language }) {
           </div>
         </div>
 
-        {!hasShifts ? (
+        {!hasAnySchedule ? (
           <div style={{ padding: '48px 24px', textAlign: 'center', background: '#f4faff', borderRadius: 18, border: '1px solid #dee7e7' }}>
             <h3 style={{ margin: 0, color: '#002642' }}>{t.noSchedule}</h3>
             <p style={{ margin: '8px 0 0', color: '#4f646f', fontSize: 14 }}>{t.noScheduleHint}</p>
+          </div>
+        ) : !hasGridContent ? (
+          <div style={{ padding: '48px 24px', textAlign: 'center', background: '#f4faff', borderRadius: 18, border: '1px solid #dee7e7' }}>
+            <h3 style={{ margin: 0, color: '#002642' }}>{getStatusLabel(scheduleStatus, t)}</h3>
+            <p style={{ margin: '8px 0 0', color: '#4f646f', fontSize: 14 }}>{t.noShiftsInVersion}</p>
           </div>
         ) : (
           <div style={{ overflowX: 'auto' }}>
@@ -784,6 +1051,61 @@ export default function ScheduleReview({ language }) {
                     })}
                   </tr>
                 ))}
+                {unfilledNotFoundRequirements.map((item) => {
+                  const rowBg = '#fff6f0';
+                  const itemDate = formatDate(item.date);
+
+                  return (
+                    <tr key={`unfilled-${item.requirement_id}`} style={{ background: rowBg }}>
+                      <td style={{
+                        position: 'sticky',
+                        left: 0,
+                        zIndex: 5,
+                        background: rowBg,
+                        padding: '12px 16px',
+                        borderBottom: '1px solid #f0f0f0',
+                        width: '220px',
+                        minWidth: '220px',
+                        maxWidth: '220px',
+                        fontWeight: '600',
+                        fontSize: '14px',
+                        color: '#8d1d1d',
+                      }}>
+                        {item.position_title || '—'}
+                      </td>
+                      {visibleDates.map((d) => (
+                        <td
+                          key={`${d}-unfilled-${item.requirement_id}`}
+                          style={{
+                            padding: 0,
+                            borderBottom: '1px solid #f0f0f0',
+                            height: 72,
+                            position: 'relative',
+                            background: rowBg,
+                            width: 24 * cellWidth,
+                            minWidth: 24 * cellWidth,
+                            maxWidth: 24 * cellWidth,
+                          }}
+                        >
+                          {d === itemDate ? (
+                            <div style={{ position: 'relative', width: '100%', height: '100%' }}>
+                              {renderTimeSlotBlock({
+                                startTime: item.start_time,
+                                endTime: item.end_time,
+                                title: t.notFound,
+                                subtitle: `${String(item.start_time || '').slice(0, 5)} - ${String(item.end_time || '').slice(0, 5)}`,
+                                cellWidth,
+                                background: 'linear-gradient(135deg, #ffd6a5 0%, #ffb085 100%)',
+                                color: '#5a1a1a',
+                                border: '2px dashed #8d1d1d',
+                              })}
+                            </div>
+                          ) : null}
+                        </td>
+                      ))}
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>
