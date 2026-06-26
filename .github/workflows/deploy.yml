@@ -1,0 +1,100 @@
+name: Deploy
+
+on:
+  push:
+    branches:
+      - main
+      - dev
+  workflow_dispatch:
+
+concurrency:
+  group: production-deploy
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    name: Deploy root Docker Compose
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    environment: production
+
+    env:
+      VPS_HOST: ${{ secrets.DEPLOY_IP }}
+      VPS_USER: ${{ secrets.DEPLOY_LOGIN }}
+      VPS_SSH_PORT: "22"
+
+    steps:
+      - name: Validate deployment configuration
+        env:
+          VPS_PASSWORD: ${{ secrets.DEPLOY_SSH_PASSWORD }}
+        run: |
+          : "${VPS_HOST:?GitHub secret DEPLOY_IP is required}"
+          : "${VPS_USER:?GitHub secret DEPLOY_LOGIN is required}"
+          : "${VPS_PASSWORD:?GitHub secret DEPLOY_SSH_PASSWORD is required}"
+
+      - name: Install SSH client dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes sshpass
+
+      - name: Configure SSH host key
+        run: |
+          mkdir -p ~/.ssh
+          chmod 700 ~/.ssh
+          ssh-keyscan -p "$VPS_SSH_PORT" -H "$VPS_HOST" >> ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/known_hosts
+
+      - name: Deploy Docker Compose stack
+        env:
+          SSHPASS: ${{ secrets.DEPLOY_SSH_PASSWORD }}
+        run: |
+          sshpass -e ssh \
+            -p "$VPS_SSH_PORT" \
+            "$VPS_USER@$VPS_HOST" \
+            "bash -s -- '$GITHUB_SHA'" <<'REMOTE_SCRIPT'
+          set -Eeuo pipefail
+
+          readonly SHA="$1"
+          readonly DEPLOY_DIR="$HOME/shiftplanner"
+          readonly REPOSITORY="https://github.com/shift-happens-daily/ShiftPlanner.git"
+          readonly COMPOSE_PROJECT="shiftplanner"
+
+          command -v git >/dev/null
+          command -v docker >/dev/null
+          command -v certbot >/dev/null
+          docker compose version >/dev/null
+          test "$(id -u)" -eq 0
+          test -f /etc/letsencrypt/live/shiftplanner.online/fullchain.pem
+          test -f /etc/letsencrypt/live/shiftplanner.online/privkey.pem
+
+          if [ ! -d "$DEPLOY_DIR/.git" ]; then
+            rm -rf -- "$DEPLOY_DIR"
+            git clone "$REPOSITORY" "$DEPLOY_DIR"
+          fi
+
+          cd "$DEPLOY_DIR"
+          readonly PREVIOUS_SHA="$(git rev-parse HEAD)"
+
+          git remote set-url origin "$REPOSITORY"
+          git fetch --prune origin
+          git cat-file -e "${SHA}^{commit}"
+          git reset --hard "$SHA"
+          git clean -fd
+
+          if docker compose -p "$COMPOSE_PROJECT" up -d --build --remove-orphans --wait --wait-timeout 120; then
+            install -D -m 755 \
+              nginx/renewal-hooks/pre/shiftplanner-nginx \
+              /etc/letsencrypt/renewal-hooks/pre/shiftplanner-nginx
+            install -D -m 755 \
+              nginx/renewal-hooks/post/shiftplanner-nginx \
+              /etc/letsencrypt/renewal-hooks/post/shiftplanner-nginx
+            docker image prune -f
+          else
+            git reset --hard "$PREVIOUS_SHA"
+            docker compose -p "$COMPOSE_PROJECT" up -d --build --remove-orphans
+            exit 1
+          fi
+          REMOTE_SCRIPT
