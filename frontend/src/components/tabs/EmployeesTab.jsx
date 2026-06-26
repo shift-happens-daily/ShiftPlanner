@@ -3,6 +3,7 @@ import { useEffect, useMemo, useState } from 'react';
 import {
   createEmployee,
   createEmployeeAbsence,
+  deleteEmployee,
   deleteEmployeeAbsence,
   getEmployeeAvailability,
   getEmployeeCalendarSummary,
@@ -219,6 +220,10 @@ export default function EmployeesTab({ language, userRole, user }) {
       noCompanyForLink: 'У вас нет компании',
       noCompanyForPosition: 'Сначала создайте компанию во вкладке «Компания».',
       noPositionsHint: 'Сначала создайте позицию, потом добавьте сотрудника.',
+      removeFromCompany: 'Удалить из компании',
+      confirmRemoveEmployee: 'Удалить сотрудника из компании?',
+      employeeRemoved: 'Сотрудник удалён из компании.',
+      removeEmployeeError: 'Не удалось удалить сотрудника.',
     },
     en: {
       title: 'Employees',
@@ -300,6 +305,10 @@ export default function EmployeesTab({ language, userRole, user }) {
       noCompanyForLink: 'You don\'t have a company',
       noCompanyForPosition: 'Create a company in the Company tab first.',
       noPositionsHint: 'Create a position first, then add an employee.',
+      removeFromCompany: 'Remove from company',
+      confirmRemoveEmployee: 'Remove this employee from the company?',
+      employeeRemoved: 'Employee removed from company.',
+      removeEmployeeError: 'Failed to remove employee.',
     },
   };
 
@@ -781,6 +790,26 @@ export default function EmployeesTab({ language, userRole, user }) {
     }
   };
 
+  const handleDeleteEmployeeFromCompany = async () => {
+    if (!selectedEmployee) return;
+    if (!window.confirm(t.confirmRemoveEmployee)) return;
+
+    clearMessages();
+    setIsSubmitting(true);
+
+    try {
+      await deleteEmployee(selectedEmployee.id);
+      setSelectedEmployeeId('');
+      setIsViewingEmployee(true);
+      await reloadEmployees();
+      setSuccessMessage(t.employeeRemoved);
+    } catch (error) {
+      setErrorMessage(getFriendlyError(error, t.removeEmployeeError));
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
   // ===== ПРИВЯЗКА ПО USER ID =====
   const handleLinkUser = async () => {
     const publicId = linkUserId.trim().toUpperCase();
@@ -1090,6 +1119,15 @@ export default function EmployeesTab({ language, userRole, user }) {
 
                       <button type="button" onClick={handleAssignDetails} style={styles.primaryButton}>
                         {t.save}
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={handleDeleteEmployeeFromCompany}
+                        style={styles.deleteButton}
+                        disabled={isSubmitting}
+                      >
+                        {t.removeFromCompany}
                       </button>
                     </div>
                   </div>

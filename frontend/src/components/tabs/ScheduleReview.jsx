@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   defaultSchedulePeriod,
+  deleteSchedule,
   generateSchedule,
   getLatestSchedule,
   mergePublishedSchedule,
@@ -113,6 +114,7 @@ export default function ScheduleReview({ language }) {
   const [viewMode, setViewMode] = useState('day');
   const [periodForm, setPeriodForm] = useState(defaultPeriod);
   const [schedule, setSchedule] = useState(null);
+  const [archivedSchedule, setArchivedSchedule] = useState(null);
   const [realEmployeeIds, setRealEmployeeIds] = useState(new Set());
   const [employeesLoaded, setEmployeesLoaded] = useState(false);
   const [selectedDateIndex, setSelectedDateIndex] = useState(0);
@@ -145,6 +147,11 @@ export default function ScheduleReview({ language }) {
       loading: 'Загрузка...',
       generated: 'Черновик расписания создан.',
       publishedDone: 'Расписание опубликовано.',
+      previousVersion: 'Прошлая версия',
+      deletePrevious: 'Удалить прошлую версию',
+      confirmDeletePrevious: 'Удалить прошлую версию расписания?',
+      previousDeleted: 'Прошлая версия расписания удалена.',
+      deletePreviousError: 'Не удалось удалить прошлую версию.',
     },
     en: {
       title: 'Generated Schedule Review',
@@ -169,6 +176,11 @@ export default function ScheduleReview({ language }) {
       loading: 'Loading...',
       generated: 'Draft schedule generated.',
       publishedDone: 'Schedule published.',
+      previousVersion: 'Previous version',
+      deletePrevious: 'Delete previous version',
+      confirmDeletePrevious: 'Delete the previous schedule version?',
+      previousDeleted: 'Previous schedule version deleted.',
+      deletePreviousError: 'Failed to delete previous version.',
     },
   };
 
@@ -228,32 +240,6 @@ export default function ScheduleReview({ language }) {
     [schedules, dateIndexForVisible]
   );
 
-  const runGenerate = useCallback(async (period) => {
-    setIsSubmitting(true);
-    setError('');
-    setSuccess('');
-
-    try {
-      const generated = await generateSchedule(period);
-      const visibleShiftCount = countVisibleShifts(generated, realEmployeeIds);
-
-      setSchedule(generated);
-      setSelectedDateIndex(0);
-
-      if (visibleShiftCount > 0) {
-        setSuccess(t.generated);
-      } else if (realEmployeeIds.size === 0 && !hasStaffingRequirements(generated)) {
-        setError(t.noEmployeesAndRequirements);
-      } else {
-        setError(t.noScheduleHint);
-      }
-    } catch (e) {
-      setError(extractApiErrorMessage(e, t.noScheduleHint, language));
-    } finally {
-      setIsSubmitting(false);
-    }
-  }, [language, realEmployeeIds, t.generated, t.noEmployeesAndRequirements, t.noScheduleHint]);
-
   const loadLatestSchedule = useCallback(async () => {
     for (const status of ['draft', 'published']) {
       try {
@@ -268,6 +254,46 @@ export default function ScheduleReview({ language }) {
 
     return null;
   }, []);
+
+  const loadArchivedSchedule = useCallback(async () => {
+    try {
+      return await getLatestSchedule('archived');
+    } catch (error) {
+      if (error?.response?.status === 404 || isMissingCompanyError(error)) {
+        return null;
+      }
+      throw error;
+    }
+  }, []);
+
+  const runGenerate = useCallback(async (period) => {
+    setIsSubmitting(true);
+    setError('');
+    setSuccess('');
+
+    try {
+      const generated = await generateSchedule(period);
+      const visibleShiftCount = countVisibleShifts(generated, realEmployeeIds);
+
+      setSchedule(generated);
+      setSelectedDateIndex(0);
+
+      const archived = await loadArchivedSchedule();
+      setArchivedSchedule(archived);
+
+      if (visibleShiftCount > 0) {
+        setSuccess(t.generated);
+      } else if (realEmployeeIds.size === 0 && !hasStaffingRequirements(generated)) {
+        setError(t.noEmployeesAndRequirements);
+      } else {
+        setError(t.noScheduleHint);
+      }
+    } catch (e) {
+      setError(extractApiErrorMessage(e, t.noScheduleHint, language));
+    } finally {
+      setIsSubmitting(false);
+    }
+  }, [language, loadArchivedSchedule, realEmployeeIds, t.generated, t.noEmployeesAndRequirements, t.noScheduleHint]);
 
   useEffect(() => {
     if (isAuthLoading) {
@@ -284,6 +310,7 @@ export default function ScheduleReview({ language }) {
         if (cancelled) return;
         setRealEmployeeIds(new Set());
         setSchedule(null);
+        setArchivedSchedule(null);
         setSelectedDateIndex(0);
         setEmployeesLoaded(true);
         setIsLoading(false);
@@ -291,9 +318,10 @@ export default function ScheduleReview({ language }) {
       }
 
       try {
-        const [employees, latestSchedule] = await Promise.all([
+        const [employees, latestSchedule, archived] = await Promise.all([
           listEmployees().catch(() => []),
           loadLatestSchedule(),
+          loadArchivedSchedule(),
         ]);
 
         if (cancelled) return;
@@ -302,6 +330,7 @@ export default function ScheduleReview({ language }) {
           filterRealEmployees(employees).map((employee) => String(employee.id))
         ));
         setSchedule(latestSchedule);
+        setArchivedSchedule(archived);
         setSelectedDateIndex(0);
       } catch (error) {
         if (!cancelled && !isMissingCompanyError(error)) {
@@ -321,7 +350,7 @@ export default function ScheduleReview({ language }) {
     return () => {
       cancelled = true;
     };
-  }, [hasCompany, isAuthLoading, language, loadLatestSchedule, t.noScheduleHint]);
+  }, [hasCompany, isAuthLoading, language, loadArchivedSchedule, loadLatestSchedule, t.noScheduleHint]);
 
   useEffect(() => {
     if (!error && !success) return undefined;
@@ -341,6 +370,8 @@ export default function ScheduleReview({ language }) {
     try {
       const published = await publishSchedule(schedule.id);
       setSchedule((prev) => mergePublishedSchedule(prev, published));
+      const archived = await loadArchivedSchedule();
+      setArchivedSchedule(archived);
       setSuccess(t.publishedDone);
     } catch (e) {
       setError(extractApiErrorMessage(e, null, language));
@@ -348,6 +379,30 @@ export default function ScheduleReview({ language }) {
       setIsSubmitting(false);
     }
   };
+
+  const handleDeletePreviousSchedule = async () => {
+    if (!archivedSchedule?.id) return;
+    if (!window.confirm(t.confirmDeletePrevious)) return;
+
+    setIsSubmitting(true);
+    setError('');
+    setSuccess('');
+
+    try {
+      await deleteSchedule(archivedSchedule.id);
+      setArchivedSchedule(null);
+      setSuccess(t.previousDeleted);
+    } catch (e) {
+      setError(extractApiErrorMessage(e, t.deletePreviousError, language));
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const showDeletePrevious = Boolean(
+    archivedSchedule?.id
+    && String(archivedSchedule.id) !== String(schedule?.id)
+  );
 
   const exportCSV = () => {
     const rows = [['date', 'position', 'employee', 'start_time', 'end_time']];
@@ -467,7 +522,45 @@ export default function ScheduleReview({ language }) {
               {t.publish}
             </button>
           )}
+
+          {showDeletePrevious && (
+            <button
+              type="button"
+              onClick={handleDeletePreviousSchedule}
+              disabled={isSubmitting}
+              style={{
+                height: 40,
+                padding: '0 16px',
+                borderRadius: 12,
+                background: '#8d1d1d',
+                color: '#fff',
+                border: 'none',
+                cursor: isSubmitting ? 'default' : 'pointer',
+                fontWeight: 700,
+                opacity: isSubmitting ? 0.65 : 1,
+              }}
+            >
+              {t.deletePrevious}
+            </button>
+          )}
         </div>
+
+        {showDeletePrevious && (
+          <div style={{
+            marginBottom: 16,
+            padding: '10px 14px',
+            borderRadius: 12,
+            background: '#f4faff',
+            border: '1px solid #dee7e7',
+            color: '#4f646f',
+            fontSize: 13,
+            fontWeight: 600,
+          }}>
+            {t.previousVersion}: {archivedSchedule.start_date || archivedSchedule.period_start || '—'}
+            {' — '}
+            {archivedSchedule.end_date || archivedSchedule.period_end || '—'}
+          </div>
+        )}
 
         <div style={{ display: 'flex', gap: 12, alignItems: 'center', marginBottom: 20, flexWrap: 'wrap' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 10, background: '#f4faff', border: '1px solid #dee7e7', borderRadius: 12, padding: '10px 14px' }}>

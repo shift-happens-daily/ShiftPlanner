@@ -82,6 +82,11 @@ export async function publishSchedule(scheduleId) {
   return response.data;
 }
 
+export async function deleteSchedule(scheduleId) {
+  const response = await api.delete(`/schedule/${scheduleId}`);
+  return response.data;
+}
+
 export async function getMySchedule() {
   const response = await api.get('/schedule/my');
   return response.data;
