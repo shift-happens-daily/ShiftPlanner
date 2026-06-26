@@ -305,6 +305,7 @@ export default function ShiftsTab({ language, userRole, user }) {
   });
 
   const [selectedDate, setSelectedDate] = useState(() => new Date().toISOString().slice(0, 10));
+  const [brushMode, setBrushMode] = useState('available'); // 'available', 'maybe', 'unavailable'
 
   const weekDates = useMemo(() => {
     const current = new Date(selectedDate);
@@ -640,18 +641,15 @@ export default function ShiftsTab({ language, userRole, user }) {
       const dayMap = { ...(prev[dateKey] || {}) };
       const currentStatus = dayMap[slot] || null;
 
-      if (currentStatus === null) {
-        dayMap[slot] = 'available';
-      } else if (currentStatus === 'available') {
-        dayMap[slot] = 'maybe';
-      } else {
+      if (currentStatus === brushMode) {
         delete dayMap[slot];
+      } else {
+        dayMap[slot] = brushMode;
       }
 
       return { ...prev, [dateKey]: dayMap };
     });
   };
-
   const submitManagerRequirement = async () => {
     if (!singleRequirement.position_id || !singleRequirement.date) {
       setErrorMessage(t.single);
@@ -1261,11 +1259,43 @@ export default function ShiftsTab({ language, userRole, user }) {
         ) : (
           <div style={styles.employeeGrid}>
             <section style={styles.panel}>
-              <div style={styles.panelHeader}>
-                <div>
-                  <h3 style={styles.panelTitle}>{t.availability}</h3>
-                </div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                <div style={styles.panelHeader}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '20px' }}>
+                    <h3 style={styles.panelTitle}>{t.availability}</h3>
+                    
+                    <div style={styles.brushPicker}>
+                      <button 
+                        type="button"
+                        onClick={() => setBrushMode('available')}
+                        style={{ 
+                          ...styles.brushBtn, 
+                          background: '#4CAF50', 
+                          border: brushMode === 'available' ? '3px solid #002642' : '3px solid transparent'
+                        }}
+                        title={t.available}
+                      />
+                      <button 
+                        type="button"
+                        onClick={() => setBrushMode('maybe')}
+                        style={{ 
+                          ...styles.brushBtn, 
+                          background: '#FFC107', 
+                          border: brushMode === 'maybe' ? '3px solid #002642' : '3px solid transparent'
+                        }}
+                        title={t.maybe}
+                      />
+                      <button 
+                        type="button"
+                        onClick={() => setBrushMode('unavailable')}
+                        style={{ 
+                          ...styles.brushBtn, 
+                          background: '#eef3f6', 
+                          border: brushMode === 'unavailable' ? '3px solid #002642' : '3px solid transparent'
+                        }}
+                        title={t.unavailable}
+                      />
+                    </div>
+                  </div>                <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
                   <button
                     type="button"
                     onClick={() => shiftWeek(-7)}
@@ -2073,6 +2103,22 @@ const styles = {
     transition: 'all 0.15s ease',
   },
 
+  brushPicker: {
+    display: 'flex',
+    gap: '8px',
+    background: '#eceff4',
+    padding: '4px 8px',
+    borderRadius: '12px',
+  },
+
+  brushBtn: {
+    width: '24px',
+    height: '24px',
+    borderRadius: '6px',
+    cursor: 'pointer',
+    padding: 0,
+    transition: 'transform 0.1s ease',
+  },
   gridCellLocked: {
     width: '100%',
     minHeight: '34px',
