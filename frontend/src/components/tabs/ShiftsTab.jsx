@@ -930,18 +930,11 @@ export default function ShiftsTab({ language, userRole, user }) {
         {renderToast()}
 
         <header style={styles.header}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', width: '100%' }}>
-            <div>
-              <h2 style={styles.title}>{isManager ? t.titleManager : t.titleEmployee}</h2>
-              <p style={styles.subtitle}>{isManager ? t.subtitleManager : t.subtitleEmployee}</p>
-            </div>
-            <div style={styles.todayBadge}>
-              <span style={styles.todayLabel}>{language === 'ru' ? 'Сегодня' : 'Today'}</span>
-              <span style={styles.todayDate}>{todayStr}</span>
-            </div>
+          <div>
+            <h2 style={styles.title}>{isManager ? t.titleManager : t.titleEmployee}</h2>
+            <p style={styles.subtitle}>{isManager ? t.subtitleManager : t.subtitleEmployee}</p>
           </div>
-        </header>
-        {isManager ? (
+        </header>        {isManager ? (
           <div style={styles.managerLayout}>
             <aside style={styles.sidebar}>
               <div style={styles.helpBox}>
