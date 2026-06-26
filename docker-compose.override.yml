@@ -1,0 +1,12 @@
+services:
+  backend:
+    ports:
+      - "8000:8000"
+    environment:
+      FRONTEND_ORIGINS: http://localhost:5173
+
+  frontend:
+    ports:
+      - "5173:5173"
+    environment:
+      VITE_API_URL: http://localhost:8000

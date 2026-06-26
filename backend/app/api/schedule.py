@@ -1,7 +1,7 @@
-from datetime import date
+from datetime import date, time
 from typing import Literal
 
-from fastapi import APIRouter, Depends, Query, status
+from fastapi import APIRouter, Depends, Query, Response, status
 from sqlalchemy.orm import Session
 
 from app.api.dependencies import ensure_employee_user, get_current_user, require_role
@@ -15,6 +15,9 @@ from app.api.responses import (
 from app.database import get_db
 from app.schemas.auth import UserRead
 from app.schemas.schedule import (
+    AvailableEmployeeRead,
+    ManualShiftCreate,
+    RequirementAssignRequest,
     ScheduleGenerateRequest,
     ScheduleRead,
     ScheduleRequirementBulkCreate,
@@ -208,6 +211,60 @@ def get_schedule(
     return schedule_service.get_schedule(db, schedule_id)
 
 
+@router.post(
+    "/{schedule_id}/shifts",
+    response_model=ScheduleRead,
+    status_code=status.HTTP_201_CREATED,
+    responses={
+        **BAD_REQUEST_RESPONSE,
+        **UNAUTHORIZED_RESPONSE,
+        **FORBIDDEN_RESPONSE,
+        **NOT_FOUND_RESPONSE,
+        **VALIDATION_ERROR_RESPONSE,
+    },
+)
+def create_manual_shift(
+    schedule_id: int,
+    payload: ManualShiftCreate,
+    current_user: UserRead = Depends(require_role("manager")),
+    db: Session = Depends(get_db),
+) -> ScheduleRead:
+    return schedule_service.create_manual_shift(db, schedule_id, payload, current_user)
+
+
+@router.get(
+    "/{schedule_id}/employees/available",
+    response_model=list[AvailableEmployeeRead],
+    responses={
+        **BAD_REQUEST_RESPONSE,
+        **UNAUTHORIZED_RESPONSE,
+        **FORBIDDEN_RESPONSE,
+        **NOT_FOUND_RESPONSE,
+        **VALIDATION_ERROR_RESPONSE,
+    },
+)
+def get_available_employees(
+    schedule_id: int,
+    shift_date: date = Query(alias="date"),
+    start_time: time = Query(),
+    end_time: time = Query(),
+    position_id: int = Query(ge=1),
+    branch_id: int | None = Query(default=None, ge=1),
+    current_user: UserRead = Depends(require_role("manager")),
+    db: Session = Depends(get_db),
+) -> list[AvailableEmployeeRead]:
+    return schedule_service.list_available_employees(
+        db,
+        schedule_id,
+        current_user,
+        shift_date=shift_date,
+        start_time=start_time,
+        end_time=end_time,
+        position_id=position_id,
+        branch_id=branch_id,
+    )
+
+
 @router.patch(
     "/{schedule_id}/shifts/{shift_id}",
     response_model=ScheduleRead,
@@ -223,10 +280,67 @@ def update_shift(
     schedule_id: int,
     shift_id: int,
     payload: ScheduleShiftUpdate,
-    _: UserRead = Depends(require_role("manager")),
+    current_user: UserRead = Depends(require_role("manager")),
     db: Session = Depends(get_db),
 ) -> ScheduleRead:
-    return schedule_service.update_shift(db, schedule_id, shift_id, payload)
+    return schedule_service.update_shift(db, schedule_id, shift_id, payload, current_user)
+
+
+@router.delete(
+    "/{schedule_id}/shifts/{shift_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    responses={**UNAUTHORIZED_RESPONSE, **FORBIDDEN_RESPONSE, **NOT_FOUND_RESPONSE},
+)
+def delete_shift(
+    schedule_id: int,
+    shift_id: int,
+    current_user: UserRead = Depends(require_role("manager")),
+    db: Session = Depends(get_db),
+) -> Response:
+    schedule_service.delete_shift(db, schedule_id, shift_id, current_user)
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+@router.post(
+    "/{schedule_id}/requirements/{requirement_id}/assign",
+    response_model=ScheduleRead,
+    responses={
+        **BAD_REQUEST_RESPONSE,
+        **UNAUTHORIZED_RESPONSE,
+        **FORBIDDEN_RESPONSE,
+        **NOT_FOUND_RESPONSE,
+        **VALIDATION_ERROR_RESPONSE,
+    },
+)
+def assign_requirement(
+    schedule_id: int,
+    requirement_id: int,
+    payload: RequirementAssignRequest,
+    current_user: UserRead = Depends(require_role("manager")),
+    db: Session = Depends(get_db),
+) -> ScheduleRead:
+    return schedule_service.assign_requirement(db, schedule_id, requirement_id, payload, current_user)
+
+
+@router.patch(
+    "/{schedule_id}/requirements/{requirement_id}",
+    response_model=ScheduleRead,
+    responses={
+        **BAD_REQUEST_RESPONSE,
+        **UNAUTHORIZED_RESPONSE,
+        **FORBIDDEN_RESPONSE,
+        **NOT_FOUND_RESPONSE,
+        **VALIDATION_ERROR_RESPONSE,
+    },
+)
+def update_schedule_requirement(
+    schedule_id: int,
+    requirement_id: int,
+    payload: ScheduleRequirementUpdate,
+    current_user: UserRead = Depends(require_role("manager")),
+    db: Session = Depends(get_db),
+) -> ScheduleRead:
+    return schedule_service.update_schedule_requirement(db, schedule_id, requirement_id, payload, current_user)
 
 
 @router.post(

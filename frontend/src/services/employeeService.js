@@ -31,6 +31,21 @@ export async function updateEmployeeBranch(employeeId, payload) {
   return response.data;
 }
 
+export async function deleteEmployee(employeeId) {
+  const response = await api.delete(`/employees/${employeeId}`);
+  return response.data;
+}
+
+export async function leaveCompany() {
+  const response = await api.delete('/employees/me');
+  return response.data;
+}
+
+export async function updateMyPosition(payload) {
+  const response = await api.patch('/employees/me/position', payload);
+  return response.data;
+}
+
 export async function getEmployeeAvailability(employeeId) {
   const response = await api.get(`/employees/${employeeId}/availability`);
   return response.data;
