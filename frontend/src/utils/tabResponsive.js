@@ -78,13 +78,75 @@ export function useTabResponsive(maxWidth = 1200) {
       alignItems: 'stretch',
     } : {},
     modeSegment: isMobile ? {
-      flexDirection: 'column',
+      display: 'flex',
+      width: '100%',
+      boxSizing: 'border-box',
     } : {},
     modeButton: isMobile ? {
-      width: '100%',
+      flex: 1,
+      minWidth: 0,
+      padding: '10px 8px',
     } : {},
+    employeeArea: isMobile ? {
+      overflow: 'visible',
+      minHeight: 'auto',
+    } : {},
+    employeePanel: isMobile ? {
+      overflow: 'visible',
+      flex: 'none',
+      padding: 16,
+      borderRadius: 18,
+      background: '#ffffff',
+      border: '1px solid rgba(222, 231, 231, 0.95)',
+      boxShadow: '0 8px 22px rgba(0, 38, 66, 0.06)',
+    } : {},
+    weekNavRow: isMobile ? {
+      display: 'flex',
+      width: '100%',
+      gap: 8,
+      alignItems: 'center',
+    } : {},
+    weekNavInput: isMobile ? {
+      flex: 1,
+      minWidth: 0,
+    } : {},
+    dayPickerRow: {
+      display: 'flex',
+      gap: 8,
+      overflowX: 'auto',
+      paddingBottom: 4,
+      WebkitOverflowScrolling: 'touch',
+      marginBottom: 12,
+    },
+    availabilityMobileList: {
+      display: 'flex',
+      flexDirection: 'column',
+      gap: 8,
+    },
+    availabilityMobileRow: {
+      display: 'flex',
+      alignItems: 'center',
+      gap: 10,
+    },
+    availabilityMobileTime: {
+      width: 52,
+      flexShrink: 0,
+      fontSize: 12,
+      fontWeight: 700,
+      color: '#4f646f',
+      textAlign: 'right',
+    },
     availabilityGrid: isMobile ? {
       gridTemplateColumns: '52px repeat(7, minmax(48px, 1fr))',
+    } : {},
+    primaryButton: isMobile ? {
+      width: '100%',
+      boxSizing: 'border-box',
+    } : {},
+    legend: isMobile ? {
+      flexWrap: 'wrap',
+      justifyContent: 'center',
+      gap: 10,
     } : {},
     reportCard: {
       padding: '14px 16px',

@@ -15,6 +15,7 @@ import {
   publishSchedule,
   updateShift,
 } from '../../services/scheduleService';
+import { useTabResponsive } from '../../utils/tabResponsive';
 
 function defaultPeriod() {
   return defaultSchedulePeriod();
@@ -171,6 +172,7 @@ function exportScheduleDraftToXlsx(schedule, translations) {
 
 export default function ScheduleTab({ language, userRole }) {
   const isManager = userRole === 'manager';
+  const r = useTabResponsive(1280);
 
   const [periodForm, setPeriodForm] = useState(defaultPeriod);
 
@@ -574,8 +576,8 @@ export default function ScheduleTab({ language, userRole }) {
 
   if (isLoading) {
     return (
-      <section style={styles.page}>
-        <div style={styles.shell}>
+      <section style={{ ...styles.page, ...r.page }}>
+        <div style={{ ...styles.shell, ...r.shell }}>
           <div style={styles.emptyBox}>{t.loading}</div>
         </div>
       </section>
@@ -583,13 +585,13 @@ export default function ScheduleTab({ language, userRole }) {
   }
 
   return (
-    <section style={styles.page}>
-      <div style={styles.shell}>
+    <section style={{ ...styles.page, ...r.page }}>
+      <div style={{ ...styles.shell, ...r.shell }}>
         {renderToast()}
 
-        <header style={styles.header}>
+        <header style={{ ...styles.header, ...r.header }}>
           <div>
-            <h2 style={styles.title}>{isManager ? t.titleManager : t.titleEmployee}</h2>
+            <h2 style={{ ...styles.title, ...r.title }}>{isManager ? t.titleManager : t.titleEmployee}</h2>
             <p style={styles.subtitle}>{isManager ? t.subtitleManager : t.subtitleEmployee}</p>
           </div>
 
@@ -602,7 +604,7 @@ export default function ScheduleTab({ language, userRole }) {
         </header>
 
         {isManager ? (
-          <div style={styles.managerLayout}>
+          <div style={{ ...styles.managerLayout, ...r.splitLayout('300px minmax(0, 1fr)') }}>
             <aside style={styles.sidebar}>
               <section style={styles.panel}>
                 <h3 style={styles.panelTitle}>{t.period}</h3>
@@ -871,19 +873,20 @@ export default function ScheduleTab({ language, userRole }) {
             </main>
           </div>
         ) : (
-          <main style={styles.employeeArea}>
-            <section style={styles.panel}>
-              <div style={styles.panelHeader}>
-                <div style={styles.modeSegment}>                  {['day', 'week', 'month'].map((mode) => (
+          <main style={{ ...styles.employeeArea, ...r.employeeArea }}>
+            <section style={{ ...styles.panel, ...r.employeePanel }}>
+              <div style={{ ...styles.panelHeader, ...r.panelHeader }}>
+                <div style={{ ...styles.modeSegment, ...r.modeSegment }}>
+                  {['day', 'week', 'month'].map((mode) => (
                     <button
                       key={mode}
                       type="button"
                       onClick={() => setEmployeeViewMode(mode)}
-                      style={
-                        employeeViewMode === mode
-                          ? { ...styles.modeButton, ...styles.modeButtonActive }
-                          : styles.modeButton
-                      }
+                      style={{
+                        ...styles.modeButton,
+                        ...(employeeViewMode === mode ? styles.modeButtonActive : {}),
+                        ...r.modeButton,
+                      }}
                     >
                       {t[mode] || mode}
                     </button>
@@ -892,7 +895,7 @@ export default function ScheduleTab({ language, userRole }) {
               </div>
 
               {employeeSchedule.length === 0 ? (
-                <div style={styles.emptyHero}>
+                <div style={{ ...styles.emptyHero, ...(r.isMobile ? { padding: '32px 16px' } : {}) }}>
                   <div style={styles.emptyHeroInner}>
                     <div style={styles.emptyIcon}>🕒</div>
                     <h3 style={styles.emptyTitle}>{t.noPublishedScheduleTitle}</h3>
@@ -908,7 +911,11 @@ export default function ScheduleTab({ language, userRole }) {
                   </div>
                 </div>
               ) : (
-                <div style={styles.employeeTimelineScroll}>
+                <div style={{
+                  ...styles.employeeTimelineScroll,
+                  ...(r.isMobile ? { overflowY: 'visible', flex: 'none' } : {}),
+                }}
+                >
                   <div style={styles.employeeTimeline}>
                     {employeeTimelineDates.map((date) => {
                       const shiftsForDate = normalizeArray(employeeSchedule).filter(
@@ -916,8 +923,16 @@ export default function ScheduleTab({ language, userRole }) {
                       );
 
                       return (
-                        <section key={date} style={styles.timelineDay}>
-                          <div style={styles.timelineDayHeader}>
+                        <section key={date} style={{
+                          ...styles.timelineDay,
+                          ...(r.isMobile ? { padding: 14, borderRadius: 16 } : {}),
+                        }}
+                        >
+                          <div style={{
+                            ...styles.timelineDayHeader,
+                            ...(r.isMobile ? { flexDirection: 'column', alignItems: 'flex-start', gap: 4 } : {}),
+                          }}
+                          >
                             <strong style={styles.itemTitle}>{formatDisplayDate(date)}</strong>
                             <span style={styles.itemMeta}>{date}</span>
                           </div>
@@ -928,6 +943,41 @@ export default function ScheduleTab({ language, userRole }) {
                             <div style={styles.shiftList}>
                               {shiftsForDate.map((shift) => {
                                 const shiftId = getShiftId(shift);
+                                const timeLabel = `${formatTime(shift.start_time)} — ${formatTime(shift.end_time)}`;
+
+                                if (r.isMobile) {
+                                  return (
+                                    <div
+                                      key={shiftId}
+                                      style={{
+                                        padding: '14px 16px',
+                                        borderRadius: 14,
+                                        background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+                                        color: '#fff',
+                                        border: '1px solid rgba(255,255,255,0.12)',
+                                        boxShadow: '0 2px 8px rgba(102,126,234,0.25)',
+                                      }}
+                                    >
+                                      <div style={{ fontWeight: 800, fontSize: 15, marginBottom: 4 }}>
+                                        {getShiftPosition(shift)}
+                                      </div>
+                                      <div style={{ fontSize: 13, opacity: 0.92, marginBottom: 6 }}>
+                                        {getShiftCompany(shift)}
+                                      </div>
+                                      <div style={{
+                                        display: 'inline-block',
+                                        padding: '4px 10px',
+                                        borderRadius: 999,
+                                        background: 'rgba(255,255,255,0.18)',
+                                        fontSize: 13,
+                                        fontWeight: 700,
+                                      }}
+                                      >
+                                        {timeLabel}
+                                      </div>
+                                    </div>
+                                  );
+                                }
 
                                 return (
                                   <div key={shiftId} style={styles.shiftCard}>
@@ -935,9 +985,7 @@ export default function ScheduleTab({ language, userRole }) {
                                       <div style={styles.shiftRow}>
                                         <strong style={styles.itemTitle}>{getShiftPosition(shift)}</strong>
                                         <span style={styles.itemMeta}>· {getShiftCompany(shift)}</span>
-                                        <span style={styles.timeBadge}>
-                                          {formatTime(shift.start_time)} — {formatTime(shift.end_time)}
-                                        </span>
+                                        <span style={styles.timeBadge}>{timeLabel}</span>
                                       </div>
                                     </div>
                                   </div>
