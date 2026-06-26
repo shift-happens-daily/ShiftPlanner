@@ -242,10 +242,7 @@ final class AvailabilityViewModel: ObservableObject {
             _ = try await repository.saveAvailability(employeeId: employeeId, payload: payload)
             weekStorage[currentWeekStart] = weeklyStates
             localStore.saveWeeks(weekStorage, employeeId: employeeId)
-            statusMessage = localized(
-                "Availability saved. 'Prefer not' stays only on this device until the backend supports it.",
-                "Доступность сохранена. 'Нежелательно' пока хранится только на этом устройстве, пока бэкенд это не поддерживает."
-            )
+            statusMessage = localized("Availability saved.", "Доступность сохранена.")
         } catch {
             errorMessage = error.localizedDescription
         }
@@ -305,7 +302,7 @@ final class AvailabilityViewModel: ObservableObject {
             }
 
             for slotIndex in startSlot..<endSlot {
-                restoredWeek[slotIndex][block.weekday] = .canWork
+                restoredWeek[slotIndex][block.weekday] = availabilityState(for: block.availabilityStatus)
             }
         }
 
@@ -320,8 +317,8 @@ final class AvailabilityViewModel: ObservableObject {
         }
 
         backendSyncNote = localized(
-            "Can work syncs with the server. 'Prefer not' is stored only on this device for now.",
-            "'Могу' синхронизируется с сервером. 'Нежелательно' пока хранится только на этом устройстве."
+            "Availability now syncs fully with the server, including 'Prefer not'.",
+            "Доступность теперь полностью синхронизируется с сервером, включая 'Нежелательно'."
         )
     }
 
@@ -332,24 +329,39 @@ final class AvailabilityViewModel: ObservableObject {
             let dayStates = weeklyStates.map { $0[dayIndex] }
 
             var activeStartSlot: Int?
+            var activeStatus: EmployeeAvailabilityStatusDTO?
 
             for slotIndex in 0...dayStates.count {
                 let state: AvailabilityState? = slotIndex < dayStates.count ? dayStates[slotIndex] : nil
-                let isAvailable = state == .canWork
+                let status = state.flatMap(serverStatus(for:))
 
-                if isAvailable {
+                if let status {
                     if activeStartSlot == nil {
                         activeStartSlot = slotIndex
+                        activeStatus = status
+                    } else if activeStatus != status, let startSlot = activeStartSlot, let previousStatus = activeStatus {
+                        blocks.append(
+                            EmployeeAvailabilityBlockDTO(
+                                weekday: dayIndex,
+                                startTime: timeString(forSlotBoundary: startSlot),
+                                endTime: timeString(forSlotBoundary: slotIndex),
+                                availabilityStatus: previousStatus
+                            )
+                        )
+                        activeStartSlot = slotIndex
+                        activeStatus = status
                     }
                 } else if let startSlot = activeStartSlot {
                     blocks.append(
                         EmployeeAvailabilityBlockDTO(
                             weekday: dayIndex,
                             startTime: timeString(forSlotBoundary: startSlot),
-                            endTime: timeString(forSlotBoundary: slotIndex)
+                            endTime: timeString(forSlotBoundary: slotIndex),
+                            availabilityStatus: activeStatus ?? .available
                         )
                     )
                     activeStartSlot = nil
+                    activeStatus = nil
                 }
             }
         }
@@ -360,11 +372,25 @@ final class AvailabilityViewModel: ObservableObject {
         )
     }
 
-    private func applyServerCompatibleStates(from states: [[AvailabilityState]]) -> [[AvailabilityState]] {
-        states.map { row in
-            row.map { state in
-                state == .canWork ? .canWork : .unavailable
-            }
+    private func serverStatus(for state: AvailabilityState) -> EmployeeAvailabilityStatusDTO? {
+        switch state {
+        case .canWork:
+            return .available
+        case .preferNotToWork:
+            return .ifNeeded
+        case .unavailable:
+            return nil
+        }
+    }
+
+    private func availabilityState(for status: EmployeeAvailabilityStatusDTO) -> AvailabilityState {
+        switch status {
+        case .available:
+            return .canWork
+        case .ifNeeded:
+            return .preferNotToWork
+        case .unavailable:
+            return .unavailable
         }
     }
 

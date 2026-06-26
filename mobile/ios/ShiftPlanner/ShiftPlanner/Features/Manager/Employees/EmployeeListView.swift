@@ -87,6 +87,12 @@ struct EmployeeListView: View {
                     await viewModel.loadData()
                 }
             }
+            .onAppear {
+                guard user.hasCompany else { return }
+                Task {
+                    await viewModel.loadData()
+                }
+            }
         }
     }
 

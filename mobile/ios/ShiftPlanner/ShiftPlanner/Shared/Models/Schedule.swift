@@ -17,15 +17,42 @@ enum AppScheduleStatus: String, Codable, Equatable {
     }
 }
 
+enum AppEmployeeAvailabilityStatus: String, Codable, Equatable {
+    case available
+    case ifNeeded = "if_needed"
+
+    var title: String {
+        switch self {
+        case .available:
+            return localized("Available", "Доступен")
+        case .ifNeeded:
+            return localized("If needed", "Если очень нужно")
+        }
+    }
+}
+
+struct AppAvailableEmployee: Identifiable, Equatable {
+    let id: Int
+    let fullName: String
+    let positionName: String
+    let branchName: String?
+    let availabilityStatus: AppEmployeeAvailabilityStatus
+    let assignedHours: Double
+}
+
 struct AppScheduledShift: Identifiable, Equatable {
     let id: Int
-    let employeeId: Int
-    let employeeName: String
+    let employeeId: Int?
+    let employeeName: String?
     let positionId: Int
     let positionName: String
     let date: Date
     let startMinutes: Int
     let endMinutes: Int
+
+    var hasAssignedEmployee: Bool {
+        employeeId != nil
+    }
 }
 
 struct AppUnfilledRequirement: Identifiable, Equatable {

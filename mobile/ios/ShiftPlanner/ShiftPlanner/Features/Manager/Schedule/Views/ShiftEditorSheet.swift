@@ -6,13 +6,21 @@ struct ShiftEditorSheet: View {
     @Environment(\.dismiss) private var dismiss
 
     let shift: AppScheduledShift
+    let recommendedEmployees: [AppAvailableEmployee]
     let employees: [ManagedEmployee]
     let isSubmitting: Bool
+    let isLoadingRecommendedEmployees: Bool
+    let canRemoveShift: Bool
+    let onLoadRecommended: () async -> Void
     let onAssign: (ManagedEmployee) -> Void
     let onRemove: () -> Void
 
     @State private var searchText = ""
     @State private var isShowingDeleteConfirmation = false
+
+    private var isAssignmentMode: Bool {
+        !canRemoveShift && shift.employeeId == nil
+    }
 
     private var normalizedSearchText: String {
         searchText.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -24,6 +32,15 @@ struct ShiftEditorSheet: View {
             $0.fullName.localizedCaseInsensitiveContains(normalizedSearchText) ||
             $0.email.localizedCaseInsensitiveContains(normalizedSearchText) ||
             ($0.positionTitle?.localizedCaseInsensitiveContains(normalizedSearchText) ?? false)
+        }
+    }
+
+    private var filteredRecommendedEmployees: [AppAvailableEmployee] {
+        guard !normalizedSearchText.isEmpty else { return recommendedEmployees }
+        return recommendedEmployees.filter {
+            $0.fullName.localizedCaseInsensitiveContains(normalizedSearchText) ||
+            $0.positionName.localizedCaseInsensitiveContains(normalizedSearchText) ||
+            ($0.branchName?.localizedCaseInsensitiveContains(normalizedSearchText) ?? false)
         }
     }
 
@@ -46,41 +63,49 @@ struct ShiftEditorSheet: View {
 
                 ScrollView(showsIndicators: false) {
                     VStack(alignment: .leading, spacing: 8) {
-                        ForEach(filteredEmployees) { employee in
-                            employeeRow(employee)
-                        }
+                        recommendedSection
+                        fullEmployeesSection
 
-                        Button(role: .destructive) {
-                            isShowingDeleteConfirmation = true
-                        } label: {
-                            HStack {
-                                Image(systemName: "trash")
-                                Text(languageManager.text("Remove shift", "Удалить смену"))
-                                Spacer()
+                        if canRemoveShift {
+                            Button(role: .destructive) {
+                                isShowingDeleteConfirmation = true
+                            } label: {
+                                HStack {
+                                    Image(systemName: "trash")
+                                    Text(languageManager.text("Remove shift", "Удалить смену"))
+                                    Spacer()
+                                }
+                                .font(.headline)
+                                .padding(.horizontal, 16)
+                                .padding(.vertical, 14)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                                .background(themeManager.selectedTheme.cardTint)
+                                .overlay {
+                                    RoundedRectangle(cornerRadius: 16, style: .continuous)
+                                        .stroke(themeManager.selectedTheme.destructiveColor.opacity(0.25), lineWidth: 1)
+                                }
+                                .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
                             }
-                            .font(.headline)
-                            .padding(.horizontal, 16)
-                            .padding(.vertical, 14)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                            .background(themeManager.selectedTheme.cardTint)
-                            .overlay {
-                                RoundedRectangle(cornerRadius: 16, style: .continuous)
-                                    .stroke(themeManager.selectedTheme.destructiveColor.opacity(0.25), lineWidth: 1)
-                            }
-                            .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+                            .buttonStyle(.plain)
+                            .foregroundStyle(themeManager.selectedTheme.destructiveColor)
+                            .disabled(isSubmitting)
+                            .opacity(isSubmitting ? 0.5 : 1)
                         }
-                        .buttonStyle(.plain)
-                        .foregroundStyle(themeManager.selectedTheme.destructiveColor)
-                        .disabled(isSubmitting)
-                        .opacity(isSubmitting ? 0.5 : 1)
                     }
                     .padding(.vertical, 4)
                 }
             }
             .padding()
             .background(themeManager.selectedTheme.screenBackground.ignoresSafeArea())
-            .navigationTitle(languageManager.text("Edit shift", "Редактировать смену"))
+            .navigationTitle(
+                isAssignmentMode
+                ? languageManager.text("Assign shift", "Назначить смену")
+                : languageManager.text("Edit shift", "Редактировать смену")
+            )
             .navigationBarTitleDisplayMode(.inline)
+            .task {
+                await onLoadRecommended()
+            }
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
                     Button(languageManager.text("Close", "Закрыть")) {
@@ -100,12 +125,60 @@ struct ShiftEditorSheet: View {
             }
             Button(languageManager.text("Cancel", "Отмена"), role: .cancel) {}
         } message: {
-            Text(
-                languageManager.text(
-                    "The shift will be removed from the schedule.",
-                    "Смена будет удалена из расписания."
+            if canRemoveShift {
+                Text(
+                    languageManager.text(
+                        "The shift will be removed from the schedule.",
+                        "Смена будет удалена из расписания."
+                    )
                 )
-            )
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var recommendedSection: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text(languageManager.text("Recommended / available", "Recommended / available"))
+                .font(.footnote)
+                .fontWeight(.semibold)
+                .foregroundStyle(themeManager.selectedTheme.secondaryTextColor)
+
+            if isLoadingRecommendedEmployees {
+                HStack {
+                    ProgressView()
+                        .tint(themeManager.selectedTheme.accentColor)
+                    Text(languageManager.text("Checking availability...", "Проверяю доступность..."))
+                        .font(.footnote)
+                        .foregroundStyle(themeManager.selectedTheme.secondaryTextColor)
+                }
+                .padding(.horizontal, 4)
+                .padding(.vertical, 8)
+            } else if filteredRecommendedEmployees.isEmpty {
+                Text(languageManager.text("No recommended employees for this slot.", "Для этого слота нет рекомендуемых сотрудников."))
+                    .font(.footnote)
+                    .foregroundStyle(themeManager.selectedTheme.secondaryTextColor)
+                    .padding(.horizontal, 4)
+                    .padding(.vertical, 8)
+            } else {
+                ForEach(filteredRecommendedEmployees) { employee in
+                    recommendedEmployeeRow(employee)
+                }
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var fullEmployeesSection: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text(languageManager.text("All employees", "Все сотрудники"))
+                .font(.footnote)
+                .fontWeight(.semibold)
+                .foregroundStyle(themeManager.selectedTheme.secondaryTextColor)
+
+            ForEach(filteredEmployees) { employee in
+                employeeRow(employee)
+            }
         }
     }
 
@@ -120,7 +193,12 @@ struct ShiftEditorSheet: View {
                 .foregroundStyle(themeManager.selectedTheme.secondaryTextColor)
 
             Text(
-                languageManager.text(
+                isAssignmentMode
+                ? languageManager.text(
+                    "Choose an employee for this unfilled shift. Recommended employees are shown first, but you can override manually.",
+                    "Выберите сотрудника для этой незаполненной смены. Сначала показаны рекомендуемые сотрудники, но можно назначить любого вручную."
+                )
+                : languageManager.text(
                     "Select any employee to reassign this shift. Availability is not checked here.",
                     "Выберите любого сотрудника, чтобы переназначить смену. Доступность здесь не проверяется."
                 )
@@ -131,6 +209,68 @@ struct ShiftEditorSheet: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(16)
         .themeCard()
+    }
+
+    private func recommendedEmployeeRow(_ employee: AppAvailableEmployee) -> some View {
+        let matchedEmployee = employees.first(where: { $0.id == employee.id })
+
+        return Button {
+            if let matchedEmployee {
+                onAssign(matchedEmployee)
+            }
+        } label: {
+            HStack(spacing: 12) {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(employee.fullName)
+                        .font(.headline)
+                        .foregroundStyle(themeManager.selectedTheme.primaryTextColor)
+
+                    HStack(spacing: 8) {
+                        Text(employee.availabilityStatus.title)
+                            .font(.caption)
+                            .fontWeight(.semibold)
+                            .foregroundStyle(themeManager.selectedTheme.accentColor)
+
+                        Text(
+                            languageManager.format(
+                                "Assigned: %.1f h",
+                                "Назначено: %.1f ч",
+                                employee.assignedHours
+                            )
+                        )
+                        .font(.caption)
+                        .foregroundStyle(themeManager.selectedTheme.secondaryTextColor)
+                    }
+
+                    Text(recommendedSubtitle(for: employee))
+                        .font(.caption)
+                        .foregroundStyle(themeManager.selectedTheme.secondaryTextColor)
+                }
+
+                Spacer()
+
+                if isSubmitting {
+                    ProgressView()
+                        .tint(themeManager.selectedTheme.accentColor)
+                } else {
+                    Image(systemName: "sparkles")
+                        .font(.title3)
+                        .foregroundStyle(themeManager.selectedTheme.accentColor)
+                }
+            }
+            .padding(.horizontal, 16)
+            .padding(.vertical, 14)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(themeManager.selectedTheme.cardTint)
+            .overlay {
+                RoundedRectangle(cornerRadius: 16, style: .continuous)
+                    .stroke(themeManager.selectedTheme.accentColor.opacity(0.25), lineWidth: 1)
+            }
+            .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+        }
+        .buttonStyle(.plain)
+        .disabled(isSubmitting || matchedEmployee == nil)
+        .opacity((isSubmitting || matchedEmployee == nil) ? 0.5 : 1)
     }
 
     private func employeeRow(_ employee: ManagedEmployee) -> some View {
@@ -196,5 +336,12 @@ struct ShiftEditorSheet: View {
         let hour = minutes / 60
         let minute = minutes % 60
         return String(format: "%02d:%02d", hour, minute)
+    }
+
+    private func recommendedSubtitle(for employee: AppAvailableEmployee) -> String {
+        if let branchName = employee.branchName, !branchName.isEmpty {
+            return "\(employee.positionName) • \(branchName)"
+        }
+        return employee.positionName
     }
 }

@@ -112,6 +112,52 @@ final class APIScheduleRepository: ScheduleRepository {
         return try response.map(mapShift)
     }
 
+    func fetchAvailableEmployees(
+        scheduleId: Int,
+        shift: AppScheduledShift
+    ) async throws -> [AppAvailableEmployee] {
+        let baseURL = apiClient.baseURL.appendingPathComponent("schedule/\(scheduleId)/employees/available")
+        var components = URLComponents(url: baseURL, resolvingAgainstBaseURL: false)
+        components?.queryItems = [
+            URLQueryItem(name: "date", value: Self.dateFormatter.string(from: shift.date)),
+            URLQueryItem(name: "start_time", value: Self.timeString(from: shift.startMinutes)),
+            URLQueryItem(name: "end_time", value: Self.timeString(from: shift.endMinutes)),
+            URLQueryItem(name: "position_id", value: String(shift.positionId))
+        ]
+
+        guard let url = components?.url else {
+            throw APIClientError.invalidResponse
+        }
+
+        var request = URLRequest(url: url)
+        request.httpMethod = "GET"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        if let accessToken = apiClient.accessToken {
+            request.setValue("Bearer \(accessToken)", forHTTPHeaderField: "Authorization")
+        }
+
+        let response = try await apiClient.send(request, as: [AvailableEmployeeResponseDTO].self)
+        return try response.map(mapAvailableEmployee)
+    }
+
+    func assignRequirement(
+        scheduleId: Int,
+        requirementId: Int,
+        employeeId: Int
+    ) async throws -> AppSchedule {
+        let body = try JSONEncoder().encode(
+            RequirementAssignRequestDTO(employeeId: employeeId)
+        )
+        let request = apiClient.makeRequest(
+            path: "schedule/\(scheduleId)/requirements/\(requirementId)/assign",
+            method: "POST",
+            body: body,
+            requiresAuthorization: true
+        )
+        let response = try await apiClient.send(request, as: ScheduleResponseDTO.self)
+        return try mapSchedule(response)
+    }
+
     func updateShift(
         scheduleId: Int,
         shiftId: Int,
@@ -125,10 +171,13 @@ final class APIScheduleRepository: ScheduleRepository {
                 employeeId: employeeId
             )
         case .remove:
-            payload = ScheduleShiftUpdateRequestDTO(
-                action: "remove",
-                employeeId: nil
+            let request = apiClient.makeRequest(
+                path: "schedule/\(scheduleId)/shifts/\(shiftId)",
+                method: "DELETE",
+                requiresAuthorization: true
             )
+            try await apiClient.sendWithoutResponseBody(request)
+            return try await fetchSchedule(scheduleId: scheduleId)
         }
 
         let body = try JSONEncoder().encode(payload)
@@ -188,10 +237,31 @@ final class APIScheduleRepository: ScheduleRepository {
         )
     }
 
+    private func mapAvailableEmployee(_ dto: AvailableEmployeeResponseDTO) throws -> AppAvailableEmployee {
+        guard let availabilityStatus = AppEmployeeAvailabilityStatus(rawValue: dto.availabilityStatus) else {
+            throw APIClientError.decodingFailed
+        }
+
+        return AppAvailableEmployee(
+            id: dto.id,
+            fullName: dto.fullName,
+            positionName: dto.position.name,
+            branchName: dto.branch?.name,
+            availabilityStatus: availabilityStatus,
+            assignedHours: dto.assignedHours
+        )
+    }
+
     private static func minutes(from timeString: String) -> Int {
         let parts = timeString.split(separator: ":").compactMap { Int($0) }
         guard parts.count >= 2 else { return 0 }
         return (parts[0] * 60) + parts[1]
+    }
+
+    private static func timeString(from minutes: Int) -> String {
+        let hour = minutes / 60
+        let minute = minutes % 60
+        return String(format: "%02d:%02d:00", hour, minute)
     }
 
     private static let dateFormatter: DateFormatter = {

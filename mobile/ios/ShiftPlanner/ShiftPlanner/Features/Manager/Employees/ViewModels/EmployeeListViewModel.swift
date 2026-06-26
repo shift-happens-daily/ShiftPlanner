@@ -34,7 +34,7 @@ final class EmployeeListViewModel: ObservableObject {
     }
 
     func loadData() async {
-        guard employees.isEmpty, positions.isEmpty else { return }
+        guard !isLoading else { return }
 
         isLoading = true
         errorMessage = nil

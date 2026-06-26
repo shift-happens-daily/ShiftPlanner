@@ -1,14 +1,22 @@
 import Foundation
 
+enum EmployeeAvailabilityStatusDTO: String, Codable {
+    case available
+    case ifNeeded = "if_needed"
+    case unavailable
+}
+
 struct EmployeeAvailabilityBlockDTO: Codable {
     let weekday: Int
     let startTime: String
     let endTime: String
+    let availabilityStatus: EmployeeAvailabilityStatusDTO
 
     enum CodingKeys: String, CodingKey {
         case weekday
         case startTime = "start_time"
         case endTime = "end_time"
+        case availabilityStatus = "availability_status"
     }
 }
 

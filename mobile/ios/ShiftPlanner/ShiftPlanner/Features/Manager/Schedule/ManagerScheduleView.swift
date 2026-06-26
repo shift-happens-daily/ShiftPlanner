@@ -10,6 +10,7 @@ struct ManagerScheduleView: View {
     @State private var selectedTab: ScheduleContentTab = .assigned
     @State private var selectedPresentationMode: SchedulePresentationMode = .list
     @State private var editingShift: AppScheduledShift?
+    @State private var assigningRequirement: AppUnfilledRequirement?
     @State private var editingRequirementDraft: ScheduleRequirementEditorDraft?
     @State private var requirementPendingDeletion: AppUnfilledRequirement?
 
@@ -100,8 +101,14 @@ struct ManagerScheduleView: View {
             .sheet(item: $editingShift) { shift in
                 ShiftEditorSheet(
                     shift: shift,
+                    recommendedEmployees: viewModel.recommendedEmployees,
                     employees: viewModel.employees,
                     isSubmitting: viewModel.isUpdatingShift,
+                    isLoadingRecommendedEmployees: viewModel.isLoadingRecommendedEmployees,
+                    canRemoveShift: true,
+                    onLoadRecommended: {
+                        await viewModel.loadRecommendedEmployees(for: shift)
+                    },
                     onAssign: { employee in
                         Task {
                             await viewModel.updateShift(
@@ -125,6 +132,43 @@ struct ManagerScheduleView: View {
                         }
                     }
                 )
+                .onDisappear {
+                    viewModel.clearRecommendedEmployees()
+                }
+            }
+            .sheet(item: $assigningRequirement) { requirement in
+                ShiftEditorSheet(
+                    shift: AppScheduledShift(
+                        id: requirement.id,
+                        employeeId: nil,
+                        employeeName: nil,
+                        positionId: requirement.positionId,
+                        positionName: requirement.positionTitle,
+                        date: requirement.date,
+                        startMinutes: requirement.startMinutes,
+                        endMinutes: requirement.endMinutes
+                    ),
+                    recommendedEmployees: viewModel.recommendedEmployeesForRequirement,
+                    employees: viewModel.employees,
+                    isSubmitting: viewModel.isAssigningRequirement,
+                    isLoadingRecommendedEmployees: viewModel.isLoadingRecommendedEmployees,
+                    canRemoveShift: false,
+                    onLoadRecommended: {
+                        await viewModel.loadRecommendedEmployees(for: requirement)
+                    },
+                    onAssign: { employee in
+                        Task {
+                            await viewModel.assignRequirement(requirement, employee: employee)
+                            if viewModel.errorMessage == nil {
+                                assigningRequirement = nil
+                            }
+                        }
+                    },
+                    onRemove: {}
+                )
+                .onDisappear {
+                    viewModel.clearRecommendedEmployees()
+                }
             }
             .sheet(item: $editingRequirementDraft) { draft in
                 ScheduleRequirementEditorSheet(
@@ -472,6 +516,13 @@ struct ManagerScheduleView: View {
                     .foregroundStyle(themeManager.selectedTheme.destructiveColor)
 
                     actionPill(
+                        title: languageManager.text("Assign", "Назначить"),
+                        systemImage: "person.badge.plus"
+                    ) {
+                        assigningRequirement = item
+                    }
+
+                    actionPill(
                         title: languageManager.text("Edit", "Изменить"),
                         systemImage: "square.and.pencil"
                     ) {
@@ -506,7 +557,10 @@ struct ManagerScheduleView: View {
                         .font(.subheadline)
                         .fontWeight(.semibold)
                         .foregroundStyle(themeManager.selectedTheme.primaryTextColor)
-                    Text(shift.employeeName)
+                    Text(
+                        shift.employeeName ??
+                        languageManager.text("Unassigned shift", "Смена пока не назначена")
+                    )
                         .font(.footnote)
                         .foregroundStyle(themeManager.selectedTheme.secondaryTextColor)
                 }

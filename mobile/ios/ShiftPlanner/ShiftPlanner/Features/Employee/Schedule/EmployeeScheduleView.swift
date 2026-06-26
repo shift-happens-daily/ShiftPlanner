@@ -153,7 +153,10 @@ struct EmployeeScheduleView: View {
                     .fontWeight(.semibold)
                     .foregroundStyle(themeManager.selectedTheme.primaryTextColor)
 
-                Text(shift.employeeName)
+                Text(
+                    shift.employeeName ??
+                    languageManager.text("Unassigned shift", "Смена пока не назначена")
+                )
                     .font(.footnote)
                     .foregroundStyle(themeManager.selectedTheme.secondaryTextColor)
             }

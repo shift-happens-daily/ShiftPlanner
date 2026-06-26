@@ -10,6 +10,14 @@ struct ScheduleGenerateRequestDTO: Codable {
     }
 }
 
+struct RequirementAssignRequestDTO: Codable {
+    let employeeId: Int
+
+    enum CodingKeys: String, CodingKey {
+        case employeeId = "employee_id"
+    }
+}
+
 struct ScheduleShiftUpdateRequestDTO: Codable {
     let action: String
     let employeeId: Int?
@@ -34,10 +42,38 @@ struct ScheduleResponseDTO: Codable {
     }
 }
 
+struct AvailableEmployeePositionResponseDTO: Codable {
+    let id: Int
+    let name: String
+}
+
+struct AvailableEmployeeBranchResponseDTO: Codable {
+    let id: Int
+    let name: String
+}
+
+struct AvailableEmployeeResponseDTO: Codable {
+    let id: Int
+    let fullName: String
+    let position: AvailableEmployeePositionResponseDTO
+    let branch: AvailableEmployeeBranchResponseDTO?
+    let availabilityStatus: String
+    let assignedHours: Double
+
+    enum CodingKeys: String, CodingKey {
+        case id
+        case fullName = "full_name"
+        case position
+        case branch
+        case availabilityStatus = "availability_status"
+        case assignedHours = "assigned_hours"
+    }
+}
+
 struct ScheduleShiftResponseDTO: Codable {
     let id: Int
-    let employeeId: Int
-    let employeeName: String
+    let employeeId: Int?
+    let employeeName: String?
     let positionId: Int
     let position: String
     let date: String

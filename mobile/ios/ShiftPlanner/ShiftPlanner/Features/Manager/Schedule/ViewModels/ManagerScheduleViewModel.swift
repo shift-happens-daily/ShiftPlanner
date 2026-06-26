@@ -8,10 +8,14 @@ final class ManagerScheduleViewModel: ObservableObject {
     @Published private(set) var schedule: AppSchedule?
     @Published private(set) var employees: [ManagedEmployee] = []
     @Published private(set) var availablePositions: [RequirementPositionOption] = []
+    @Published private(set) var recommendedEmployees: [AppAvailableEmployee] = []
+    @Published private(set) var recommendedEmployeesForRequirement: [AppAvailableEmployee] = []
     @Published var isLoading = false
     @Published var isGenerating = false
     @Published var isPublishing = false
     @Published var isUpdatingShift = false
+    @Published var isLoadingRecommendedEmployees = false
+    @Published var isAssigningRequirement = false
     @Published var isSavingRequirement = false
     @Published var errorMessage: String?
     @Published var statusMessage: String?
@@ -172,6 +176,90 @@ final class ManagerScheduleViewModel: ObservableObject {
         }
 
         isUpdatingShift = false
+    }
+
+    func loadRecommendedEmployees(for shift: AppScheduledShift) async {
+        guard let schedule else {
+            recommendedEmployees = []
+            return
+        }
+
+        isLoadingRecommendedEmployees = true
+
+        do {
+            recommendedEmployees = try await repository.fetchAvailableEmployees(
+                scheduleId: schedule.id,
+                shift: shift
+            )
+        } catch {
+            recommendedEmployees = []
+            errorMessage = error.localizedDescription
+        }
+
+        isLoadingRecommendedEmployees = false
+    }
+
+    func loadRecommendedEmployees(for requirement: AppUnfilledRequirement) async {
+        guard let schedule else {
+            recommendedEmployeesForRequirement = []
+            return
+        }
+
+        isLoadingRecommendedEmployees = true
+
+        let syntheticShift = AppScheduledShift(
+            id: requirement.id,
+            employeeId: nil,
+            employeeName: nil,
+            positionId: requirement.positionId,
+            positionName: requirement.positionTitle,
+            date: requirement.date,
+            startMinutes: requirement.startMinutes,
+            endMinutes: requirement.endMinutes
+        )
+
+        do {
+            recommendedEmployeesForRequirement = try await repository.fetchAvailableEmployees(
+                scheduleId: schedule.id,
+                shift: syntheticShift
+            )
+        } catch {
+            recommendedEmployeesForRequirement = []
+            errorMessage = error.localizedDescription
+        }
+
+        isLoadingRecommendedEmployees = false
+    }
+
+    func clearRecommendedEmployees() {
+        recommendedEmployees = []
+        recommendedEmployeesForRequirement = []
+        isLoadingRecommendedEmployees = false
+    }
+
+    func assignRequirement(_ requirement: AppUnfilledRequirement, employee: ManagedEmployee) async {
+        guard let schedule else { return }
+
+        isAssigningRequirement = true
+        errorMessage = nil
+        statusMessage = nil
+
+        do {
+            self.schedule = try await repository.assignRequirement(
+                scheduleId: schedule.id,
+                requirementId: requirement.id,
+                employeeId: employee.id
+            )
+            try await refreshRequirementOccurrences()
+            statusMessage = localized(
+                "Employee assigned to the unfilled shift.",
+                "Сотрудник назначен на незаполненную смену."
+            )
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+
+        isAssigningRequirement = false
     }
 
     func makeRequirementDraft(for date: Date) -> ScheduleRequirementEditorDraft? {
