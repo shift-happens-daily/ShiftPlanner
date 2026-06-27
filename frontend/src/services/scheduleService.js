@@ -116,9 +116,18 @@ export async function publishSchedule(scheduleId) {
   return response.data;
 }
 
-/** Whole schedule delete — wire when backend adds DELETE /schedule/{id}. */
 export async function deleteSchedule(scheduleId) {
   const response = await api.delete(`/schedule/${scheduleId}`);
+  return response.data;
+}
+
+export async function listExchangeRequests() {
+  const response = await api.get('/schedule/exchange-requests');
+  return response.data;
+}
+
+export async function updateExchangeRequest(exchangeRequestId, payload) {
+  const response = await api.patch(`/schedule/exchange-requests/${exchangeRequestId}`, payload);
   return response.data;
 }
 

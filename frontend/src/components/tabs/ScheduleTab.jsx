@@ -11,8 +11,10 @@ import {
   getMySchedule,
   getSchedule,
   listAvailableEmployees,
+  listExchangeRequests,
   mergePublishedSchedule,
   publishSchedule,
+  updateExchangeRequest,
   updateShift,
 } from '../../services/scheduleService';
 import { useTabResponsive } from '../../utils/tabResponsive';
@@ -196,6 +198,7 @@ export default function ScheduleTab({ language, userRole }) {
   const [employeeViewMode, setEmployeeViewMode] = useState('day');
   const [employees, setEmployees] = useState([]);
   const [exchangeNotes, setExchangeNotes] = useState({});
+  const [exchangeRequests, setExchangeRequests] = useState([]);
   const [reassignEmployeeIds, setReassignEmployeeIds] = useState({});
   const [availableByShift, setAvailableByShift] = useState({});
   const [assignEmployeeIds, setAssignEmployeeIds] = useState({});
@@ -258,6 +261,16 @@ export default function ScheduleTab({ language, userRole }) {
       howTwo: '2. «Сгенерировать» создает черновик смен.',
       howThree: '3. «Опубликовать» делает расписание видимым сотрудникам.',
       company: 'Компания',
+      exchangeRequests: 'Запросы на обмен',
+      exchangeNotePlaceholder: 'Причина обмена',
+      requestExchange: 'Запросить обмен',
+      exchangeRequested: 'Запрос на обмен отправлен.',
+      exchangeNoteRequired: 'Укажите причину обмена.',
+      exchangeApprove: 'Одобрить',
+      exchangeReject: 'Отклонить',
+      exchangeApproved: 'Запрос на обмен одобрен.',
+      exchangeRejected: 'Запрос на обмен отклонён.',
+      noExchangeRequests: 'Нет ожидающих запросов на обмен.',
     },
     en: {
       titleManager: 'Schedule',
@@ -311,6 +324,16 @@ export default function ScheduleTab({ language, userRole }) {
       howTwo: '2. Generate creates a draft shift schedule.',
       howThree: '3. Publish makes the schedule visible to employees.',
       company: 'Company',
+      exchangeRequests: 'Exchange requests',
+      exchangeNotePlaceholder: 'Reason for exchange',
+      requestExchange: 'Request exchange',
+      exchangeRequested: 'Exchange request submitted.',
+      exchangeNoteRequired: 'Enter a reason for the exchange.',
+      exchangeApprove: 'Approve',
+      exchangeReject: 'Reject',
+      exchangeApproved: 'Exchange request approved.',
+      exchangeRejected: 'Exchange request rejected.',
+      noExchangeRequests: 'No pending exchange requests.',
     },
   };
 
@@ -371,8 +394,12 @@ export default function ScheduleTab({ language, userRole }) {
   }, [isManager, schedule, scheduleStorageKey]);
 
   const loadManagerData = useCallback(async () => {
-    const employeesData = await listEmployees();
+    const [employeesData, requestsData] = await Promise.all([
+      listEmployees(),
+      listExchangeRequests(),
+    ]);
     setEmployees(normalizeArray(employeesData));
+    setExchangeRequests(normalizeArray(requestsData));
   }, []);
 
   const loadEmployeeData = useCallback(async () => {
@@ -548,6 +575,46 @@ export default function ScheduleTab({ language, userRole }) {
     }
   };
 
+  const handleCreateExchangeRequest = async (shiftId) => {
+    const note = String(exchangeNotes[shiftId] || '').trim();
+    if (!note) {
+      setErrorMessage(t.exchangeNoteRequired);
+      return;
+    }
+
+    clearMessages();
+    setIsSubmitting(true);
+
+    try {
+      await createExchangeRequest({
+        shift_id: Number(shiftId),
+        note,
+      });
+      setExchangeNotes((prev) => ({ ...prev, [shiftId]: '' }));
+      setSuccessMessage(t.exchangeRequested);
+    } catch (error) {
+      setErrorMessage(extractApiErrorMessage(error, null, language));
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const handleExchangeDecision = async (requestId, status) => {
+    clearMessages();
+    setIsSubmitting(true);
+
+    try {
+      await updateExchangeRequest(requestId, { status });
+      const requestsData = await listExchangeRequests();
+      setExchangeRequests(normalizeArray(requestsData));
+      setSuccessMessage(status === 'approved' ? t.exchangeApproved : t.exchangeRejected);
+    } catch (error) {
+      setErrorMessage(extractApiErrorMessage(error, null, language));
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
   const renderToast = () => (
     (errorMessage || successMessage) && (
       <div style={styles.toastLayer}>
@@ -681,6 +748,43 @@ export default function ScheduleTab({ language, userRole }) {
                 <span>{t.howOne}</span>
                 <span>{t.howTwo}</span>
                 <span>{t.howThree}</span>
+              </section>
+
+              <section style={styles.panel}>
+                <h3 style={styles.panelTitle}>{t.exchangeRequests}</h3>
+
+                {exchangeRequests.length === 0 ? (
+                  <p style={styles.emptyText}>{t.noExchangeRequests}</p>
+                ) : (
+                  <div style={styles.compactList}>
+                    {exchangeRequests.map((request) => (
+                      <div key={request.id} style={styles.compactItem}>
+                        <strong style={styles.itemTitle}>{request.employee_name}</strong>
+                        <span style={styles.itemMeta}>
+                          {t.note}: {request.note}
+                        </span>
+                        <div style={styles.inlineActions}>
+                          <button
+                            type="button"
+                            onClick={() => handleExchangeDecision(request.id, 'approved')}
+                            style={isSubmitting ? styles.smallPrimaryButtonDisabled : styles.smallPrimaryButton}
+                            disabled={isSubmitting}
+                          >
+                            {t.exchangeApprove}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleExchangeDecision(request.id, 'rejected')}
+                            style={isSubmitting ? styles.smallSecondaryButtonDisabled : styles.smallSecondaryButton}
+                            disabled={isSubmitting}
+                          >
+                            {t.exchangeReject}
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
               </section>
             </aside>
 
@@ -975,6 +1079,36 @@ export default function ScheduleTab({ language, userRole }) {
                                       >
                                         {timeLabel}
                                       </div>
+                                      <textarea
+                                        value={exchangeNotes[shiftId] || ''}
+                                        onChange={(event) =>
+                                          setExchangeNotes((prev) => ({
+                                            ...prev,
+                                            [shiftId]: event.target.value,
+                                          }))
+                                        }
+                                        placeholder={t.exchangeNotePlaceholder}
+                                        style={{
+                                          ...styles.textarea,
+                                          marginTop: 10,
+                                          minHeight: 48,
+                                          background: 'rgba(255,255,255,0.95)',
+                                          color: '#002642',
+                                        }}
+                                        disabled={isSubmitting}
+                                      />
+                                      <button
+                                        type="button"
+                                        onClick={() => handleCreateExchangeRequest(shiftId)}
+                                        style={{
+                                          ...(isSubmitting ? styles.smallSecondaryButtonDisabled : styles.smallSecondaryButton),
+                                          marginTop: 8,
+                                          width: '100%',
+                                        }}
+                                        disabled={isSubmitting}
+                                      >
+                                        {t.requestExchange}
+                                      </button>
                                     </div>
                                   );
                                 }
@@ -987,6 +1121,29 @@ export default function ScheduleTab({ language, userRole }) {
                                         <span style={styles.itemMeta}>· {getShiftCompany(shift)}</span>
                                         <span style={styles.timeBadge}>{timeLabel}</span>
                                       </div>
+                                      <textarea
+                                        value={exchangeNotes[shiftId] || ''}
+                                        onChange={(event) =>
+                                          setExchangeNotes((prev) => ({
+                                            ...prev,
+                                            [shiftId]: event.target.value,
+                                          }))
+                                        }
+                                        placeholder={t.exchangeNotePlaceholder}
+                                        style={{ ...styles.textarea, marginTop: 10 }}
+                                        disabled={isSubmitting}
+                                      />
+                                      <button
+                                        type="button"
+                                        onClick={() => handleCreateExchangeRequest(shiftId)}
+                                        style={{
+                                          ...(isSubmitting ? styles.smallSecondaryButtonDisabled : styles.smallPrimaryButton),
+                                          marginTop: 8,
+                                        }}
+                                        disabled={isSubmitting}
+                                      >
+                                        {t.requestExchange}
+                                      </button>
                                     </div>
                                   </div>
                                 );
@@ -1332,6 +1489,41 @@ const styles = {
     fontWeight: '850',
     cursor: 'pointer',
     whiteSpace: 'nowrap',
+  },
+
+  smallPrimaryButtonDisabled: {
+    height: '36px',
+    padding: '0 13px',
+    background: '#4f646f',
+    border: 'none',
+    borderRadius: '12px',
+    color: '#f4faff',
+    fontSize: '13px',
+    fontWeight: '850',
+    cursor: 'default',
+    opacity: 0.65,
+    whiteSpace: 'nowrap',
+  },
+
+  smallSecondaryButtonDisabled: {
+    height: '36px',
+    padding: '0 13px',
+    background: 'rgba(215, 173, 207, 0.42)',
+    border: 'none',
+    borderRadius: '12px',
+    color: '#002642',
+    fontSize: '13px',
+    fontWeight: '850',
+    cursor: 'default',
+    opacity: 0.65,
+    whiteSpace: 'nowrap',
+  },
+
+  inlineActions: {
+    display: 'flex',
+    flexWrap: 'wrap',
+    gap: '8px',
+    marginTop: '8px',
   },
 
   helpBox: {

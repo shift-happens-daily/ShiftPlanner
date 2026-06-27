@@ -1,7 +1,7 @@
 // frontend/src/components/tabs/ShiftsTab.jsx
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
-  createEmployeeAbsence,
+  createMyAbsence,
   deleteEmployeeAbsence,
   getEmployeeAvailability,
   getMyAbsences,
@@ -412,6 +412,7 @@ export default function ShiftsTab({ language, userRole, user }) {
       bulkHint: 'Создаст одинаковые требования на выбранные дни недели внутри периода.',
       singleHint: 'Например: Barista, 15.06, 09:00–18:00, нужно 2 человека.',
       localOnly: 'локально',
+      deleteNotSupported: 'Удаление через API пока недоступно.',
       available: 'Доступен',
       maybe: 'Может быть',
       unavailable: 'Недоступен',
@@ -481,6 +482,7 @@ export default function ShiftsTab({ language, userRole, user }) {
       bulkHint: 'Creates the same requirements for selected weekdays within the period.',
       singleHint: 'Example: Barista, Jun 15, 09:00–18:00, need 2 people.',
       localOnly: 'local',
+      deleteNotSupported: 'Delete is not available via API yet.',
       available: 'Available',
       maybe: 'Maybe',
       unavailable: 'Unavailable',
@@ -907,7 +909,7 @@ export default function ShiftsTab({ language, userRole, user }) {
     setIsSubmitting(true);
 
     try {
-      await createEmployeeAbsence(employeeId, absenceForm);
+      await createMyAbsence(absenceForm);
       setAbsenceForm({ absence_type: 'vacation', start_date: '', end_date: '', comment: '' });
       await loadEmployeeData();
       setSuccessMessage(t.absenceAdded);
