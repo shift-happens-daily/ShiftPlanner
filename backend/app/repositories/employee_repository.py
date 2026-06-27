@@ -160,6 +160,7 @@ def replace_availability(
                 weekday=block["weekday"],
                 start_time=block["start_time"],
                 end_time=block["end_time"],
+                availability_status=block.get("availability_status", "available"),
             )
         )
 
@@ -167,6 +168,7 @@ def replace_availability(
         db.add(EmployeeDesiredDayOff(employee_id=employee_id, weekday=weekday))
 
     db.commit()
+    db.expire_all()
 
     return get_employee_by_id(db, employee_id)
 

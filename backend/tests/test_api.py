@@ -475,6 +475,80 @@ def test_employee_position_update_returns_clear_errors_for_invalid_ids(client: T
     assert missing_position.json()["detail"] == "Position was not found."
 
 
+def test_employee_availability_round_trips_availability_status(client: TestClient) -> None:
+    employee_headers = login_json(client, "ivan@example.com", "employee123")
+    payload = {
+        "weekly_availability": [
+            {
+                "weekday": 1,
+                "start_time": "09:00:00",
+                "end_time": "13:00:00",
+                "availability_status": "available",
+            },
+            {
+                "weekday": 1,
+                "start_time": "13:00:00",
+                "end_time": "17:00:00",
+                "availability_status": "if_needed",
+            },
+            {
+                "weekday": 2,
+                "start_time": "10:00:00",
+                "end_time": "12:00:00",
+                "availability_status": "unavailable",
+            },
+        ],
+        "desired_days_off": [5],
+    }
+
+    saved = client.post("/employees/1/availability", headers=employee_headers, json=payload)
+    assert saved.status_code == 200, saved.text
+    assert saved.json()["weekly_availability"] == payload["weekly_availability"]
+
+    fetched = client.get("/employees/1/availability", headers=employee_headers)
+    assert fetched.status_code == 200, fetched.text
+    assert fetched.json()["weekly_availability"] == payload["weekly_availability"]
+    assert fetched.json()["desired_days_off"] == [5]
+
+    with psycopg.connect(PSYCOPG_DSN) as connection:
+        with connection.cursor() as cursor:
+            cursor.execute(
+                """
+                SELECT weekday, start_time::text, end_time::text, availability_status
+                FROM employee_availability
+                WHERE employee_id = 1
+                ORDER BY weekday, start_time
+                """
+            )
+            assert cursor.fetchall() == [
+                (1, "09:00:00", "13:00:00", "available"),
+                (1, "13:00:00", "17:00:00", "if_needed"),
+                (2, "10:00:00", "12:00:00", "unavailable"),
+            ]
+
+
+def test_employee_availability_rejects_unknown_status(client: TestClient) -> None:
+    employee_headers = login_json(client, "ivan@example.com", "employee123")
+
+    response = client.post(
+        "/employees/1/availability",
+        headers=employee_headers,
+        json={
+            "weekly_availability": [
+                {
+                    "weekday": 1,
+                    "start_time": "09:00:00",
+                    "end_time": "13:00:00",
+                    "availability_status": "maybe",
+                }
+            ],
+            "desired_days_off": [],
+        },
+    )
+
+    assert response.status_code == 422
+
+
 def test_manager_can_update_own_company(client: TestClient) -> None:
     manager_headers = login_json(client, "manager@example.com", "manager123")
 
