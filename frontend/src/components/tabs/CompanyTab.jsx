@@ -1,5 +1,5 @@
 // frontend/src/components/tabs/CompanyTab.jsx
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useAuth } from '../../context/useAuth';
 import {
   createBranch,
@@ -242,6 +242,15 @@ export default function CompanyTab({ language, userRole, user }) {
     }
   };
 
+  useEffect(() => {
+    if (!isManager || !currentCompanyId) {
+      setBranches([]);
+      return;
+    }
+
+    void loadBranches(currentCompanyId);
+  }, [isManager, currentCompanyId]);
+
   const handlePreview = async () => {
     if (!inviteCode.trim()) {
       setErrorMessage(t.invitePlaceholder);
@@ -308,10 +317,15 @@ export default function CompanyTab({ language, userRole, user }) {
 
     try {
       await createCompany({ name: companyName.trim() });
-      await refreshUser();
+      const updatedUser = await refreshUser();
 
       setCompanyName('');
       setSuccessMessage(t.companyCreated);
+
+      const companyId = getCompanyId(updatedUser?.company);
+      if (companyId) {
+        await loadBranches(companyId);
+      }
     } catch (error) {
       setErrorMessage(extractApiErrorMessage(error, null, language));
     } finally {
@@ -334,11 +348,11 @@ export default function CompanyTab({ language, userRole, user }) {
     setIsSubmitting(true);
 
     try {
-      const created = await createBranch(currentCompanyId, {
+      await createBranch(currentCompanyId, {
         name: branchName.trim(),
       });
 
-      setBranches((prev) => [...prev, created]);
+      await loadBranches(currentCompanyId);
       setBranchName('');
       setSuccessMessage(t.branchCreated);
     } catch (error) {
