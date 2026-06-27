@@ -67,8 +67,14 @@ jobs:
           command -v certbot >/dev/null
           docker compose version >/dev/null
           test "$(id -u)" -eq 0
-          test -f /etc/letsencrypt/live/shiftplanner.online/fullchain.pem
-          test -f /etc/letsencrypt/live/shiftplanner.online/privkey.pem
+
+          if [ -f /etc/letsencrypt/live/shiftplanner.online/fullchain.pem ] && \
+             [ -f /etc/letsencrypt/live/shiftplanner.online/privkey.pem ]; then
+            echo "Using existing Let's Encrypt certificate for shiftplanner.online."
+          else
+            echo "WARNING: Let's Encrypt certificate for shiftplanner.online was not found."
+            echo "Nginx will start in HTTP-only mode until the certificate exists on the host."
+          fi
 
           if [ ! -d "$DEPLOY_DIR/.git" ]; then
             rm -rf -- "$DEPLOY_DIR"
@@ -84,7 +90,7 @@ jobs:
           git reset --hard "$SHA"
           git clean -fd
 
-          if docker compose -f docker-compose.yml -p "$COMPOSE_PROJECT" up -d --build --remove-orphans --wait --wait-timeout 120; then
+          if docker compose -f docker-compose.yml -p "$COMPOSE_PROJECT" up -d --build --force-recreate --remove-orphans --wait --wait-timeout 120; then
             install -D -m 755 \
               nginx/renewal-hooks/pre/shiftplanner-nginx \
               /etc/letsencrypt/renewal-hooks/pre/shiftplanner-nginx
@@ -94,7 +100,7 @@ jobs:
             docker image prune -f
           else
             git reset --hard "$PREVIOUS_SHA"
-            docker compose -f docker-compose.yml -p "$COMPOSE_PROJECT" up -d --build --remove-orphans
+            docker compose -f docker-compose.yml -p "$COMPOSE_PROJECT" up -d --build --force-recreate --remove-orphans
             exit 1
           fi
           REMOTE_SCRIPT
