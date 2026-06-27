@@ -882,7 +882,7 @@ export default function ShiftsTab({ language, userRole, user }) {
       }
 
       await updateEmployeeAvailability(employeeId, {
-        desired_days_off: availabilityForm.desired_days_off,
+        desired_days_off: [],
         weekly_availability: convertDatesToWeeklyIntervals(availabilityByDate),
       });
       await loadEmployeeData();
@@ -1439,28 +1439,6 @@ export default function ShiftsTab({ language, userRole, user }) {
                     </div>
                   )}
 
-                  <div style={styles.mobileSectionLabel}>{t.desiredDaysOff}</div>
-                  <div style={styles.mobileDayOffGrid}>
-                    {WEEKDAYS.map((day) => {
-                      const checked = availabilityForm.desired_days_off.includes(day.value);
-                      return (
-                        <button
-                          key={day.value}
-                          type="button"
-                          onClick={() => setAvailabilityForm((prev) => ({
-                            ...prev,
-                            desired_days_off: checked
-                              ? prev.desired_days_off.filter((value) => value !== day.value)
-                              : [...prev.desired_days_off, day.value].sort((a, b) => a - b),
-                          }))}
-                          style={checked ? styles.mobileDayOffActive : styles.mobileDayOffButton}
-                        >
-                          {day[language] || day.ru}
-                        </button>
-                      );
-                    })}
-                  </div>
-
                   <button
                     type="button"
                     onClick={submitAvailability}
@@ -1619,30 +1597,6 @@ export default function ShiftsTab({ language, userRole, user }) {
                       })}
                     </div>
                   ))}
-                </div>
-              </div>
-
-              <div style={styles.desiredDaysOffSection}>
-                <span style={styles.desiredDaysOffLabel}>{t.desiredDaysOff}</span>
-                <div style={styles.dayPills}>
-                  {WEEKDAYS.map((day) => {
-                    const checked = availabilityForm.desired_days_off.includes(day.value);
-                    return (
-                      <button
-                        key={day.value}
-                        type="button"
-                        onClick={() => setAvailabilityForm((prev) => ({
-                          ...prev,
-                          desired_days_off: checked
-                            ? prev.desired_days_off.filter((value) => value !== day.value)
-                            : [...prev.desired_days_off, day.value].sort((a, b) => a - b),
-                        }))}
-                        style={checked ? styles.dayPillActive : styles.dayPill}
-                      >
-                        {day[language] || day.ru}
-                      </button>
-                    );
-                  })}
                 </div>
               </div>
 
