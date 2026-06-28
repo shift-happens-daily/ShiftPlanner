@@ -25,6 +25,10 @@ function writeStore(store) {
 
 export function getPrimaryBranchId(employee) {
   if (!employee) return null;
+  if (Array.isArray(employee.branches)) {
+    const primary = employee.branches.find((branch) => branch?.is_primary);
+    if (primary?.id != null) return primary.id;
+  }
   return employee.branch?.id ?? employee.branch_id ?? employee.branchId ?? null;
 }
 
@@ -103,15 +107,13 @@ export function seedStoredBranchIds(employee) {
 export function getEmployeeBranchIds(employee) {
   if (!employee) return [];
 
-  const stored = getStoredBranchIds(employee.id);
   const apiIds = branchIdsFromApiList(employee.branches);
-  const primaryId = normalizeBranchId(getPrimaryBranchId(employee));
+  if (apiIds.length > 0) return apiIds;
 
-  return Array.from(new Set([
-    ...stored,
-    ...apiIds,
-    ...(primaryId ? [primaryId] : []),
-  ]));
+  const primaryId = normalizeBranchId(getPrimaryBranchId(employee));
+  if (primaryId) return [primaryId];
+
+  return getStoredBranchIds(employee.id);
 }
 
 export function resolveBranchById(branchId, allBranches = [], employee = null) {
@@ -204,16 +206,14 @@ export function removeBranchFromAllStoredAssignments(branchId) {
 export function getUserBranchIds(user) {
   if (!user) return [];
 
-  const employeeId = user.employeeId ?? user.employee_id;
-  const stored = employeeId ? getStoredBranchIds(employeeId) : [];
   const apiIds = branchIdsFromApiList(user.branches);
-  const primaryId = normalizeBranchId(user.branch?.id ?? user.branch_id);
+  if (apiIds.length > 0) return apiIds;
 
-  return Array.from(new Set([
-    ...stored,
-    ...apiIds,
-    ...(primaryId ? [primaryId] : []),
-  ]));
+  const primaryId = normalizeBranchId(user.branch?.id ?? user.branch_id);
+  if (primaryId) return [primaryId];
+
+  const employeeId = user.employeeId ?? user.employee_id;
+  return employeeId ? getStoredBranchIds(employeeId) : [];
 }
 
 export function resolveUserBranches(user, allBranches = []) {
@@ -255,7 +255,6 @@ export function enrichReportRowBranch(item, allBranches = []) {
     branches: item?.branches,
   };
 
-  seedStoredBranchIds(syntheticEmployee);
   const resolved = resolveEmployeeBranches(syntheticEmployee, allBranches);
   const branchNames = resolved
     .map((branch) => branch.name || branch.title)

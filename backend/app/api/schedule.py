@@ -4,7 +4,7 @@ from typing import Literal
 from fastapi import APIRouter, Depends, Query, Response, status
 from sqlalchemy.orm import Session
 
-from app.api.dependencies import ensure_employee_user, get_current_user, require_role
+from app.api.dependencies import ensure_employee_user, get_current_user, require_active_manager, require_role
 from app.api.responses import (
     BAD_REQUEST_RESPONSE,
     FORBIDDEN_RESPONSE,
@@ -33,9 +33,6 @@ from app.schemas.schedule import (
 )
 from app.services import schedule_service
 
-from app.api.dependencies import require_manager
-from app.models.user import User
-
 router = APIRouter()
 
 
@@ -47,7 +44,7 @@ router = APIRouter()
 )
 def create_requirement(
     payload: ScheduleRequirementCreate,
-    current_user: UserRead = Depends(require_role("manager")),
+    current_user: UserRead = Depends(require_active_manager),
     db: Session = Depends(get_db),
 ) -> ScheduleRequirementRead:
     return schedule_service.create_requirement(db, payload, current_user)
@@ -61,7 +58,7 @@ def create_requirement(
 def update_requirement(
     requirement_id: int,
     payload: ScheduleRequirementUpdate,
-    current_user: UserRead = Depends(require_role("manager")),
+    current_user: UserRead = Depends(require_active_manager),
     db: Session = Depends(get_db),
 ) -> ScheduleRequirementRead:
     return schedule_service.update_requirement(db, requirement_id, payload, current_user)
@@ -100,7 +97,7 @@ def get_requirements(
 )
 def create_bulk_requirements(
     payload: ScheduleRequirementBulkCreate,
-    _: UserRead = Depends(require_role("manager")),
+    _: UserRead = Depends(require_active_manager),
     db: Session = Depends(get_db),
 ) -> ScheduleRequirementBulkRead:
     return schedule_service.create_bulk_requirements(db, payload)
@@ -113,7 +110,7 @@ def create_bulk_requirements(
 )
 def generate_schedule(
     payload: ScheduleGenerateRequest | None = None,
-    current_user: UserRead = Depends(require_role("manager")),
+    current_user: UserRead = Depends(require_active_manager),
     db: Session = Depends(get_db),
 ) -> ScheduleRead:
     return schedule_service.generate_schedule(db, current_user, payload)
@@ -187,7 +184,7 @@ def create_exchange_request(
     responses={**UNAUTHORIZED_RESPONSE, **FORBIDDEN_RESPONSE},
 )
 def get_exchange_requests(
-    _: UserRead = Depends(require_role("manager")),
+    _: UserRead = Depends(require_active_manager),
     db: Session = Depends(get_db),
 ) -> list[ShiftExchangeRequestRead]:
     return schedule_service.list_pending_exchange_requests(db)
@@ -207,7 +204,7 @@ def get_exchange_requests(
 def update_exchange_request(
     exchange_request_id: int,
     payload: ShiftExchangeRequestUpdate,
-    _: UserRead = Depends(require_role("manager")),
+    _: UserRead = Depends(require_active_manager),
     db: Session = Depends(get_db),
 ) -> ShiftExchangeRequestRead:
     return schedule_service.update_exchange_request_status(db, exchange_request_id, payload)
@@ -220,7 +217,7 @@ def update_exchange_request(
 )
 def get_latest_schedule(
     schedule_status: Literal["draft", "published", "archived"] | None = Query(default=None, alias="status"),
-    current_user: UserRead = Depends(require_role("manager")),
+    current_user: UserRead = Depends(require_active_manager),
     db: Session = Depends(get_db),
 ) -> ScheduleRead:
     return schedule_service.get_latest_schedule(db, current_user, schedule_status)
@@ -268,7 +265,7 @@ def get_schedule(
 def create_manual_shift(
     schedule_id: int,
     payload: ManualShiftCreate,
-    current_user: UserRead = Depends(require_role("manager")),
+    current_user: UserRead = Depends(require_active_manager),
     db: Session = Depends(get_db),
 ) -> ScheduleRead:
     return schedule_service.create_manual_shift(db, schedule_id, payload, current_user)
@@ -292,7 +289,7 @@ def get_available_employees(
     end_time: time = Query(),
     position_id: int = Query(ge=1),
     branch_id: int | None = Query(default=None, ge=1),
-    current_user: UserRead = Depends(require_role("manager")),
+    current_user: UserRead = Depends(require_active_manager),
     db: Session = Depends(get_db),
 ) -> list[AvailableEmployeeRead]:
     return schedule_service.list_available_employees(
@@ -322,7 +319,7 @@ def update_shift(
     schedule_id: int,
     shift_id: int,
     payload: ScheduleShiftUpdate,
-    current_user: UserRead = Depends(require_role("manager")),
+    current_user: UserRead = Depends(require_active_manager),
     db: Session = Depends(get_db),
 ) -> ScheduleRead:
     return schedule_service.update_shift(db, schedule_id, shift_id, payload, current_user)
@@ -336,7 +333,7 @@ def update_shift(
 def delete_shift(
     schedule_id: int,
     shift_id: int,
-    current_user: UserRead = Depends(require_role("manager")),
+    current_user: UserRead = Depends(require_active_manager),
     db: Session = Depends(get_db),
 ) -> Response:
     schedule_service.delete_shift(db, schedule_id, shift_id, current_user)
@@ -358,7 +355,7 @@ def assign_requirement(
     schedule_id: int,
     requirement_id: int,
     payload: RequirementAssignRequest,
-    current_user: UserRead = Depends(require_role("manager")),
+    current_user: UserRead = Depends(require_active_manager),
     db: Session = Depends(get_db),
 ) -> ScheduleRead:
     return schedule_service.assign_requirement(db, schedule_id, requirement_id, payload, current_user)
@@ -379,7 +376,7 @@ def update_schedule_requirement(
     schedule_id: int,
     requirement_id: int,
     payload: ScheduleRequirementUpdate,
-    current_user: UserRead = Depends(require_role("manager")),
+    current_user: UserRead = Depends(require_active_manager),
     db: Session = Depends(get_db),
 ) -> ScheduleRead:
     return schedule_service.update_schedule_requirement(db, schedule_id, requirement_id, payload, current_user)
@@ -392,7 +389,7 @@ def update_schedule_requirement(
 )
 def publish_schedule(
     schedule_id: int,
-    current_user: UserRead = Depends(require_role("manager")),
+    current_user: UserRead = Depends(require_active_manager),
     db: Session = Depends(get_db),
 ) -> ScheduleRead:
     return schedule_service.publish_schedule(db, schedule_id, current_user)
@@ -401,7 +398,7 @@ def publish_schedule(
 @router.delete("/requirements/{requirement_id}", status_code=204)
 def delete_requirement(
     requirement_id: int,
-    _current_user: User = Depends(require_manager),
+    _current_user: UserRead = Depends(require_active_manager),
     db: Session = Depends(get_db),
 ):
     schedule_service.delete_requirement(db, requirement_id)

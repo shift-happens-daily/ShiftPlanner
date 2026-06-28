@@ -24,6 +24,9 @@ class Company(Base):
         server_default=func.current_timestamp(),
     )
     invite_code_expires_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    manager_invite_code: Mapped[str | None] = mapped_column(String(16), unique=True, nullable=True)
+    manager_invite_code_generated_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    manager_invite_code_expires_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
 
     created_at: Mapped[datetime] = mapped_column(
         DateTime,
@@ -52,8 +55,11 @@ class Company(Base):
     def manager_user_id(self) -> int | None:
         if not self.manager_links:
             return None
-        owner = next((link for link in self.manager_links if link.manager_role == "owner"), None)
-        return (owner or sorted(self.manager_links, key=lambda item: item.id)[0]).user_id
+        active_links = [link for link in self.manager_links if link.membership_status == "active"]
+        if not active_links:
+            return None
+        owner = next((link for link in active_links if link.manager_role == "owner"), None)
+        return (owner or sorted(active_links, key=lambda item: item.id)[0]).user_id
 
 
 class CompanyManager(Base):
@@ -63,7 +69,9 @@ class CompanyManager(Base):
     company_id: Mapped[int] = mapped_column(ForeignKey("companies.id", ondelete="CASCADE"))
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"))
     manager_role: Mapped[str] = mapped_column(String(50), default="manager", server_default="manager")
+    membership_status: Mapped[str] = mapped_column(String(50), default="active", server_default="active")
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.current_timestamp())
+    updated_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.current_timestamp())
 
     company: Mapped[Company] = relationship(back_populates="manager_links")
     user: Mapped["User"] = relationship()

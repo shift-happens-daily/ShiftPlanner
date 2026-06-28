@@ -9,7 +9,9 @@ from app.schemas.employee import (
     AbsenceRead,
     AvailabilityRead,
     AvailabilityUpsert,
+    EmployeeBranchAssignmentRead,
     EmployeeBranchRead,
+    EmployeeBranchesUpdate,
     EmployeeBranchUpdate,
     EmployeeCalendarEmployeeRead,
     EmployeeCalendarPositionRead,
@@ -27,6 +29,11 @@ from app.services import auth_service
 
 def list_employees(db: Session, current_user: UserRead) -> list[EmployeeRead]:
     if current_user.company_id is None:
+        if current_user.role == "manager":
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Manager is not linked to a company.",
+            )
         return []
 
     return [
@@ -35,14 +42,30 @@ def list_employees(db: Session, current_user: UserRead) -> list[EmployeeRead]:
     ]
 
 
-def create_employee(db: Session, payload: EmployeeCreate) -> EmployeeRead:
+def get_employee(db: Session, employee_id: int, current_user: UserRead) -> EmployeeRead:
+    employee = _get_visible_employee_or_404(db, employee_id, current_user)
+    return _build_employee_read(employee)
+
+
+def create_employee(db: Session, payload: EmployeeCreate, current_user: UserRead) -> EmployeeRead:
+    if current_user.company_id is None:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Manager is not linked to a company.",
+        )
+
     position = position_repository.get_position_by_id(db, payload.position_id)
     if position is None:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Position {payload.position_id} was not found.")
+    if position.company_id != current_user.company_id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Position does not belong to the authenticated user's company.",
+        )
     if user_repository.get_user_by_email(db, payload.email) is not None:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="A user with this email already exists.")
 
-    branch = company_repository.get_default_branch_for_company(db, position.company_id)
+    branch = company_repository.get_default_branch_for_company(db, current_user.company_id)
     user = user_repository.create_user(
         db,
         full_name=payload.full_name,
@@ -54,9 +77,10 @@ def create_employee(db: Session, payload: EmployeeCreate) -> EmployeeRead:
     employee = employee_repository.create_employee(
         db,
         user_id=user.id,
-        company_id=position.company_id,
+        company_id=current_user.company_id,
         branch_id=branch.id if branch else None,
         position_id=position.id,
+        is_active=True,
     )
     return _build_employee_read(employee)
 
@@ -222,6 +246,52 @@ def update_employee_branch(
     return _build_employee_read(updated_employee)
 
 
+def list_employee_branches(
+    db: Session,
+    employee_id: int,
+    current_user: UserRead,
+) -> list[EmployeeBranchAssignmentRead]:
+    employee = _get_visible_employee_or_404(db, employee_id, current_user)
+    return _build_employee_branches_read(employee)
+
+
+def replace_employee_branches(
+    db: Session,
+    employee_id: int,
+    payload: EmployeeBranchesUpdate,
+    current_user: UserRead,
+) -> list[EmployeeBranchAssignmentRead]:
+    if current_user.company_id is None:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Manager is not linked to a company.",
+        )
+
+    employee = employee_repository.get_employee_by_id(db, employee_id)
+    if employee is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Employee was not found.")
+    if employee.company_id != current_user.company_id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Employee does not belong to the authenticated user's company.",
+        )
+
+    _validate_branch_assignment(
+        db,
+        company_id=current_user.company_id,
+        branch_ids=payload.branch_ids,
+        primary_branch_id=payload.primary_branch_id,
+    )
+
+    updated_employee = employee_repository.update_employee_branches(
+        db,
+        employee=employee,
+        branch_ids=payload.branch_ids,
+        primary_branch_id=payload.primary_branch_id,
+    )
+    return _build_employee_branches_read(updated_employee)
+
+
 def get_availability(db: Session, employee_id: int) -> AvailabilityRead:
     employee = employee_repository.get_employee_by_id(db, employee_id)
     if employee is None:
@@ -349,9 +419,22 @@ def _build_employee_read(employee) -> EmployeeRead:
         position_id=employee.position_id,
         position_title=employee.position.name if employee.position is not None else "",
         branch=branch,
+        branches=_build_employee_branches_read(employee),
         position=position,
         availability=_build_availability_read(employee),
     )
+
+
+def _build_employee_branches_read(employee) -> list[EmployeeBranchAssignmentRead]:
+    return [
+        EmployeeBranchAssignmentRead(
+            id=link.branch.id,
+            name=link.branch.name,
+            is_primary=link.is_primary,
+        )
+        for link in sorted(employee.branch_links, key=lambda item: (not item.is_primary, item.branch_id))
+        if link.branch is not None
+    ]
 
 
 def _build_availability_read(employee) -> AvailabilityRead:
@@ -385,3 +468,56 @@ def _get_employee_or_404(db: Session, employee_id: int):
     if employee is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Employee was not found.")
     return employee
+
+
+def _get_visible_employee_or_404(db: Session, employee_id: int, current_user: UserRead):
+    employee = employee_repository.get_employee_by_id(db, employee_id)
+    if employee is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Employee was not found.")
+    if current_user.role == "manager":
+        if current_user.company_id is None:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Manager is not linked to a company.",
+            )
+        if employee.company_id != current_user.company_id:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Employee does not belong to the authenticated user's company.",
+            )
+        return employee
+    if current_user.employee_id == employee_id and current_user.employee_status in (None, "active"):
+        return employee
+    raise HTTPException(
+        status_code=status.HTTP_403_FORBIDDEN,
+        detail="You do not have access to this employee resource.",
+    )
+
+
+def _validate_branch_assignment(
+    db: Session,
+    *,
+    company_id: int,
+    branch_ids: list[int],
+    primary_branch_id: int,
+) -> None:
+    if len(set(branch_ids)) != len(branch_ids):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Branch IDs must be unique.",
+        )
+    if primary_branch_id not in branch_ids:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Primary branch must be included in branch_ids.",
+        )
+
+    for branch_id in branch_ids:
+        branch = company_repository.get_branch_by_id(db, branch_id)
+        if branch is None:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Branch was not found.")
+        if branch.company_id != company_id:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Branch does not belong to the authenticated user's company.",
+            )

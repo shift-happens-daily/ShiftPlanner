@@ -9,8 +9,8 @@ import {
   getEmployeeCalendarSummary,
   listEmployeeAbsences,
   listEmployees,
+  replaceEmployeeBranches,
   updateEmployeeAvailability,
-  updateEmployeeBranch,
   updateEmployeePosition,
 } from '../../services/employeeService';
 import { extractApiErrorMessage, localizeBackendMessage } from '../../services/error';
@@ -18,13 +18,10 @@ import { mapEmployeeCalendarSummary } from '../../services/mappers';
 import { createPosition, deletePosition, listPositions } from '../../services/positionService';
 import { listBranches, linkUserToCompany } from '../../services/companyService';
 import {
-  addEmployeeBranch,
   employeeHasBranch,
   getEmployeeBranchIds,
-  removeEmployeeBranch,
+  getPrimaryBranchId,
   resolveEmployeeBranches,
-  seedStoredBranchIds,
-  setStoredBranchIds,
 } from '../../utils/employeeBranches';
 import { useTabResponsive } from '../../utils/tabResponsive';
 
@@ -365,7 +362,6 @@ export default function EmployeesTab({ language, userRole, user }) {
   const selectedEmployeePosition = getEmployeePosition(selectedEmployee);
   const selectedEmployeeBranches = useMemo(() => {
     if (!selectedEmployee) return [];
-    seedStoredBranchIds(selectedEmployee);
     return resolveEmployeeBranches(selectedEmployee, branches);
   }, [selectedEmployee, branches, branchAssignmentsRevision]);
 
@@ -374,7 +370,6 @@ export default function EmployeesTab({ language, userRole, user }) {
 
     return employees.filter((employee) => {
       if (selectedBranchId) {
-        seedStoredBranchIds(employee);
         if (!employeeHasBranch(employee, selectedBranchId)) return false;
       }
 
@@ -414,7 +409,6 @@ export default function EmployeesTab({ language, userRole, user }) {
       return;
     }
 
-    seedStoredBranchIds(selectedEmployee);
     setSelectedEmployeeDetails({
       position_id: selectedEmployee.position_id || selectedEmployee.position?.id || selectedEmployee.position?.position_id || '',
     });
@@ -573,7 +567,6 @@ export default function EmployeesTab({ language, userRole, user }) {
 
     const currentFiltered = employeesData.filter((employee) => {
       if (!selectedBranchId) return true;
-      seedStoredBranchIds(employee);
       return employeeHasBranch(employee, selectedBranchId);
     });
 
@@ -591,35 +584,70 @@ export default function EmployeesTab({ language, userRole, user }) {
     setBranchAssignmentsRevision((value) => value + 1);
   };
 
-  const handleAddEmployeeBranch = () => {
+  const persistEmployeeBranches = async (employee, branchIds, primaryBranchId = null) => {
+    const normalizedIds = Array.from(new Set(branchIds.map(String).filter(Boolean)));
+    if (normalizedIds.length === 0) {
+      throw new Error('branch_ids required');
+    }
+
+    const currentPrimary = normalizeBranchId(primaryBranchId ?? getPrimaryBranchId(employee));
+    const primaryId = currentPrimary && normalizedIds.includes(currentPrimary)
+      ? currentPrimary
+      : normalizedIds[0];
+
+    await replaceEmployeeBranches(employee.id, {
+      branch_ids: normalizedIds.map(Number),
+      primary_branch_id: Number(primaryId),
+    });
+  };
+
+  const normalizeBranchId = (value) => {
+    if (value == null || value === '') return null;
+    return String(value);
+  };
+
+  const handleAddEmployeeBranch = async () => {
     if (!selectedEmployee || !branchToAddId) return;
 
     clearMessages();
-    const nextIds = addEmployeeBranch(selectedEmployee, branchToAddId, branches);
-    setStoredBranchIds(selectedEmployee.id, nextIds);
-    setSelectedEmployeeBranchIds(nextIds);
-    setBranchToAddId('');
-    bumpBranchAssignments();
-    setSuccessMessage(t.assignmentsSaved);
+    setIsSubmitting(true);
+
+    try {
+      const currentIds = getEmployeeBranchIds(selectedEmployee);
+      const nextIds = Array.from(new Set([...currentIds, String(branchToAddId)]));
+      await persistEmployeeBranches(selectedEmployee, nextIds);
+      await reloadEmployees(selectedEmployee.id);
+      bumpBranchAssignments();
+      setBranchToAddId('');
+      setSuccessMessage(t.assignmentsSaved);
+    } catch (error) {
+      setErrorMessage(getFriendlyError(error, t.assignmentsError));
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   const handleRemoveEmployeeBranch = async (branchId) => {
     if (!selectedEmployee) return;
 
     clearMessages();
-    const nextIds = removeEmployeeBranch(selectedEmployee, branchId);
-    setSelectedEmployeeBranchIds(nextIds);
-    bumpBranchAssignments();
+    const nextIds = getEmployeeBranchIds(selectedEmployee).filter((id) => String(id) !== String(branchId));
+    if (nextIds.length === 0) {
+      setErrorMessage(t.assignmentsError);
+      return;
+    }
 
-    const primaryBranchId = nextIds[0] ? Number(nextIds[0]) : null;
+    setIsSubmitting(true);
 
     try {
-      await updateEmployeeBranch(selectedEmployee.id, { branch_id: primaryBranchId });
+      await persistEmployeeBranches(selectedEmployee, nextIds);
       await reloadEmployees(selectedEmployee.id);
+      bumpBranchAssignments();
       setSuccessMessage(t.assignmentsSaved);
     } catch (error) {
-      setStoredBranchIds(selectedEmployee.id, nextIds);
       setErrorMessage(getFriendlyError(error, t.assignmentsError));
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
@@ -635,14 +663,6 @@ export default function EmployeesTab({ language, userRole, user }) {
           ? Number(selectedEmployeeDetails.position_id)
           : null,
       });
-
-      setStoredBranchIds(selectedEmployee.id, selectedEmployeeBranchIds);
-
-      const primaryBranchId = selectedEmployeeBranchIds[0]
-        ? Number(selectedEmployeeBranchIds[0])
-        : null;
-
-      await updateEmployeeBranch(selectedEmployee.id, { branch_id: primaryBranchId });
 
       await reloadEmployees(selectedEmployee.id);
       bumpBranchAssignments();
