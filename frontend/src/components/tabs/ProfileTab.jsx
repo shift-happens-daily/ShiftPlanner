@@ -37,6 +37,7 @@ export default function ProfileTab({ language, user }) {
       refresh: 'Обновить',
       empty: 'Нет данных',
       noCompany: 'Не привязана',
+      pendingApproval: 'Ожидает подтверждения менеджера',
       manager: 'Менеджер',
       employee: 'Сотрудник',
       refreshError: 'Не удалось обновить профиль.',
@@ -68,6 +69,7 @@ export default function ProfileTab({ language, user }) {
       refresh: 'Refresh',
       empty: 'No data',
       noCompany: 'Not linked',
+      pendingApproval: 'Waiting for manager approval',
       manager: 'Manager',
       employee: 'Employee',
       refreshError: 'Failed to refresh profile.',
@@ -93,6 +95,7 @@ export default function ProfileTab({ language, user }) {
   const role = user?.role;
   const isManager = role === 'manager';
   const isEmployee = role === 'employee';
+  const isPendingEmployee = isEmployee && user?.employeeStatus === 'pending';
   const hasCompany = Boolean(user?.company);
 
   const { branchesLabel } = useUserBranches(user);
@@ -156,8 +159,8 @@ export default function ProfileTab({ language, user }) {
 
   rows.push({
     label: t.company,
-    value: companyName || t.noCompany,
-    muted: !companyName,
+    value: companyName || (isPendingEmployee ? t.pendingApproval : t.noCompany),
+    muted: !companyName && !isPendingEmployee,
   });
 
   if (isEmployee) {

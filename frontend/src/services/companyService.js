@@ -39,6 +39,21 @@ export async function joinCompany(payload) {
   return response.data;
 }
 
+export async function listEmployeeRequests() {
+  const response = await api.get('/companies/me/employee-requests');
+  return response.data;
+}
+
+export async function acceptEmployeeRequest(requestId, payload = {}) {
+  const response = await api.post(`/companies/me/employee-requests/${requestId}/accept`, payload);
+  return response.data;
+}
+
+export async function declineEmployeeRequest(requestId) {
+  const response = await api.post(`/companies/me/employee-requests/${requestId}/decline`);
+  return response.data;
+}
+
 export async function linkUserToCompany(payload) {
   const response = await api.post('/companies/me/link-user', payload);
   return response.data;

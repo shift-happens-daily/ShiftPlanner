@@ -2,11 +2,14 @@
 import { useEffect, useState } from 'react';
 import { useAuth } from '../../context/useAuth';
 import {
+  acceptEmployeeRequest,
   createBranch,
   createCompany,
+  declineEmployeeRequest,
   deleteBranch,
   joinCompany,
   listBranches,
+  listEmployeeRequests,
   previewInviteCode,
   regenerateInviteCode,
 } from '../../services/companyService';
@@ -88,6 +91,7 @@ export default function CompanyTab({ language, userRole, user }) {
   const [branchName, setBranchName] = useState('');
 
   const [companyName, setCompanyName] = useState('');
+  const [employeeRequests, setEmployeeRequests] = useState([]);
 
   const [errorMessage, setErrorMessage] = useState('');
   const [successMessage, setSuccessMessage] = useState('');
@@ -151,10 +155,23 @@ export default function CompanyTab({ language, userRole, user }) {
       noPositionSelected: 'Без позиции',
       noBranchesAssigned: 'Филиалы не назначены',
       positionsHint: '',
-      employeeHint: 'После присоединения вкладки расписания и отчетов станут доступны.',
+      employeeHint: 'После подтверждения менеджером станут доступны расписание и отчёты.',
       managerHint: 'Скопируйте инвайт-код и отправьте его сотрудникам.',
       inviteFound: 'Инвайт-код найден.',
       joinSuccess: 'Вы успешно присоединились к компании!',
+      joinPending: 'Заявка отправлена. Дождитесь подтверждения менеджера во вкладке «Компания».',
+      pendingTitle: 'Заявка на рассмотрении',
+      pendingText: 'Менеджер компании должен принять вашу заявку. После этого здесь появятся филиал и позиция.',
+      employeeRequests: 'Заявки сотрудников',
+      employeeRequestsHint: 'Примите или отклоните заявки на вступление в компанию.',
+      noEmployeeRequests: 'Нет ожидающих заявок.',
+      acceptRequest: 'Принять',
+      declineRequest: 'Отклонить',
+      requestAccepted: 'Сотрудник принят.',
+      requestDeclined: 'Заявка отклонена.',
+      requestActionError: 'Не удалось обработать заявку.',
+      requestBranches: 'Филиалы в заявке',
+      requestPosition: 'Позиция в заявке',
     },
     en: {
       title: 'Company',
@@ -213,16 +230,30 @@ export default function CompanyTab({ language, userRole, user }) {
       noPositionSelected: 'No position selected',
       noBranchesAssigned: 'No branches assigned',
       positionsHint: '',
-      employeeHint: 'After joining, schedule and reports tabs become available.',
+      employeeHint: 'Schedule and reports become available after a manager approves your request.',
       managerHint: 'Copy the invite code and send it to employees.',
       inviteFound: 'Invite found.',
       joinSuccess: 'You have successfully joined the company!',
+      joinPending: 'Request submitted. Wait for manager approval in the Company tab.',
+      pendingTitle: 'Request pending',
+      pendingText: 'A company manager must approve your request. Branch and position will appear here after approval.',
+      employeeRequests: 'Employee requests',
+      employeeRequestsHint: 'Approve or decline join requests.',
+      noEmployeeRequests: 'No pending requests.',
+      acceptRequest: 'Accept',
+      declineRequest: 'Decline',
+      requestAccepted: 'Employee accepted.',
+      requestDeclined: 'Request declined.',
+      requestActionError: 'Failed to process the request.',
+      requestBranches: 'Requested branches',
+      requestPosition: 'Requested position',
     },
   };
 
   const t = texts[language] || texts.ru;
   const isManager = userRole === 'manager';
   const isEmployee = userRole === 'employee';
+  const isPendingEmployee = isEmployee && user?.employeeStatus === 'pending';
 
   const currentCompany = user?.company || null;
   const currentPosition = user?.position || null;
@@ -257,6 +288,20 @@ export default function CompanyTab({ language, userRole, user }) {
     }
   };
 
+  const loadEmployeeRequests = async () => {
+    if (!isManager || !currentCompanyId) {
+      setEmployeeRequests([]);
+      return;
+    }
+
+    try {
+      const data = await listEmployeeRequests();
+      setEmployeeRequests(normalizeArray(data));
+    } catch {
+      setEmployeeRequests([]);
+    }
+  };
+
   useEffect(() => {
     if (!isManager || !currentCompanyId) {
       setBranches([]);
@@ -264,6 +309,10 @@ export default function CompanyTab({ language, userRole, user }) {
     }
 
     void loadBranches(currentCompanyId);
+  }, [isManager, currentCompanyId]);
+
+  useEffect(() => {
+    void loadEmployeeRequests();
   }, [isManager, currentCompanyId]);
 
   const handlePreview = async () => {
@@ -301,10 +350,10 @@ export default function CompanyTab({ language, userRole, user }) {
     setIsSubmitting(true);
 
     try {
-      await joinCompany({
+      const joinedProfile = await joinCompany({
         invite_code: inviteCode.trim(),
-        branch_id: selectedJoinBranchId || null,
-        position_id: selectedJoinPositionId || null,
+        branch_id: selectedJoinBranchId ? Number(selectedJoinBranchId) : null,
+        position_id: selectedJoinPositionId ? Number(selectedJoinPositionId) : null,
       });
 
       await refreshUser();
@@ -313,7 +362,9 @@ export default function CompanyTab({ language, userRole, user }) {
       setInvitePreview(null);
       setSelectedJoinBranchId('');
       setSelectedJoinPositionId('');
-      setSuccessMessage(t.joinSuccess);
+      setSuccessMessage(
+        joinedProfile?.employee_status === 'pending' ? t.joinPending : t.joinSuccess
+      );
     } catch (error) {
       setErrorMessage(extractApiErrorMessage(error, null, language));
     } finally {
@@ -419,6 +470,45 @@ export default function CompanyTab({ language, userRole, user }) {
     }
   };
 
+  const getRequestBranchesLabel = (request) => {
+    const labels = normalizeArray(request?.branches)
+      .map((branch) => branch?.name || branch?.title)
+      .filter(Boolean);
+    return labels.length > 0 ? labels.join(', ') : '—';
+  };
+
+  const handleAcceptEmployeeRequest = async (requestId) => {
+    clearMessages();
+    setIsSubmitting(true);
+
+    try {
+      await acceptEmployeeRequest(requestId);
+      await loadEmployeeRequests();
+      setSuccessMessage(t.requestAccepted);
+    } catch (error) {
+      setErrorMessage(extractApiErrorMessage(error, t.requestActionError, language));
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const handleDeclineEmployeeRequest = async (requestId) => {
+    if (!window.confirm(language === 'en' ? 'Decline this request?' : 'Отклонить заявку?')) return;
+
+    clearMessages();
+    setIsSubmitting(true);
+
+    try {
+      await declineEmployeeRequest(requestId);
+      await loadEmployeeRequests();
+      setSuccessMessage(t.requestDeclined);
+    } catch (error) {
+      setErrorMessage(extractApiErrorMessage(error, t.requestActionError, language));
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
   const handleRegenerateInviteCode = async () => {
     if (!currentCompanyId) return;
     if (!window.confirm(t.confirmRegenerate)) return;
@@ -451,7 +541,12 @@ export default function CompanyTab({ language, userRole, user }) {
           <div style={styles.section}>
             <h3 style={styles.sectionTitle}>{t.currentCompany}</h3>
 
-            {currentCompany ? (
+            {isPendingEmployee ? (
+              <div style={styles.pendingPanel}>
+                <strong style={styles.pendingTitle}>{t.pendingTitle}</strong>
+                <span style={styles.pendingText}>{t.pendingText}</span>
+              </div>
+            ) : currentCompany ? (
               <div style={styles.companyPanel}>
                 <span style={styles.panelLabel}>{t.company}</span>
                 <strong style={styles.companyTitle}>{currentCompany.name || t.empty}</strong>
@@ -595,7 +690,55 @@ export default function CompanyTab({ language, userRole, user }) {
           </div>
         )}
 
-        {isEmployee && !currentCompany && (
+        {isManager && currentCompany && (
+          <div style={{ ...styles.card, ...r.card }}>
+            <div style={styles.section}>
+              <h3 style={styles.sectionTitle}>{t.employeeRequests}</h3>
+              <p style={styles.hint}>{t.employeeRequestsHint}</p>
+
+              <div style={styles.requestList}>
+                {employeeRequests.length === 0 ? (
+                  <p style={styles.emptyText}>{t.noEmployeeRequests}</p>
+                ) : (
+                  employeeRequests.map((request) => (
+                    <div key={request.id} style={styles.requestItem}>
+                      <div style={styles.requestMain}>
+                        <strong style={styles.requestName}>{request.full_name || request.email}</strong>
+                        <span style={styles.requestMeta}>{request.email}</span>
+                        <span style={styles.requestMeta}>
+                          {t.requestBranches}: {getRequestBranchesLabel(request)}
+                        </span>
+                        <span style={styles.requestMeta}>
+                          {t.requestPosition}: {getName(request.position)}
+                        </span>
+                      </div>
+                      <div style={styles.requestActions}>
+                        <button
+                          type="button"
+                          onClick={() => handleAcceptEmployeeRequest(request.id)}
+                          style={isSubmitting ? styles.primaryButtonDisabled : styles.primaryButton}
+                          disabled={isSubmitting}
+                        >
+                          {t.acceptRequest}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleDeclineEmployeeRequest(request.id)}
+                          style={isSubmitting ? styles.secondaryButtonDisabled : styles.secondaryButton}
+                          disabled={isSubmitting}
+                        >
+                          {t.declineRequest}
+                        </button>
+                      </div>
+                    </div>
+                  ))
+                )}
+              </div>
+            </div>
+          </div>
+        )}
+
+        {isEmployee && !currentCompany && !isPendingEmployee && (
           <div style={{ ...styles.card, ...r.card }}>
             <div style={styles.section}>
               <h3 style={styles.sectionTitle}>{t.joinCompany}</h3>
@@ -1155,5 +1298,69 @@ const styles = {
     color: '#002642',
     fontSize: '13px',
     fontWeight: '700',
+  },
+
+  pendingPanel: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '8px',
+    padding: '16px 18px',
+    borderRadius: '18px',
+    background: 'rgba(215, 173, 207, 0.18)',
+    border: '1px solid rgba(215, 173, 207, 0.45)',
+  },
+
+  pendingTitle: {
+    color: '#002642',
+    fontSize: '16px',
+    fontWeight: '850',
+  },
+
+  pendingText: {
+    color: '#475569',
+    fontSize: '14px',
+    lineHeight: 1.5,
+  },
+
+  requestList: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '12px',
+  },
+
+  requestItem: {
+    display: 'flex',
+    flexWrap: 'wrap',
+    alignItems: 'flex-start',
+    justifyContent: 'space-between',
+    gap: '12px',
+    padding: '16px 18px',
+    borderRadius: '18px',
+    background: '#ffffff',
+    border: '1px solid rgba(226, 232, 240, 0.98)',
+  },
+
+  requestMain: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '4px',
+    minWidth: '220px',
+  },
+
+  requestName: {
+    color: '#002642',
+    fontSize: '15px',
+    fontWeight: '800',
+  },
+
+  requestMeta: {
+    color: '#64748b',
+    fontSize: '13px',
+  },
+
+  requestActions: {
+    display: 'flex',
+    flexWrap: 'wrap',
+    gap: '8px',
   },
 };

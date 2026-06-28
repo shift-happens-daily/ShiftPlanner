@@ -51,6 +51,33 @@ export default function DashboardTabs({ userRole, language, title, rightSlot }) 
   ));
 
   const { user } = useAuth();
+  const isEmployeePending = userRole === 'employee' && user?.employeeStatus === 'pending';
+
+  const pendingTexts = {
+    ru: {
+      title: 'Ожидается подтверждение',
+      text: 'Менеджер должен принять вашу заявку во вкладке «Компания». После этого откроются расписание, смены и отчёты.',
+      action: 'Перейти в «Компания»',
+    },
+    en: {
+      title: 'Waiting for approval',
+      text: 'A manager must approve your request in the Company tab. Schedule, shifts, and reports will unlock after approval.',
+      action: 'Open Company tab',
+    },
+  };
+  const pendingT = pendingTexts[language] || pendingTexts.ru;
+
+  const renderPendingNotice = () => (
+    <section style={pendingStyles.page}>
+      <div style={pendingStyles.card}>
+        <h2 style={pendingStyles.title}>{pendingT.title}</h2>
+        <p style={pendingStyles.text}>{pendingT.text}</p>
+        <button type="button" onClick={() => handleTabClick('company')} style={pendingStyles.button}>
+          {pendingT.action}
+        </button>
+      </div>
+    </section>
+  );
 
   const tabLabels = {
     ru: {
@@ -137,6 +164,10 @@ export default function DashboardTabs({ userRole, language, title, rightSlot }) 
   };
 
   const renderContent = () => {
+    if (isEmployeePending && ['schedule', 'shifts', 'reports'].includes(safeActiveTab)) {
+      return renderPendingNotice();
+    }
+
     switch (safeActiveTab) {
       case 'profile':
         return <ProfileTab {...sharedProps} />;
@@ -498,5 +529,47 @@ const styles = {
     background: '#dee7e7',
     borderTop: '1px solid rgba(79, 100, 111, 0.16)',
     boxShadow: '0 -8px 24px rgba(0, 38, 66, 0.08)',
+  },
+};
+
+const pendingStyles = {
+  page: {
+    width: '100%',
+    boxSizing: 'border-box',
+    padding: '22px',
+  },
+  card: {
+    maxWidth: '720px',
+    margin: '40px auto',
+    padding: '28px',
+    borderRadius: '24px',
+    background: '#f4faff',
+    border: '1px solid rgba(222, 231, 231, 0.95)',
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '14px',
+  },
+  title: {
+    margin: 0,
+    color: '#002642',
+    fontSize: '24px',
+    fontWeight: '850',
+  },
+  text: {
+    margin: 0,
+    color: '#475569',
+    fontSize: '15px',
+    lineHeight: 1.55,
+  },
+  button: {
+    alignSelf: 'flex-start',
+    height: '42px',
+    padding: '0 16px',
+    border: 'none',
+    borderRadius: '14px',
+    background: '#d7adcf',
+    color: '#002642',
+    fontWeight: '800',
+    cursor: 'pointer',
   },
 };
