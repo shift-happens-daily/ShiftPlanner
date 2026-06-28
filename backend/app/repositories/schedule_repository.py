@@ -108,9 +108,9 @@ def create_schedule(
         db.scalars(
             select(Schedule).where(
                 Schedule.company_id == company_id,
-                Schedule.start_date == start_date,
-                Schedule.end_date == end_date,
                 Schedule.status == "draft",
+                Schedule.start_date <= end_date,
+                Schedule.end_date >= start_date,
             )
         )
     )
@@ -154,6 +154,24 @@ def get_latest_schedule(
     if schedule_status is not None:
         query = query.where(Schedule.status == schedule_status)
     return db.scalars(query.order_by(Schedule.id.desc())).first()
+
+
+def list_schedules(
+    db: Session,
+    *,
+    company_id: int,
+    start_date: date | None = None,
+    end_date: date | None = None,
+    schedule_status: str | None = None,
+) -> list[Schedule]:
+    query = select(Schedule).where(Schedule.company_id == company_id)
+    if start_date is not None:
+        query = query.where(Schedule.end_date >= start_date)
+    if end_date is not None:
+        query = query.where(Schedule.start_date <= end_date)
+    if schedule_status is not None:
+        query = query.where(Schedule.status == schedule_status)
+    return list(db.scalars(query.order_by(Schedule.start_date, Schedule.id)))
 
 
 def list_schedule_shift_rows(db: Session, schedule_id: int) -> list[dict]:
@@ -496,8 +514,12 @@ def list_published_shift_rows_for_employee_period(
             ShiftAssignment.status,
             Position.id.label("position_id"),
             Position.name.label("position_name"),
+            Employee.id.label("employee_id"),
+            User.full_name.label("employee_name"),
         )
         .join(ShiftAssignment, ShiftAssignment.shift_id == Shift.id)
+        .join(Employee, Employee.id == ShiftAssignment.employee_id)
+        .join(User, User.id == Employee.user_id)
         .join(Schedule, Schedule.id == Shift.schedule_id)
         .join(Position, Position.id == Shift.position_id)
         .where(

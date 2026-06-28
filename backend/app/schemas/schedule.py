@@ -128,6 +128,8 @@ class UnfilledRequirementRead(BaseModel):
 
 class ScheduleRead(BaseModel):
     id: int
+    start_date: date
+    end_date: date
     status: Literal["draft", "published", "archived"]
     shifts: list[ShiftRead]
     conflicts: list[ScheduleConflictRead]

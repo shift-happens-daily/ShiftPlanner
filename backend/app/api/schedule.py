@@ -120,16 +120,44 @@ def generate_schedule(
 
 
 @router.get(
+    "",
+    response_model=list[ScheduleRead],
+    responses={**UNAUTHORIZED_RESPONSE, **FORBIDDEN_RESPONSE, **VALIDATION_ERROR_RESPONSE},
+)
+def get_schedules(
+    date_from: date | None = Query(default=None),
+    date_to: date | None = Query(default=None),
+    schedule_status: Literal["draft", "published", "archived"] | None = Query(default=None, alias="status"),
+    current_user: UserRead = Depends(require_role("manager")),
+    db: Session = Depends(get_db),
+) -> list[ScheduleRead]:
+    return schedule_service.list_schedules(
+        db,
+        current_user,
+        start_date=date_from,
+        end_date=date_to,
+        schedule_status=schedule_status,
+    )
+
+
+@router.get(
     "/my",
     response_model=list[ShiftRead],
-    responses={**BAD_REQUEST_RESPONSE, **UNAUTHORIZED_RESPONSE, **FORBIDDEN_RESPONSE},
+    responses={**BAD_REQUEST_RESPONSE, **UNAUTHORIZED_RESPONSE, **FORBIDDEN_RESPONSE, **VALIDATION_ERROR_RESPONSE},
 )
 def get_my_schedule(
+    date_from: date | None = Query(default=None),
+    date_to: date | None = Query(default=None),
     current_user: UserRead = Depends(require_role("employee")),
     db: Session = Depends(get_db),
 ) -> list[ShiftRead]:
     ensure_employee_user(current_user)
-    return schedule_service.list_my_schedule(db, current_user)
+    return schedule_service.list_my_schedule(
+        db,
+        current_user,
+        start_date=date_from,
+        end_date=date_to,
+    )
 
 
 @router.post(
