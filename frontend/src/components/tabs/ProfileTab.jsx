@@ -5,6 +5,8 @@ import { deleteAccountRequest } from '../../services/authService';
 import { leaveCompany, updateMyPosition } from '../../services/employeeService';
 import { extractApiErrorMessage } from '../../services/error';
 import { createPosition, listPositions } from '../../services/positionService';
+import { listBranches } from '../../services/companyService';
+import { getUserBranchesLabel } from '../../utils/employeeBranches';
 import { useTabResponsive } from '../../utils/tabResponsive';
 
 function getPositionLabel(position) {
@@ -20,6 +22,7 @@ export default function ProfileTab({ language, user }) {
   const [errorMessage, setErrorMessage] = useState('');
   const [successMessage, setSuccessMessage] = useState('');
   const [positions, setPositions] = useState([]);
+  const [companyBranches, setCompanyBranches] = useState([]);
   const [selectedPositionId, setSelectedPositionId] = useState('');
   const [newPositionTitle, setNewPositionTitle] = useState('');
 
@@ -33,6 +36,7 @@ export default function ProfileTab({ language, user }) {
       employeeId: 'ID сотрудника',
       company: 'Компания',
       branch: 'Филиал',
+      branches: 'Филиалы',
       position: 'Позиция',
       refresh: 'Обновить',
       empty: 'Нет данных',
@@ -68,6 +72,7 @@ export default function ProfileTab({ language, user }) {
       employeeId: 'Employee ID',
       company: 'Company',
       branch: 'Branch',
+      branches: 'Branches',
       position: 'Position',
       refresh: 'Refresh',
       empty: 'No data',
@@ -108,8 +113,39 @@ export default function ProfileTab({ language, user }) {
   const employeeId = user?.employeeId || user?.employee_id;
 
   const companyName = user?.company?.name;
-  const branchName = user?.branch?.name;
+  const branchesLabel = getUserBranchesLabel(user, companyBranches);
   const positionName = user?.position?.name;
+
+  useEffect(() => {
+    if (!hasCompany) {
+      setCompanyBranches([]);
+      return undefined;
+    }
+
+    const companyId = user?.company?.id || user?.company_id;
+    if (!companyId) return undefined;
+
+    let cancelled = false;
+
+    async function loadBranches() {
+      try {
+        const data = await listBranches(companyId);
+        if (!cancelled) {
+          setCompanyBranches(Array.isArray(data) ? data : []);
+        }
+      } catch {
+        if (!cancelled) {
+          setCompanyBranches([]);
+        }
+      }
+    }
+
+    void loadBranches();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [hasCompany, user?.company?.id, user?.company_id]);
 
   useEffect(() => {
     if (!isEmployee || !hasCompany) {
@@ -175,9 +211,9 @@ export default function ProfileTab({ language, user }) {
         muted: !employeeId,
       },
       {
-        label: t.branch,
-        value: branchName || t.empty,
-        muted: !branchName,
+        label: t.branches,
+        value: branchesLabel || t.empty,
+        muted: !branchesLabel,
       },
       {
         label: t.position,

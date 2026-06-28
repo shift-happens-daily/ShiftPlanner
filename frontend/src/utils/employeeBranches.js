@@ -1,0 +1,221 @@
+const STORAGE_KEY = 'shiftplanner_employee_branch_ids';
+
+function readStore() {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    return raw ? JSON.parse(raw) : {};
+  } catch {
+    return {};
+  }
+}
+
+function writeStore(store) {
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(store));
+}
+
+export function getPrimaryBranchId(employee) {
+  if (!employee) return null;
+  return employee.branch?.id ?? employee.branch_id ?? employee.branchId ?? null;
+}
+
+function normalizeBranchId(value) {
+  if (value == null || value === '') return null;
+  return String(value);
+}
+
+function branchIdsFromApiList(branches) {
+  if (!Array.isArray(branches) || branches.length === 0) return [];
+  return branches
+    .map((branch) => normalizeBranchId(branch?.id ?? branch?.branch_id ?? branch))
+    .filter(Boolean);
+}
+
+export function getStoredBranchIds(employeeId) {
+  if (employeeId == null || employeeId === '') return [];
+  const stored = readStore()[String(employeeId)];
+  return Array.isArray(stored) ? stored.map(String).filter(Boolean) : [];
+}
+
+export function setStoredBranchIds(employeeId, branchIds) {
+  if (employeeId == null || employeeId === '') return;
+  const store = readStore();
+  const normalized = Array.from(new Set((branchIds || []).map(normalizeBranchId).filter(Boolean)));
+  if (normalized.length === 0) {
+    delete store[String(employeeId)];
+  } else {
+    store[String(employeeId)] = normalized;
+  }
+  writeStore(store);
+}
+
+export function clearStoredBranchIds(employeeId) {
+  if (employeeId == null || employeeId === '') return;
+  const store = readStore();
+  delete store[String(employeeId)];
+  writeStore(store);
+}
+
+export function seedStoredBranchIds(employee) {
+  if (!employee?.id) return [];
+  const existing = getStoredBranchIds(employee.id);
+  if (existing.length > 0) return existing;
+
+  const apiIds = branchIdsFromApiList(employee.branches);
+  if (apiIds.length > 0) {
+    setStoredBranchIds(employee.id, apiIds);
+    return apiIds;
+  }
+
+  const primaryId = normalizeBranchId(getPrimaryBranchId(employee));
+  if (primaryId) {
+    setStoredBranchIds(employee.id, [primaryId]);
+    return [primaryId];
+  }
+
+  return [];
+}
+
+export function getEmployeeBranchIds(employee) {
+  if (!employee) return [];
+
+  const apiIds = branchIdsFromApiList(employee.branches);
+  if (apiIds.length > 0) return apiIds;
+
+  const stored = getStoredBranchIds(employee.id);
+  if (stored.length > 0) return stored;
+
+  const primaryId = normalizeBranchId(getPrimaryBranchId(employee));
+  return primaryId ? [primaryId] : [];
+}
+
+export function resolveBranchById(branchId, allBranches = [], employee = null) {
+  const id = normalizeBranchId(branchId);
+  if (!id) return null;
+
+  const fromEmployee = Array.isArray(employee?.branches)
+    ? employee.branches.find((branch) => normalizeBranchId(branch?.id ?? branch?.branch_id) === id)
+    : null;
+  if (fromEmployee) return fromEmployee;
+
+  if (normalizeBranchId(employee?.branch?.id) === id && employee?.branch) {
+    return employee.branch;
+  }
+
+  const fromList = (allBranches || []).find((branch) => normalizeBranchId(branch?.id) === id);
+  if (fromList) return fromList;
+
+  return { id: branchId, name: `#${id}` };
+}
+
+export function resolveEmployeeBranches(employee, allBranches = []) {
+  return getEmployeeBranchIds(employee)
+    .map((branchId) => resolveBranchById(branchId, allBranches, employee))
+    .filter(Boolean);
+}
+
+export function getEmployeeBranchesLabel(employee, allBranches = []) {
+  const labels = resolveEmployeeBranches(employee, allBranches)
+    .map((branch) => branch.name || branch.title || branch.branch_name)
+    .filter(Boolean);
+  return labels.join(', ');
+}
+
+export function employeeHasBranch(employee, branchId) {
+  if (!branchId) return true;
+  const targetId = normalizeBranchId(branchId);
+  return getEmployeeBranchIds(employee).some((id) => id === targetId);
+}
+
+export function addEmployeeBranch(employee, branchId, allBranches = []) {
+  const employeeId = employee?.id;
+  const nextId = normalizeBranchId(branchId);
+  if (!employeeId || !nextId) return getEmployeeBranchIds(employee);
+
+  const current = getEmployeeBranchIds(employee);
+  if (current.includes(nextId)) return current;
+
+  const next = [...current, nextId];
+  setStoredBranchIds(employeeId, next);
+  return next;
+}
+
+export function removeEmployeeBranch(employee, branchId) {
+  const employeeId = employee?.id;
+  const removeId = normalizeBranchId(branchId);
+  if (!employeeId || !removeId) return getEmployeeBranchIds(employee);
+
+  const next = getEmployeeBranchIds(employee).filter((id) => id !== removeId);
+  setStoredBranchIds(employeeId, next);
+  return next;
+}
+
+export function getUserBranchIds(user) {
+  if (!user) return [];
+
+  const apiIds = branchIdsFromApiList(user.branches);
+  if (apiIds.length > 0) return apiIds;
+
+  const employeeId = user.employeeId ?? user.employee_id;
+  if (employeeId) {
+    const stored = getStoredBranchIds(employeeId);
+    if (stored.length > 0) return stored;
+  }
+
+  const primaryId = normalizeBranchId(user.branch?.id ?? user.branch_id);
+  return primaryId ? [primaryId] : [];
+}
+
+export function resolveUserBranches(user, allBranches = []) {
+  const syntheticEmployee = {
+    id: user?.employeeId ?? user?.employee_id,
+    branch: user?.branch,
+    branches: user?.branches,
+    branch_id: user?.branch_id,
+  };
+
+  return getUserBranchIds(user)
+    .map((branchId) => resolveBranchById(branchId, allBranches, syntheticEmployee))
+    .filter(Boolean);
+}
+
+export function getUserBranchesLabel(user, allBranches = []) {
+  return resolveUserBranches(user, allBranches)
+    .map((branch) => branch.name || branch.title)
+    .filter(Boolean)
+    .join(', ');
+}
+
+export function enrichReportRowBranch(item, allBranches = []) {
+  const employeeId = item?.employee_id ?? item?.id;
+  const apiBranchName =
+    item?.branch || item?.branch_name || item?.branch_title || item?.branch?.name || '';
+
+  if (!employeeId) {
+    return {
+      branch: apiBranchName || '—',
+      branchNames: apiBranchName ? [apiBranchName] : [],
+    };
+  }
+
+  const syntheticEmployee = {
+    id: employeeId,
+    branch: typeof item?.branch === 'object' ? item.branch : null,
+    branch_id: item?.branch_id,
+    branches: item?.branches,
+  };
+
+  seedStoredBranchIds(syntheticEmployee);
+  const resolved = resolveEmployeeBranches(syntheticEmployee, allBranches);
+  const branchNames = resolved
+    .map((branch) => branch.name || branch.title)
+    .filter(Boolean);
+
+  if (branchNames.length === 0 && apiBranchName) {
+    branchNames.push(apiBranchName);
+  }
+
+  return {
+    branch: branchNames.length > 0 ? branchNames.join(', ') : '—',
+    branchNames,
+  };
+}
