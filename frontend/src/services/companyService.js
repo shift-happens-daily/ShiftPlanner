@@ -10,6 +10,10 @@ export async function createBranch(companyId, payload) {
   return data;
 }
 
+export async function deleteBranch(branchId) {
+  await api.delete(`/companies/branches/${branchId}`);
+}
+
 export async function listCompanies() {
   const response = await api.get('/companies/');
   return response.data;

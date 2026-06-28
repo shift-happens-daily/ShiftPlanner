@@ -4,12 +4,15 @@ import { useAuth } from '../../context/useAuth';
 import {
   createBranch,
   createCompany,
+  deleteBranch,
   joinCompany,
   listBranches,
   previewInviteCode,
   regenerateInviteCode,
 } from '../../services/companyService';
 import { extractApiErrorMessage } from '../../services/error';
+import { useUserBranches } from '../../hooks/useUserBranches';
+import { removeBranchFromAllStoredAssignments } from '../../utils/employeeBranches';
 import { useTabResponsive } from '../../utils/tabResponsive';
 
 function normalizeArray(value) {
@@ -136,11 +139,17 @@ export default function CompanyTab({ language, userRole, user }) {
       branchName: '',
       branchPlaceholder: 'Например: Main Branch',
       branchCreated: 'Филиал создан.',
+      branchDeleted: 'Филиал удалён.',
       createBranchError: 'Не удалось создать филиал.',
+      deleteBranch: 'Удалить',
+      confirmDeleteBranch: 'Удалить филиал «{name}»?',
+      branchDeleteError: 'Не удалось удалить филиал.',
+      branchInUse: 'Нельзя удалить: филиал назначен сотрудникам или используется в требованиях.',
       createCompanyFirst: 'Сначала создайте компанию.',
       branchRequired: 'Введите название филиала.',
       noBranchSelected: 'Без филиала',
       noPositionSelected: 'Без позиции',
+      noBranchesAssigned: 'Филиалы не назначены',
       positionsHint: '',
       employeeHint: 'После присоединения вкладки расписания и отчетов станут доступны.',
       managerHint: 'Скопируйте инвайт-код и отправьте его сотрудникам.',
@@ -192,11 +201,17 @@ export default function CompanyTab({ language, userRole, user }) {
       branchName: '',
       branchPlaceholder: 'Example: Main Branch',
       branchCreated: 'Branch created.',
+      branchDeleted: 'Branch deleted.',
       createBranchError: 'Failed to create branch.',
+      deleteBranch: 'Delete',
+      confirmDeleteBranch: 'Delete branch "{name}"?',
+      branchDeleteError: 'Failed to delete branch.',
+      branchInUse: 'Cannot delete: branch is assigned to employees or used in requirements.',
       createCompanyFirst: 'Create a company first.',
       branchRequired: 'Enter branch name.',
       noBranchSelected: 'No branch selected',
       noPositionSelected: 'No position selected',
+      noBranchesAssigned: 'No branches assigned',
       positionsHint: '',
       employeeHint: 'After joining, schedule and reports tabs become available.',
       managerHint: 'Copy the invite code and send it to employees.',
@@ -210,9 +225,9 @@ export default function CompanyTab({ language, userRole, user }) {
   const isEmployee = userRole === 'employee';
 
   const currentCompany = user?.company || null;
-  const currentBranch = user?.branch || null;
   const currentPosition = user?.position || null;
   const currentCompanyId = getCompanyId(currentCompany);
+  const { userBranches } = useUserBranches(user);
 
   const effectiveInviteCode = getInviteCode(currentCompany);
 
@@ -333,6 +348,37 @@ export default function CompanyTab({ language, userRole, user }) {
     }
   };
 
+  const handleDeleteBranch = async (branch) => {
+    if (!branch?.id || !currentCompanyId) return;
+
+    const branchTitle = getName(branch);
+    const confirmMessage = t.confirmDeleteBranch.replace('{name}', branchTitle);
+    if (!window.confirm(confirmMessage)) return;
+
+    clearMessages();
+    setIsSubmitting(true);
+
+    try {
+      await deleteBranch(branch.id);
+      removeBranchFromAllStoredAssignments(branch.id);
+      await loadBranches(currentCompanyId);
+      setSuccessMessage(t.branchDeleted);
+    } catch (error) {
+      const status = error?.response?.status;
+      const detail = error?.response?.data?.detail;
+      if (
+        status === 409
+        || (typeof detail === 'string' && detail.toLowerCase().includes('cannot be deleted'))
+      ) {
+        setErrorMessage(t.branchInUse);
+      } else {
+        setErrorMessage(extractApiErrorMessage(error, t.branchDeleteError, language));
+      }
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
   const handleCreateBranch = async () => {
     if (!currentCompanyId) {
       setErrorMessage(t.createCompanyFirst);
@@ -440,7 +486,20 @@ export default function CompanyTab({ language, userRole, user }) {
 
                 {isEmployee && (
                   <div style={{ ...styles.infoGrid, gridTemplateColumns: r.gridCols('1fr 1fr') }}>
-                    <InfoItem label={t.branch} value={getName(currentBranch)} />
+                    <div style={styles.infoItem}>
+                      <span style={styles.infoLabel}>{t.branches}</span>
+                      {userBranches.length === 0 ? (
+                        <strong style={styles.infoValue}>{t.noBranchesAssigned}</strong>
+                      ) : (
+                        <div style={styles.assignedBranchList}>
+                          {userBranches.map((branch) => (
+                            <span key={branch.id} style={styles.assignedBranchPill}>
+                              {getName(branch)}
+                            </span>
+                          ))}
+                        </div>
+                      )}
+                    </div>
                     <InfoItem label={t.position} value={getName(currentPosition)} />
                   </div>
                 )}
@@ -514,7 +573,20 @@ export default function CompanyTab({ language, userRole, user }) {
                 ) : (
                   branches.map((branch) => (
                     <div key={branch.id} style={styles.branchItem}>
-                      {getName(branch)}
+                      <span style={styles.branchItemName}>{getName(branch)}</span>
+                      <button
+                        type="button"
+                        onClick={() => handleDeleteBranch(branch)}
+                        style={
+                          isSubmitting
+                            ? { ...styles.branchDeleteButton, opacity: 0.5, cursor: 'not-allowed' }
+                            : styles.branchDeleteButton
+                        }
+                        disabled={isSubmitting}
+                        aria-label={`${t.deleteBranch} ${getName(branch)}`}
+                      >
+                        {t.deleteBranch}
+                      </button>
                     </div>
                   ))
                 )}
@@ -1036,12 +1108,52 @@ const styles = {
   },
 
   branchItem: {
-    padding: '14px 16px',
+    padding: '12px 14px',
     borderRadius: '16px',
     background: '#ffffff',
     border: '1px solid rgba(226, 232, 240, 0.98)',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: '10px',
+  },
+
+  branchItemName: {
     color: '#0f172a',
     fontWeight: '850',
-    textAlign: 'center',
+    overflowWrap: 'anywhere',
+  },
+
+  branchDeleteButton: {
+    flexShrink: 0,
+    height: '32px',
+    padding: '0 12px',
+    border: 'none',
+    borderRadius: '10px',
+    background: 'rgba(215, 173, 207, 0.42)',
+    color: '#8d1d1d',
+    fontSize: '12px',
+    fontWeight: '800',
+    cursor: 'pointer',
+  },
+
+  assignedBranchList: {
+    display: 'flex',
+    flexWrap: 'wrap',
+    gap: '8px',
+    marginTop: '2px',
+  },
+
+  assignedBranchPill: {
+    display: 'inline-flex',
+    alignItems: 'center',
+    minHeight: '30px',
+    padding: '0 12px',
+    borderRadius: '999px',
+    background: '#ffffff',
+    border: '1px solid #dee7e7',
+    color: '#002642',
+    fontSize: '13px',
+    fontWeight: '700',
   },
 };

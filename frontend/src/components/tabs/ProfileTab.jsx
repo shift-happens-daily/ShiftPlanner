@@ -5,8 +5,7 @@ import { deleteAccountRequest } from '../../services/authService';
 import { leaveCompany, updateMyPosition } from '../../services/employeeService';
 import { extractApiErrorMessage } from '../../services/error';
 import { createPosition, listPositions } from '../../services/positionService';
-import { listBranches } from '../../services/companyService';
-import { getUserBranchesLabel } from '../../utils/employeeBranches';
+import { useUserBranches } from '../../hooks/useUserBranches';
 import { useTabResponsive } from '../../utils/tabResponsive';
 
 function getPositionLabel(position) {
@@ -22,7 +21,6 @@ export default function ProfileTab({ language, user }) {
   const [errorMessage, setErrorMessage] = useState('');
   const [successMessage, setSuccessMessage] = useState('');
   const [positions, setPositions] = useState([]);
-  const [companyBranches, setCompanyBranches] = useState([]);
   const [selectedPositionId, setSelectedPositionId] = useState('');
   const [newPositionTitle, setNewPositionTitle] = useState('');
 
@@ -113,39 +111,8 @@ export default function ProfileTab({ language, user }) {
   const employeeId = user?.employeeId || user?.employee_id;
 
   const companyName = user?.company?.name;
-  const branchesLabel = getUserBranchesLabel(user, companyBranches);
+  const { branchesLabel } = useUserBranches(user);
   const positionName = user?.position?.name;
-
-  useEffect(() => {
-    if (!hasCompany) {
-      setCompanyBranches([]);
-      return undefined;
-    }
-
-    const companyId = user?.company?.id || user?.company_id;
-    if (!companyId) return undefined;
-
-    let cancelled = false;
-
-    async function loadBranches() {
-      try {
-        const data = await listBranches(companyId);
-        if (!cancelled) {
-          setCompanyBranches(Array.isArray(data) ? data : []);
-        }
-      } catch {
-        if (!cancelled) {
-          setCompanyBranches([]);
-        }
-      }
-    }
-
-    void loadBranches();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [hasCompany, user?.company?.id, user?.company_id]);
 
   useEffect(() => {
     if (!isEmployee || !hasCompany) {

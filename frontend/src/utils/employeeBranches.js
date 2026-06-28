@@ -1,4 +1,14 @@
-const STORAGE_KEY = 'shiftplanner_employee_branch_ids';
+export const EMPLOYEE_BRANCHES_STORAGE_KEY = 'shiftplanner_employee_branch_ids';
+export const EMPLOYEE_BRANCHES_CHANGED_EVENT = 'shiftplanner:employee-branches-changed';
+
+const STORAGE_KEY = EMPLOYEE_BRANCHES_STORAGE_KEY;
+
+function notifyBranchesChanged(employeeId) {
+  if (typeof window === 'undefined' || employeeId == null) return;
+  window.dispatchEvent(new CustomEvent(EMPLOYEE_BRANCHES_CHANGED_EVENT, {
+    detail: { employeeId: String(employeeId) },
+  }));
+}
 
 function readStore() {
   try {
@@ -46,6 +56,7 @@ export function setStoredBranchIds(employeeId, branchIds) {
     store[String(employeeId)] = normalized;
   }
   writeStore(store);
+  notifyBranchesChanged(employeeId);
 }
 
 export function clearStoredBranchIds(employeeId) {
@@ -53,6 +64,20 @@ export function clearStoredBranchIds(employeeId) {
   const store = readStore();
   delete store[String(employeeId)];
   writeStore(store);
+  notifyBranchesChanged(employeeId);
+}
+
+export function buildUserAsEmployee(user) {
+  return {
+    id: user?.employeeId ?? user?.employee_id,
+    branch: user?.branch,
+    branches: user?.branches,
+    branch_id: user?.branch_id ?? user?.branch?.id,
+  };
+}
+
+export function seedUserBranchIds(user) {
+  return seedStoredBranchIds(buildUserAsEmployee(user));
 }
 
 export function seedStoredBranchIds(employee) {
@@ -147,6 +172,32 @@ export function removeEmployeeBranch(employee, branchId) {
   const next = getEmployeeBranchIds(employee).filter((id) => id !== removeId);
   setStoredBranchIds(employeeId, next);
   return next;
+}
+
+export function removeBranchFromAllStoredAssignments(branchId) {
+  const removeId = normalizeBranchId(branchId);
+  if (!removeId) return;
+
+  const store = readStore();
+  const affectedEmployeeIds = [];
+
+  Object.keys(store).forEach((employeeId) => {
+    const current = (store[employeeId] || []).map(String).filter(Boolean);
+    const next = current.filter((id) => id !== removeId);
+    if (next.length === current.length) return;
+
+    affectedEmployeeIds.push(employeeId);
+    if (next.length === 0) {
+      delete store[employeeId];
+    } else {
+      store[employeeId] = next;
+    }
+  });
+
+  if (affectedEmployeeIds.length === 0) return;
+
+  writeStore(store);
+  affectedEmployeeIds.forEach((employeeId) => notifyBranchesChanged(employeeId));
 }
 
 export function getUserBranchIds(user) {
