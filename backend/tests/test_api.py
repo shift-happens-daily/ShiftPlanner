@@ -1,6 +1,7 @@
 from io import BytesIO
 from pathlib import Path
 import sys
+from datetime import date
 
 import psycopg
 import pytest
@@ -2160,6 +2161,241 @@ def test_manager_generation_is_company_scoped_and_publishable(client: TestClient
     visible = client.get("/schedule/my", headers=employee_headers)
     assert visible.status_code == 200, visible.text
     assert len(visible.json()) == 1
+
+
+def test_generating_four_week_period_creates_one_full_period_schedule(client: TestClient) -> None:
+    with psycopg.connect(PSYCOPG_DSN) as connection:
+        with connection.cursor() as cursor:
+            cursor.execute("UPDATE employees SET position_id = 1 WHERE id = 1")
+            cursor.execute(
+                """
+                INSERT INTO schedules (company_id, start_date, end_date, status)
+                VALUES (1, '2026-07-01', '2026-07-10', 'draft')
+                RETURNING id
+                """
+            )
+            old_overlapping_draft_id = cursor.fetchone()[0]
+
+    manager_headers = login_json(client, "manager@example.com", "manager123")
+    requirements = client.post(
+        "/schedule/requirements/bulk",
+        headers=manager_headers,
+        json={
+            "start_date": "2026-07-06",
+            "end_date": "2026-08-02",
+            "weekdays": [0, 1, 2, 3, 4],
+            "requirements": [
+                {"position_id": 1, "min_staff": 1, "start_time": "09:00:00", "end_time": "17:00:00"}
+            ],
+        },
+    )
+    assert requirements.status_code == 201, requirements.text
+
+    generated = client.post(
+        "/schedule/generate",
+        headers=manager_headers,
+        json={"start_date": "2026-07-06", "end_date": "2026-08-02"},
+    )
+    assert generated.status_code == 200, generated.text
+    generated_json = generated.json()
+    schedule_id = generated_json["id"]
+    assert generated_json["start_date"] == "2026-07-06"
+    assert generated_json["end_date"] == "2026-08-02"
+    assert generated_json["status"] == "draft"
+    assert len(generated_json["shifts"]) == 20
+
+    with psycopg.connect(PSYCOPG_DSN) as connection:
+        with connection.cursor() as cursor:
+            cursor.execute(
+                """
+                SELECT id, start_date, end_date
+                FROM schedules
+                WHERE company_id = 1
+                  AND status = 'draft'
+                  AND start_date <= '2026-08-02'
+                  AND end_date >= '2026-07-06'
+                """
+            )
+            assert cursor.fetchall() == [(schedule_id, date(2026, 7, 6), date(2026, 8, 2))]
+            cursor.execute("SELECT COUNT(*) FROM schedules WHERE id = %s", (old_overlapping_draft_id,))
+            assert cursor.fetchone()[0] == 0
+            cursor.execute("SELECT COUNT(DISTINCT schedule_id) FROM shifts WHERE schedule_id = %s", (schedule_id,))
+            assert cursor.fetchone()[0] == 1
+            cursor.execute("SELECT COUNT(*) FROM shifts WHERE schedule_id = %s", (schedule_id,))
+            assert cursor.fetchone()[0] == 20
+
+
+def test_publishing_full_period_schedule_exposes_all_employee_shifts(client: TestClient) -> None:
+    with psycopg.connect(PSYCOPG_DSN) as connection:
+        with connection.cursor() as cursor:
+            cursor.execute("UPDATE employees SET position_id = 1 WHERE id = 1")
+
+    manager_headers = login_json(client, "manager@example.com", "manager123")
+    employee_headers = login_json(client, "ivan@example.com", "employee123")
+    requirements = client.post(
+        "/schedule/requirements/bulk",
+        headers=manager_headers,
+        json={
+            "start_date": "2026-07-06",
+            "end_date": "2026-08-02",
+            "weekdays": [0, 1, 2, 3, 4],
+            "requirements": [
+                {"position_id": 1, "min_staff": 1, "start_time": "09:00:00", "end_time": "17:00:00"}
+            ],
+        },
+    )
+    assert requirements.status_code == 201, requirements.text
+    generated = client.post(
+        "/schedule/generate",
+        headers=manager_headers,
+        json={"start_date": "2026-07-06", "end_date": "2026-08-02"},
+    )
+    assert generated.status_code == 200, generated.text
+    schedule_id = generated.json()["id"]
+
+    published = client.post(f"/schedule/{schedule_id}/publish", headers=manager_headers)
+    assert published.status_code == 200, published.text
+    assert published.json()["start_date"] == "2026-07-06"
+    assert published.json()["end_date"] == "2026-08-02"
+
+    visible = client.get(
+        "/schedule/my?date_from=2026-07-06&date_to=2026-08-02",
+        headers=employee_headers,
+    )
+    assert visible.status_code == 200, visible.text
+    assert len(visible.json()) == 20
+    assert {shift["date"] for shift in visible.json()} >= {"2026-07-06", "2026-07-31"}
+
+
+def test_employee_schedule_period_query_returns_all_matching_published_schedules(client: TestClient) -> None:
+    with psycopg.connect(PSYCOPG_DSN) as connection:
+        with connection.cursor() as cursor:
+            cursor.execute("UPDATE employees SET position_id = 1 WHERE id = 1")
+            cursor.execute("UPDATE schedules SET status = 'published' WHERE id = 1")
+            cursor.execute(
+                """
+                INSERT INTO schedules (company_id, start_date, end_date, status)
+                VALUES (1, '2026-07-01', '2026-07-07', 'published')
+                RETURNING id
+                """
+            )
+            second_schedule_id = cursor.fetchone()[0]
+            cursor.execute(
+                """
+                INSERT INTO shifts (schedule_id, company_id, position_id, shift_date, start_time, end_time)
+                VALUES (%s, 1, 1, '2026-07-02', '09:00', '17:00')
+                RETURNING id
+                """,
+                (second_schedule_id,),
+            )
+            second_shift_id = cursor.fetchone()[0]
+            cursor.execute(
+                "INSERT INTO shift_assignments (shift_id, employee_id, status) VALUES (%s, 1, 'assigned')",
+                (second_shift_id,),
+            )
+
+    employee_headers = login_json(client, "ivan@example.com", "employee123")
+    response = client.get(
+        "/schedule/my?date_from=2026-06-01&date_to=2026-07-31",
+        headers=employee_headers,
+    )
+    assert response.status_code == 200, response.text
+    assert [shift["date"] for shift in response.json()] == ["2026-06-15", "2026-07-02"]
+
+    filtered = client.get(
+        "/schedule/my?date_from=2026-07-01&date_to=2026-07-31",
+        headers=employee_headers,
+    )
+    assert filtered.status_code == 200, filtered.text
+    assert [shift["date"] for shift in filtered.json()] == ["2026-07-02"]
+
+
+def test_publishing_archives_only_overlapping_published_schedules(client: TestClient) -> None:
+    with psycopg.connect(PSYCOPG_DSN) as connection:
+        with connection.cursor() as cursor:
+            cursor.execute("UPDATE employees SET position_id = 1 WHERE id = 1")
+            cursor.execute(
+                """
+                INSERT INTO schedules (company_id, start_date, end_date, status)
+                VALUES (1, '2026-07-01', '2026-07-10', 'published')
+                RETURNING id
+                """
+            )
+            overlapping_schedule_id = cursor.fetchone()[0]
+            cursor.execute(
+                """
+                INSERT INTO schedules (company_id, start_date, end_date, status)
+                VALUES (1, '2026-09-01', '2026-09-07', 'published')
+                RETURNING id
+                """
+            )
+            non_overlapping_schedule_id = cursor.fetchone()[0]
+
+    manager_headers = login_json(client, "manager@example.com", "manager123")
+    requirements = client.post(
+        "/schedule/requirements/bulk",
+        headers=manager_headers,
+        json={
+            "start_date": "2026-07-06",
+            "end_date": "2026-08-02",
+            "weekdays": [0],
+            "requirements": [
+                {"position_id": 1, "min_staff": 1, "start_time": "09:00:00", "end_time": "17:00:00"}
+            ],
+        },
+    )
+    assert requirements.status_code == 201, requirements.text
+    generated = client.post(
+        "/schedule/generate",
+        headers=manager_headers,
+        json={"start_date": "2026-07-06", "end_date": "2026-08-02"},
+    )
+    assert generated.status_code == 200, generated.text
+    schedule_id = generated.json()["id"]
+    published = client.post(f"/schedule/{schedule_id}/publish", headers=manager_headers)
+    assert published.status_code == 200, published.text
+
+    with psycopg.connect(PSYCOPG_DSN) as connection:
+        with connection.cursor() as cursor:
+            cursor.execute("SELECT status FROM schedules WHERE id = %s", (overlapping_schedule_id,))
+            assert cursor.fetchone()[0] == "archived"
+            cursor.execute("SELECT status FROM schedules WHERE id = %s", (non_overlapping_schedule_id,))
+            assert cursor.fetchone()[0] == "published"
+            cursor.execute("SELECT status FROM schedules WHERE id = %s", (schedule_id,))
+            assert cursor.fetchone()[0] == "published"
+
+
+def test_manager_can_list_schedules_overlapping_period(client: TestClient) -> None:
+    manager_headers = login_json(client, "manager@example.com", "manager123")
+    with psycopg.connect(PSYCOPG_DSN) as connection:
+        with connection.cursor() as cursor:
+            cursor.execute("UPDATE schedules SET status = 'published' WHERE id = 1")
+            cursor.execute(
+                """
+                INSERT INTO schedules (company_id, start_date, end_date, status)
+                VALUES (1, '2026-07-01', '2026-07-07', 'published')
+                RETURNING id
+                """
+            )
+            overlapping_schedule_id = cursor.fetchone()[0]
+            cursor.execute(
+                """
+                INSERT INTO schedules (company_id, start_date, end_date, status)
+                VALUES (1, '2026-09-01', '2026-09-07', 'published')
+                RETURNING id
+                """
+            )
+            non_overlapping_schedule_id = cursor.fetchone()[0]
+
+    response = client.get(
+        "/schedule?date_from=2026-06-20&date_to=2026-07-02&status=published",
+        headers=manager_headers,
+    )
+    assert response.status_code == 200, response.text
+    schedule_ids = [schedule["id"] for schedule in response.json()]
+    assert overlapping_schedule_id in schedule_ids
+    assert non_overlapping_schedule_id not in schedule_ids
+    assert all("start_date" in schedule and "end_date" in schedule for schedule in response.json())
 
 
 def test_repeated_generation_does_not_stack_shifts_or_reported_hours(client: TestClient) -> None:
