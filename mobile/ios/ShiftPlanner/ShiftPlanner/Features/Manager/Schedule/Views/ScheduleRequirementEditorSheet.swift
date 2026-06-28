@@ -17,10 +17,39 @@ struct ScheduleRequirementEditorSheet: View {
         isSubmitting: Bool,
         onSave: @escaping (ScheduleRequirementEditorDraft) async -> Bool
     ) {
-        _draft = State(initialValue: draft)
+        var normalizedDraft = draft
+        if normalizedDraft.positionId.map({ $0 <= 0 }) ?? true {
+            normalizedDraft.positionId = availablePositions.first(where: { $0.id > 0 })?.id
+        }
+        if normalizedDraft.positionName == nil,
+           let positionId = normalizedDraft.positionId {
+            normalizedDraft.positionName = availablePositions.first(where: { $0.id == positionId })?.name
+        }
+
+        _draft = State(initialValue: normalizedDraft)
         self.availablePositions = availablePositions
         self.isSubmitting = isSubmitting
         self.onSave = onSave
+    }
+
+    private var hasValidPositionSelection: Bool {
+        draft.positionId.map { $0 > 0 } ?? false
+    }
+
+    private var selectedPositionIdBinding: Binding<Int> {
+        Binding(
+            get: {
+                if let positionId = draft.positionId, positionId > 0 {
+                    return positionId
+                }
+
+                return availablePositions.first(where: { $0.id > 0 })?.id ?? 0
+            },
+            set: { newValue in
+                draft.positionId = newValue > 0 ? newValue : nil
+                draft.positionName = availablePositions.first(where: { $0.id == newValue })?.name
+            }
+        )
     }
 
     var body: some View {
@@ -32,9 +61,9 @@ struct ScheduleRequirementEditorSheet: View {
                 }
 
                 Section(languageManager.text("Position", "Должность")) {
-                    Picker(languageManager.text("Role", "Роль"), selection: $draft.positionId) {
+                    Picker(languageManager.text("Role", "Роль"), selection: selectedPositionIdBinding) {
                         ForEach(availablePositions) { position in
-                            Text(position.name).tag(Optional(position.id))
+                            Text(position.name).tag(position.id)
                         }
                     }
                 }
@@ -93,7 +122,7 @@ struct ScheduleRequirementEditorSheet: View {
                             Text(languageManager.text("Save", "Сохранить"))
                         }
                     }
-                    .disabled(isSubmitting || draft.positionId == nil)
+                    .disabled(isSubmitting || !hasValidPositionSelection)
                 }
             }
         }

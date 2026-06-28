@@ -154,6 +154,7 @@ final class APIRequirementsRepository: RequirementsRepository {
             id: dto.id,
             date: date,
             weekday: weekday,
+            branchId: dto.branchId,
             positionId: dto.positionId,
             positionName: dto.positionTitle,
             quantity: dto.minStaff,

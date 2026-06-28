@@ -10,7 +10,7 @@ struct EmployeeAvailabilityBlockDTO: Codable {
     let weekday: Int
     let startTime: String
     let endTime: String
-    let availabilityStatus: EmployeeAvailabilityStatusDTO
+    let availabilityStatus: EmployeeAvailabilityStatusDTO?
 
     enum CodingKeys: String, CodingKey {
         case weekday

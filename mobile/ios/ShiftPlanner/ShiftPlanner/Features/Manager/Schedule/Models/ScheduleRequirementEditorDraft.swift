@@ -5,6 +5,7 @@ struct ScheduleRequirementEditorDraft: Identifiable, Equatable {
     var requirementId: Int?
     var date: Date
     var positionId: Int?
+    var positionName: String?
     var quantity: Int
     var startSlot: Int
     var endSlot: Int

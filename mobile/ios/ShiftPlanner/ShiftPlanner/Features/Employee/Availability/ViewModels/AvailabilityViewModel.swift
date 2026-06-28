@@ -302,7 +302,8 @@ final class AvailabilityViewModel: ObservableObject {
             }
 
             for slotIndex in startSlot..<endSlot {
-                restoredWeek[slotIndex][block.weekday] = availabilityState(for: block.availabilityStatus)
+                let status = block.availabilityStatus ?? .available
+                restoredWeek[slotIndex][block.weekday] = availabilityState(for: status)
             }
         }
 

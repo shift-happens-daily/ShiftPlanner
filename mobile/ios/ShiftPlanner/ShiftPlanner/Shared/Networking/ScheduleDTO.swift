@@ -18,13 +18,53 @@ struct RequirementAssignRequestDTO: Codable {
     }
 }
 
-struct ScheduleShiftUpdateRequestDTO: Codable {
-    let action: String
+struct ManualShiftCreateRequestDTO: Encodable {
+    let date: String
+    let startTime: String
+    let endTime: String
+    let positionId: Int
     let employeeId: Int?
 
     enum CodingKeys: String, CodingKey {
-        case action
+        case date
+        case startTime = "start_time"
+        case endTime = "end_time"
+        case positionId = "position_id"
         case employeeId = "employee_id"
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(date, forKey: .date)
+        try container.encode(startTime, forKey: .startTime)
+        try container.encode(endTime, forKey: .endTime)
+        try container.encode(positionId, forKey: .positionId)
+        try container.encodeIfPresent(employeeId, forKey: .employeeId)
+    }
+}
+
+struct ScheduleShiftUpdateRequestDTO: Encodable {
+    let date: String
+    let startTime: String
+    let endTime: String
+    let positionId: Int
+    let employeeId: Int?
+
+    enum CodingKeys: String, CodingKey {
+        case date
+        case startTime = "start_time"
+        case endTime = "end_time"
+        case positionId = "position_id"
+        case employeeId = "employee_id"
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(date, forKey: .date)
+        try container.encode(startTime, forKey: .startTime)
+        try container.encode(endTime, forKey: .endTime)
+        try container.encode(positionId, forKey: .positionId)
+        try container.encodeIfPresent(employeeId, forKey: .employeeId)
     }
 }
 

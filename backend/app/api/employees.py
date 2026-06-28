@@ -89,6 +89,20 @@ def update_employee_branch(
     return employee_service.update_employee_branch(db, employee_id, payload, current_user)
 
 
+@router.delete(
+    "/{employee_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    responses={**UNAUTHORIZED_RESPONSE, **FORBIDDEN_RESPONSE, **NOT_FOUND_RESPONSE, **VALIDATION_ERROR_RESPONSE},
+)
+def delete_employee(
+    employee_id: int,
+    current_user: UserRead = Depends(require_role("manager")),
+    db: Session = Depends(get_db),
+) -> Response:
+    employee_service.delete_employee_from_company(db, employee_id, current_user)
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
 @router.get(
     "/me/absences",
     response_model=list[AbsenceRead],

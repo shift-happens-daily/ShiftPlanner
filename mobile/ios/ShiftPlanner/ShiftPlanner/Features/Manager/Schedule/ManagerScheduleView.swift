@@ -9,7 +9,7 @@ struct ManagerScheduleView: View {
     let onUserUpdated: (AppUser) -> Void
     @State private var selectedTab: ScheduleContentTab = .assigned
     @State private var selectedPresentationMode: SchedulePresentationMode = .list
-    @State private var editingShift: AppScheduledShift?
+    @State private var editingShiftDraft: ScheduleShiftEditorDraft?
     @State private var assigningRequirement: AppUnfilledRequirement?
     @State private var editingRequirementDraft: ScheduleRequirementEditorDraft?
     @State private var requirementPendingDeletion: AppUnfilledRequirement?
@@ -95,41 +95,27 @@ struct ManagerScheduleView: View {
             .background(themeManager.selectedTheme.screenBackground.ignoresSafeArea())
             .navigationTitle(languageManager.text("Schedule", "График"))
             .navigationBarTitleDisplayMode(.inline)
-            .task {
-                await viewModel.loadScheduleIfNeeded()
+            .onAppear {
+                Task {
+                    await viewModel.loadLatestSchedule()
+                }
             }
-            .sheet(item: $editingShift) { shift in
-                ShiftEditorSheet(
-                    shift: shift,
-                    recommendedEmployees: viewModel.recommendedEmployees,
+            .sheet(item: $editingShiftDraft) { draft in
+                ScheduleShiftEditorSheet(
+                    draft: draft,
+                    positions: viewModel.availablePositions,
                     employees: viewModel.employees,
-                    isSubmitting: viewModel.isUpdatingShift,
+                    recommendedEmployees: viewModel.recommendedEmployees,
+                    isSubmitting: viewModel.isSavingShift,
                     isLoadingRecommendedEmployees: viewModel.isLoadingRecommendedEmployees,
-                    canRemoveShift: true,
-                    onLoadRecommended: {
-                        await viewModel.loadRecommendedEmployees(for: shift)
+                    onLoadRecommended: { updatedDraft in
+                        await viewModel.loadRecommendedEmployees(for: updatedDraft)
                     },
-                    onAssign: { employee in
-                        Task {
-                            await viewModel.updateShift(
-                                shift,
-                                action: .reassign(employeeId: employee.id)
-                            )
-                            if viewModel.errorMessage == nil {
-                                editingShift = nil
-                            }
-                        }
+                    onSave: { updatedDraft in
+                        await viewModel.saveShift(updatedDraft)
                     },
-                    onRemove: {
-                        Task {
-                            await viewModel.updateShift(
-                                shift,
-                                action: .remove
-                            )
-                            if viewModel.errorMessage == nil {
-                                editingShift = nil
-                            }
-                        }
+                    onDelete: { updatedDraft in
+                        await viewModel.deleteShift(updatedDraft)
                     }
                 )
                 .onDisappear {
@@ -149,16 +135,19 @@ struct ManagerScheduleView: View {
                         endMinutes: requirement.endMinutes
                     ),
                     recommendedEmployees: viewModel.recommendedEmployeesForRequirement,
-                    employees: viewModel.employees,
+                    employees: viewModel.eligibleEmployees(
+                        for: requirement.positionId,
+                        branchId: viewModel.requirementBranchId(for: requirement)
+                    ),
                     isSubmitting: viewModel.isAssigningRequirement,
                     isLoadingRecommendedEmployees: viewModel.isLoadingRecommendedEmployees,
                     canRemoveShift: false,
                     onLoadRecommended: {
                         await viewModel.loadRecommendedEmployees(for: requirement)
                     },
-                    onAssign: { employee in
+                    onAssign: { employeeId in
                         Task {
-                            await viewModel.assignRequirement(requirement, employee: employee)
+                            await viewModel.assignRequirement(requirement, employeeId: employeeId)
                             if viewModel.errorMessage == nil {
                                 assigningRequirement = nil
                             }
@@ -306,25 +295,35 @@ struct ManagerScheduleView: View {
 
                 Spacer(minLength: 8)
 
-                if schedule.status == .draft {
+                VStack(spacing: 8) {
                     Button {
-                        Task {
-                            await viewModel.publishSchedule()
-                        }
+                        editingShiftDraft = viewModel.makeShiftDraft(for: viewModel.startDate)
                     } label: {
-                        if viewModel.isPublishing {
-                            ProgressView()
-                                .tint(themeManager.selectedTheme.primaryActionTextColor)
-                                .frame(maxWidth: .infinity)
-                        } else {
-                            Text(languageManager.text("Publish", "Опубликовать"))
-                        }
+                        Text(languageManager.text("Add shift", "Добавить смену"))
                     }
                     .buttonStyle(.plain)
-                    .themePrimaryAction(isEnabled: viewModel.canPublish)
-                    .frame(maxWidth: 150)
-                    .disabled(!viewModel.canPublish)
+                    .themeSecondaryAction()
+
+                    if schedule.status == .draft {
+                        Button {
+                            Task {
+                                await viewModel.publishSchedule()
+                            }
+                        } label: {
+                            if viewModel.isPublishing {
+                                ProgressView()
+                                    .tint(themeManager.selectedTheme.primaryActionTextColor)
+                                    .frame(maxWidth: .infinity)
+                            } else {
+                                Text(languageManager.text("Publish", "Опубликовать"))
+                            }
+                        }
+                        .buttonStyle(.plain)
+                        .themePrimaryAction(isEnabled: viewModel.canPublish)
+                        .disabled(!viewModel.canPublish)
+                    }
                 }
+                .frame(maxWidth: 160)
             }
 
             HStack(spacing: 12) {
@@ -574,7 +573,7 @@ struct ManagerScheduleView: View {
                         .foregroundStyle(themeManager.selectedTheme.accentColor)
 
                     Button {
-                        editingShift = shift
+                        editingShiftDraft = viewModel.makeShiftDraft(for: shift)
                     } label: {
                         HStack(spacing: 4) {
                             Image(systemName: "square.and.pencil")
@@ -638,7 +637,7 @@ struct ManagerScheduleView: View {
             Spacer()
 
             Button {
-                editingRequirementDraft = viewModel.makeRequirementDraft(for: date)
+                editingShiftDraft = viewModel.makeShiftDraft(for: date)
             } label: {
                 HStack(spacing: 4) {
                     Image(systemName: "plus")

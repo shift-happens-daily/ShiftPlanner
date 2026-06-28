@@ -143,6 +143,11 @@ def delete_employees_by_company(db: Session, company_id: int) -> None:
     db.flush()
 
 
+def delete_employee(db: Session, employee: Employee) -> None:
+    db.delete(employee)
+    db.commit()
+
+
 def replace_availability(
     db: Session,
     *,

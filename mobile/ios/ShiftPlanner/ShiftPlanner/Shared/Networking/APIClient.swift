@@ -149,8 +149,8 @@ final class APIClient {
         case .timedOut, .cannotConnectToHost, .cannotFindHost, .networkConnectionLost, .notConnectedToInternet:
             return .requestFailed(
                 message: LanguageManager.localized(
-                    "Cannot reach the server at \(baseURL.absoluteString). Start the backend and, for iPhone Simulator, use http://127.0.0.1:8000.",
-                    "Не удается подключиться к серверу \(baseURL.absoluteString). Запустите бэкенд и, если это симулятор iPhone, используйте http://127.0.0.1:8000."
+                    "Cannot reach the server at \(baseURL.absoluteString). Start the backend. For iPhone Simulator use http://127.0.0.1:8000, and for a physical iPhone use your Mac's local /api address.",
+                    "Не удается подключиться к серверу \(baseURL.absoluteString). Запустите бэкенд. Для симулятора iPhone используйте http://127.0.0.1:8000, а для реального iPhone используйте локальный адрес вашего Mac с /api."
                 )
             )
         default:
@@ -175,7 +175,7 @@ final class APIClient {
         #if targetEnvironment(simulator)
         return "http://127.0.0.1:8000"
         #else
-        return "http://10.91.61.1:8000"
+        return "http://10.91.61.1/api"
         #endif
     }
 

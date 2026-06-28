@@ -62,7 +62,7 @@ struct EmployeeListView: View {
                     employeePendingRemoval = nil
                 }
             } message: {
-                Text(languageManager.text("This employee will be removed from the local company preview.", "Этот сотрудник будет удален из локального предпросмотра компании."))
+                Text(languageManager.text("This employee will be removed from the company.", "Этот сотрудник будет удален из компании."))
             }
             .alert(languageManager.text("Delete role?", "Удалить должность?"), isPresented: positionRemovalBinding) {
                 Button(languageManager.text("Cancel", "Отмена"), role: .cancel) {}
@@ -181,7 +181,7 @@ struct EmployeeListView: View {
             positionTitle: viewModel.positionTitle(for: employee),
             isBranchPickerExpanded: activeSheet?.employee?.id == employee.id && activeSheet?.kind == .branch,
             isRolePickerExpanded: activeSheet?.employee?.id == employee.id && activeSheet?.kind == .position,
-            canDeleteEmployee: true,
+            canDeleteEmployee: viewModel.capabilities.canRemoveEmployee,
             onToggleBranchPicker: {
                 activeSheet = .branch(employee)
             },
@@ -221,8 +221,8 @@ struct EmployeeListView: View {
         if viewModel.capabilities.canAssignPosition &&
             viewModel.capabilities.canRemovePosition {
             return languageManager.text(
-                "Managers can add employees before registration. Roles and positions are synced with the backend. Employee removal is still local-only for now.",
-                "Менеджер может добавлять сотрудников до регистрации. Роли и должности синхронизируются с бэкендом. Удаление сотрудника пока работает только локально."
+                "Managers can add employees before registration. Roles, positions, and employee removal are synced with the backend.",
+                "Менеджер может добавлять сотрудников до регистрации. Роли, должности и удаление сотрудников синхронизируются с бэкендом."
             )
         }
 

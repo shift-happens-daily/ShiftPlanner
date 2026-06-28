@@ -83,6 +83,10 @@ final class MockAuthRepository: AuthRepository {
         currentUser = nil
     }
 
+    func deleteCurrentAccount() async throws {
+        currentUser = nil
+    }
+
     func getCurrentUser() async -> AppUser? {
         currentUser
     }

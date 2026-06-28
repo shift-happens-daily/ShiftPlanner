@@ -4,6 +4,7 @@ struct EmployeeMainView: View {
     @EnvironmentObject private var languageManager: LanguageManager
     let user: AppUser
     let onLogout: () async -> Void
+    let onDeleteAccount: () async throws -> Void
     let onUserUpdated: (AppUser) -> Void
 
     @State private var isShowingInviteSheet = false
@@ -31,7 +32,11 @@ struct EmployeeMainView: View {
                     Label(languageManager.text("Schedule", "График"), systemImage: "calendar")
                 }
 
-            EmployeeProfileView(user: user, onLogout: onLogout)
+            EmployeeProfileView(
+                user: user,
+                onLogout: onLogout,
+                onDeleteAccount: onDeleteAccount
+            )
                 .tabItem {
                     Label(languageManager.text("Profile", "Профиль"), systemImage: "person.crop.circle")
                 }

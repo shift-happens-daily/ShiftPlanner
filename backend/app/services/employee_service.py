@@ -144,6 +144,28 @@ def update_employee_branch(
     return _build_employee_read(updated_employee)
 
 
+def delete_employee_from_company(db: Session, employee_id: int, current_user: UserRead) -> None:
+    if current_user.company_id is None:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Manager is not linked to a company.",
+        )
+
+    employee = employee_repository.get_employee_by_id(db, employee_id)
+    if employee is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Employee was not found.",
+        )
+    if employee.company_id != current_user.company_id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Employee does not belong to the authenticated user's company.",
+        )
+
+    employee_repository.delete_employee(db, employee)
+
+
 def get_availability(db: Session, employee_id: int) -> AvailabilityRead:
     employee = employee_repository.get_employee_by_id(db, employee_id)
     if employee is None:

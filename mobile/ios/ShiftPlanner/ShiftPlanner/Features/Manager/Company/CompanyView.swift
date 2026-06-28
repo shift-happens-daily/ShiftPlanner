@@ -323,24 +323,22 @@ struct CompanyView: View {
                 TextField(languageManager.text("Branch name", "Название филиала"), text: branch.name)
                     .themeInputField()
 
-                if viewModel.branchDrafts.count > 1 {
-                    Button {
-                        viewModel.removeBranchDraft(id: branch.wrappedValue.id)
-                    } label: {
-                        Image(systemName: "xmark")
-                            .font(.caption.weight(.bold))
-                            .frame(width: 16, height: 16)
-                            .padding(10)
-                    }
-                    .buttonStyle(.plain)
-                    .foregroundStyle(themeManager.selectedTheme.accentColor)
-                    .background(themeManager.selectedTheme.elevatedSurfaceColor)
-                    .overlay {
-                        RoundedRectangle(cornerRadius: 14, style: .continuous)
-                            .stroke(themeManager.selectedTheme.borderColor, lineWidth: 1)
-                    }
-                    .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+                Button {
+                    viewModel.removeBranchDraft(id: branch.wrappedValue.id)
+                } label: {
+                    Image(systemName: "xmark")
+                        .font(.caption.weight(.bold))
+                        .frame(width: 16, height: 16)
+                        .padding(10)
                 }
+                .buttonStyle(.plain)
+                .foregroundStyle(themeManager.selectedTheme.accentColor)
+                .background(themeManager.selectedTheme.elevatedSurfaceColor)
+                .overlay {
+                    RoundedRectangle(cornerRadius: 14, style: .continuous)
+                        .stroke(themeManager.selectedTheme.borderColor, lineWidth: 1)
+                }
+                .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
             }
 
             TextField(languageManager.text("Branch address", "Адрес филиала"), text: branch.address, axis: .vertical)

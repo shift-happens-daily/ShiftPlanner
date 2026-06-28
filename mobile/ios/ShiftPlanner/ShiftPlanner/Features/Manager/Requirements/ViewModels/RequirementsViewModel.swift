@@ -10,6 +10,7 @@ final class RequirementsViewModel: ObservableObject {
     @Published var activeDraft: StaffingRequirementDraft?
     @Published var isLoading = false
     @Published var isSaving = false
+    @Published private(set) var deletingRequirementIDs: Set<Int> = []
     @Published var errorMessage: String?
     @Published var statusMessage: String?
 
@@ -161,7 +162,7 @@ final class RequirementsViewModel: ObservableObject {
             requirements[index].startSlot = draft.startSlot
             requirements[index].endSlot = normalizedEndSlot
             selectedWeekday = targetWeekday
-            statusMessage = localized("Template updated locally.", "Шаблон обновлен локально.")
+            statusMessage = localized("Requirement updated. Changes will be synced automatically.", "Требование обновлено. Изменения будут синхронизированы автоматически.")
         } else {
             let newItems = normalizedWeekdays.sorted().map { weekday in
                 makeLocalRequirement(
@@ -176,17 +177,42 @@ final class RequirementsViewModel: ObservableObject {
 
             requirements.append(contentsOf: newItems)
             selectedWeekday = normalizedWeekdays.sorted().first ?? selectedWeekday
-            statusMessage = localized("Template added locally.", "Шаблон добавлен локально.")
+            statusMessage = localized("Requirement added. Changes will be synced automatically.", "Требование добавлено. Изменения будут синхронизированы автоматически.")
         }
 
         activeDraft = nil
         return true
     }
 
-    func delete(_ requirement: StaffingRequirement) {
-        requirements.removeAll { $0.id == requirement.id }
-        statusMessage = localized("Template removed locally.", "Шаблон удален локально.")
+    func delete(_ requirement: StaffingRequirement) async {
         errorMessage = nil
+        statusMessage = nil
+
+        let matchingRemoteOccurrences = remoteMonthOccurrences.filter {
+            contentSignature(for: $0) == contentSignature(for: requirement)
+        }
+
+        if !matchingRemoteOccurrences.isEmpty {
+            let deletingIds = Set(matchingRemoteOccurrences.map(\.id))
+            deletingRequirementIDs.formUnion(deletingIds)
+            defer { deletingRequirementIDs.subtract(deletingIds) }
+
+            do {
+                for occurrence in matchingRemoteOccurrences {
+                    try await repository.deleteRequirement(id: occurrence.id)
+                }
+                await loadCurrentMonth(forceRemote: true)
+                statusMessage = localized("Requirement deleted successfully.", "Требование успешно удалено.")
+            } catch {
+                errorMessage = error.localizedDescription
+            }
+
+            return
+        }
+
+        requirements.removeAll { $0.id == requirement.id }
+        synchronizeWorkingHours(with: requirements)
+        statusMessage = localized("Requirement deleted. Changes will be synced automatically.", "Требование удалено. Изменения будут синхронизированы автоматически.")
     }
 
     func duplicate(_ requirement: StaffingRequirement) {
@@ -200,20 +226,20 @@ final class RequirementsViewModel: ObservableObject {
         )
 
         requirements.append(duplicated)
-        statusMessage = localized("Template duplicated locally.", "Шаблон продублирован локально.")
+        statusMessage = localized("Requirement duplicated. Changes will be synced automatically.", "Требование продублировано. Изменения будут синхронизированы автоматически.")
         errorMessage = nil
     }
 
     func clearSelectedDay() {
         requirements.removeAll { $0.weekday == selectedWeekday }
-        statusMessage = localized("Selected weekday cleared locally.", "Выбранный день очищен локально.")
+        statusMessage = localized("Selected day cleared. Changes will be synced automatically.", "Выбранный день очищен. Изменения будут синхронизированы автоматически.")
         errorMessage = nil
     }
 
     func clearAllDays() {
         requirements.removeAll()
         workingHoursByWeekday = [:]
-        statusMessage = localized("All weekdays cleared locally.", "Все дни недели очищены локально.")
+        statusMessage = localized("All weekdays cleared. Changes will be synced automatically.", "Все дни недели очищены. Изменения будут синхронизированы автоматически.")
         errorMessage = nil
     }
 
@@ -244,7 +270,7 @@ final class RequirementsViewModel: ObservableObject {
         for weekday in validTargets {
             workingHoursByWeekday[weekday] = selectedDayWorkingHours
         }
-        statusMessage = localized("Templates copied locally.", "Шаблоны скопированы локально.")
+        statusMessage = localized("Requirements copied. Changes will be synced automatically.", "Требования скопированы. Изменения будут синхронизированы автоматически.")
         errorMessage = nil
     }
 
@@ -271,7 +297,7 @@ final class RequirementsViewModel: ObservableObject {
             return updatedRequirement
         }
 
-        statusMessage = localized("Working hours updated locally.", "Рабочие часы обновлены локально.")
+        statusMessage = localized("Working hours updated. Changes will be synced automatically.", "Рабочие часы обновлены. Изменения будут синхронизированы автоматически.")
         errorMessage = nil
     }
 
@@ -473,5 +499,9 @@ final class RequirementsViewModel: ObservableObject {
 
     private func contentSignature(for item: StaffingRequirement) -> String {
         "\(item.weekday)|\(item.positionId)|\(item.quantity)|\(item.startSlot)|\(item.endSlot)"
+    }
+
+    private func contentSignature(for occurrence: RequirementOccurrence) -> String {
+        "\(occurrence.weekday)|\(occurrence.positionId)|\(occurrence.quantity)|\(occurrence.startSlot)|\(occurrence.endSlot)"
     }
 }

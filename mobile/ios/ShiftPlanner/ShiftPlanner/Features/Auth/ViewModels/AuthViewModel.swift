@@ -83,6 +83,17 @@ final class AuthViewModel: ObservableObject {
         
     }
 
+    func deleteCurrentAccount() async throws {
+        try await repository.deleteCurrentAccount()
+        currentUser = nil
+        email = ""
+        password = ""
+        confirmPassword = ""
+        name = ""
+        selectedRole = .employee
+        errorMessage = nil
+    }
+
     func loadCurrentUser() async {
         currentUser = await repository.getCurrentUser()
     }

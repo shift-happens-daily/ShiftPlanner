@@ -114,16 +114,23 @@ final class APIScheduleRepository: ScheduleRepository {
 
     func fetchAvailableEmployees(
         scheduleId: Int,
-        shift: AppScheduledShift
+        shift: AppScheduledShift,
+        branchId: Int?
     ) async throws -> [AppAvailableEmployee] {
         let baseURL = apiClient.baseURL.appendingPathComponent("schedule/\(scheduleId)/employees/available")
         var components = URLComponents(url: baseURL, resolvingAgainstBaseURL: false)
-        components?.queryItems = [
+        var queryItems = [
             URLQueryItem(name: "date", value: Self.dateFormatter.string(from: shift.date)),
             URLQueryItem(name: "start_time", value: Self.timeString(from: shift.startMinutes)),
             URLQueryItem(name: "end_time", value: Self.timeString(from: shift.endMinutes)),
             URLQueryItem(name: "position_id", value: String(shift.positionId))
         ]
+
+        if let branchId {
+            queryItems.append(URLQueryItem(name: "branch_id", value: String(branchId)))
+        }
+
+        components?.queryItems = queryItems
 
         guard let url = components?.url else {
             throw APIClientError.invalidResponse
@@ -154,41 +161,126 @@ final class APIScheduleRepository: ScheduleRepository {
             body: body,
             requiresAuthorization: true
         )
-        let response = try await apiClient.send(request, as: ScheduleResponseDTO.self)
-        return try mapSchedule(response)
+        do {
+            let response = try await apiClient.send(request, as: ScheduleResponseDTO.self)
+            return try mapSchedule(response)
+        } catch APIClientError.decodingFailed {
+            return try await fetchSchedule(scheduleId: scheduleId)
+        }
+    }
+
+    func createShift(
+        scheduleId: Int,
+        payload: ScheduleShiftMutation
+    ) async throws -> AppSchedule {
+        guard payload.positionId > 0 else {
+            throw APIClientError.requestFailed(
+                message: localized("Choose a valid position.", "Выберите корректную должность.")
+            )
+        }
+
+        let body = try JSONEncoder().encode(
+            ManualShiftCreateRequestDTO(
+                date: Self.dateFormatter.string(from: payload.date),
+                startTime: Self.timeString(from: payload.startMinutes),
+                endTime: Self.timeString(from: payload.endMinutes),
+                positionId: payload.positionId,
+                employeeId: normalizedEmployeeId(payload.employeeId)
+            )
+        )
+        let request = apiClient.makeRequest(
+            path: "schedule/\(scheduleId)/shifts",
+            method: "POST",
+            body: body,
+            requiresAuthorization: true
+        )
+        do {
+            let response = try await apiClient.send(request, as: ScheduleResponseDTO.self)
+            return try mapSchedule(response)
+        } catch APIClientError.decodingFailed {
+            return try await fetchSchedule(scheduleId: scheduleId)
+        }
     }
 
     func updateShift(
         scheduleId: Int,
         shiftId: Int,
-        action: ScheduleShiftUpdateAction
+        payload: ScheduleShiftMutation
     ) async throws -> AppSchedule {
-        let payload: ScheduleShiftUpdateRequestDTO
-        switch action {
-        case .reassign(let employeeId):
-            payload = ScheduleShiftUpdateRequestDTO(
-                action: "reassign",
-                employeeId: employeeId
+        guard payload.positionId > 0 else {
+            throw APIClientError.requestFailed(
+                message: localized("Choose a valid position.", "Выберите корректную должность.")
             )
-        case .remove:
-            let request = apiClient.makeRequest(
-                path: "schedule/\(scheduleId)/shifts/\(shiftId)",
-                method: "DELETE",
-                requiresAuthorization: true
-            )
-            try await apiClient.sendWithoutResponseBody(request)
-            return try await fetchSchedule(scheduleId: scheduleId)
         }
 
-        let body = try JSONEncoder().encode(payload)
+        let body = try JSONEncoder().encode(
+            ScheduleShiftUpdateRequestDTO(
+                date: Self.dateFormatter.string(from: payload.date),
+                startTime: Self.timeString(from: payload.startMinutes),
+                endTime: Self.timeString(from: payload.endMinutes),
+                positionId: payload.positionId,
+                employeeId: normalizedEmployeeId(payload.employeeId)
+            )
+        )
         let request = apiClient.makeRequest(
             path: "schedule/\(scheduleId)/shifts/\(shiftId)",
             method: "PATCH",
             body: body,
             requiresAuthorization: true
         )
-        let response = try await apiClient.send(request, as: ScheduleResponseDTO.self)
-        return try mapSchedule(response)
+        do {
+            let response = try await apiClient.send(request, as: ScheduleResponseDTO.self)
+            return try mapSchedule(response)
+        } catch APIClientError.decodingFailed {
+            return try await fetchSchedule(scheduleId: scheduleId)
+        }
+    }
+
+    func deleteShift(
+        scheduleId: Int,
+        shiftId: Int
+    ) async throws -> AppSchedule {
+        let request = apiClient.makeRequest(
+            path: "schedule/\(scheduleId)/shifts/\(shiftId)",
+            method: "DELETE",
+            requiresAuthorization: true
+        )
+        try await apiClient.sendWithoutResponseBody(request)
+        return try await fetchSchedule(scheduleId: scheduleId)
+    }
+
+    func updateScheduleRequirement(
+        scheduleId: Int,
+        requirementId: Int,
+        date: Date,
+        positionId: Int,
+        quantity: Int,
+        startSlot: Int,
+        endSlot: Int
+    ) async throws -> AppSchedule {
+        let body = try JSONEncoder().encode(
+            ScheduleRequirementUpdateDTO(
+                branchId: nil,
+                positionId: positionId,
+                date: Self.dateFormatter.string(from: date),
+                minStaff: quantity,
+                requiredCount: quantity,
+                startTime: Self.timeString(from: startSlot * 30),
+                endTime: Self.timeString(from: endSlot * 30)
+            )
+        )
+        let request = apiClient.makeRequest(
+            path: "schedule/\(scheduleId)/requirements/\(requirementId)",
+            method: "PATCH",
+            body: body,
+            requiresAuthorization: true
+        )
+        do {
+            let response = try await apiClient.send(request, as: ScheduleResponseDTO.self)
+            return try mapSchedule(response)
+        } catch APIClientError.decodingFailed {
+            return try await fetchSchedule(scheduleId: scheduleId)
+        }
     }
 
     private func mapSchedule(_ dto: ScheduleResponseDTO) throws -> AppSchedule {
@@ -262,6 +354,13 @@ final class APIScheduleRepository: ScheduleRepository {
         let hour = minutes / 60
         let minute = minutes % 60
         return String(format: "%02d:%02d:00", hour, minute)
+    }
+
+    private func normalizedEmployeeId(_ employeeId: Int?) -> Int? {
+        guard let employeeId, employeeId > 0 else {
+            return nil
+        }
+        return employeeId
     }
 
     private static let dateFormatter: DateFormatter = {

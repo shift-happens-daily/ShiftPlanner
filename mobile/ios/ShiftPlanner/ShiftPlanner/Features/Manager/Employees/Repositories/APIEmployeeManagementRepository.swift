@@ -2,14 +2,11 @@ import Foundation
 
 enum EmployeeManagementRepositoryError: LocalizedError {
     case missingCompany
-    case employeeRemovalUnavailable
 
     var errorDescription: String? {
         switch self {
         case .missingCompany:
             return localized("Company context is missing.", "Не найден контекст компании.")
-        case .employeeRemovalUnavailable:
-            return localized("The backend does not support removing employees from the company yet.", "Бэкенд пока не поддерживает удаление сотрудников из компании.")
         }
     }
 }
@@ -36,6 +33,7 @@ private struct EmployeeManagementEmployeeResponseDTO: Decodable {
     let branch: EmployeeManagementBranchSummaryDTO?
     let positionId: Int?
     let positionTitle: String
+    let position: EmployeeManagementPositionSummaryDTO?
 
     enum CodingKeys: String, CodingKey {
         case id
@@ -47,10 +45,16 @@ private struct EmployeeManagementEmployeeResponseDTO: Decodable {
         case branch
         case positionId = "position_id"
         case positionTitle = "position_title"
+        case position
     }
 }
 
 private struct EmployeeManagementBranchSummaryDTO: Decodable {
+    let id: Int
+    let name: String
+}
+
+private struct EmployeeManagementPositionSummaryDTO: Decodable {
     let id: Int
     let name: String
 }
@@ -117,7 +121,20 @@ private struct EmployeeManagementBranchUpdateRequestDTO: Encodable {
 
 extension EmployeeManagementEmployeeResponseDTO {
     func asManagedEmployee() -> ManagedEmployee {
-        ManagedEmployee(
+        let resolvedPositionId = positionId ?? position?.id
+        let resolvedPositionTitle: String? = {
+            if !positionTitle.isEmpty {
+                return positionTitle
+            }
+
+            if let nestedName = position?.name, !nestedName.isEmpty {
+                return nestedName
+            }
+
+            return nil
+        }()
+
+        return ManagedEmployee(
             id: id,
             publicId: publicId,
             fullName: fullName,
@@ -125,8 +142,8 @@ extension EmployeeManagementEmployeeResponseDTO {
             role: role,
             branchId: branchId,
             branchName: branch?.name,
-            positionId: positionId,
-            positionTitle: positionTitle.isEmpty ? nil : positionTitle
+            positionId: resolvedPositionId,
+            positionTitle: resolvedPositionTitle
         )
     }
 }
@@ -149,7 +166,7 @@ final class APIEmployeeManagementRepository: EmployeeManagementRepository {
         canCreatePosition: true,
         canAssignPosition: true,
         canRemovePosition: true,
-        canRemoveEmployee: false
+        canRemoveEmployee: true
     )
 
     private let apiClient: APIClient
@@ -332,6 +349,12 @@ final class APIEmployeeManagementRepository: EmployeeManagementRepository {
     }
 
     func removeEmployee(_ employee: ManagedEmployee, from employees: [ManagedEmployee]) async throws -> [ManagedEmployee] {
-        employees.filter { $0.id != employee.id }
+        let request = apiClient.makeRequest(
+            path: "employees/\(employee.id)",
+            method: "DELETE",
+            requiresAuthorization: true
+        )
+        try await apiClient.sendWithoutResponseBody(request)
+        return employees.filter { $0.id != employee.id }
     }
 }

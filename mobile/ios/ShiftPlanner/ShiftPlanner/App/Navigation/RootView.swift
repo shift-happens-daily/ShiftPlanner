@@ -32,6 +32,9 @@ struct RootView: View {
                         onLogout: {
                             await authViewModel.logout()
                         },
+                        onDeleteAccount: {
+                            try await authViewModel.deleteCurrentAccount()
+                        },
                         onUserUpdated: { updatedUser in
                             authViewModel.updateCurrentUser(updatedUser)
                         }

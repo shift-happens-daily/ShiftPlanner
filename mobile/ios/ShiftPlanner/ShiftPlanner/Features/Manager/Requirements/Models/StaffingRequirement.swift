@@ -19,6 +19,7 @@ struct RequirementOccurrence: Identifiable, Equatable {
     let id: Int
     let date: Date
     let weekday: Int
+    let branchId: Int?
     let positionId: Int
     let positionName: String
     let quantity: Int

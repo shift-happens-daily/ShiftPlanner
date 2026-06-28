@@ -5,10 +5,20 @@ struct EmployeeProfileView: View {
     @EnvironmentObject private var languageManager: LanguageManager
     @StateObject private var viewModel: EmployeeProfileViewModel
     let onLogout: () async -> Void
+    let onDeleteAccount: () async throws -> Void
 
-    init(user: AppUser, onLogout: @escaping () async -> Void) {
+    @State private var isDeletingAccount = false
+    @State private var isShowingDeleteConfirmation = false
+    @State private var deletionErrorMessage: String?
+
+    init(
+        user: AppUser,
+        onLogout: @escaping () async -> Void,
+        onDeleteAccount: @escaping () async throws -> Void
+    ) {
         _viewModel = StateObject(wrappedValue: EmployeeProfileViewModel(user: user))
         self.onLogout = onLogout
+        self.onDeleteAccount = onDeleteAccount
     }
 
     var body: some View {
@@ -139,6 +149,57 @@ struct EmployeeProfileView: View {
                     .padding(20)
                     .themeCard()
 
+                    VStack(alignment: .leading, spacing: 14) {
+                        Text(languageManager.text("Account", "Аккаунт"))
+                            .font(.title3)
+                            .fontWeight(.bold)
+                            .foregroundStyle(themeManager.selectedTheme.primaryTextColor)
+
+                        Text(
+                            languageManager.text(
+                                "You can permanently delete your employee account from here.",
+                                "Здесь можно навсегда удалить свой аккаунт сотрудника."
+                            )
+                        )
+                        .font(.subheadline)
+                        .foregroundStyle(themeManager.selectedTheme.secondaryTextColor)
+
+                        Button {
+                            isShowingDeleteConfirmation = true
+                        } label: {
+                            if isDeletingAccount {
+                                ProgressView()
+                                    .tint(themeManager.selectedTheme.primaryActionTextColor)
+                            } else {
+                                Text(languageManager.text("Delete account", "Удалить аккаунт"))
+                            }
+                        }
+                        .buttonStyle(.plain)
+                        .font(.headline)
+                        .frame(maxWidth: .infinity)
+                        .padding(.horizontal, 20)
+                        .padding(.vertical, 14)
+                        .foregroundStyle(themeManager.selectedTheme.primaryActionTextColor)
+                        .background(
+                            RoundedRectangle(cornerRadius: 18, style: .continuous)
+                                .fill(
+                                    isDeletingAccount
+                                    ? themeManager.selectedTheme.secondaryTextColor.opacity(0.45)
+                                    : themeManager.selectedTheme.destructiveColor
+                                )
+                        )
+                        .disabled(isDeletingAccount)
+
+                        if let deletionErrorMessage {
+                            Text(deletionErrorMessage)
+                                .font(.footnote)
+                                .foregroundStyle(themeManager.selectedTheme.destructiveColor)
+                        }
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(20)
+                    .themeCard()
+
                     Button {
                         Task {
                             await onLogout()
@@ -156,6 +217,25 @@ struct EmployeeProfileView: View {
             .background(themeManager.selectedTheme.screenBackground.ignoresSafeArea())
             .navigationTitle(languageManager.text("Profile", "Профиль"))
             .navigationBarTitleDisplayMode(.inline)
+            .confirmationDialog(
+                languageManager.text("Delete account?", "Удалить аккаунт?"),
+                isPresented: $isShowingDeleteConfirmation,
+                titleVisibility: .visible
+            ) {
+                Button(languageManager.text("Delete", "Удалить"), role: .destructive) {
+                    Task {
+                        await deleteAccount()
+                    }
+                }
+                Button(languageManager.text("Cancel", "Отмена"), role: .cancel) {}
+            } message: {
+                Text(
+                    languageManager.text(
+                        "This action cannot be undone.",
+                        "Это действие нельзя отменить."
+                    )
+                )
+            }
         }
     }
 
@@ -169,6 +249,18 @@ struct EmployeeProfileView: View {
             Text(value)
                 .font(.body)
                 .foregroundStyle(themeManager.selectedTheme.primaryTextColor)
+        }
+    }
+
+    private func deleteAccount() async {
+        isDeletingAccount = true
+        deletionErrorMessage = nil
+
+        do {
+            try await onDeleteAccount()
+        } catch {
+            deletionErrorMessage = error.localizedDescription
+            isDeletingAccount = false
         }
     }
 }

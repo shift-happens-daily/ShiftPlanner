@@ -83,6 +83,17 @@ final class APIAuthRepository: AuthRepository {
         currentUser = nil
     }
 
+    func deleteCurrentAccount() async throws {
+        let request = apiClient.makeRequest(
+            path: "auth/me",
+            method: "DELETE",
+            requiresAuthorization: true
+        )
+        try await apiClient.sendWithoutResponseBody(request)
+        apiClient.clearAccessToken()
+        currentUser = nil
+    }
+
     func getCurrentUser() async -> AppUser? {
         guard apiClient.accessToken != nil else {
             return nil

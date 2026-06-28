@@ -133,8 +133,14 @@ struct RequirementsView: View {
                                         requirement: requirement,
                                         onEdit: { viewModel.startEditing(requirement) },
                                         onDuplicate: { viewModel.duplicate(requirement) },
-                                        onDelete: { viewModel.delete(requirement) }
+                                        onDelete: {
+                                            Task {
+                                                await viewModel.delete(requirement)
+                                            }
+                                        }
                                     )
+                                    .disabled(viewModel.deletingRequirementIDs.contains(requirement.id))
+                                    .opacity(viewModel.deletingRequirementIDs.contains(requirement.id) ? 0.55 : 1)
                                 }
                             }
                         }

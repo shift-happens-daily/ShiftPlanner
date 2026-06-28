@@ -1,8 +1,11 @@
 import Foundation
 
-enum ScheduleShiftUpdateAction {
-    case reassign(employeeId: Int)
-    case remove
+struct ScheduleShiftMutation: Equatable {
+    let date: Date
+    let startMinutes: Int
+    let endMinutes: Int
+    let positionId: Int
+    let employeeId: Int?
 }
 
 protocol ScheduleRepository {
@@ -13,16 +16,34 @@ protocol ScheduleRepository {
     func fetchMySchedule() async throws -> [AppScheduledShift]
     func fetchAvailableEmployees(
         scheduleId: Int,
-        shift: AppScheduledShift
+        shift: AppScheduledShift,
+        branchId: Int?
     ) async throws -> [AppAvailableEmployee]
     func assignRequirement(
         scheduleId: Int,
         requirementId: Int,
         employeeId: Int
     ) async throws -> AppSchedule
+    func createShift(
+        scheduleId: Int,
+        payload: ScheduleShiftMutation
+    ) async throws -> AppSchedule
     func updateShift(
         scheduleId: Int,
         shiftId: Int,
-        action: ScheduleShiftUpdateAction
+        payload: ScheduleShiftMutation
+    ) async throws -> AppSchedule
+    func deleteShift(
+        scheduleId: Int,
+        shiftId: Int
+    ) async throws -> AppSchedule
+    func updateScheduleRequirement(
+        scheduleId: Int,
+        requirementId: Int,
+        date: Date,
+        positionId: Int,
+        quantity: Int,
+        startSlot: Int,
+        endSlot: Int
     ) async throws -> AppSchedule
 }

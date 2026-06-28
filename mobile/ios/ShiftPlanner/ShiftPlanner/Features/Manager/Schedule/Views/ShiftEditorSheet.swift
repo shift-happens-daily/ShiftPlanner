@@ -12,7 +12,7 @@ struct ShiftEditorSheet: View {
     let isLoadingRecommendedEmployees: Bool
     let canRemoveShift: Bool
     let onLoadRecommended: () async -> Void
-    let onAssign: (ManagedEmployee) -> Void
+    let onAssign: (Int) -> Void
     let onRemove: () -> Void
 
     @State private var searchText = ""
@@ -212,12 +212,8 @@ struct ShiftEditorSheet: View {
     }
 
     private func recommendedEmployeeRow(_ employee: AppAvailableEmployee) -> some View {
-        let matchedEmployee = employees.first(where: { $0.id == employee.id })
-
         return Button {
-            if let matchedEmployee {
-                onAssign(matchedEmployee)
-            }
+            onAssign(employee.id)
         } label: {
             HStack(spacing: 12) {
                 VStack(alignment: .leading, spacing: 4) {
@@ -269,13 +265,13 @@ struct ShiftEditorSheet: View {
             .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
         }
         .buttonStyle(.plain)
-        .disabled(isSubmitting || matchedEmployee == nil)
-        .opacity((isSubmitting || matchedEmployee == nil) ? 0.5 : 1)
+        .disabled(isSubmitting)
+        .opacity(isSubmitting ? 0.5 : 1)
     }
 
     private func employeeRow(_ employee: ManagedEmployee) -> some View {
         Button {
-            onAssign(employee)
+            onAssign(employee.id)
         } label: {
             HStack(spacing: 12) {
                 VStack(alignment: .leading, spacing: 4) {
