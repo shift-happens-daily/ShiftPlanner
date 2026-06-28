@@ -1,10 +1,15 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   defaultSchedulePeriod,
-  deleteSchedule,
-  generateSchedule,
-  getLatestSchedule,
-  publishSchedule,
+  deleteScheduleForPeriod,
+  deriveSchedulePeriod,
+  fetchScheduleVersions,
+  formatLocalDate,
+  generateScheduleForPeriod,
+  getFourWeekPeriodRange,
+  clearMergedScheduleBundle,
+  persistMergedScheduleBundle,
+  publishScheduleForPeriod,
   assignRequirement,
 } from '../../services/scheduleService';
 import { filterRealEmployees, listEmployees } from '../../services/employeeService';
@@ -25,11 +30,12 @@ function formatDate(d) {
   if (Number.isNaN(date.getTime())) {
     return String(d || '').slice(0, 10);
   }
-  return date.toISOString().slice(0, 10);
+  return formatLocalDate(date);
 }
 
 function defaultPeriod() {
-  return defaultSchedulePeriod();
+  const today = formatLocalDate(new Date());
+  return getFourWeekPeriodRange(today) || defaultSchedulePeriod();
 }
 
 function normalizeArray(value) {
@@ -178,7 +184,7 @@ function enumerateDates(startDate, endDate) {
   const dates = [];
   const cursor = new Date(start);
   while (cursor <= end) {
-    dates.push(cursor.toISOString().slice(0, 10));
+    dates.push(formatLocalDate(cursor));
     cursor.setDate(cursor.getDate() + 1);
   }
   return dates;
@@ -532,24 +538,8 @@ function hasStaffingRequirements(scheduleRead) {
 
 const EMPTY_SCHEDULE_VERSIONS = { draft: null, published: null };
 
-async function fetchScheduleByStatus(status) {
-  try {
-    return await getLatestSchedule(status);
-  } catch (error) {
-    if (error?.response?.status === 404 || isMissingCompanyError(error)) {
-      return null;
-    }
-    throw error;
-  }
-}
-
 async function loadScheduleVersions() {
-  const [draft, published] = await Promise.all([
-    fetchScheduleByStatus('draft'),
-    fetchScheduleByStatus('published'),
-  ]);
-
-  return { draft, published };
+  return fetchScheduleVersions();
 }
 
 function pickActiveVersion(versions, current) {
@@ -579,6 +569,7 @@ export default function ScheduleReview({ language }) {
   const hasCompany = Boolean(user?.company);
   const [viewMode, setViewMode] = useState('day');
   const [periodForm, setPeriodForm] = useState(defaultPeriod);
+  const [generatedPeriod, setGeneratedPeriod] = useState(null);
   const [scheduleVersions, setScheduleVersions] = useState(EMPTY_SCHEDULE_VERSIONS);
   const [activeVersion, setActiveVersion] = useState('draft');
   const [assignEmployeeIds, setAssignEmployeeIds] = useState({});
@@ -602,6 +593,7 @@ export default function ScheduleReview({ language }) {
       startDate: 'Начало',
       endDate: 'Конец',
       generate: 'Сгенерировать',
+      fillMonth: '4 недели',
       publish: 'Опубликовать',
       status: 'Статус',
       draft: 'Черновик',
@@ -639,6 +631,7 @@ export default function ScheduleReview({ language }) {
       startDate: 'Start',
       endDate: 'End',
       generate: 'Generate',
+      fillMonth: '4 weeks',
       publish: 'Publish',
       status: 'Status',
       draft: 'Draft',
@@ -706,8 +699,51 @@ export default function ScheduleReview({ language }) {
     };
   }, [schedule, employeesLoaded, realEmployeeIds]);
 
-  const scheduleStartDate = schedule?.start_date || schedule?.period_start || periodForm.start_date;
-  const scheduleEndDate = schedule?.end_date || schedule?.period_end || periodForm.end_date;
+  const basePeriod = useMemo(
+    () => deriveSchedulePeriod(schedule, periodForm),
+    [periodForm, schedule],
+  );
+
+  const monthViewRange = useMemo(() => (
+    getFourWeekPeriodRange(periodForm.start_date)
+    || getFourWeekPeriodRange(formatLocalDate(new Date()))
+  ), [periodForm.start_date]);
+
+  const applyMonthRangeFromStart = useCallback((startDate) => {
+    const range = getFourWeekPeriodRange(startDate);
+    if (!range) {
+      return null;
+    }
+    setGeneratedPeriod(null);
+    setPeriodForm(range);
+    setSelectedDateIndex(0);
+    return range;
+  }, []);
+
+  const resolveViewAnchorDate = useCallback(() => {
+    const sparseDates = mergeScheduleDates(displaySchedule, unfilledNotFoundRequirements)
+      .map((day) => day.date)
+      .filter(Boolean);
+
+    if (sparseDates.length > 0) {
+      const safeIndex = Math.max(0, Math.min(selectedDateIndex, sparseDates.length - 1));
+      return sparseDates[safeIndex];
+    }
+
+    return periodForm.start_date || formatLocalDate(new Date());
+  }, [displaySchedule, periodForm.start_date, selectedDateIndex, unfilledNotFoundRequirements]);
+
+  const activateMonthView = useCallback(() => {
+    applyMonthRangeFromStart(resolveViewAnchorDate());
+    setViewMode('month');
+  }, [applyMonthRangeFromStart, resolveViewAnchorDate]);
+
+  const scheduleStartDate = viewMode === 'month'
+    ? monthViewRange.start_date
+    : basePeriod.start_date;
+  const scheduleEndDate = viewMode === 'month'
+    ? monthViewRange.end_date
+    : basePeriod.end_date;
 
   const sparseSchedules = useMemo(
     () => mergeScheduleDates(displaySchedule, unfilledNotFoundRequirements),
@@ -797,10 +833,19 @@ export default function ScheduleReview({ language }) {
     setSuccess('');
 
     try {
-      const generated = await generateSchedule(period);
+      const generationPeriod = viewMode === 'month'
+        ? (getFourWeekPeriodRange(periodForm.start_date) || period)
+        : period;
+      const generated = await generateScheduleForPeriod(generationPeriod);
       const visibleShiftCount = countVisibleShifts(generated, realEmployeeIds);
 
-      await reloadScheduleVersions('draft');
+      setGeneratedPeriod({
+        start_date: generationPeriod.start_date,
+        end_date: generationPeriod.end_date,
+      });
+      persistMergedScheduleBundle('draft', generated);
+      setScheduleVersions((prev) => ({ ...prev, draft: generated }));
+      setActiveVersion('draft');
       setSelectedDateIndex(0);
 
       if (visibleShiftCount > 0) {
@@ -815,7 +860,7 @@ export default function ScheduleReview({ language }) {
     } finally {
       setIsSubmitting(false);
     }
-  }, [language, realEmployeeIds, reloadScheduleVersions, t.generated, t.noEmployeesAndRequirements, t.noScheduleHint]);
+  }, [language, periodForm.start_date, realEmployeeIds, t.generated, t.noEmployeesAndRequirements, t.noScheduleHint, viewMode]);
 
   useEffect(() => {
     if (isAuthLoading) {
@@ -889,8 +934,21 @@ export default function ScheduleReview({ language }) {
     setSuccess('');
 
     try {
-      await publishSchedule(schedule.id);
-      await reloadScheduleVersions('published');
+      const published = await publishScheduleForPeriod(schedule);
+      persistMergedScheduleBundle('published', published);
+      clearMergedScheduleBundle('draft');
+      setGeneratedPeriod(
+        getFourWeekPeriodRange(periodForm.start_date) || {
+          start_date: periodForm.start_date,
+          end_date: periodForm.end_date,
+        },
+      );
+      setScheduleVersions((prev) => ({
+        ...prev,
+        draft: null,
+        published,
+      }));
+      setActiveVersion('published');
       setSuccess(t.publishedDone);
     } catch (e) {
       setError(extractApiErrorMessage(e, null, language));
@@ -909,7 +967,9 @@ export default function ScheduleReview({ language }) {
     setSuccess('');
 
     try {
-      await deleteSchedule(publishedSchedule.id);
+      await deleteScheduleForPeriod(publishedSchedule);
+      clearMergedScheduleBundle('published');
+      setGeneratedPeriod(null);
       await reloadScheduleVersions('draft');
       setSuccess(t.publishedDeleted);
     } catch (e) {
@@ -962,7 +1022,7 @@ export default function ScheduleReview({ language }) {
 
   if (isLoading || isAuthLoading) return <div style={{ padding: 20 }}>{t.loading}</div>;
 
-  const hasShifts = normalizeArray(displaySchedule?.shifts).length > 0 && employeesForView.length > 0;
+  const hasShifts = normalizeArray(displaySchedule?.shifts).length > 0;
   const hasGridContent = hasShifts || unfilledNotFoundRequirements.length > 0;
   const versionOptions = [
     { id: 'draft', label: t.viewDraft, schedule: scheduleVersions.draft },
@@ -1080,7 +1140,15 @@ export default function ScheduleReview({ language }) {
             <input
               type="date"
               value={periodForm.start_date}
-              onChange={(e) => setPeriodForm((prev) => ({ ...prev, start_date: e.target.value }))}
+              onChange={(e) => {
+                const startDate = e.target.value;
+                if (viewMode === 'month') {
+                  applyMonthRangeFromStart(startDate);
+                  return;
+                }
+                setGeneratedPeriod(null);
+                setPeriodForm((prev) => ({ ...prev, start_date: startDate }));
+              }}
               style={{
                 width: isMobile ? '100%' : 'auto',
                 height: 40,
@@ -1109,20 +1177,53 @@ export default function ScheduleReview({ language }) {
             <input
               type="date"
               value={periodForm.end_date}
-              onChange={(e) => setPeriodForm((prev) => ({ ...prev, end_date: e.target.value }))}
+              readOnly={viewMode === 'month'}
+              onChange={(e) => {
+                if (viewMode === 'month') return;
+                setGeneratedPeriod(null);
+                setPeriodForm((prev) => ({ ...prev, end_date: e.target.value }));
+              }}
               style={{
                 width: isMobile ? '100%' : 'auto',
                 height: 40,
                 borderRadius: 12,
                 border: '2px solid #dee7e7',
                 padding: '0 12px',
-                background: '#ffffff',
+                background: viewMode === 'month' ? '#f4faff' : '#ffffff',
                 color: '#002642',
                 colorScheme: 'light',
                 boxSizing: 'border-box',
               }}
             />
           </label>
+
+          <button
+            type="button"
+            onClick={() => {
+              const range = getFourWeekPeriodRange(periodForm.start_date);
+              if (!range) return;
+              setGeneratedPeriod(null);
+              setPeriodForm(range);
+              if (viewMode === 'month') {
+                setSelectedDateIndex(0);
+              }
+            }}
+            disabled={isSubmitting}
+            style={{
+              height: 40,
+              padding: '0 14px',
+              borderRadius: 12,
+              background: '#f4faff',
+              color: '#002642',
+              border: '2px solid #dee7e7',
+              cursor: isSubmitting ? 'default' : 'pointer',
+              fontWeight: 700,
+              width: isMobile ? '100%' : 'auto',
+              ...actionButtonStyle,
+            }}
+          >
+            {t.fillMonth}
+          </button>
 
           <button
             onClick={() => runGenerate(periodForm)}
@@ -1325,31 +1426,33 @@ export default function ScheduleReview({ language }) {
             </button>
           </div>
 
-          {!isMobile && (
-            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-              {['day', '3day', 'month'].map((mode) => (
-                <button
-                  key={mode}
-                  type="button"
-                  onClick={() => {
-                    setViewMode(mode);
-                    setSelectedDateIndex(0);
-                  }}
-                  style={{
-                    fontWeight: viewMode === mode ? 700 : 400,
-                    padding: '6px 12px',
-                    borderRadius: '6px',
-                    background: viewMode === mode ? '#002642' : '#dee7e7',
-                    color: viewMode === mode ? '#fff' : '#002642',
-                    border: '1px solid #dee7e7',
-                    cursor: 'pointer',
-                  }}
-                >
-                  {mode === 'day' ? t.day : mode === '3day' ? t.threeDay : t.month}
-                </button>
-              ))}
-            </div>
-          )}
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+            {['day', '3day', 'month'].map((mode) => (
+              <button
+                key={mode}
+                type="button"
+                onClick={() => {
+                  if (mode === 'month') {
+                    activateMonthView();
+                    return;
+                  }
+                  setViewMode(mode);
+                  setSelectedDateIndex(0);
+                }}
+                style={{
+                  fontWeight: viewMode === mode ? 700 : 400,
+                  padding: '6px 12px',
+                  borderRadius: '6px',
+                  background: viewMode === mode ? '#002642' : '#dee7e7',
+                  color: viewMode === mode ? '#fff' : '#002642',
+                  border: '1px solid #dee7e7',
+                  cursor: 'pointer',
+                }}
+              >
+                {mode === 'day' ? t.day : mode === '3day' ? t.threeDay : t.month}
+              </button>
+            ))}
+          </div>
 
           <div style={{
             marginLeft: isMobile ? 0 : 'auto',

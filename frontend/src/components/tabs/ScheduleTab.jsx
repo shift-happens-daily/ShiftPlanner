@@ -7,13 +7,13 @@ import {
   createExchangeRequest,
   defaultSchedulePeriod,
   deleteShift,
-  generateSchedule,
+  generateScheduleForPeriod,
   getMySchedule,
   getSchedule,
   listAvailableEmployees,
   listExchangeRequests,
   mergePublishedSchedule,
-  publishSchedule,
+  publishScheduleForPeriod,
   updateExchangeRequest,
   updateShift,
 } from '../../services/scheduleService';
@@ -437,7 +437,7 @@ export default function ScheduleTab({ language, userRole }) {
     setIsSubmitting(true);
 
     try {
-      const generated = await generateSchedule(periodForm);
+      const generated = await generateScheduleForPeriod(periodForm);
       setSchedule(generated);
       setReassignEmployeeIds({});
       setSuccessMessage(t.generated);
@@ -455,8 +455,8 @@ export default function ScheduleTab({ language, userRole }) {
     setIsSubmitting(true);
 
     try {
-      const publishedSchedule = await publishSchedule(schedule.id);
-      setSchedule((prev) => mergePublishedSchedule(prev, publishedSchedule));
+      const publishedSchedule = await publishScheduleForPeriod(schedule);
+      setSchedule(publishedSchedule);
       setSuccessMessage(t.publishedDone);
     } catch (error) {
       setErrorMessage(extractApiErrorMessage(error, null, language));
