@@ -17,16 +17,6 @@ import { extractApiErrorMessage, localizeBackendMessage } from '../../services/e
 import { mapEmployeeCalendarSummary } from '../../services/mappers';
 import { createPosition, deletePosition, listPositions } from '../../services/positionService';
 import { listBranches, linkUserToCompany } from '../../services/companyService';
-import {
-  addEmployeeBranch,
-  employeeHasBranch,
-  getEmployeeBranchesLabel,
-  getEmployeeBranchIds,
-  removeEmployeeBranch,
-  resolveEmployeeBranches,
-  seedStoredBranchIds,
-  setStoredBranchIds,
-} from '../../utils/employeeBranches';
 import { useTabResponsive } from '../../utils/tabResponsive';
 
 const WEEKDAYS = [
@@ -59,6 +49,19 @@ function getPositionLabel(position) {
 
 function getEmployeePosition(employee) {
   return employee?.position_title || employee?.position?.title || employee?.position?.name || '';
+}
+
+function getEmployeeBranch(employee, branches = []) {
+  if (!employee) return '';
+
+  const directName = employee?.branch?.name || employee?.branch_name || employee?.branch_title;
+  if (directName) return directName;
+
+  const branchId = employee?.branch?.id || employee?.branch_id || employee?.branchId;
+  if (!branchId) return '';
+
+  const matchedBranch = branches.find((branch) => String(branch.id) === String(branchId));
+  return matchedBranch?.name || matchedBranch?.title || '';
 }
 
 function isValidEmail(email) {
@@ -117,11 +120,9 @@ export default function EmployeesTab({ language, userRole, user }) {
   });
 
   const [selectedEmployeeDetails, setSelectedEmployeeDetails] = useState({
+    branch_id: '',
     position_id: '',
   });
-  const [selectedEmployeeBranchIds, setSelectedEmployeeBranchIds] = useState([]);
-  const [branchToAddId, setBranchToAddId] = useState('');
-  const [branchAssignmentsRevision, setBranchAssignmentsRevision] = useState(0);
 
   const [selectedBranchId, setSelectedBranchId] = useState('');
   const [selectedPositionId, setSelectedPositionId] = useState('');
@@ -234,11 +235,6 @@ export default function EmployeesTab({ language, userRole, user }) {
       confirmRemoveEmployee: 'Удалить сотрудника из компании?',
       employeeRemoved: 'Сотрудник удалён из компании.',
       removeEmployeeError: 'Не удалось удалить сотрудника.',
-      branches: 'Филиалы',
-      addBranch: 'Добавить филиал',
-      removeBranch: 'Убрать',
-      noBranchesAssigned: 'Филиалы не назначены',
-      branchesPreviewHint: 'Несколько филиалов сохраняются локально до обновления API.',
     },
     en: {
       title: 'Employees',
@@ -324,11 +320,6 @@ export default function EmployeesTab({ language, userRole, user }) {
       confirmRemoveEmployee: 'Remove this employee from the company?',
       employeeRemoved: 'Employee removed from company.',
       removeEmployeeError: 'Failed to remove employee.',
-      branches: 'Branches',
-      addBranch: 'Add branch',
-      removeBranch: 'Remove',
-      noBranchesAssigned: 'No branches assigned',
-      branchesPreviewHint: 'Multiple branches are stored locally until the API supports them.',
     },
   };
 
@@ -364,22 +355,15 @@ export default function EmployeesTab({ language, userRole, user }) {
   );
 
   const selectedEmployeePosition = getEmployeePosition(selectedEmployee);
-  const selectedEmployeeBranches = useMemo(() => {
-    if (!selectedEmployee) return [];
-    seedStoredBranchIds(selectedEmployee);
-    return resolveEmployeeBranches(selectedEmployee, branches);
-  }, [selectedEmployee, branches, branchAssignmentsRevision]);
-  const selectedEmployeeBranchLabel = selectedEmployee
-    ? getEmployeeBranchesLabel(selectedEmployee, branches)
-    : '';
+  const selectedEmployeeBranch = getEmployeeBranch(selectedEmployee, branches);
 
   const filteredEmployees = useMemo(() => {
     const query = searchQuery.trim().toLowerCase();
 
     return employees.filter((employee) => {
       if (selectedBranchId) {
-        seedStoredBranchIds(employee);
-        if (!employeeHasBranch(employee, selectedBranchId)) return false;
+        const employeeBranchId = employee.branch?.id || employee.branch_id || employee.branchId;
+        if (String(employeeBranchId) !== String(selectedBranchId)) return false;
       }
 
       if (selectedPositionId) {
@@ -397,12 +381,7 @@ export default function EmployeesTab({ language, userRole, user }) {
 
       return true;
     });
-  }, [employees, selectedBranchId, selectedPositionId, searchQuery, branchAssignmentsRevision]);
-
-  const availableBranchesToAdd = useMemo(() => {
-    const assigned = new Set(selectedEmployeeBranchIds.map(String));
-    return branches.filter((branch) => !assigned.has(String(branch.id)));
-  }, [branches, selectedEmployeeBranchIds]);
+  }, [employees, selectedBranchId, selectedPositionId, searchQuery]);
 
   useEffect(() => {
     if (filteredEmployees.some((employee) => String(employee.id) === String(selectedEmployeeId))) return;
@@ -412,16 +391,12 @@ export default function EmployeesTab({ language, userRole, user }) {
 
   useEffect(() => {
     if (selectedEmployee) {
-      seedStoredBranchIds(selectedEmployee);
       setSelectedEmployeeDetails({
+        branch_id: selectedEmployee.branch?.id || selectedEmployee.branch_id || '',
         position_id: selectedEmployee.position_id || selectedEmployee.position?.id || selectedEmployee.position?.position_id || '',
       });
-      setSelectedEmployeeBranchIds(getEmployeeBranchIds(selectedEmployee));
-      setBranchToAddId('');
     } else {
-      setSelectedEmployeeDetails({ position_id: '' });
-      setSelectedEmployeeBranchIds([]);
-      setBranchToAddId('');
+      setSelectedEmployeeDetails({ branch_id: '', position_id: '' });
     }
   }, [selectedEmployee]);
 
@@ -576,8 +551,8 @@ export default function EmployeesTab({ language, userRole, user }) {
 
     const currentFiltered = employeesData.filter((employee) => {
       if (!selectedBranchId) return true;
-      seedStoredBranchIds(employee);
-      return employeeHasBranch(employee, selectedBranchId);
+      const employeeBranchId = employee.branch?.id || employee.branch_id || employee.branchId;
+      return String(employeeBranchId) === String(selectedBranchId);
     });
 
     if (!currentFiltered.some((employee) => String(employee.id) === String(selectedEmployeeId))) {
@@ -588,41 +563,6 @@ export default function EmployeesTab({ language, userRole, user }) {
   const reloadPositions = async () => {
     const positionsData = normalizeArray(await listPositions());
     setPositions(positionsData);
-  };
-
-  const bumpBranchAssignments = () => {
-    setBranchAssignmentsRevision((value) => value + 1);
-  };
-
-  const handleAddEmployeeBranch = () => {
-    if (!selectedEmployee || !branchToAddId) return;
-
-    clearMessages();
-    const nextIds = addEmployeeBranch(selectedEmployee, branchToAddId, branches);
-    setSelectedEmployeeBranchIds(nextIds);
-    setBranchToAddId('');
-    bumpBranchAssignments();
-    setSuccessMessage(t.assignmentsSaved);
-  };
-
-  const handleRemoveEmployeeBranch = async (branchId) => {
-    if (!selectedEmployee) return;
-
-    clearMessages();
-    const nextIds = removeEmployeeBranch(selectedEmployee, branchId);
-    setSelectedEmployeeBranchIds(nextIds);
-    bumpBranchAssignments();
-
-    const primaryBranchId = nextIds[0] ? Number(nextIds[0]) : null;
-
-    try {
-      await updateEmployeeBranch(selectedEmployee.id, { branch_id: primaryBranchId });
-      await reloadEmployees(selectedEmployee.id);
-      setSuccessMessage(t.assignmentsSaved);
-    } catch (error) {
-      setStoredBranchIds(selectedEmployee.id, nextIds);
-      setErrorMessage(getFriendlyError(error, t.assignmentsError));
-    }
   };
 
   const handleAssignDetails = async () => {
@@ -638,16 +578,13 @@ export default function EmployeesTab({ language, userRole, user }) {
           : null,
       });
 
-      setStoredBranchIds(selectedEmployee.id, selectedEmployeeBranchIds);
-
-      const primaryBranchId = selectedEmployeeBranchIds[0]
-        ? Number(selectedEmployeeBranchIds[0])
-        : null;
-
-      await updateEmployeeBranch(selectedEmployee.id, { branch_id: primaryBranchId });
+      await updateEmployeeBranch(selectedEmployee.id, {
+        branch_id: selectedEmployeeDetails.branch_id
+          ? Number(selectedEmployeeDetails.branch_id)
+          : null,
+      });
 
       await reloadEmployees(selectedEmployee.id);
-      bumpBranchAssignments();
       setSuccessMessage(t.assignmentsSaved);
     } catch (error) {
       setErrorMessage(getFriendlyError(error, t.assignmentsError));
@@ -1171,7 +1108,7 @@ export default function EmployeesTab({ language, userRole, user }) {
                       <Info label={t.fullName} value={selectedEmployee?.full_name || selectedEmployee?.name || '—'} />
                       <Info label={t.email} value={selectedEmployee?.email || '—'} />
                       <Info label={t.position} value={selectedEmployeePosition || t.empty} />
-                      <Info label={t.branches} value={selectedEmployeeBranchLabel || t.noBranchesAssigned} />
+                      <Info label={t.branch} value={selectedEmployeeBranch || t.empty} />
                     </div>
 
                     <div style={styles.innerSection}>
@@ -1198,56 +1135,21 @@ export default function EmployeesTab({ language, userRole, user }) {
                       </div>
 
                       <div style={styles.stack}>
-                        <label style={styles.label}>{t.branches}</label>
-                        <p style={styles.panelHint}>{t.branchesPreviewHint}</p>
-
-                        {selectedEmployeeBranches.length === 0 ? (
-                          <div style={styles.emptyBox}>{t.noBranchesAssigned}</div>
-                        ) : (
-                          <div style={styles.branchPills}>
-                            {selectedEmployeeBranches.map((branch) => (
-                              <span key={branch.id} style={styles.branchPill}>
-                                <span>{branch.name || branch.title || `#${branch.id}`}</span>
-                                <button
-                                  type="button"
-                                  onClick={() => handleRemoveEmployeeBranch(branch.id)}
-                                  style={styles.branchPillRemove}
-                                  aria-label={`${t.removeBranch} ${branch.name || branch.id}`}
-                                  disabled={isSubmitting}
-                                >
-                                  ×
-                                </button>
-                              </span>
-                            ))}
-                          </div>
-                        )}
-
-                        <div style={{ ...styles.row, gridTemplateColumns: r.gridCols('1fr auto') }}>
-                          <select
-                            value={branchToAddId}
-                            onChange={(event) => setBranchToAddId(event.target.value)}
-                            style={styles.select}
-                            disabled={availableBranchesToAdd.length === 0 || isSubmitting}
-                          >
-                            <option value="">{t.selectBranch}</option>
-                            {availableBranchesToAdd.map((branch) => (
-                              <option key={branch.id} value={branch.id}>
-                                {branch.name}
-                              </option>
-                            ))}
-                          </select>
-                          <button
-                            type="button"
-                            onClick={handleAddEmployeeBranch}
-                            style={{
-                              ...styles.secondaryButton,
-                              ...((!branchToAddId || isSubmitting) ? { opacity: 0.65, cursor: 'default' } : {}),
-                            }}
-                            disabled={!branchToAddId || isSubmitting}
-                          >
-                            {t.addBranch}
-                          </button>
-                        </div>
+                        <label style={styles.label}>{t.branch}</label>
+                        <select
+                          value={selectedEmployeeDetails.branch_id}
+                          onChange={(event) =>
+                            setSelectedEmployeeDetails((prev) => ({ ...prev, branch_id: event.target.value }))
+                          }
+                          style={styles.select}
+                        >
+                          <option value="">{t.selectBranch}</option>
+                          {branches.map((branch) => (
+                            <option key={branch.id} value={branch.id}>
+                              {branch.name}
+                            </option>
+                          ))}
+                        </select>
                       </div>
 
                       <button type="button" onClick={handleAssignDetails} style={styles.primaryButton}>
@@ -1772,39 +1674,6 @@ const styles = {
     color: '#002642',
     fontWeight: '900',
     cursor: 'pointer',
-  },
-
-  branchPills: {
-    display: 'flex',
-    flexWrap: 'wrap',
-    gap: '8px',
-  },
-
-  branchPill: {
-    display: 'inline-flex',
-    alignItems: 'center',
-    gap: '8px',
-    minHeight: '34px',
-    padding: '0 8px 0 13px',
-    border: '1px solid #dee7e7',
-    borderRadius: '999px',
-    background: '#ffffff',
-    color: '#002642',
-    fontWeight: '700',
-    fontSize: '13px',
-  },
-
-  branchPillRemove: {
-    width: '24px',
-    height: '24px',
-    border: 'none',
-    borderRadius: '999px',
-    background: 'rgba(215, 173, 207, 0.35)',
-    color: '#8d1d1d',
-    fontSize: '16px',
-    lineHeight: 1,
-    cursor: 'pointer',
-    fontWeight: '900',
   },
 
   metricGrid: {

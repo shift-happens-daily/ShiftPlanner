@@ -1,8 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import * as XLSX from 'xlsx';
 import { getEmployeeReports, getMyReport } from '../../services/reportService';
-import { listBranches } from '../../services/companyService';
-import { enrichReportRowBranch } from '../../utils/employeeBranches';
 import { extractApiErrorMessage } from '../../services/error';
 import { useTabResponsive } from '../../utils/tabResponsive';
 
@@ -44,18 +42,16 @@ function normalizeNumber(value) {
 
 const DEFAULT_HOURLY_RATE = 25;
 
-function normalizeManagerRow(item, allBranches = []) {
+function normalizeManagerRow(item) {
   const totalHours = normalizeNumber(item?.total_hours);
   const hourlyRate = normalizeNumber(item?.hourly_rate) || DEFAULT_HOURLY_RATE;
   const totalSalary = normalizeNumber(item?.total_salary) || normalizeNumber(item?.salary) || totalHours * hourlyRate;
-  const branchInfo = enrichReportRowBranch(item, allBranches);
 
   return {
     employee_id: item?.employee_id || item?.id || item?.user_id || `${item?.full_name}-${item?.position}`,
     full_name: item?.full_name || item?.employee_name || item?.name || '—',
     position: item?.position || item?.position_title || item?.position_name || '—',
-    branch: branchInfo.branch,
-    branchNames: branchInfo.branchNames,
+    branch: item?.branch || item?.branch_name || item?.branch_title || item?.branch?.name || '—',
     total_hours: totalHours,
     total_shifts: normalizeNumber(item?.total_shifts),
     hourly_rate: hourlyRate,
@@ -80,10 +76,9 @@ function normalizeEmployeeReport(report) {
   };
 }
 
-export default function ReportsTab({ language, userRole, user }) {
+export default function ReportsTab({ language, userRole }) {
   const r = useTabResponsive(1200);
   const isManager = userRole === 'manager';
-  const companyId = user?.company?.id || user?.company_id || null;
 
   const [filterForm, setFilterForm] = useState(defaultRange);
   const [appliedRange, setAppliedRange] = useState(defaultRange);
@@ -91,7 +86,6 @@ export default function ReportsTab({ language, userRole, user }) {
   const [employeeSearch, setEmployeeSearch] = useState('');
   const [positionFilter, setPositionFilter] = useState('');
   const [branchFilter, setBranchFilter] = useState('');
-  const [companyBranches, setCompanyBranches] = useState([]);
 
   const [managerReport, setManagerReport] = useState([]);
   const [employeeReport, setEmployeeReport] = useState(null);
@@ -174,49 +168,16 @@ export default function ReportsTab({ language, userRole, user }) {
 
   const t = texts[language] || texts.ru;
 
-  useEffect(() => {
-    if (!isManager || !companyId) {
-      setCompanyBranches([]);
-      return undefined;
-    }
-
-    let cancelled = false;
-
-    async function loadBranches() {
-      try {
-        const data = await listBranches(companyId);
-        if (!cancelled) {
-          setCompanyBranches(Array.isArray(data) ? data : []);
-        }
-      } catch {
-        if (!cancelled) {
-          setCompanyBranches([]);
-        }
-      }
-    }
-
-    void loadBranches();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [companyId, isManager]);
-
   const normalizedManagerReport = useMemo(
-    () => normalizeArray(managerReport).map((item) => normalizeManagerRow(item, companyBranches)),
-    [managerReport, companyBranches]
+    () => normalizeArray(managerReport).map(normalizeManagerRow),
+    [managerReport]
   );
 
   const filteredManagerReport = useMemo(() => {
-    const branchQuery = branchFilter.trim().toLowerCase();
-
     return normalizedManagerReport.filter((item) => {
       const matchesEmployee = !employeeSearch || item.full_name.toLowerCase().includes(employeeSearch.toLowerCase());
       const matchesPosition = !positionFilter || item.position.toLowerCase().includes(positionFilter.toLowerCase());
-      const branchNames = item.branchNames?.length ? item.branchNames : [item.branch];
-      const matchesBranch = !branchQuery || branchNames.some((name) =>
-        String(name || '').toLowerCase().includes(branchQuery)
-      );
+      const matchesBranch = !branchFilter || item.branch.toLowerCase().includes(branchFilter.toLowerCase());
       return matchesEmployee && matchesPosition && matchesBranch;
     });
   }, [normalizedManagerReport, employeeSearch, positionFilter, branchFilter]);

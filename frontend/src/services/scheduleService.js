@@ -29,6 +29,13 @@ export function getFourWeekPeriodRange(startDateStr) {
 }
 
 export function deriveSchedulePeriod(schedule, periodForm = {}) {
+  if (schedule?.start_date && schedule?.end_date) {
+    return {
+      start_date: schedule.start_date,
+      end_date: schedule.end_date,
+    };
+  }
+
   const shiftDates = (schedule?.shifts || [])
     .map((shift) => String(shift.date || '').slice(0, 10))
     .filter(Boolean);
@@ -50,238 +57,54 @@ export function deriveSchedulePeriod(schedule, periodForm = {}) {
   };
 }
 
-/** Split a date range into Mon–Sun week chunks (partial weeks at the edges are allowed). */
-export function splitPeriodIntoWeeks(startDateStr, endDateStr) {
-  const start = new Date(`${startDateStr}T12:00:00`);
-  const end = new Date(`${endDateStr}T12:00:00`);
-  if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime()) || start > end) {
-    return [];
+function buildScheduleQueryParams(period = null, status = null) {
+  const params = {};
+  if (period?.start_date) params.date_from = period.start_date;
+  if (period?.end_date) params.date_to = period.end_date;
+  if (status) params.status = status;
+  return params;
+}
+
+function pickPrimarySchedule(schedules) {
+  if (!Array.isArray(schedules) || schedules.length === 0) {
+    return null;
   }
+  return [...schedules].sort((a, b) => b.id - a.id)[0];
+}
 
-  const weeks = [];
-  let cursor = new Date(start);
-
-  while (cursor <= end) {
-    const weekStart = new Date(cursor);
-    const weekEnd = new Date(cursor);
-    const daysUntilSunday = cursor.getDay() === 0 ? 0 : (7 - cursor.getDay());
-    weekEnd.setDate(cursor.getDate() + daysUntilSunday);
-    if (weekEnd > end) {
-      weekEnd.setTime(end.getTime());
+/** Load draft/published schedules for the selected date range (one schedule per status). */
+export async function fetchScheduleVersions(period = null) {
+  const loadByStatus = async (status) => {
+    try {
+      const schedules = await listSchedules(buildScheduleQueryParams(period, status));
+      return pickPrimarySchedule(schedules);
+    } catch (error) {
+      if (error?.response?.status === 404) {
+        return null;
+      }
+      throw error;
     }
-
-    weeks.push({
-      start_date: formatLocalDate(weekStart),
-      end_date: formatLocalDate(weekEnd),
-    });
-
-    cursor = new Date(weekEnd);
-    cursor.setDate(cursor.getDate() + 1);
-  }
-
-  return weeks;
-}
-
-function mergeGeneratedSchedules(existing, next, fullPeriod) {
-  if (!existing) {
-    return {
-      ...next,
-      start_date: fullPeriod.start_date,
-      end_date: fullPeriod.end_date,
-      scheduleIds: next.id ? [next.id] : [],
-      shifts: [...(next.shifts || [])],
-      unfilled_requirements: [...(next.unfilled_requirements || [])],
-      conflicts: [...(next.conflicts || [])],
-    };
-  }
-
-  return {
-    ...next,
-    start_date: fullPeriod.start_date,
-    end_date: fullPeriod.end_date,
-    scheduleIds: [...(existing.scheduleIds || []), ...(next.id ? [next.id] : [])],
-    shifts: [...(existing.shifts || []), ...(next.shifts || [])],
-    unfilled_requirements: [
-      ...(existing.unfilled_requirements || []),
-      ...(next.unfilled_requirements || []),
-    ],
-    conflicts: [...(existing.conflicts || []), ...(next.conflicts || [])],
   };
-}
 
-export function resolveScheduleIds(schedule) {
-  if (Array.isArray(schedule?.scheduleIds) && schedule.scheduleIds.length > 0) {
-    return schedule.scheduleIds;
-  }
-  if (schedule?.id) {
-    return [schedule.id];
-  }
-  return [];
-}
-
-const MERGED_SCHEDULE_STORAGE_KEYS = {
-  draft: 'shiftplanner_merged_draft_v2',
-  published: 'shiftplanner_merged_published_v2',
-};
-
-export function mergeScheduleReads(schedules, meta = {}) {
-  const items = (schedules || []).filter(Boolean);
-  if (!items.length) {
-    return null;
-  }
-
-  const last = items[items.length - 1];
-  const scheduleIds = meta.scheduleIds || items.map((item) => item.id).filter(Boolean);
-
-  return {
-    ...last,
-    id: last.id,
-    status: meta.status || last.status,
-    scheduleIds,
-    start_date: meta.start_date,
-    end_date: meta.end_date,
-    shifts: items.flatMap((item) => item.shifts || []),
-    unfilled_requirements: items.flatMap((item) => item.unfilled_requirements || []),
-    conflicts: items.flatMap((item) => item.conflicts || []),
-  };
-}
-
-export function persistMergedScheduleBundle(kind, schedule) {
-  const scheduleIds = resolveScheduleIds(schedule);
-  if (!scheduleIds.length) {
-    return;
-  }
-
-  localStorage.setItem(MERGED_SCHEDULE_STORAGE_KEYS[kind], JSON.stringify({
-    scheduleIds,
-    start_date: schedule.start_date || null,
-    end_date: schedule.end_date || null,
-    shifts: schedule.shifts || [],
-    unfilled_requirements: schedule.unfilled_requirements || [],
-    conflicts: schedule.conflicts || [],
-  }));
-}
-
-export function clearMergedScheduleBundle(kind) {
-  localStorage.removeItem(MERGED_SCHEDULE_STORAGE_KEYS[kind]);
-}
-
-function mergeStoredScheduleSnapshot(stored, mergedFromApi, kind) {
-  const scheduleIds = Array.isArray(stored?.scheduleIds) ? stored.scheduleIds : [];
-  const storedShifts = Array.isArray(stored?.shifts) ? stored.shifts : [];
-  const apiShifts = mergedFromApi?.shifts || [];
-  const shifts = apiShifts.length >= storedShifts.length ? apiShifts : storedShifts;
-
-  if (!mergedFromApi && !storedShifts.length) {
-    return null;
-  }
-
-  return {
-    ...(mergedFromApi || {}),
-    id: mergedFromApi?.id || scheduleIds[scheduleIds.length - 1],
-    status: kind,
-    scheduleIds,
-    start_date: stored.start_date || mergedFromApi?.start_date,
-    end_date: stored.end_date || mergedFromApi?.end_date,
-    shifts,
-    unfilled_requirements: (mergedFromApi?.unfilled_requirements?.length
-      ? mergedFromApi.unfilled_requirements
-      : stored.unfilled_requirements) || [],
-    conflicts: mergedFromApi?.conflicts || stored.conflicts || [],
-  };
-}
-
-export async function loadMergedScheduleBundle(kind) {
-  const raw = localStorage.getItem(MERGED_SCHEDULE_STORAGE_KEYS[kind]);
-  if (!raw) {
-    return null;
-  }
-
-  try {
-    const stored = JSON.parse(raw);
-    const scheduleIds = Array.isArray(stored?.scheduleIds) ? stored.scheduleIds : [];
-    if (!scheduleIds.length) {
-      return null;
-    }
-
-    const responses = await Promise.all(
-      scheduleIds.map((id) => getSchedule(id).catch(() => null)),
-    );
-    const schedules = responses.filter(Boolean);
-    const mergedFromApi = schedules.length
-      ? mergeScheduleReads(schedules, {
-        status: kind,
-        scheduleIds,
-        start_date: stored.start_date,
-        end_date: stored.end_date,
-      })
-      : null;
-
-    return mergeStoredScheduleSnapshot(stored, mergedFromApi, kind);
-  } catch {
-    return null;
-  }
-}
-
-async function fetchScheduleByStatusSafe(status) {
-  try {
-    return await getLatestSchedule(status);
-  } catch (error) {
-    if (error?.response?.status === 404) {
-      return null;
-    }
-    throw error;
-  }
-}
-
-function normalizeScheduleBundle(schedule) {
-  if (!schedule) {
-    return null;
-  }
-
-  return {
-    ...schedule,
-    scheduleIds: resolveScheduleIds(schedule),
-  };
-}
-
-/** Load draft/published, merging multi-week bundles stored locally or fetched by id. */
-export async function fetchScheduleVersions() {
-  const [storedDraft, storedPublished, latestDraft, latestPublished] = await Promise.all([
-    loadMergedScheduleBundle('draft'),
-    loadMergedScheduleBundle('published'),
-    fetchScheduleByStatusSafe('draft'),
-    fetchScheduleByStatusSafe('published'),
+  const [draft, published] = await Promise.all([
+    loadByStatus('draft'),
+    loadByStatus('published'),
   ]);
 
   return {
-    draft: storedDraft || normalizeScheduleBundle(latestDraft),
-    published: storedPublished || (latestPublished
-      ? mergePublishedSchedule(null, normalizeScheduleBundle(latestPublished))
-      : null),
+    draft,
+    published: published ? mergePublishedSchedule(null, published) : null,
   };
 }
 
-/** Generate schedule week-by-week when the period is longer than one solver week. */
+/** Generate one schedule for the full selected period. */
 export async function generateScheduleForPeriod(period) {
-  const weeks = splitPeriodIntoWeeks(period.start_date, period.end_date);
-  if (weeks.length <= 1) {
-    const response = await api.post('/schedule/generate', period);
-    return {
-      ...response.data,
-      start_date: period.start_date,
-      end_date: period.end_date,
-      scheduleIds: response.data?.id ? [response.data.id] : [],
-    };
-  }
-
-  let merged = null;
-  for (const week of weeks) {
-    const response = await api.post('/schedule/generate', week);
-    merged = mergeGeneratedSchedules(merged, response.data, period);
-  }
-
-  return merged;
+  const response = await api.post('/schedule/generate', period);
+  return {
+    ...response.data,
+    start_date: response.data?.start_date || period.start_date,
+    end_date: response.data?.end_date || period.end_date,
+  };
 }
 
 /** Solver-friendly default: next Mon–Sun week (matches recurring staffing/availability templates). */
@@ -311,8 +134,8 @@ export function defaultCalendarMonthPeriod(anchorDateStr) {
 }
 
 /**
- * Publish may return an empty shift list while status changes to "published"
- * (legacy read path on backend). Keep the draft shifts on screen for the manager.
+ * Publish may return an empty shift list while status changes to "published".
+ * Keep the draft shifts on screen for the manager.
  */
 export function mergePublishedSchedule(previous, published) {
   if (!published) {
@@ -323,7 +146,6 @@ export function mergePublishedSchedule(previous, published) {
     ...previous,
     ...published,
     status: published.status || 'published',
-    scheduleIds: published.scheduleIds ?? previous?.scheduleIds ?? resolveScheduleIds(previous),
     start_date: published.start_date ?? previous?.start_date,
     end_date: published.end_date ?? previous?.end_date,
     shifts: published.shifts?.length ? published.shifts : (previous?.shifts || []),
@@ -332,38 +154,32 @@ export function mergePublishedSchedule(previous, published) {
   };
 }
 
-/** Publish one schedule or every weekly draft that makes up a merged period. */
+/** Publish the single schedule for the selected period. */
 export async function publishScheduleForPeriod(schedule) {
-  const ids = resolveScheduleIds(schedule);
-  if (!ids.length) {
+  if (!schedule?.id) {
     throw new Error('No schedule id to publish.');
   }
 
-  for (const id of ids) {
-    await api.post(`/schedule/${id}/publish`);
-  }
-
-  const freshSchedules = await Promise.all(
-    ids.map((id) => getSchedule(id).catch(() => null)),
-  );
-  const mergedPublished = mergeScheduleReads(freshSchedules.filter(Boolean), {
-    status: 'published',
-    scheduleIds: ids,
-    start_date: schedule.start_date,
-    end_date: schedule.end_date,
-  });
-
-  return mergePublishedSchedule(schedule, mergedPublished || {
-    ...schedule,
-    status: 'published',
-    scheduleIds: ids,
+  const response = await api.post(`/schedule/${schedule.id}/publish`);
+  return mergePublishedSchedule(schedule, {
+    ...response.data,
+    start_date: response.data?.start_date ?? schedule.start_date,
+    end_date: response.data?.end_date ?? schedule.end_date,
   });
 }
 
-/** Delete one schedule or every weekly schedule in a merged period. */
+/** Delete the single schedule for the selected period. */
 export async function deleteScheduleForPeriod(schedule) {
-  const ids = resolveScheduleIds(schedule);
-  await Promise.all(ids.map((id) => api.delete(`/schedule/${id}`)));
+  if (!schedule?.id) {
+    throw new Error('No schedule id to delete.');
+  }
+
+  await api.delete(`/schedule/${schedule.id}`);
+}
+
+export async function listSchedules(params = {}) {
+  const response = await api.get('/schedule', { params });
+  return response.data;
 }
 
 export async function listRequirements(params = {}) {
@@ -456,25 +272,43 @@ export async function updateExchangeRequest(exchangeRequestId, payload) {
   return response.data;
 }
 
-/** Same source as ShiftsTab mobile: calendar-summary returns all published shifts. */
-export async function getMySchedule(params = {}) {
-  const response = await api.get('/employees/me/calendar-summary', { params });
-  const summary = response.data || {};
-  const employee = summary.employee || {};
-  const positionName = employee.position?.name || '';
+export function buildEmployeeScheduleRange(viewMode = 'month') {
+  const start = new Date();
+  start.setHours(12, 0, 0, 0);
+  const end = new Date(start);
 
-  return (summary.shifts || []).map((shift) => ({
-    id: shift.shift_id,
-    shift_id: shift.shift_id,
-    schedule_id: shift.schedule_id,
-    date: shift.date,
-    start_time: shift.start_time,
-    end_time: shift.end_time,
-    status: shift.status,
-    employee_id: employee.id,
-    employee_name: employee.full_name,
-    position: positionName,
-    position_title: positionName,
+  if (viewMode === 'day') {
+    end.setDate(end.getDate() + 13);
+  } else if (viewMode === 'week') {
+    end.setDate(end.getDate() + 41);
+  } else {
+    end.setDate(end.getDate() + 90);
+  }
+
+  return {
+    date_from: formatLocalDate(start),
+    date_to: formatLocalDate(end),
+  };
+}
+
+/** Load employee shifts for a date range via GET /schedule/my. */
+export async function getMySchedule(params = {}) {
+  const query = {
+    date_from: params.date_from || params.start_date || undefined,
+    date_to: params.date_to || params.end_date || undefined,
+  };
+
+  Object.keys(query).forEach((key) => {
+    if (query[key] === undefined) {
+      delete query[key];
+    }
+  });
+
+  const response = await api.get('/schedule/my', { params: query });
+  return (response.data || []).map((shift) => ({
+    ...shift,
+    shift_id: shift.id,
+    position_title: shift.position,
   }));
 }
 

@@ -4,16 +4,17 @@ import { listEmployees } from '../../services/employeeService';
 import { extractApiErrorMessage, localizeBackendMessage } from '../../services/error';
 import {
   assignRequirement,
+  buildEmployeeScheduleRange,
   createExchangeRequest,
   defaultSchedulePeriod,
   deleteShift,
+  fetchScheduleVersions,
   generateScheduleForPeriod,
   getMySchedule,
   getSchedule,
   listAvailableEmployees,
   listExchangeRequests,
   mergePublishedSchedule,
-  persistMergedScheduleBundle,
   publishScheduleForPeriod,
   updateExchangeRequest,
   updateShift,
@@ -178,22 +179,7 @@ export default function ScheduleTab({ language, userRole }) {
   const r = useTabResponsive(1280);
 
   const [periodForm, setPeriodForm] = useState(defaultPeriod);
-
-  const scheduleStorageKey = 'shiftplanner_manager_draft_schedule';
-  const [schedule, setSchedule] = useState(() => {
-    const rawSchedule = localStorage.getItem(scheduleStorageKey);
-
-    if (!rawSchedule) {
-      return null;
-    }
-
-    try {
-      return JSON.parse(rawSchedule);
-    } catch {
-      localStorage.removeItem(scheduleStorageKey);
-      return null;
-    }
-  });
+  const [schedule, setSchedule] = useState(null);
 
   const [mySchedule, setMySchedule] = useState([]);
   const [employeeViewMode, setEmployeeViewMode] = useState('day');
@@ -382,31 +368,22 @@ export default function ScheduleTab({ language, userRole }) {
     setSuccessMessage('');
   };
 
-  useEffect(() => {
-    if (!isManager) {
-      return;
-    }
-
-    if (schedule) {
-      localStorage.setItem(scheduleStorageKey, JSON.stringify(schedule));
-    } else {
-      localStorage.removeItem(scheduleStorageKey);
-    }
-  }, [isManager, schedule, scheduleStorageKey]);
-
   const loadManagerData = useCallback(async () => {
-    const [employeesData, requestsData] = await Promise.all([
+    const [employeesData, requestsData, versions] = await Promise.all([
       listEmployees(),
       listExchangeRequests(),
+      fetchScheduleVersions(periodForm),
     ]);
     setEmployees(normalizeArray(employeesData));
     setExchangeRequests(normalizeArray(requestsData));
-  }, []);
+    setSchedule(versions.draft || null);
+  }, [periodForm]);
 
   const loadEmployeeData = useCallback(async () => {
-    const shifts = await getMySchedule();
+    const range = buildEmployeeScheduleRange(employeeViewMode);
+    const shifts = await getMySchedule(range);
     setMySchedule(normalizeArray(shifts));
-  }, []);
+  }, [employeeViewMode]);
 
   const loadData = useCallback(async () => {
     setIsLoading(true);
@@ -423,7 +400,7 @@ export default function ScheduleTab({ language, userRole }) {
     } finally {
       setIsLoading(false);
     }
-  }, [isManager, language, loadEmployeeData, loadManagerData, t.empty]);
+  }, [employeeViewMode, isManager, language, loadEmployeeData, loadManagerData, periodForm, t.empty]);
 
   useEffect(() => {
     const timer = setTimeout(() => {
@@ -457,7 +434,6 @@ export default function ScheduleTab({ language, userRole }) {
 
     try {
       const publishedSchedule = await publishScheduleForPeriod(schedule);
-      persistMergedScheduleBundle('published', publishedSchedule);
       setSchedule(publishedSchedule);
       setSuccessMessage(t.publishedDone);
     } catch (error) {

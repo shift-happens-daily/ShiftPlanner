@@ -4,8 +4,7 @@ import { useAuth } from '../../context/useAuth';
 import { deleteAccountRequest } from '../../services/authService';
 import { leaveCompany, updateMyPosition } from '../../services/employeeService';
 import { extractApiErrorMessage } from '../../services/error';
-import { listPositions } from '../../services/positionService';
-import { useUserBranches } from '../../hooks/useUserBranches';
+import { createPosition, listPositions } from '../../services/positionService';
 import { useTabResponsive } from '../../utils/tabResponsive';
 
 function getPositionLabel(position) {
@@ -22,6 +21,7 @@ export default function ProfileTab({ language, user }) {
   const [successMessage, setSuccessMessage] = useState('');
   const [positions, setPositions] = useState([]);
   const [selectedPositionId, setSelectedPositionId] = useState('');
+  const [newPositionTitle, setNewPositionTitle] = useState('');
 
   const texts = {
     ru: {
@@ -33,7 +33,6 @@ export default function ProfileTab({ language, user }) {
       employeeId: 'ID сотрудника',
       company: 'Компания',
       branch: 'Филиал',
-      branches: 'Филиалы',
       position: 'Позиция',
       refresh: 'Обновить',
       empty: 'Нет данных',
@@ -49,12 +48,16 @@ export default function ProfileTab({ language, user }) {
       confirmLeaveCompany: 'Отвязать аккаунт от текущей компании?',
       leftCompany: 'Вы покинули компанию.',
       leaveCompanyError: 'Не удалось покинуть компанию.',
+      addPosition: 'Добавить позицию',
+      positionPlaceholder: 'Например: Бариста',
       savePosition: 'Сохранить позицию',
       selectPosition: 'Выберите позицию',
       positionSaved: 'Позиция сохранена.',
+      positionCreated: 'Позиция добавлена.',
       positionError: 'Не удалось обновить позицию.',
+      requiredPosition: 'Введите название позиции.',
       positionSection: 'Моя позиция',
-      positionSectionHint: 'Выберите одну из позиций, созданных менеджером.',
+      positionSectionHint: 'Выберите позицию или добавьте новую для компании.',
     },
     en: {
       title: 'Profile',
@@ -65,7 +68,6 @@ export default function ProfileTab({ language, user }) {
       employeeId: 'Employee ID',
       company: 'Company',
       branch: 'Branch',
-      branches: 'Branches',
       position: 'Position',
       refresh: 'Refresh',
       empty: 'No data',
@@ -81,12 +83,16 @@ export default function ProfileTab({ language, user }) {
       confirmLeaveCompany: 'Unlink your account from the current company?',
       leftCompany: 'You left the company.',
       leaveCompanyError: 'Failed to leave company.',
+      addPosition: 'Add position',
+      positionPlaceholder: 'Example: Barista',
       savePosition: 'Save position',
       selectPosition: 'Select position',
       positionSaved: 'Position saved.',
+      positionCreated: 'Position added.',
       positionError: 'Failed to update position.',
+      requiredPosition: 'Enter position title.',
       positionSection: 'My position',
-      positionSectionHint: 'Choose one of the positions created by your manager.',
+      positionSectionHint: 'Select a position or add a new one for your company.',
     },
   };
 
@@ -102,7 +108,7 @@ export default function ProfileTab({ language, user }) {
   const employeeId = user?.employeeId || user?.employee_id;
 
   const companyName = user?.company?.name;
-  const { branchesLabel } = useUserBranches(user);
+  const branchName = user?.branch?.name;
   const positionName = user?.position?.name;
 
   useEffect(() => {
@@ -169,9 +175,9 @@ export default function ProfileTab({ language, user }) {
         muted: !employeeId,
       },
       {
-        label: t.branches,
-        value: branchesLabel || t.empty,
-        muted: !branchesLabel,
+        label: t.branch,
+        value: branchName || t.empty,
+        muted: !branchName,
       },
       {
         label: t.position,
@@ -212,6 +218,44 @@ export default function ProfileTab({ language, user }) {
       await updateMyPosition({ position_id: Number(selectedPositionId) });
       await refreshUser();
       setSuccessMessage(t.positionSaved);
+    } catch (error) {
+      setErrorMessage(extractApiErrorMessage(error, t.positionError, language));
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const handleAddPosition = async () => {
+    if (!newPositionTitle.trim()) {
+      setErrorMessage(t.requiredPosition);
+      return;
+    }
+
+    const companyId = user?.company?.id || user?.company_id;
+    if (!companyId) {
+      setErrorMessage(t.noCompany);
+      return;
+    }
+
+    clearMessages();
+    setIsSubmitting(true);
+
+    try {
+      const created = await createPosition({
+        title: newPositionTitle.trim(),
+        company_id: Number(companyId),
+      });
+      const data = await listPositions();
+      setPositions(Array.isArray(data) ? data : []);
+      setSelectedPositionId(String(created?.id || ''));
+      setNewPositionTitle('');
+
+      if (created?.id) {
+        await updateMyPosition({ position_id: Number(created.id) });
+        await refreshUser();
+      }
+
+      setSuccessMessage(t.positionCreated);
     } catch (error) {
       setErrorMessage(extractApiErrorMessage(error, t.positionError, language));
     } finally {
@@ -352,6 +396,32 @@ export default function ProfileTab({ language, user }) {
               >
                 {t.savePosition}
               </button>
+
+              <div style={{
+                ...styles.addPositionRow,
+                flexDirection: r.isMobile ? 'column' : styles.addPositionRow.flexDirection,
+              }}
+              >
+                <input
+                  value={newPositionTitle}
+                  onChange={(event) => setNewPositionTitle(event.target.value)}
+                  placeholder={t.positionPlaceholder}
+                  style={{ ...styles.input, ...(r.isMobile ? r.fullWidth : {}) }}
+                  disabled={isSubmitting}
+                />
+                <button
+                  type="button"
+                  onClick={handleAddPosition}
+                  style={{
+                    ...(isSubmitting ? styles.secondaryButtonDisabled : styles.secondaryButton),
+                    ...r.fullWidth,
+                    whiteSpace: r.isMobile ? 'normal' : 'nowrap',
+                  }}
+                  disabled={isSubmitting}
+                >
+                  {t.addPosition}
+                </button>
+              </div>
             </div>
           </div>
         )}
@@ -564,6 +634,23 @@ const styles = {
     fontSize: '14px',
   },
 
+  input: {
+    flex: 1,
+    minWidth: 0,
+    height: '42px',
+    borderRadius: '12px',
+    border: '2px solid #dee7e7',
+    padding: '0 12px',
+    color: '#002642',
+    fontSize: '14px',
+  },
+
+  addPositionRow: {
+    display: 'flex',
+    gap: '10px',
+    flexWrap: 'wrap',
+  },
+
   primaryButton: {
     alignSelf: 'flex-start',
     padding: '10px 16px',
@@ -587,6 +674,31 @@ const styles = {
     fontWeight: '700',
     cursor: 'default',
     opacity: 0.7,
+  },
+
+  secondaryButton: {
+    padding: '10px 16px',
+    border: '2px solid #002642',
+    borderRadius: '12px',
+    background: '#f4faff',
+    color: '#002642',
+    fontSize: '14px',
+    fontWeight: '700',
+    cursor: 'pointer',
+    whiteSpace: 'nowrap',
+  },
+
+  secondaryButtonDisabled: {
+    padding: '10px 16px',
+    border: '2px solid #4f646f',
+    borderRadius: '12px',
+    background: '#f4faff',
+    color: '#4f646f',
+    fontSize: '14px',
+    fontWeight: '700',
+    cursor: 'default',
+    opacity: 0.7,
+    whiteSpace: 'nowrap',
   },
 
   dangerZone: {

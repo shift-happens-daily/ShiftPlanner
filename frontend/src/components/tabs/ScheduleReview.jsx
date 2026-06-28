@@ -7,9 +7,6 @@ import {
   formatLocalDate,
   generateScheduleForPeriod,
   getFourWeekPeriodRange,
-  clearMergedScheduleBundle,
-  loadMergedScheduleBundle,
-  persistMergedScheduleBundle,
   publishScheduleForPeriod,
   assignRequirement,
 } from '../../services/scheduleService';
@@ -537,8 +534,8 @@ function hasStaffingRequirements(scheduleRead) {
 
 const EMPTY_SCHEDULE_VERSIONS = { draft: null, published: null };
 
-async function loadScheduleVersions() {
-  return fetchScheduleVersions();
+async function loadScheduleVersions(period) {
+  return fetchScheduleVersions(period);
 }
 
 function pickActiveVersion(versions, current) {
@@ -801,12 +798,16 @@ export default function ScheduleReview({ language }) {
     return Object.values(empMap);
   }, [schedules, dateIndexForVisible, displaySchedule]);
 
-  const reloadScheduleVersions = useCallback(async (preferredVersion) => {
-    const versions = await loadScheduleVersions();
+  const reloadScheduleVersions = useCallback(async (preferredVersion, period = null) => {
+    const targetPeriod = period || {
+      start_date: periodForm.start_date,
+      end_date: periodForm.end_date,
+    };
+    const versions = await loadScheduleVersions(targetPeriod);
     setScheduleVersions(versions);
     setActiveVersion((current) => pickActiveVersion(versions, preferredVersion || current));
     return versions;
-  }, []);
+  }, [periodForm.end_date, periodForm.start_date]);
 
   const runGenerate = useCallback(async (period) => {
     setIsSubmitting(true);
@@ -824,7 +825,6 @@ export default function ScheduleReview({ language }) {
         start_date: generationPeriod.start_date,
         end_date: generationPeriod.end_date,
       });
-      persistMergedScheduleBundle('draft', generated);
       setScheduleVersions((prev) => ({ ...prev, draft: generated }));
       setActiveVersion('draft');
       setSelectedDateIndex(0);
@@ -868,7 +868,10 @@ export default function ScheduleReview({ language }) {
       try {
         const [employees, versions] = await Promise.all([
           listEmployees().catch(() => []),
-          loadScheduleVersions(),
+          loadScheduleVersions({
+            start_date: periodForm.start_date,
+            end_date: periodForm.end_date,
+          }),
         ]);
 
         if (cancelled) return;
@@ -897,7 +900,7 @@ export default function ScheduleReview({ language }) {
     return () => {
       cancelled = true;
     };
-  }, [hasCompany, isAuthLoading, language, t.noScheduleHint]);
+  }, [hasCompany, isAuthLoading, language, periodForm.end_date, periodForm.start_date, t.noScheduleHint]);
 
   useEffect(() => {
     if (!error && !success) return undefined;
@@ -916,18 +919,14 @@ export default function ScheduleReview({ language }) {
 
     try {
       const published = await publishScheduleForPeriod(schedule);
-      persistMergedScheduleBundle('published', published);
-      clearMergedScheduleBundle('draft');
-      const reloadedPublished = await loadMergedScheduleBundle('published');
-      setGeneratedPeriod(
-        getFourWeekPeriodRange(periodForm.start_date) || {
-          start_date: periodForm.start_date,
-          end_date: periodForm.end_date,
-        },
-      );
+      const publishedPeriod = getFourWeekPeriodRange(periodForm.start_date) || {
+        start_date: periodForm.start_date,
+        end_date: periodForm.end_date,
+      };
+      setGeneratedPeriod(publishedPeriod);
       setScheduleVersions({
         draft: null,
-        published: reloadedPublished || published,
+        published,
       });
       setActiveVersion('published');
       setSelectedDateIndex(0);
@@ -950,7 +949,6 @@ export default function ScheduleReview({ language }) {
 
     try {
       await deleteScheduleForPeriod(publishedSchedule);
-      clearMergedScheduleBundle('published');
       setGeneratedPeriod(null);
       await reloadScheduleVersions('draft');
       setSuccess(t.publishedDeleted);

@@ -19,7 +19,6 @@ export function mapCurrentUser(profile) {
     employeeId: profile?.employee_id ?? null,
     company: profile?.company || null,
     branch: profile?.branch || null,
-    branches: profile?.branches || null,
     position: profile?.position || null,
   };
 }
