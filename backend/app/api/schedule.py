@@ -198,6 +198,20 @@ def get_latest_schedule(
     return schedule_service.get_latest_schedule(db, current_user, schedule_status)
 
 
+@router.delete(
+    "/{schedule_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    responses={**UNAUTHORIZED_RESPONSE, **FORBIDDEN_RESPONSE, **NOT_FOUND_RESPONSE, **VALIDATION_ERROR_RESPONSE},
+)
+def delete_schedule(
+    schedule_id: int,
+    current_user: UserRead = Depends(require_role("manager")),
+    db: Session = Depends(get_db),
+) -> Response:
+    schedule_service.delete_schedule(db, schedule_id, current_user)
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
 @router.get(
     "/{schedule_id}",
     response_model=ScheduleRead,

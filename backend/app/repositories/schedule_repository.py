@@ -144,6 +144,11 @@ def get_schedule(db: Session, schedule_id: int) -> Schedule | None:
     return db.get(Schedule, schedule_id)
 
 
+def delete_schedule(db: Session, schedule: Schedule) -> None:
+    db.delete(schedule)
+    db.commit()
+
+
 def get_latest_schedule(
     db: Session,
     *,

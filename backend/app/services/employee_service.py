@@ -105,6 +105,83 @@ def update_employee_position(
     return _build_employee_read(updated_employee)
 
 
+def update_own_employee_position(
+    db: Session,
+    payload: EmployeePositionUpdate,
+    current_user: UserRead,
+) -> None:
+    if current_user.employee_id is None or current_user.company_id is None:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="This employee account is not linked to an employee profile.",
+        )
+
+    employee = employee_repository.get_employee_by_id(db, current_user.employee_id)
+    if employee is None:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="This employee account is not linked to an employee profile.",
+        )
+
+    if payload.position_id is not None:
+        position = position_repository.get_position_by_id(db, payload.position_id)
+        if position is None:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Position was not found.",
+            )
+        if position.company_id != current_user.company_id:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Position does not belong to the authenticated user's company.",
+            )
+
+    employee_repository.update_employee_position(
+        db,
+        employee=employee,
+        position_id=payload.position_id,
+    )
+
+
+def delete_employee_from_company(db: Session, employee_id: int, current_user: UserRead) -> None:
+    if current_user.company_id is None:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Manager is not linked to a company.",
+        )
+
+    employee = employee_repository.get_employee_by_id(db, employee_id)
+    if employee is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Employee was not found.",
+        )
+    if employee.company_id != current_user.company_id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Employee does not belong to the authenticated user's company.",
+        )
+
+    employee_repository.delete_employee(db, employee)
+
+
+def leave_company(db: Session, current_user: UserRead) -> None:
+    if current_user.employee_id is None:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="This employee account is not linked to an employee profile.",
+        )
+
+    employee = employee_repository.get_employee_by_id(db, current_user.employee_id)
+    if employee is None:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="This employee account is not linked to an employee profile.",
+        )
+
+    employee_repository.delete_employee(db, employee)
+
+
 def update_employee_branch(
     db: Session,
     employee_id: int,

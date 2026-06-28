@@ -136,6 +136,19 @@ def get_current_user_profile(db: Session, current_user: UserRead) -> CurrentUser
     return _build_current_user_response(db, user)
 
 
+def delete_current_user_account(db: Session, current_user: UserRead, token: str) -> None:
+    user = user_repository.get_user_by_id(db, current_user.id)
+
+    if user is None:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Could not validate credentials.",
+        )
+
+    user_repository.delete_user(db, user)
+    _active_tokens.discard(token)
+
+
 def create_placeholder_employee_password() -> str:
     return get_password_hash(secrets.token_urlsafe(24))
 

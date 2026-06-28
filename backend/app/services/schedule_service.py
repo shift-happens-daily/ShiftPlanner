@@ -600,6 +600,25 @@ def publish_schedule(db: Session, schedule_id: int, current_user: UserRead) -> S
     return _build_schedule_read(db, published_schedule.id, published_schedule.status)
 
 
+def delete_schedule(db: Session, schedule_id: int, current_user: UserRead) -> None:
+    if current_user.company_id is None:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Manager is not linked to a company.",
+        )
+
+    schedule = schedule_repository.get_schedule(db, schedule_id)
+    if schedule is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Schedule was not found.")
+    if schedule.company_id != current_user.company_id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Schedule does not belong to the authenticated manager's company.",
+        )
+
+    schedule_repository.delete_schedule(db, schedule)
+
+
 def list_my_schedule(db: Session, current_user: UserRead) -> list[ShiftRead]:
     if current_user.employee_id is None:
         raise HTTPException(

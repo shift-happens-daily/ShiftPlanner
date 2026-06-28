@@ -154,6 +154,35 @@ def test_auth_token_and_profile_endpoints(client: TestClient) -> None:
     assert unauthorized.status_code == 401
 
 
+def test_user_can_delete_own_account(client: TestClient) -> None:
+    employee_headers = login_json(client, "ivan@example.com", "employee123")
+
+    deleted = client.delete("/auth/me", headers=employee_headers)
+    assert deleted.status_code == 204, deleted.text
+    assert client.get("/auth/me", headers=employee_headers).status_code == 401
+
+    with psycopg.connect(PSYCOPG_DSN) as connection:
+        with connection.cursor() as cursor:
+            cursor.execute("SELECT COUNT(*) FROM users WHERE email = 'ivan@example.com'")
+            assert cursor.fetchone()[0] == 0
+            cursor.execute("SELECT COUNT(*) FROM employees WHERE id = 1")
+            assert cursor.fetchone()[0] == 0
+
+
+def test_manager_can_delete_own_account_without_deleting_company(client: TestClient) -> None:
+    manager_headers = login_json(client, "manager@example.com", "manager123")
+
+    deleted = client.delete("/auth/me", headers=manager_headers)
+    assert deleted.status_code == 204, deleted.text
+
+    with psycopg.connect(PSYCOPG_DSN) as connection:
+        with connection.cursor() as cursor:
+            cursor.execute("SELECT COUNT(*), MAX(manager_user_id) FROM companies WHERE id = 1")
+            company_count, manager_user_id = cursor.fetchone()
+            assert company_count == 1
+            assert manager_user_id is None
+
+
 def test_registered_user_receives_public_id_in_profile_without_membership(client: TestClient) -> None:
     requested_public_id = "frontend-value"
     registered = client.post(
@@ -453,6 +482,49 @@ def test_manager_can_unassign_employee_position(client: TestClient) -> None:
     employees = client.get("/employees/", headers=manager_headers)
     assert employees.status_code == 200, employees.text
     assert employees.json()[0]["position"] is None
+
+
+def test_employee_can_update_own_position(client: TestClient) -> None:
+    employee_headers = login_json(client, "ivan@example.com", "employee123")
+
+    updated = client.patch(
+        "/employees/me/position",
+        headers=employee_headers,
+        json={"position_id": 2},
+    )
+    assert updated.status_code == 200, updated.text
+    assert updated.json()["employee_id"] == 1
+    assert updated.json()["company_id"] == 1
+    assert updated.json()["position_id"] == 2
+    assert updated.json()["position"] == {"id": 2, "name": "Cashier"}
+
+    cleared = client.patch(
+        "/employees/me/position",
+        headers=employee_headers,
+        json={"position_id": None},
+    )
+    assert cleared.status_code == 200, cleared.text
+    assert cleared.json()["position_id"] is None
+    assert cleared.json()["position"] is None
+
+
+def test_employee_cannot_set_position_from_another_company(client: TestClient) -> None:
+    seed_second_company_scope_data()
+    employee_headers = login_json(client, "ivan@example.com", "employee123")
+
+    with psycopg.connect(PSYCOPG_DSN) as connection:
+        with connection.cursor() as cursor:
+            cursor.execute("SELECT id FROM companies WHERE invite_code = %s", (SECOND_COMPANY_INVITE_CODE,))
+            other_company_id = cursor.fetchone()[0]
+            cursor.execute("SELECT id FROM positions WHERE company_id = %s ORDER BY id LIMIT 1", (other_company_id,))
+            other_position_id = cursor.fetchone()[0]
+
+    response = client.patch(
+        "/employees/me/position",
+        headers=employee_headers,
+        json={"position_id": other_position_id},
+    )
+    assert response.status_code == 403
 
 
 def test_employee_position_update_returns_clear_errors_for_invalid_ids(client: TestClient) -> None:
@@ -993,6 +1065,70 @@ def test_employee_and_position_lists_are_scoped_to_authenticated_company(client:
 
     assert client.get("/employees/").status_code == 401
     assert client.get("/positions/").status_code == 401
+
+
+def test_manager_can_remove_employee_from_own_company_without_deleting_user(client: TestClient) -> None:
+    manager_headers = login_json(client, "manager@example.com", "manager123")
+    employee_headers = login_json(client, "ivan@example.com", "employee123")
+
+    deleted = client.delete("/employees/1", headers=manager_headers)
+    assert deleted.status_code == 204, deleted.text
+
+    employees = client.get("/employees/", headers=manager_headers)
+    assert employees.status_code == 200, employees.text
+    assert employees.json() == []
+
+    profile = client.get("/auth/me", headers=employee_headers)
+    assert profile.status_code == 200, profile.text
+    assert profile.json()["employee_id"] is None
+    assert profile.json()["company_id"] is None
+
+    with psycopg.connect(PSYCOPG_DSN) as connection:
+        with connection.cursor() as cursor:
+            cursor.execute("SELECT COUNT(*) FROM users WHERE email = 'ivan@example.com'")
+            assert cursor.fetchone()[0] == 1
+            cursor.execute("SELECT COUNT(*) FROM employees WHERE id = 1")
+            assert cursor.fetchone()[0] == 0
+
+
+def test_manager_cannot_remove_employee_from_another_company(client: TestClient) -> None:
+    seed_second_company_scope_data()
+    manager_headers = login_json(client, "manager@example.com", "manager123")
+
+    with psycopg.connect(PSYCOPG_DSN) as connection:
+        with connection.cursor() as cursor:
+            cursor.execute("SELECT id FROM companies WHERE invite_code = %s", (SECOND_COMPANY_INVITE_CODE,))
+            other_company_id = cursor.fetchone()[0]
+            cursor.execute("SELECT id FROM employees WHERE company_id = %s ORDER BY id LIMIT 1", (other_company_id,))
+            other_employee_id = cursor.fetchone()[0]
+
+    response = client.delete(f"/employees/{other_employee_id}", headers=manager_headers)
+    assert response.status_code == 403
+
+    with psycopg.connect(PSYCOPG_DSN) as connection:
+        with connection.cursor() as cursor:
+            cursor.execute("SELECT COUNT(*) FROM employees WHERE id = %s", (other_employee_id,))
+            assert cursor.fetchone()[0] == 1
+
+
+def test_employee_can_leave_company_without_deleting_user_account(client: TestClient) -> None:
+    employee_headers = login_json(client, "ivan@example.com", "employee123")
+
+    deleted = client.delete("/employees/me", headers=employee_headers)
+    assert deleted.status_code == 204, deleted.text
+
+    profile = client.get("/auth/me", headers=employee_headers)
+    assert profile.status_code == 200, profile.text
+    assert profile.json()["employee_id"] is None
+    assert profile.json()["company_id"] is None
+    assert profile.json()["company"] is None
+
+    with psycopg.connect(PSYCOPG_DSN) as connection:
+        with connection.cursor() as cursor:
+            cursor.execute("SELECT COUNT(*) FROM users WHERE email = 'ivan@example.com'")
+            assert cursor.fetchone()[0] == 1
+            cursor.execute("SELECT COUNT(*) FROM employees WHERE id = 1")
+            assert cursor.fetchone()[0] == 0
 
 
 def test_manager_can_delete_own_unused_position(client: TestClient) -> None:
@@ -1566,6 +1702,70 @@ def test_manager_publishes_own_draft_and_employee_visibility_changes(client: Tes
 
     already_published = client.post("/schedule/1/publish", headers=manager_headers)
     assert already_published.status_code == 400
+
+
+def test_manager_can_delete_own_company_schedule_and_related_rows(client: TestClient) -> None:
+    manager_headers = login_json(client, "manager@example.com", "manager123")
+    employee_headers = login_json(client, "ivan@example.com", "employee123")
+
+    assert client.delete("/schedule/1", headers=employee_headers).status_code == 403
+    assert client.delete("/schedule/1").status_code == 401
+
+    published = client.post("/schedule/1/publish", headers=manager_headers)
+    assert published.status_code == 200, published.text
+    visible_schedule = client.get("/schedule/my", headers=employee_headers)
+    assert visible_schedule.status_code == 200, visible_schedule.text
+    assert len(visible_schedule.json()) == 1
+
+    deleted = client.delete("/schedule/1", headers=manager_headers)
+    assert deleted.status_code == 204, deleted.text
+
+    hidden_schedule = client.get("/schedule/my", headers=employee_headers)
+    assert hidden_schedule.status_code == 200, hidden_schedule.text
+    assert hidden_schedule.json() == []
+
+    with psycopg.connect(PSYCOPG_DSN) as connection:
+        with connection.cursor() as cursor:
+            cursor.execute("SELECT COUNT(*) FROM schedules WHERE id = 1")
+            assert cursor.fetchone()[0] == 0
+            cursor.execute("SELECT COUNT(*) FROM shifts WHERE schedule_id = 1")
+            assert cursor.fetchone()[0] == 0
+            cursor.execute(
+                """
+                SELECT COUNT(*)
+                FROM shift_assignments sa
+                LEFT JOIN shifts s ON s.id = sa.shift_id
+                WHERE s.id IS NULL
+                """
+            )
+            assert cursor.fetchone()[0] == 0
+
+
+def test_manager_cannot_delete_another_company_schedule(client: TestClient) -> None:
+    seed_second_company_scope_data()
+    manager_headers = login_json(client, "manager@example.com", "manager123")
+
+    with psycopg.connect(PSYCOPG_DSN) as connection:
+        with connection.cursor() as cursor:
+            cursor.execute("SELECT id FROM companies WHERE invite_code = %s", (SECOND_COMPANY_INVITE_CODE,))
+            other_company_id = cursor.fetchone()[0]
+            cursor.execute(
+                """
+                INSERT INTO schedules (company_id, start_date, end_date, status)
+                VALUES (%s, '2026-08-01', '2026-08-07', 'published')
+                RETURNING id
+                """,
+                (other_company_id,),
+            )
+            other_schedule_id = cursor.fetchone()[0]
+
+    forbidden = client.delete(f"/schedule/{other_schedule_id}", headers=manager_headers)
+    assert forbidden.status_code == 403
+
+    with psycopg.connect(PSYCOPG_DSN) as connection:
+        with connection.cursor() as cursor:
+            cursor.execute("SELECT COUNT(*) FROM schedules WHERE id = %s", (other_schedule_id,))
+            assert cursor.fetchone()[0] == 1
 
 
 def test_manager_gets_latest_schedule_with_status_filters(client: TestClient) -> None:

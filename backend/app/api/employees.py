@@ -17,7 +17,7 @@ from app.api.responses import (
     VALIDATION_ERROR_RESPONSE,
 )
 from app.database import get_db
-from app.schemas.auth import UserRead
+from app.schemas.auth import CurrentUserResponse, UserRead
 from app.schemas.employee import (
     AbsenceCreate,
     AbsenceRead,
@@ -30,7 +30,7 @@ from app.schemas.employee import (
     EmployeeRead,
 )
 from app.schemas.schedule import ShiftRead
-from app.services import employee_service, schedule_service
+from app.services import auth_service, employee_service, schedule_service
 
 router = APIRouter()
 
@@ -61,6 +61,33 @@ def create_employee(
     return employee_service.create_employee(db, payload)
 
 
+@router.delete(
+    "/me",
+    status_code=status.HTTP_204_NO_CONTENT,
+    responses={**BAD_REQUEST_RESPONSE, **UNAUTHORIZED_RESPONSE, **FORBIDDEN_RESPONSE},
+)
+def leave_company(
+    current_user: UserRead = Depends(require_role("employee")),
+    db: Session = Depends(get_db),
+) -> Response:
+    employee_service.leave_company(db, current_user)
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+@router.patch(
+    "/me/position",
+    response_model=CurrentUserResponse,
+    responses={**BAD_REQUEST_RESPONSE, **UNAUTHORIZED_RESPONSE, **FORBIDDEN_RESPONSE, **NOT_FOUND_RESPONSE, **VALIDATION_ERROR_RESPONSE},
+)
+def update_my_position(
+    payload: EmployeePositionUpdate,
+    current_user: UserRead = Depends(require_role("employee")),
+    db: Session = Depends(get_db),
+) -> CurrentUserResponse:
+    employee_service.update_own_employee_position(db, payload, current_user)
+    return auth_service.get_current_user_profile(db, current_user)
+
+
 @router.patch(
     "/{employee_id}/position",
     response_model=EmployeeRead,
@@ -87,6 +114,20 @@ def update_employee_branch(
     db: Session = Depends(get_db),
 ) -> EmployeeRead:
     return employee_service.update_employee_branch(db, employee_id, payload, current_user)
+
+
+@router.delete(
+    "/{employee_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    responses={**UNAUTHORIZED_RESPONSE, **FORBIDDEN_RESPONSE, **NOT_FOUND_RESPONSE, **VALIDATION_ERROR_RESPONSE},
+)
+def delete_employee(
+    employee_id: int,
+    current_user: UserRead = Depends(require_role("manager")),
+    db: Session = Depends(get_db),
+) -> Response:
+    employee_service.delete_employee_from_company(db, employee_id, current_user)
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
 @router.get(
