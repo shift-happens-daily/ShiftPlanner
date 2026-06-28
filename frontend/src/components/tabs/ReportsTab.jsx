@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import * as XLSX from 'xlsx';
 import { getEmployeeReports, getMyReport } from '../../services/reportService';
 import { extractApiErrorMessage } from '../../services/error';
+import { useTabResponsive } from '../../utils/tabResponsive';
 
 function defaultRange() {
   const end = new Date();
@@ -76,6 +77,7 @@ function normalizeEmployeeReport(report) {
 }
 
 export default function ReportsTab({ language, userRole }) {
+  const r = useTabResponsive(1200);
   const isManager = userRole === 'manager';
 
   const [filterForm, setFilterForm] = useState(defaultRange);
@@ -358,8 +360,8 @@ export default function ReportsTab({ language, userRole }) {
 
   if (isLoading) {
     return (
-      <section style={styles.page}>
-        <div style={styles.shell}>
+      <section style={{ ...styles.page, ...r.page }}>
+        <div style={{ ...styles.shell, ...r.shell }}>
           <div style={styles.emptyBox}>{t.loading}</div>
         </div>
       </section>
@@ -368,29 +370,30 @@ export default function ReportsTab({ language, userRole }) {
 
   const hasManagerRows = filteredManagerReport.length > 0;
   const hasEmployeeReport = Boolean(normalizedEmployeeReport);
+  const tableColumns = '1.2fr 1fr 0.8fr 0.7fr 0.7fr';
 
   return (
-    <section style={styles.page}>
-      <div style={styles.shell}>
+    <section style={{ ...styles.page, ...r.page }}>
+      <div style={{ ...styles.shell, ...r.shell }}>
         {renderToast()}
 
-        <header style={styles.header}>
+        <header style={{ ...styles.header, ...r.header }}>
           <div>
-            <h2 style={styles.title}>{isManager ? t.title : t.selfTitle}</h2>
+            <h2 style={{ ...styles.title, ...r.title }}>{isManager ? t.title : t.selfTitle}</h2>
             <p style={styles.subtitle}>{isManager ? t.subtitleManager : t.subtitleEmployee}</p>
           </div>
 
           <button
             type="button"
             onClick={exportToExcel}
-            style={styles.primaryButton}
+            style={{ ...styles.primaryButton, ...r.fullWidth }}
             disabled={isRefreshing || (!hasManagerRows && !hasEmployeeReport)}
           >
             {t.export}
           </button>
         </header>
 
-        <div style={styles.layout}>
+        <div style={{ ...styles.layout, ...r.splitLayout('280px minmax(0, 1fr)') }}>
           <aside style={styles.sidebar}>
             <section style={styles.panel}>
               <h3 style={styles.panelTitle}>{t.period}</h3>
@@ -419,17 +422,27 @@ export default function ReportsTab({ language, userRole }) {
                 </Field>
 
                 <Field label={t.reportType}>
-                  <select
-                    value={reportMode}
-                    onChange={(event) => setReportMode(event.target.value)}
-                    style={styles.select}
-                  >
-                    <option value="hours">{t.hoursReport}</option>
-                    <option value="shifts">{t.shiftsReport}</option>
-                    <option value="salary">{t.salaryReport}</option>
-                  </select>
+                  <div style={{ ...styles.modeSegment, ...r.modeSegment }}>
+                    {[
+                      { id: 'hours', label: t.hoursReport },
+                      { id: 'shifts', label: t.shiftsReport },
+                      { id: 'salary', label: t.salaryReport }
+                    ].map((mode) => (
+                      <button
+                        key={mode.id}
+                        type="button"
+                        onClick={() => setReportMode(mode.id)}
+                        style={
+                          reportMode === mode.id
+                            ? { ...styles.modeButton, ...styles.modeButtonActive, ...r.modeButton }
+                            : { ...styles.modeButton, ...r.modeButton }
+                        }
+                      >
+                        {mode.label}
+                      </button>
+                    ))}
+                  </div>
                 </Field>
-
                 <Field label={t.employee}>
                   <input
                     type="text"
@@ -463,7 +476,7 @@ export default function ReportsTab({ language, userRole }) {
                 <button
                   type="button"
                   onClick={applyFilters}
-                  style={styles.secondaryButton}
+                  style={{ ...styles.secondaryButton, ...r.fullWidth }}
                   disabled={isRefreshing}
                 >
                   {isRefreshing ? '...' : t.apply}
@@ -484,11 +497,56 @@ export default function ReportsTab({ language, userRole }) {
             </section>
           </aside>
 
-          <main style={styles.content}>
+          <main style={{ ...styles.content, ...(r.isMobile ? { overflow: 'visible' } : {}) }}>
             {isManager ? (
               hasManagerRows ? (
+                r.isMobile ? (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                    {filteredManagerReport.map((item) => (
+                      <div key={item.employee_id} style={r.reportCard}>
+                        <strong style={{ color: '#002642', fontSize: 16 }}>{item.full_name}</strong>
+                        <div style={r.reportCardRow}>
+                          <span>{t.position}</span>
+                          <span style={r.reportCardValue}>{item.position || t.unknownPosition}</span>
+                        </div>
+                        <div style={r.reportCardRow}>
+                          <span>{t.branch}</span>
+                          <span style={r.reportCardValue}>{item.branch}</span>
+                        </div>
+                        <div style={r.reportCardRow}>
+                          <span>{t.hours}</span>
+                          <span style={r.reportCardValue}>{item.total_hours}</span>
+                        </div>
+                        <div style={r.reportCardRow}>
+                          <span>{reportMode === 'salary' ? t.salary : t.shifts}</span>
+                          <span style={r.reportCardValue}>
+                            {reportMode === 'salary' ? item.total_salary : item.total_shifts}
+                          </span>
+                        </div>
+                      </div>
+                    ))}
+                    <div style={{
+                      ...r.reportCard,
+                      background: '#dee7e7',
+                      border: '1px solid rgba(79, 100, 111, 0.12)',
+                    }}
+                    >
+                      <strong style={{ color: '#002642' }}>{t.total}</strong>
+                      <div style={r.reportCardRow}>
+                        <span>{t.hours}</span>
+                        <span style={r.reportCardValue}>{totals.total_hours}</span>
+                      </div>
+                      <div style={r.reportCardRow}>
+                        <span>{reportMode === 'salary' ? t.salary : t.shifts}</span>
+                        <span style={r.reportCardValue}>
+                          {reportMode === 'salary' ? totals.total_salary : totals.total_shifts}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                ) : (
                 <div style={styles.tableCard}>
-                  <div style={styles.tableHeader}>
+                  <div style={{ ...styles.tableHeader, gridTemplateColumns: tableColumns }}>
                     <span>{t.employee}</span>
                     <span>{t.position}</span>
                     <span>{t.branch}</span>
@@ -498,7 +556,7 @@ export default function ReportsTab({ language, userRole }) {
 
                   <div style={styles.tableBody}>
                     {filteredManagerReport.map((item) => (
-                      <div key={item.employee_id} style={styles.tableRow}>
+                      <div key={item.employee_id} style={{ ...styles.tableRow, gridTemplateColumns: tableColumns }}>
                         <strong style={styles.employeeName}>{item.full_name}</strong>
                         <span style={styles.tableCell}>{item.position || t.unknownPosition}</span>
                         <span style={styles.tableCell}>{item.branch}</span>
@@ -510,7 +568,7 @@ export default function ReportsTab({ language, userRole }) {
                     ))}
                   </div>
 
-                  <div style={styles.tableFooter}>
+                  <div style={{ ...styles.tableFooter, gridTemplateColumns: tableColumns }}>
                     <strong>{t.total}</strong>
                     <span />
                     <span />
@@ -518,6 +576,7 @@ export default function ReportsTab({ language, userRole }) {
                     <strong>{reportMode === 'salary' ? totals.total_salary : totals.total_shifts}</strong>
                   </div>
                 </div>
+                )
               ) : (
                 <div style={styles.emptyHero}>
                   <h3 style={styles.emptyTitle}>{t.empty}</h3>
@@ -527,14 +586,22 @@ export default function ReportsTab({ language, userRole }) {
                 </div>
               )
             ) : hasEmployeeReport ? (
-              <div style={styles.employeeReportCard}>
+              <div style={{
+                ...styles.employeeReportCard,
+                ...(r.isMobile ? { minHeight: 0, padding: 20 } : {}),
+              }}
+              >
                 <span style={styles.miniLabel}>{t.employee}</span>
                 <h3 style={styles.employeeReportName}>{normalizedEmployeeReport.full_name}</h3>
                 <p style={styles.employeePosition}>
                   {normalizedEmployeeReport.position || t.unknownPosition}
                 </p>
 
-                <div style={styles.employeeStats}>
+                <div style={{
+                  ...styles.employeeStats,
+                  ...(r.isMobile ? { gridTemplateColumns: '1fr' } : {}),
+                }}
+                >
                   <Metric label={t.hours} value={normalizedEmployeeReport.total_hours} />
                   {reportMode === 'salary' ? (
                     <Metric label={t.salary} value={normalizedEmployeeReport.total_salary} />
@@ -704,7 +771,32 @@ const styles = {
     outline: 'none',
   },
 
-  primaryButton: {
+  modeSegment: {
+    display: 'flex',
+    borderRadius: '14px',
+    background: '#eceff4',
+    padding: '4px',
+    gap: '4px',
+  },
+
+  modeButton: {
+    flex: 1,
+    border: 'none',
+    borderRadius: '11px',
+    background: 'transparent',
+    color: '#4f646f',
+    padding: '8px 4px',
+    fontSize: '12px',
+    fontWeight: '750',
+    cursor: 'pointer',
+    transition: 'all 0.2s ease',
+  },
+
+  modeButtonActive: {
+    background: '#ffffff',
+    color: '#002642',
+    boxShadow: 'none',
+  },  primaryButton: {
     height: '42px',
     padding: '0 18px',
     background: '#002642',

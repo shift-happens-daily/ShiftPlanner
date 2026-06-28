@@ -3,6 +3,7 @@ import { useEffect, useMemo, useState } from 'react';
 import {
   createEmployee,
   createEmployeeAbsence,
+  deleteEmployee,
   deleteEmployeeAbsence,
   getEmployeeAvailability,
   getEmployeeCalendarSummary,
@@ -14,8 +15,9 @@ import {
 } from '../../services/employeeService';
 import { extractApiErrorMessage, localizeBackendMessage } from '../../services/error';
 import { mapEmployeeCalendarSummary } from '../../services/mappers';
-import { createPosition, listPositions } from '../../services/positionService';
+import { createPosition, deletePosition, listPositions } from '../../services/positionService';
 import { listBranches, linkUserToCompany } from '../../services/companyService';
+import { useTabResponsive } from '../../utils/tabResponsive';
 
 const WEEKDAYS = [
   { value: 0, ru: 'Пн', en: 'Mon' },
@@ -49,8 +51,17 @@ function getEmployeePosition(employee) {
   return employee?.position_title || employee?.position?.title || employee?.position?.name || '';
 }
 
-function getEmployeeBranch(employee) {
-  return employee?.branch?.name || employee?.branch_name || employee?.branch_title || '';
+function getEmployeeBranch(employee, branches = []) {
+  if (!employee) return '';
+
+  const directName = employee?.branch?.name || employee?.branch_name || employee?.branch_title;
+  if (directName) return directName;
+
+  const branchId = employee?.branch?.id || employee?.branch_id || employee?.branchId;
+  if (!branchId) return '';
+
+  const matchedBranch = branches.find((branch) => String(branch.id) === String(branchId));
+  return matchedBranch?.name || matchedBranch?.title || '';
 }
 
 function isValidEmail(email) {
@@ -62,6 +73,7 @@ function getCompanyId(company) {
 }
 
 export default function EmployeesTab({ language, userRole, user }) {
+  const r = useTabResponsive(1380);
   // Добавляем глобальные стили для полей ввода
   useEffect(() => {
     const styleSheet = document.createElement('style');
@@ -188,7 +200,7 @@ export default function EmployeesTab({ language, userRole, user }) {
       duplicateEmployee: 'Пользователь или сотрудник с таким email уже существует. Используйте другой email или попросите сотрудника присоединиться по инвайт-коду.',
       positionCreated: 'Позиция создана.',
       positionUpdated: 'Позиция обновлена локально.',
-      positionDeleted: 'Позиция удалена локально.',
+      positionDeleted: 'Позиция удалена.',
       employeeCreated: 'Сотрудник создан.',
       availabilitySaved: 'Доступность сохранена.',
       assignmentsSaved: 'Данные сотрудника обновлены.',
@@ -200,7 +212,7 @@ export default function EmployeesTab({ language, userRole, user }) {
       backToList: 'Назад к списку',
       edit: 'Редактировать',
       cancel: 'Отменить',
-      confirmDeletePosition: 'Удалить эту позицию? Это повлияет только на интерфейс.',
+      confirmDeletePosition: 'Удалить эту позицию?',
       managePositionsHint: 'Редактируйте и удаляйте позиции для компании.',
       noPositionsMessage: 'Позиции не найдены. Создайте одну слева.',
       allBranches: 'Все филиалы',
@@ -219,6 +231,10 @@ export default function EmployeesTab({ language, userRole, user }) {
       noCompanyForLink: 'У вас нет компании',
       noCompanyForPosition: 'Сначала создайте компанию во вкладке «Компания».',
       noPositionsHint: 'Сначала создайте позицию, потом добавьте сотрудника.',
+      removeFromCompany: 'Удалить из компании',
+      confirmRemoveEmployee: 'Удалить сотрудника из компании?',
+      employeeRemoved: 'Сотрудник удалён из компании.',
+      removeEmployeeError: 'Не удалось удалить сотрудника.',
     },
     en: {
       title: 'Employees',
@@ -269,7 +285,7 @@ export default function EmployeesTab({ language, userRole, user }) {
       duplicateEmployee: 'A user or employee with this email already exists. Use another email or ask the employee to join by invite code.',
       positionCreated: 'Position created.',
       positionUpdated: 'Position updated locally.',
-      positionDeleted: 'Position deleted locally.',
+      positionDeleted: 'Position deleted.',
       employeeCreated: 'Employee created.',
       availabilitySaved: 'Availability saved.',
       assignmentsSaved: 'Employee details updated.',
@@ -281,7 +297,7 @@ export default function EmployeesTab({ language, userRole, user }) {
       backToList: 'Back to list',
       edit: 'Edit',
       cancel: 'Cancel',
-      confirmDeletePosition: 'Delete this position? This will only affect the UI.',
+      confirmDeletePosition: 'Delete this position?',
       managePositionsHint: 'Edit and delete positions for the company.',
       noPositionsMessage: 'No positions available. Create one on the left.',
       allBranches: 'All branches',
@@ -300,6 +316,10 @@ export default function EmployeesTab({ language, userRole, user }) {
       noCompanyForLink: 'You don\'t have a company',
       noCompanyForPosition: 'Create a company in the Company tab first.',
       noPositionsHint: 'Create a position first, then add an employee.',
+      removeFromCompany: 'Remove from company',
+      confirmRemoveEmployee: 'Remove this employee from the company?',
+      employeeRemoved: 'Employee removed from company.',
+      removeEmployeeError: 'Failed to remove employee.',
     },
   };
 
@@ -335,7 +355,7 @@ export default function EmployeesTab({ language, userRole, user }) {
   );
 
   const selectedEmployeePosition = getEmployeePosition(selectedEmployee);
-  const selectedEmployeeBranch = getEmployeeBranch(selectedEmployee);
+  const selectedEmployeeBranch = getEmployeeBranch(selectedEmployee, branches);
 
   const filteredEmployees = useMemo(() => {
     const query = searchQuery.trim().toLowerCase();
@@ -680,16 +700,26 @@ export default function EmployeesTab({ language, userRole, user }) {
     setSuccessMessage(t.positionUpdated);
   };
 
-  const handleDeletePosition = (positionId) => {
+  const handleDeletePosition = async (positionId) => {
     if (!window.confirm(t.confirmDeletePosition)) return;
 
-    setPositions((prev) => prev.filter((position) => String(position.id) !== String(positionId)));
+    clearMessages();
+    setIsSubmitting(true);
 
-    if (String(editingPositionId) === String(positionId)) {
-      handleCancelEditPosition();
+    try {
+      await deletePosition(positionId);
+      await reloadPositions();
+
+      if (String(editingPositionId) === String(positionId)) {
+        handleCancelEditPosition();
+      }
+
+      setSuccessMessage(t.positionDeleted);
+    } catch (error) {
+      setErrorMessage(normalizeError(error, t.requiredPosition, language));
+    } finally {
+      setIsSubmitting(false);
     }
-
-    setSuccessMessage(t.positionDeleted);
   };
 
   const handleAvailabilityChange = (index, key, value) => {
@@ -781,6 +811,26 @@ export default function EmployeesTab({ language, userRole, user }) {
     }
   };
 
+  const handleDeleteEmployeeFromCompany = async () => {
+    if (!selectedEmployee) return;
+    if (!window.confirm(t.confirmRemoveEmployee)) return;
+
+    clearMessages();
+    setIsSubmitting(true);
+
+    try {
+      await deleteEmployee(selectedEmployee.id);
+      setSelectedEmployeeId('');
+      setIsViewingEmployee(true);
+      await reloadEmployees();
+      setSuccessMessage(t.employeeRemoved);
+    } catch (error) {
+      setErrorMessage(getFriendlyError(error, t.removeEmployeeError));
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
   // ===== ПРИВЯЗКА ПО USER ID =====
   const handleLinkUser = async () => {
     const publicId = linkUserId.trim().toUpperCase();
@@ -820,22 +870,22 @@ export default function EmployeesTab({ language, userRole, user }) {
 
   if (isLoading) {
     return (
-      <section style={styles.page}>
+      <section style={{ ...styles.page, ...r.page }}>
         <div style={styles.card}>{t.loading}</div>
       </section>
     );
   }
 
   return (
-    <section style={styles.page} className="employees-tab">
-      <div style={styles.shell}>
-        <header style={styles.header}>
+    <section style={{ ...styles.page, ...r.page }} className="employees-tab">
+      <div style={{ ...styles.shell, ...r.shell }}>
+        <header style={{ ...styles.header, ...r.header }}>
           <div>
-            <h2 style={styles.title}>{t.title}</h2>
+            <h2 style={{ ...styles.title, ...r.title }}>{t.title}</h2>
             <p style={styles.subtitle}>{t.subtitle}</p>
           </div>
 
-          <div style={styles.headerStats}>
+          <div style={{ ...styles.headerStats, ...r.headerStats }}>
             <Metric label={t.employees} value={filteredEmployees.length} />
             <Metric label={t.positions} value={visiblePositions.length} />
           </div>
@@ -865,7 +915,7 @@ export default function EmployeesTab({ language, userRole, user }) {
           </div>
         )}
 
-        <div style={styles.mainGrid}>
+        <div style={{ ...styles.mainGrid, ...r.splitLayout('340px minmax(0, 1fr)') }}>
           <aside style={styles.sidePanel}>
             <div style={styles.panel}>
               <h3 style={styles.panelTitle}>{t.createPosition}</h3>
@@ -882,7 +932,10 @@ export default function EmployeesTab({ language, userRole, user }) {
                 <button
                   type="button"
                   onClick={handleCreatePosition}
-                  style={isSubmitting || !currentCompanyId ? styles.primaryButtonDisabled : styles.primaryButton}
+                  style={{
+                    ...(isSubmitting || !currentCompanyId ? styles.primaryButtonDisabled : styles.primaryButton),
+                    ...r.fullWidth,
+                  }}
                   disabled={isSubmitting || !currentCompanyId}
                 >
                   {t.save}
@@ -906,7 +959,7 @@ export default function EmployeesTab({ language, userRole, user }) {
                   style={styles.input}
                 />
 
-                <div style={styles.row}>
+                <div style={{ ...styles.row, gridTemplateColumns: r.gridCols('1fr 1fr') }}>
                   <div style={styles.flex}>
                     <label style={styles.label}>{t.branch}</label>
                     <select
@@ -943,7 +996,10 @@ export default function EmployeesTab({ language, userRole, user }) {
                 <button
                   type="button"
                   onClick={handleLinkUser}
-                  style={isSubmitting || !linkUserId ? styles.primaryButtonDisabled : styles.primaryButton}
+                  style={{
+                    ...(isSubmitting || !linkUserId ? styles.primaryButtonDisabled : styles.primaryButton),
+                    ...r.fullWidth,
+                  }}
                   disabled={isSubmitting || !linkUserId}
                 >
                   {isSubmitting ? '...' : t.linkUserButton}
@@ -952,29 +1008,37 @@ export default function EmployeesTab({ language, userRole, user }) {
             </div>
           </aside>
 
-          <main style={styles.detailsPanel}>
-            <div style={styles.detailsScroll}>
+          <main style={{
+            ...styles.detailsPanel,
+            ...(r.isMobile ? { overflow: 'visible' } : {}),
+          }}
+          >
+            <div style={{
+              ...styles.detailsScroll,
+              ...(r.isMobile ? { overflowY: 'visible', minHeight: 'auto', padding: 14 } : {}),
+            }}
+            >
               <section style={styles.innerSection}>
-                <div style={styles.listHeader}>
+                <div style={{ ...styles.listHeader, ...r.listHeader }}>
                   <div>
                     <h3 style={styles.panelTitle}>{t.employees}</h3>
                     <p style={styles.panelHint}>{t.selectEmployee}</p>
                   </div>
 
-                  <div style={styles.filterRow}>
+                  <div style={{ ...styles.filterRow, ...r.filterRow }}>
                     <input
                       type="text"
                       value={searchQuery}
                       onChange={(event) => setSearchQuery(event.target.value)}
                       placeholder={t.searchEmployee}
-                      style={styles.searchInput}
+                      style={{ ...styles.searchInput, ...r.searchInput }}
                       aria-label={t.searchEmployee}
                     />
                     <select
                       id="branch-filter-select"
                       value={selectedBranchId}
                       onChange={(event) => setSelectedBranchId(event.target.value)}
-                      style={styles.filterSelect}
+                      style={{ ...styles.filterSelect, ...r.filterSelect }}
                       aria-label={t.branch}
                     >
                       <option value="">{t.allBranches}</option>
@@ -988,7 +1052,7 @@ export default function EmployeesTab({ language, userRole, user }) {
                       id="position-filter-select"
                       value={selectedPositionId}
                       onChange={(event) => setSelectedPositionId(event.target.value)}
-                      style={styles.filterSelect}
+                      style={{ ...styles.filterSelect, ...r.filterSelect }}
                       aria-label={t.position}
                     >
                       <option value="">{t.allPositions}</option>
@@ -1040,7 +1104,7 @@ export default function EmployeesTab({ language, userRole, user }) {
                       </button>
                     </div>
 
-                    <div style={styles.employeeCard}>
+                    <div style={{ ...styles.employeeCard, gridTemplateColumns: r.gridCols('repeat(3, minmax(0, 1fr))') }}>
                       <Info label={t.fullName} value={selectedEmployee?.full_name || selectedEmployee?.name || '—'} />
                       <Info label={t.email} value={selectedEmployee?.email || '—'} />
                       <Info label={t.position} value={selectedEmployeePosition || t.empty} />
@@ -1091,13 +1155,22 @@ export default function EmployeesTab({ language, userRole, user }) {
                       <button type="button" onClick={handleAssignDetails} style={styles.primaryButton}>
                         {t.save}
                       </button>
+
+                      <button
+                        type="button"
+                        onClick={handleDeleteEmployeeFromCompany}
+                        style={styles.deleteButton}
+                        disabled={isSubmitting}
+                      >
+                        {t.removeFromCompany}
+                      </button>
                     </div>
                   </div>
                 </div>
               )}
 
               <section style={styles.innerSection}>
-                <div style={styles.listHeader}>
+                <div style={{ ...styles.listHeader, ...r.listHeader }}>
                   <div>
                     <h3 style={styles.panelTitle}>{t.positions}</h3>
                     <p style={styles.panelHint}>{t.managePositionsHint}</p>
@@ -1109,40 +1182,48 @@ export default function EmployeesTab({ language, userRole, user }) {
                 ) : (
                   <div style={styles.list}>
                     {visiblePositions.map((position) => (
-                      <div key={position.id} style={styles.listItem}>
+                      <div key={position.id} style={{ ...styles.listItem, ...r.listItem }}>
                         {String(editingPositionId) === String(position.id) ? (
                           <>
                             <input
                               value={editingPositionTitle}
                               onChange={(event) => setEditingPositionTitle(event.target.value)}
-                              style={styles.input}
+                              style={{ ...styles.input, ...r.fullWidth }}
                             />
-                            <div style={styles.actionGroup}>
-                              <button type="button" onClick={handleSaveEditedPosition} style={styles.primaryButton}>
+                            <div style={{ ...styles.actionGroup, ...r.actionGroup }}>
+                              <button
+                                type="button"
+                                onClick={handleSaveEditedPosition}
+                                style={{ ...styles.primaryButton, ...r.fullWidth }}
+                              >
                                 {t.save}
                               </button>
-                              <button type="button" onClick={handleCancelEditPosition} style={styles.secondaryButton}>
+                              <button
+                                type="button"
+                                onClick={handleCancelEditPosition}
+                                style={{ ...styles.secondaryButton, ...r.fullWidth }}
+                              >
                                 {t.cancel}
                               </button>
                             </div>
                           </>
                         ) : (
                           <>
-                            <div>
+                            <div style={r.isMobile ? { width: '100%' } : undefined}>
                               <strong style={styles.itemTitle}>{getPositionLabel(position)}</strong>
                             </div>
-                            <div style={styles.actionGroup}>
+                            <div style={{ ...styles.actionGroup, ...r.actionGroup }}>
                               <button
                                 type="button"
                                 onClick={() => handleStartEditingPosition(position)}
-                                style={styles.secondaryButton}
+                                style={{ ...styles.secondaryButton, ...r.fullWidth }}
                               >
                                 {t.edit}
                               </button>
                               <button
                                 type="button"
                                 onClick={() => handleDeletePosition(position.id)}
-                                style={styles.deleteButton}
+                                style={{ ...styles.deleteButton, ...r.fullWidth }}
                               >
                                 {t.delete}
                               </button>

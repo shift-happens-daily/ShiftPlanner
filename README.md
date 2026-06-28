@@ -105,7 +105,7 @@ Example:
 
 ```env
 DATABASE_URL=postgresql+psycopg://shiftplanner_user:shiftplanner_password@postgres:5432/shiftplanner
-FRONTEND_ORIGINS=http://localhost:5173
+FRONTEND_ORIGINS=http://localhost:5173,https://shiftplanner.online
 JWT_SECRET_KEY=change-me-in-production
 JWT_ALGORITHM=HS256
 ACCESS_TOKEN_EXPIRE_MINUTES=60
@@ -124,6 +124,12 @@ not `localhost`.
 Create `frontend/.env` from `frontend/.env.example`.
 
 Example:
+
+```env
+VITE_API_URL=https://shiftplanner.online/api
+```
+
+For local frontend development, `frontend/.env.development` keeps:
 
 ```env
 VITE_API_URL=http://localhost:8000
@@ -483,7 +489,13 @@ docker compose up --build
 
 ### Frontend cannot reach backend
 
-Check `frontend/.env`:
+For production builds, check `frontend/.env` or the Docker Compose build arg:
+
+```env
+VITE_API_URL=https://shiftplanner.online/api
+```
+
+For local development, check `frontend/.env.development`:
 
 ```env
 VITE_API_URL=http://localhost:8000

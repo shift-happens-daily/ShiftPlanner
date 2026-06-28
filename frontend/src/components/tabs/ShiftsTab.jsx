@@ -15,8 +15,10 @@ import { listPositions } from '../../services/positionService';
 import {
   createBulkRequirements,
   createRequirement,
+  deleteRequirement,
   listRequirements,
 } from '../../services/scheduleService';
+import { useTabResponsive } from '../../utils/tabResponsive';
 
 const WEEKDAYS = [
   { value: 0, ru: 'Пн', en: 'Mon' },
@@ -41,6 +43,22 @@ const TIME_SLOTS = Array.from(
     return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}`;
   },
 );
+
+const MOBILE_HOUR_GROUPS = TIME_SLOTS.reduce((groups, slot, index) => {
+  if (index % 2 === 0) {
+    groups.push({
+      hour: slot.slice(0, 2),
+      slots: TIME_SLOTS[index + 1] ? [slot, TIME_SLOTS[index + 1]] : [slot],
+    });
+  }
+  return groups;
+}, []);
+
+const MOBILE_BRUSH_OPTIONS = [
+  { id: 'available', color: '#4CAF50', textColor: '#ffffff' },
+  { id: 'maybe', color: '#FFC107', textColor: '#002642' },
+  { id: 'unavailable', color: '#eef3f6', textColor: '#4f646f' },
+];
 
 function toDateKey(date) {
   const year = date.getFullYear();
@@ -241,31 +259,8 @@ function normalizeError(error, fallback, language) {
   return extractApiErrorMessage(error, fallback, language) || fallback;
 }
 
-async function deleteRequirementRequest(requirementId) {
-  const baseUrl = import.meta.env.VITE_API_URL || 'http://localhost:8000';
-  const token = localStorage.getItem('shiftplanner_token');
-
-  const response = await fetch(`${baseUrl}/schedule/requirements/${requirementId}`, {
-    method: 'DELETE',
-    headers: {
-      Accept: 'application/json',
-      ...(token ? { Authorization: `Bearer ${token}` } : {}),
-    },
-  });
-
-  if (!response.ok) {
-    let detail = '';
-    try {
-      const payload = await response.json();
-      detail = payload?.detail || payload?.message || '';
-    } catch {
-      detail = '';
-    }
-    throw new Error(detail || `Delete failed with status ${response.status}`);
-  }
-}
-
 export default function ShiftsTab({ language, userRole, user }) {
+  const r = useTabResponsive(1280);
   const isManager = userRole === 'manager';
   const employeeId = user?.employeeId || user?.employee_id;
 
@@ -305,6 +300,7 @@ export default function ShiftsTab({ language, userRole, user }) {
   });
 
   const [selectedDate, setSelectedDate] = useState(() => new Date().toISOString().slice(0, 10));
+  const [brushMode, setBrushMode] = useState('available'); // 'available', 'maybe', 'unavailable'
 
   const weekDates = useMemo(() => {
     const current = new Date(selectedDate);
@@ -318,6 +314,14 @@ export default function ShiftsTab({ language, userRole, user }) {
       return d;
     });
   }, [selectedDate]);
+
+  const [mobileAvailabilityDay, setMobileAvailabilityDay] = useState(0);
+
+  useEffect(() => {
+    const todayKey = toDateKey(new Date());
+    const todayIndex = weekDates.findIndex((date) => toDateKey(date) === todayKey);
+    setMobileAvailabilityDay(todayIndex >= 0 ? todayIndex : 0);
+  }, [selectedDate, weekDates]);
 
   const shiftWeek = (deltaDays) => {
     setSelectedDate((prev) => {
@@ -370,8 +374,11 @@ export default function ShiftsTab({ language, userRole, user }) {
       refresh: 'Показать требования',
       save: 'Сохранить',
       availability: 'Моя доступность',
+      markMode: 'Режим отметки',
       desiredDaysOff: 'Желаемые выходные',
       absences: 'Мои отсутствия',
+      absenceType: 'Тип отсутствия',
+      comment: 'Комментарий',
       addRow: 'Добавить интервал',
       addAbsence: 'Добавить отсутствие',
       empty: 'Нет данных',
@@ -436,8 +443,11 @@ export default function ShiftsTab({ language, userRole, user }) {
       refresh: 'Show requirements',
       save: 'Save',
       availability: 'My availability',
+      markMode: 'Marking mode',
       desiredDaysOff: 'Desired days off',
       absences: 'My absences',
+      absenceType: 'Absence type',
+      comment: 'Comment',
       addRow: 'Add interval',
       addAbsence: 'Add absence',
       empty: 'No data',
@@ -495,6 +505,44 @@ export default function ShiftsTab({ language, userRole, user }) {
       date.getMonth() === today.getMonth() &&
       date.getFullYear() === today.getFullYear();
   };
+
+  const getAvailabilityCellStyle = (dateKey, time) => {
+    const past = isPastDateKey(dateKey);
+    const status = availabilityByDate[dateKey]?.[time] || null;
+
+    if (past) return styles.gridCellLocked;
+    if (status === 'available') return styles.gridCellAvailable;
+    if (status === 'maybe') return styles.gridCellMaybe;
+    return styles.gridCell;
+  };
+
+  const getAvailabilityCellTitle = (dateKey, time) => {
+    const past = isPastDateKey(dateKey);
+    const status = availabilityByDate[dateKey]?.[time] || null;
+
+    if (past) return t.locked;
+    if (status === 'available') return t.available;
+    if (status === 'maybe') return t.maybe;
+    return t.unavailable;
+  };
+
+  const weekRangeLabel = useMemo(() => {
+    const locale = language === 'ru' ? 'ru-RU' : 'en-US';
+    const start = weekDates[0]?.toLocaleDateString(locale, { day: 'numeric', month: 'short' }) || '';
+    const end = weekDates[6]?.toLocaleDateString(locale, { day: 'numeric', month: 'short' }) || '';
+    return `${start} — ${end}`;
+  }, [language, weekDates]);
+
+  const selectedMobileDate = weekDates[mobileAvailabilityDay] || weekDates[0];
+  const selectedMobileDateKey = selectedMobileDate ? toDateKey(selectedMobileDate) : '';
+  const selectedMobileDatePast = selectedMobileDateKey ? isPastDateKey(selectedMobileDateKey) : false;
+  const selectedMobileDateLabel = selectedMobileDate
+    ? selectedMobileDate.toLocaleDateString(language === 'ru' ? 'ru-RU' : 'en-US', {
+      weekday: 'long',
+      day: 'numeric',
+      month: 'long',
+    })
+    : '—';
 
   const visibleRequirements = useMemo(() => {
     const server = requirements.map((requirement) => normalizeRequirement(requirement, positions)).filter(Boolean);
@@ -640,18 +688,15 @@ export default function ShiftsTab({ language, userRole, user }) {
       const dayMap = { ...(prev[dateKey] || {}) };
       const currentStatus = dayMap[slot] || null;
 
-      if (currentStatus === null) {
-        dayMap[slot] = 'available';
-      } else if (currentStatus === 'available') {
-        dayMap[slot] = 'maybe';
-      } else {
+      if (currentStatus === brushMode) {
         delete dayMap[slot];
+      } else {
+        dayMap[slot] = brushMode;
       }
 
       return { ...prev, [dateKey]: dayMap };
     });
   };
-
   const submitManagerRequirement = async () => {
     if (!singleRequirement.position_id || !singleRequirement.date) {
       setErrorMessage(t.single);
@@ -725,7 +770,7 @@ export default function ShiftsTab({ language, userRole, user }) {
     setIsSubmitting(true);
 
     try {
-      await deleteRequirementRequest(requirementId);
+      await deleteRequirement(requirementId);
       setRequirements((prev) =>
         prev.filter((requirement) => String(getRequirementId(requirement)) !== String(requirementId))
       );
@@ -916,8 +961,8 @@ export default function ShiftsTab({ language, userRole, user }) {
 
   if (isLoading) {
     return (
-      <section style={styles.page}>
-        <div style={styles.shell}>
+      <section style={{ ...styles.page, ...r.page }}>
+        <div style={{ ...styles.shell, ...r.shell }}>
           <div style={styles.emptyBox}>{t.loading}</div>
         </div>
       </section>
@@ -925,24 +970,17 @@ export default function ShiftsTab({ language, userRole, user }) {
   }
 
   return (
-    <section style={styles.page}>
-      <div style={styles.shell}>
+    <section style={{ ...styles.page, ...r.page }}>
+      <div style={{ ...styles.shell, ...r.shell }}>
         {renderToast()}
 
-        <header style={styles.header}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', width: '100%' }}>
-            <div>
-              <h2 style={styles.title}>{isManager ? t.titleManager : t.titleEmployee}</h2>
-              <p style={styles.subtitle}>{isManager ? t.subtitleManager : t.subtitleEmployee}</p>
-            </div>
-            <div style={styles.todayBadge}>
-              <span style={styles.todayLabel}>{language === 'ru' ? 'Сегодня' : 'Today'}</span>
-              <span style={styles.todayDate}>{todayStr}</span>
-            </div>
+        <header style={{ ...styles.header, ...r.header }}>
+          <div>
+            <h2 style={{ ...styles.title, ...r.title }}>{isManager ? t.titleManager : t.titleEmployee}</h2>
+            <p style={styles.subtitle}>{isManager ? t.subtitleManager : t.subtitleEmployee}</p>
           </div>
-        </header>
-        {isManager ? (
-          <div style={styles.managerLayout}>
+        </header>        {isManager ? (
+          <div style={{ ...styles.managerLayout, ...r.splitLayout('290px minmax(0, 1fr)') }}>
             <aside style={styles.sidebar}>
               <div style={styles.helpBox}>
                 <strong>{t.stepOne}</strong>
@@ -1041,7 +1079,7 @@ export default function ShiftsTab({ language, userRole, user }) {
                   <h3 style={styles.panelTitle}>{t.single}</h3>
                   <p style={styles.panelHint}>{t.singleHint}</p>
 
-                  <div style={styles.formGrid}>
+                  <div style={{ ...styles.formGrid, gridTemplateColumns: r.gridCols('repeat(3, minmax(0, 1fr))') }}>
                     <Field label={t.position}>
                       <select
                         value={singleRequirement.position_id}
@@ -1115,7 +1153,7 @@ export default function ShiftsTab({ language, userRole, user }) {
                   <h3 style={styles.panelTitle}>{t.bulk}</h3>
                   <p style={styles.panelHint}>{t.bulkHint}</p>
 
-                  <div style={styles.formGrid}>
+                  <div style={{ ...styles.formGrid, gridTemplateColumns: r.gridCols('repeat(3, minmax(0, 1fr))') }}>
                     <Field label={t.startDate}>
                       <input
                         type="date"
@@ -1233,7 +1271,11 @@ export default function ShiftsTab({ language, userRole, user }) {
                 ) : (
                   <div style={styles.requirementsList}>
                     {visibleRequirements.map((requirement) => (
-                      <div key={getRequirementId(requirement)} style={styles.requirementItem}>
+                      <div key={getRequirementId(requirement)} style={{
+                        ...styles.requirementItem,
+                        gridTemplateColumns: r.gridCols('1.2fr 1fr auto auto'),
+                        ...(r.isMobile ? { gap: 12 } : {}),
+                      }}>
                         <div>
                           <strong style={styles.itemTitle}>{requirement.position_title}</strong>
                           <div style={styles.itemMeta}>
@@ -1266,13 +1308,223 @@ export default function ShiftsTab({ language, userRole, user }) {
             </main>
           </div>
         ) : (
-          <div style={styles.employeeGrid}>
-            <section style={styles.panel}>
+          <div style={{ ...styles.employeeGrid, ...(r.isMobile ? styles.employeeGridMobile : {}) }}>
+            <section style={{ ...styles.panel, ...(r.isMobile ? r.employeePanel : {}) }}>
+              {r.isMobile ? (
+                <>
+                  <h3 style={{ ...styles.panelTitle, marginBottom: 14 }}>{t.availability}</h3>
+
+                  <div style={styles.mobileWeekBar}>
+                    <button
+                      type="button"
+                      onClick={() => shiftWeek(-7)}
+                      style={styles.mobileWeekArrow}
+                      aria-label={t.prevWeek}
+                      title={t.prevWeek}
+                    >
+                      {'\u2190'}
+                    </button>
+                    <div style={styles.mobileWeekCenter}>
+                      <div style={styles.mobileWeekLabel}>{weekRangeLabel}</div>
+                      <input
+                        type="date"
+                        value={selectedDate}
+                        onChange={(e) => setSelectedDate(e.target.value)}
+                        style={styles.mobileWeekDateInput}
+                      />
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => shiftWeek(7)}
+                      style={styles.mobileWeekArrow}
+                      aria-label={t.nextWeek}
+                      title={t.nextWeek}
+                    >
+                      {'\u2192'}
+                    </button>
+                  </div>
+
+                  <div style={styles.mobileSectionLabel}>{t.markMode}</div>
+                  <div style={styles.mobileBrushRow}>
+                    {MOBILE_BRUSH_OPTIONS.map((option) => (
+                      <button
+                        key={option.id}
+                        type="button"
+                        onClick={() => setBrushMode(option.id)}
+                        style={{
+                          ...styles.mobileBrushButton,
+                          background: option.color,
+                          color: option.textColor,
+                          border: brushMode === option.id ? '2px solid #002642' : '2px solid rgba(79, 100, 111, 0.12)',
+                          boxShadow: brushMode === option.id ? '0 4px 12px rgba(0, 38, 66, 0.14)' : 'none',
+                        }}
+                      >
+                        {t[option.id]}
+                      </button>
+                    ))}
+                  </div>
+
+                  <div style={styles.mobileDayGrid}>
+                    {WEEKDAYS.map((day, index) => {
+                      const cellDate = weekDates[index];
+                      const itIsToday = isToday(cellDate);
+                      const isActive = mobileAvailabilityDay === index;
+
+                      return (
+                        <button
+                          key={day.value}
+                          type="button"
+                          onClick={() => setMobileAvailabilityDay(index)}
+                          style={{
+                            ...styles.mobileDayButton,
+                            background: isActive ? '#002642' : (itIsToday ? '#dee7e7' : '#f4faff'),
+                            color: isActive ? '#ffffff' : '#002642',
+                            border: isActive ? '2px solid #002642' : '1px solid #dee7e7',
+                          }}
+                        >
+                          <span style={styles.mobileDayButtonWeekday}>{day[language] || day.ru}</span>
+                          <span style={styles.mobileDayButtonDate}>{cellDate.getDate()}</span>
+                        </button>
+                      );
+                    })}
+                  </div>
+
+                  <div style={{
+                    ...styles.mobileSelectedDayBar,
+                    ...(selectedMobileDatePast ? styles.mobileSelectedDayBarLocked : {}),
+                  }}
+                  >
+                    <strong style={styles.mobileSelectedDayTitle}>{selectedMobileDateLabel}</strong>
+                    {selectedMobileDatePast && (
+                      <span style={styles.mobileSelectedDayHint}>{t.locked}</span>
+                    )}
+                  </div>
+
+                  {selectedMobileDatePast ? (
+                    <div style={styles.mobileLockedBox}>{t.locked}</div>
+                  ) : (
+                    <div style={styles.mobileSlotsCard}>
+                      {MOBILE_HOUR_GROUPS.map((group) => (
+                        <div key={group.hour} style={styles.mobileHourRow}>
+                          <div style={styles.mobileHourLabel}>{group.hour}:00</div>
+                          {group.slots.map((slot) => {
+                            const status = availabilityByDate[selectedMobileDateKey]?.[slot] || null;
+                            const slotTextColor = status === 'available'
+                              ? '#ffffff'
+                              : status === 'maybe'
+                                ? '#002642'
+                                : '#4f646f';
+
+                            return (
+                              <button
+                                key={slot}
+                                type="button"
+                                onClick={() => toggleAvailability(selectedMobileDateKey, slot)}
+                                style={{
+                                  ...styles.mobileSlotButton,
+                                  ...getAvailabilityCellStyle(selectedMobileDateKey, slot),
+                                  color: slotTextColor,
+                                }}
+                                aria-pressed={status === 'available'}
+                                title={getAvailabilityCellTitle(selectedMobileDateKey, slot)}
+                              >
+                                {slot.slice(3)}
+                              </button>
+                            );
+                          })}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+
+                  <div style={styles.mobileSectionLabel}>{t.desiredDaysOff}</div>
+                  <div style={styles.mobileDayOffGrid}>
+                    {WEEKDAYS.map((day) => {
+                      const checked = availabilityForm.desired_days_off.includes(day.value);
+                      return (
+                        <button
+                          key={day.value}
+                          type="button"
+                          onClick={() => setAvailabilityForm((prev) => ({
+                            ...prev,
+                            desired_days_off: checked
+                              ? prev.desired_days_off.filter((value) => value !== day.value)
+                              : [...prev.desired_days_off, day.value].sort((a, b) => a - b),
+                          }))}
+                          style={checked ? styles.mobileDayOffActive : styles.mobileDayOffButton}
+                        >
+                          {day[language] || day.ru}
+                        </button>
+                      );
+                    })}
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={submitAvailability}
+                    style={{
+                      ...(isSubmitting ? styles.primaryButtonDisabled : styles.primaryButton),
+                      ...r.primaryButton,
+                      ...styles.mobileStickyAction,
+                    }}
+                    disabled={isSubmitting}
+                  >
+                    {t.save}
+                  </button>
+                </>
+              ) : (
+                <>
               <div style={styles.panelHeader}>
-                <div>
+                <div style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 20,
+                  flexWrap: 'wrap',
+                }}
+                >
                   <h3 style={styles.panelTitle}>{t.availability}</h3>
+
+                  <div style={styles.brushPicker}>
+                    <button
+                      type="button"
+                      onClick={() => setBrushMode('available')}
+                      style={{
+                        ...styles.brushBtn,
+                        background: '#4CAF50',
+                        border: brushMode === 'available' ? '3px solid #002642' : '3px solid transparent',
+                      }}
+                      title={t.available}
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setBrushMode('maybe')}
+                      style={{
+                        ...styles.brushBtn,
+                        background: '#FFC107',
+                        border: brushMode === 'maybe' ? '3px solid #002642' : '3px solid transparent',
+                      }}
+                      title={t.maybe}
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setBrushMode('unavailable')}
+                      style={{
+                        ...styles.brushBtn,
+                        background: '#eef3f6',
+                        border: brushMode === 'unavailable' ? '3px solid #002642' : '3px solid transparent',
+                      }}
+                      title={t.unavailable}
+                    />
+                  </div>
                 </div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+
+                <div style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '10px',
+                  flexWrap: 'wrap',
+                }}
+                >
                   <button
                     type="button"
                     onClick={() => shiftWeek(-7)}
@@ -1300,7 +1552,6 @@ export default function ShiftsTab({ language, userRole, user }) {
                 </div>
               </div>
 
-              {/* Легенда */}
               <div style={styles.legend}>
                 <div style={styles.legendItem}>
                   <div style={{ ...styles.legendColor, background: '#4CAF50' }} />
@@ -1331,7 +1582,7 @@ export default function ShiftsTab({ language, userRole, user }) {
                           padding: '8px 4px',
                           background: itIsToday ? '#002642' : '#dee7e7',
                           color: itIsToday ? '#ffffff' : '#002642',
-                          border: itIsToday ? 'none' : styles.gridHeaderCell.border
+                          border: itIsToday ? 'none' : styles.gridHeaderCell.border,
                         }}
                       >
                         <span style={{ fontSize: '11px', opacity: itIsToday ? 0.9 : 0.8 }}>{day[language] || day.ru}</span>
@@ -1343,47 +1594,29 @@ export default function ShiftsTab({ language, userRole, user }) {
                   })}
                 </div>
                 <div style={styles.availabilityGridBody}>
-                  {TIME_SLOTS.map((time) => {
-                    return (
-                      <div key={time} style={styles.gridRow}>
-                        <div style={styles.gridTimeCell}>{time}</div>
-                        {WEEKDAYS.map((day, dayIndex) => {
-                          const cellDate = weekDates[dayIndex];
-                          const dateKey = toDateKey(cellDate);
-                          const past = isPastDateKey(dateKey);
-                          const status = availabilityByDate[dateKey]?.[time] || null;
+                  {TIME_SLOTS.map((time) => (
+                    <div key={time} style={styles.gridRow}>
+                      <div style={styles.gridTimeCell}>{time}</div>
+                      {WEEKDAYS.map((day, dayIndex) => {
+                        const cellDate = weekDates[dayIndex];
+                        const dateKey = toDateKey(cellDate);
+                        const past = isPastDateKey(dateKey);
+                        const status = availabilityByDate[dateKey]?.[time] || null;
 
-                          const cellStyle = past
-                            ? styles.gridCellLocked
-                            : status === 'available'
-                              ? styles.gridCellAvailable
-                              : status === 'maybe'
-                                ? styles.gridCellMaybe
-                                : styles.gridCell;
-
-                          return (
-                            <button
-                              key={`${dateKey}-${time}`}
-                              type="button"
-                              onClick={past ? undefined : () => toggleAvailability(dateKey, time)}
-                              disabled={past}
-                              style={cellStyle}
-                              aria-pressed={status === 'available'}
-                              title={
-                                past
-                                  ? t.locked
-                                  : status === 'available'
-                                    ? t.available
-                                    : status === 'maybe'
-                                      ? t.maybe
-                                      : t.unavailable
-                              }
-                            />
-                          );
-                        })}
-                      </div>
-                    );
-                  })}
+                        return (
+                          <button
+                            key={`${dateKey}-${time}`}
+                            type="button"
+                            onClick={past ? undefined : () => toggleAvailability(dateKey, time)}
+                            disabled={past}
+                            style={getAvailabilityCellStyle(dateKey, time)}
+                            aria-pressed={status === 'available'}
+                            title={getAvailabilityCellTitle(dateKey, time)}
+                          />
+                        );
+                      })}
+                    </div>
+                  ))}
                 </div>
               </div>
 
@@ -1419,12 +1652,72 @@ export default function ShiftsTab({ language, userRole, user }) {
               >
                 {t.save}
               </button>
+                </>
+              )}
             </section>
 
-            <section style={styles.panel}>
+            <section style={{ ...styles.panel, ...(r.isMobile ? r.employeePanel : {}) }}>
               <h3 style={styles.panelTitle}>{t.absences}</h3>
 
-              <div style={styles.absenceForm}>
+              {r.isMobile ? (
+                <div style={styles.mobileFormStack}>
+                  <Field label={t.absenceType}>
+                    <select
+                      value={absenceForm.absence_type}
+                      onChange={(event) => setAbsenceForm((prev) => ({ ...prev, absence_type: event.target.value }))}
+                      style={styles.input}
+                    >
+                      <option value="vacation">{t.vacation}</option>
+                      <option value="sick_leave">{t.sick_leave}</option>
+                      <option value="other">{t.other}</option>
+                    </select>
+                  </Field>
+
+                  <Field label={t.startDate}>
+                    <input
+                      type="date"
+                      value={absenceForm.start_date}
+                      onChange={(event) => setAbsenceForm((prev) => ({ ...prev, start_date: event.target.value }))}
+                      style={styles.input}
+                    />
+                  </Field>
+
+                  <Field label={t.endDate}>
+                    <input
+                      type="date"
+                      value={absenceForm.end_date}
+                      onChange={(event) => setAbsenceForm((prev) => ({ ...prev, end_date: event.target.value }))}
+                      style={styles.input}
+                    />
+                  </Field>
+
+                  <Field label={t.comment}>
+                    <input
+                      value={absenceForm.comment}
+                      onChange={(event) => setAbsenceForm((prev) => ({ ...prev, comment: event.target.value }))}
+                      placeholder={t.comment}
+                      style={styles.input}
+                    />
+                  </Field>
+
+                  <button
+                    type="button"
+                    onClick={submitAbsence}
+                    style={{
+                      ...(isSubmitting ? styles.primaryButtonDisabled : styles.primaryButton),
+                      ...r.primaryButton,
+                    }}
+                    disabled={isSubmitting}
+                  >
+                    {t.addAbsence}
+                  </button>
+                </div>
+              ) : (
+              <div style={{
+                ...styles.absenceForm,
+                gridTemplateColumns: r.gridCols('1.1fr 1fr 1fr 1.4fr auto'),
+              }}
+              >
                 <select
                   value={absenceForm.absence_type}
                   onChange={(event) => setAbsenceForm((prev) => ({ ...prev, absence_type: event.target.value }))}
@@ -1459,25 +1752,36 @@ export default function ShiftsTab({ language, userRole, user }) {
                 <button
                   type="button"
                   onClick={submitAbsence}
-                  style={isSubmitting ? styles.primaryButtonDisabled : styles.primaryButton}
+                  style={{
+                    ...(isSubmitting ? styles.primaryButtonDisabled : styles.primaryButton),
+                    ...r.primaryButton,
+                  }}
                   disabled={isSubmitting}
                 >
                   {t.addAbsence}
                 </button>
               </div>
+              )}
 
               {absences.length === 0 ? (
                 <p style={styles.emptyText}>{t.empty}</p>
               ) : (
                 <div style={styles.list}>
                   {absences.map((absence) => (
-                    <div key={absence.id} style={styles.listItem}>
+                    <div
+                      key={absence.id}
+                      style={r.isMobile ? styles.mobileAbsenceCard : { ...styles.listItem, ...r.listItem }}
+                    >
                       <div>
                         <strong style={styles.itemTitle}>{t[absence.absence_type] || absence.absence_type}</strong>
                         <div style={styles.itemMeta}>{absence.start_date} — {absence.end_date}</div>
                         {absence.comment && <div style={styles.itemMeta}>{absence.comment}</div>}
                       </div>
-                      <button type="button" onClick={() => removeAbsence(absence.id)} style={styles.deleteButton}>
+                      <button
+                        type="button"
+                        onClick={() => removeAbsence(absence.id)}
+                        style={r.isMobile ? { ...styles.deleteButton, ...r.fullWidth } : styles.deleteButton}
+                      >
                         {t.delete}
                       </button>
                     </div>
@@ -1486,12 +1790,16 @@ export default function ShiftsTab({ language, userRole, user }) {
               )}
             </section>
 
-            <section style={styles.panel}>
-              <h3 style={styles.panelTitle}>{t.shifts}</h3>
+            <section style={{ ...styles.panel, ...(r.isMobile ? r.employeePanel : {}) }}>
+              <h3 style={{ ...styles.panelTitle, ...(r.isMobile ? { marginBottom: 14 } : {}) }}>{t.shifts}</h3>
 
               {summary ? (
                 <>
-                  <div style={styles.metricGrid}>
+                  <div style={{
+                    ...styles.metricGrid,
+                    ...(r.isMobile ? { marginBottom: 16 } : {}),
+                  }}
+                  >
                     <Metric label={t.totalShifts} value={summary.workload.total_shifts} />
                     <Metric label={t.hours} value={summary.workload.total_hours} />
                   </div>
@@ -1501,17 +1809,39 @@ export default function ShiftsTab({ language, userRole, user }) {
                   ) : (
                     <div style={styles.list}>
                       {summary.shifts.map((shift) => (
-                        <div key={`${shift.schedule_id}-${shift.shift_id}`} style={styles.listItem}>
-                          <div>
-                            <strong style={styles.itemTitle}>{shift.date}</strong>
-                            <div style={styles.itemMeta}>
+                        r.isMobile ? (
+                          <div
+                            key={`${shift.schedule_id}-${shift.shift_id}`}
+                            style={{
+                              padding: '14px 16px',
+                              borderRadius: 14,
+                              background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+                              color: '#fff',
+                              border: '1px solid rgba(255,255,255,0.12)',
+                              boxShadow: '0 2px 8px rgba(102,126,234,0.25)',
+                            }}
+                          >
+                            <div style={{ fontWeight: 800, fontSize: 15, marginBottom: 4 }}>{shift.date}</div>
+                            <div style={{ fontSize: 14, marginBottom: 4 }}>
                               {formatTime(shift.start_time)} — {formatTime(shift.end_time)}
                             </div>
-                            <div style={styles.itemMeta}>
+                            <div style={{ fontSize: 13, opacity: 0.92 }}>
                               {t[shift.status] || localizeBackendMessage(shift.status, language)}
                             </div>
                           </div>
-                        </div>
+                        ) : (
+                          <div key={`${shift.schedule_id}-${shift.shift_id}`} style={styles.listItem}>
+                            <div>
+                              <strong style={styles.itemTitle}>{shift.date}</strong>
+                              <div style={styles.itemMeta}>
+                                {formatTime(shift.start_time)} — {formatTime(shift.end_time)}
+                              </div>
+                              <div style={styles.itemMeta}>
+                                {t[shift.status] || localizeBackendMessage(shift.status, language)}
+                              </div>
+                            </div>
+                          </div>
+                        )
                       ))}
                     </div>
                   )}
@@ -1563,13 +1893,12 @@ const styles = {
     borderRadius: '30px',
     background: '#f4faff',
     border: '1px solid rgba(222, 231, 231, 0.95)',
-    boxShadow: '0 22px 58px rgba(0, 38, 66, 0.18)',
+    boxShadow: 'none',
     display: 'flex',
     flexDirection: 'column',
     overflow: 'hidden',
     position: 'relative',
   },
-
   header: {
     flexShrink: 0,
     marginBottom: '18px',
@@ -1989,6 +2318,249 @@ const styles = {
     gap: '16px',
   },
 
+  employeeGridMobile: {
+    gap: 12,
+    overflowY: 'visible',
+  },
+
+  mobileWeekBar: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: 8,
+    marginBottom: 16,
+    padding: '10px 12px',
+    borderRadius: 16,
+    background: '#f4faff',
+    border: '1px solid #dee7e7',
+  },
+
+  mobileWeekArrow: {
+    width: 40,
+    height: 40,
+    flexShrink: 0,
+    border: 'none',
+    borderRadius: 12,
+    background: '#ffffff',
+    color: '#002642',
+    fontSize: 18,
+    fontWeight: 900,
+    cursor: 'pointer',
+    boxShadow: '0 2px 8px rgba(0, 38, 66, 0.08)',
+  },
+
+  mobileWeekCenter: {
+    flex: 1,
+    minWidth: 0,
+    display: 'flex',
+    flexDirection: 'column',
+    alignItems: 'center',
+    gap: 6,
+  },
+
+  mobileWeekLabel: {
+    color: '#002642',
+    fontSize: 15,
+    fontWeight: 900,
+    textAlign: 'center',
+  },
+
+  mobileWeekDateInput: {
+    width: '100%',
+    maxWidth: 180,
+    height: 36,
+    boxSizing: 'border-box',
+    borderRadius: 10,
+    border: '1px solid #dee7e7',
+    background: '#ffffff',
+    padding: '0 10px',
+    color: '#002642',
+    fontSize: 13,
+    fontWeight: 600,
+  },
+
+  mobileSectionLabel: {
+    marginBottom: 8,
+    color: '#4f646f',
+    fontSize: 12,
+    fontWeight: 850,
+    textTransform: 'uppercase',
+    letterSpacing: '0.04em',
+  },
+
+  mobileBrushRow: {
+    display: 'flex',
+    gap: 8,
+    marginBottom: 16,
+  },
+
+  mobileBrushButton: {
+    flex: 1,
+    minHeight: 42,
+    borderRadius: 12,
+    cursor: 'pointer',
+    fontSize: 12,
+    fontWeight: 800,
+    padding: '8px 6px',
+  },
+
+  mobileDayGrid: {
+    display: 'grid',
+    gridTemplateColumns: 'repeat(7, minmax(0, 1fr))',
+    gap: 6,
+    marginBottom: 14,
+  },
+
+  mobileDayButton: {
+    minHeight: 58,
+    borderRadius: 12,
+    cursor: 'pointer',
+    display: 'flex',
+    flexDirection: 'column',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 2,
+    padding: '6px 2px',
+  },
+
+  mobileDayButtonWeekday: {
+    fontSize: 10,
+    fontWeight: 800,
+    opacity: 0.85,
+  },
+
+  mobileDayButtonDate: {
+    fontSize: 16,
+    fontWeight: 900,
+    lineHeight: 1,
+  },
+
+  mobileSelectedDayBar: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: 4,
+    marginBottom: 12,
+    padding: '12px 14px',
+    borderRadius: 14,
+    background: '#dee7e7',
+  },
+
+  mobileSelectedDayBarLocked: {
+    background: '#eef3f6',
+  },
+
+  mobileSelectedDayTitle: {
+    color: '#002642',
+    fontSize: 15,
+    fontWeight: 850,
+  },
+
+  mobileSelectedDayHint: {
+    color: '#4f646f',
+    fontSize: 12,
+    fontWeight: 650,
+  },
+
+  mobileLockedBox: {
+    marginBottom: 16,
+    padding: '18px 14px',
+    borderRadius: 14,
+    background: '#f4faff',
+    border: '1px dashed #dee7e7',
+    color: '#4f646f',
+    fontSize: 13,
+    fontWeight: 650,
+    textAlign: 'center',
+  },
+
+  mobileSlotsCard: {
+    marginBottom: 18,
+    padding: 12,
+    borderRadius: 16,
+    background: '#f4faff',
+    border: '1px solid #dee7e7',
+    maxHeight: 'min(48vh, 380px)',
+    overflowY: 'auto',
+    display: 'flex',
+    flexDirection: 'column',
+    gap: 8,
+  },
+
+  mobileHourRow: {
+    display: 'grid',
+    gridTemplateColumns: '42px 1fr 1fr',
+    gap: 8,
+    alignItems: 'stretch',
+  },
+
+  mobileHourLabel: {
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    color: '#4f646f',
+    fontSize: 12,
+    fontWeight: 800,
+  },
+
+  mobileSlotButton: {
+    minHeight: 42,
+    borderRadius: 12,
+    border: '2px solid transparent',
+    cursor: 'pointer',
+    fontSize: 12,
+    fontWeight: 900,
+    color: '#002642',
+  },
+
+  mobileDayOffGrid: {
+    display: 'grid',
+    gridTemplateColumns: 'repeat(7, minmax(0, 1fr))',
+    gap: 6,
+    marginBottom: 16,
+  },
+
+  mobileDayOffButton: {
+    minHeight: 38,
+    border: '1px solid #dee7e7',
+    borderRadius: 10,
+    background: '#f4faff',
+    color: '#002642',
+    fontSize: 12,
+    fontWeight: 800,
+    cursor: 'pointer',
+  },
+
+  mobileDayOffActive: {
+    minHeight: 38,
+    border: '2px solid #002642',
+    borderRadius: 10,
+    background: '#002642',
+    color: '#ffffff',
+    fontSize: 12,
+    fontWeight: 900,
+    cursor: 'pointer',
+  },
+
+  mobileStickyAction: {
+    marginTop: 4,
+  },
+
+  mobileFormStack: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: 12,
+    marginBottom: 12,
+  },
+
+  mobileAbsenceCard: {
+    padding: '14px 16px',
+    borderRadius: 14,
+    background: '#f4faff',
+    border: '1px solid #dee7e7',
+    display: 'flex',
+    flexDirection: 'column',
+    gap: 10,
+  },
+
   availabilityGridWrapper: {
     display: 'flex',
     flexDirection: 'column',
@@ -2081,6 +2653,22 @@ const styles = {
     transition: 'all 0.15s ease',
   },
 
+  brushPicker: {
+    display: 'flex',
+    gap: '8px',
+    background: '#eceff4',
+    padding: '4px 8px',
+    borderRadius: '12px',
+  },
+
+  brushBtn: {
+    width: '24px',
+    height: '24px',
+    borderRadius: '6px',
+    cursor: 'pointer',
+    padding: 0,
+    transition: 'transform 0.1s ease',
+  },
   gridCellLocked: {
     width: '100%',
     minHeight: '34px',

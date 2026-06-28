@@ -519,6 +519,80 @@ def test_employee_position_update_returns_clear_errors_for_invalid_ids(client: T
     assert missing_position.json()["detail"] == "Position was not found."
 
 
+def test_employee_availability_round_trips_availability_status(client: TestClient) -> None:
+    employee_headers = login_json(client, "ivan@example.com", "employee123")
+    payload = {
+        "weekly_availability": [
+            {
+                "weekday": 1,
+                "start_time": "09:00:00",
+                "end_time": "13:00:00",
+                "availability_status": "available",
+            },
+            {
+                "weekday": 1,
+                "start_time": "13:00:00",
+                "end_time": "17:00:00",
+                "availability_status": "if_needed",
+            },
+            {
+                "weekday": 2,
+                "start_time": "10:00:00",
+                "end_time": "12:00:00",
+                "availability_status": "unavailable",
+            },
+        ],
+        "desired_days_off": [5],
+    }
+
+    saved = client.post("/employees/1/availability", headers=employee_headers, json=payload)
+    assert saved.status_code == 200, saved.text
+    assert saved.json()["weekly_availability"] == payload["weekly_availability"]
+
+    fetched = client.get("/employees/1/availability", headers=employee_headers)
+    assert fetched.status_code == 200, fetched.text
+    assert fetched.json()["weekly_availability"] == payload["weekly_availability"]
+    assert fetched.json()["desired_days_off"] == [5]
+
+    with psycopg.connect(PSYCOPG_DSN) as connection:
+        with connection.cursor() as cursor:
+            cursor.execute(
+                """
+                SELECT weekday, start_time::text, end_time::text, availability_status
+                FROM employee_availability
+                WHERE employee_id = 1
+                ORDER BY weekday, start_time
+                """
+            )
+            assert cursor.fetchall() == [
+                (1, "09:00:00", "13:00:00", "available"),
+                (1, "13:00:00", "17:00:00", "if_needed"),
+                (2, "10:00:00", "12:00:00", "unavailable"),
+            ]
+
+
+def test_employee_availability_rejects_unknown_status(client: TestClient) -> None:
+    employee_headers = login_json(client, "ivan@example.com", "employee123")
+
+    response = client.post(
+        "/employees/1/availability",
+        headers=employee_headers,
+        json={
+            "weekly_availability": [
+                {
+                    "weekday": 1,
+                    "start_time": "09:00:00",
+                    "end_time": "13:00:00",
+                    "availability_status": "maybe",
+                }
+            ],
+            "desired_days_off": [],
+        },
+    )
+
+    assert response.status_code == 422
+
+
 def test_manager_can_update_own_company(client: TestClient) -> None:
     manager_headers = login_json(client, "manager@example.com", "manager123")
 
@@ -1704,6 +1778,252 @@ def test_latest_schedule_returns_404_when_company_has_no_schedules(client: TestC
     manager_headers = login_json(client, "manager@example.com", "manager123")
     missing = client.get("/schedule/latest", headers=manager_headers)
     assert missing.status_code == 404
+
+
+def test_manager_can_manually_add_edit_and_delete_shifts(client: TestClient) -> None:
+    with psycopg.connect(PSYCOPG_DSN) as connection:
+        with connection.cursor() as cursor:
+            cursor.execute("UPDATE employees SET branch_id = 1, position_id = 1 WHERE id = 1")
+
+    manager_headers = login_json(client, "manager@example.com", "manager123")
+
+    assigned = client.post(
+        "/schedule/1/shifts",
+        headers=manager_headers,
+        json={
+            "date": "2026-06-16",
+            "start_time": "12:00:00",
+            "end_time": "20:00:00",
+            "position_id": 1,
+            "employee_id": 1,
+        },
+    )
+    assert assigned.status_code == 201, assigned.text
+    assigned_shift = next(
+        shift
+        for shift in assigned.json()["shifts"]
+        if shift["date"] == "2026-06-16" and shift["start_time"] == "12:00:00"
+    )
+    assert assigned_shift["employee_id"] == 1
+    assert assigned_shift["position_id"] == 1
+
+    unassigned = client.post(
+        "/schedule/1/shifts",
+        headers=manager_headers,
+        json={
+            "date": "2026-06-17",
+            "start_time": "10:00:00",
+            "end_time": "18:00:00",
+            "position_id": 1,
+        },
+    )
+    assert unassigned.status_code == 201, unassigned.text
+    unassigned_shift = next(
+        shift
+        for shift in unassigned.json()["shifts"]
+        if shift["date"] == "2026-06-17" and shift["start_time"] == "10:00:00"
+    )
+    assert unassigned_shift["employee_id"] is None
+    assert unassigned_shift["employee_name"] is None
+
+    edited = client.patch(
+        f"/schedule/1/shifts/{unassigned_shift['id']}",
+        headers=manager_headers,
+        json={
+            "date": "2026-06-18",
+            "start_time": "10:00:00",
+            "end_time": "18:00:00",
+            "position_id": 1,
+            "employee_id": 1,
+        },
+    )
+    assert edited.status_code == 200, edited.text
+    edited_shift = next(shift for shift in edited.json()["shifts"] if shift["id"] == unassigned_shift["id"])
+    assert edited_shift["date"] == "2026-06-18"
+    assert edited_shift["employee_id"] == 1
+
+    deleted = client.delete(f"/schedule/1/shifts/{assigned_shift['id']}", headers=manager_headers)
+    assert deleted.status_code == 204, deleted.text
+    after_delete = client.get("/schedule/1", headers=manager_headers)
+    assert assigned_shift["id"] not in [shift["id"] for shift in after_delete.json()["shifts"]]
+
+
+def test_manager_can_assign_employee_to_unfilled_requirement(client: TestClient) -> None:
+    with psycopg.connect(PSYCOPG_DSN) as connection:
+        with connection.cursor() as cursor:
+            cursor.execute("UPDATE employees SET branch_id = 1, position_id = 1 WHERE id = 1")
+
+    manager_headers = login_json(client, "manager@example.com", "manager123")
+    requirement = client.post(
+        "/schedule/requirements",
+        headers=manager_headers,
+        json={
+            "branch_id": 1,
+            "position_id": 1,
+            "date": "2026-06-16",
+            "start_time": "12:00:00",
+            "end_time": "20:00:00",
+            "required_count": 1,
+        },
+    )
+    assert requirement.status_code == 201, requirement.text
+
+    assigned = client.post(
+        f"/schedule/1/requirements/{requirement.json()['id']}/assign",
+        headers=manager_headers,
+        json={"employee_id": 1},
+    )
+    assert assigned.status_code == 200, assigned.text
+    assert any(
+        shift["employee_id"] == 1
+        and shift["date"] == "2026-06-16"
+        and shift["start_time"] == "12:00:00"
+        for shift in assigned.json()["shifts"]
+    )
+    assert requirement.json()["id"] not in [
+        item["requirement_id"]
+        for item in assigned.json()["unfilled_requirements"]
+    ]
+
+    already_filled = client.post(
+        f"/schedule/1/requirements/{requirement.json()['id']}/assign",
+        headers=manager_headers,
+        json={"employee_id": 1},
+    )
+    assert already_filled.status_code == 400
+
+
+def test_available_employees_filters_position_absence_availability_and_overlap(client: TestClient) -> None:
+    password_hash = "$2b$12$uSYcqEdeSEBbX1C4vnns9.33t2QvChgi0eQ5RxJBGg8jCHGqu3w8a"
+    with psycopg.connect(PSYCOPG_DSN) as connection:
+        with connection.cursor() as cursor:
+            cursor.execute("UPDATE employees SET branch_id = 1, position_id = 1 WHERE id = 1")
+            created_employee_ids = []
+            for full_name, email, position_id in [
+                ("Absent Barista", "absent-barista@example.com", 1),
+                ("Busy Barista", "busy-barista@example.com", 1),
+                ("Wrong Position", "wrong-position@example.com", 2),
+                ("No Availability", "no-availability@example.com", 1),
+            ]:
+                cursor.execute(
+                    """
+                    INSERT INTO users (full_name, email, password_hash, role)
+                    VALUES (%s, %s, %s, 'employee')
+                    RETURNING id
+                    """,
+                    (full_name, email, password_hash),
+                )
+                user_id = cursor.fetchone()[0]
+                cursor.execute(
+                    """
+                    INSERT INTO employees (user_id, company_id, branch_id, position_id)
+                    VALUES (%s, 1, 1, %s)
+                    RETURNING id
+                    """,
+                    (user_id, position_id),
+                )
+                created_employee_ids.append(cursor.fetchone()[0])
+
+            absent_id, busy_id, wrong_position_id, _no_availability_id = created_employee_ids
+            cursor.execute(
+                """
+                INSERT INTO employee_availability (employee_id, weekday, start_time, end_time, availability_status)
+                VALUES
+                (%s, 1, '12:00', '20:00', 'available'),
+                (%s, 1, '12:00', '20:00', 'available'),
+                (%s, 1, '12:00', '20:00', 'available')
+                """,
+                (absent_id, busy_id, wrong_position_id),
+            )
+            cursor.execute(
+                """
+                INSERT INTO absences (employee_id, absence_type, start_date, end_date)
+                VALUES (%s, 'vacation', '2026-06-16', '2026-06-16')
+                """,
+                (absent_id,),
+            )
+            cursor.execute(
+                """
+                INSERT INTO shifts (schedule_id, company_id, position_id, shift_date, start_time, end_time)
+                VALUES (1, 1, 1, '2026-06-16', '13:00', '15:00')
+                RETURNING id
+                """
+            )
+            busy_shift_id = cursor.fetchone()[0]
+            cursor.execute(
+                "INSERT INTO shift_assignments (shift_id, employee_id, status) VALUES (%s, %s, 'assigned')",
+                (busy_shift_id, busy_id),
+            )
+
+    manager_headers = login_json(client, "manager@example.com", "manager123")
+    available = client.get(
+        "/schedule/1/employees/available"
+        "?date=2026-06-16&start_time=12:00:00&end_time=20:00:00&position_id=1",
+        headers=manager_headers,
+    )
+    assert available.status_code == 200, available.text
+    available_json = available.json()
+    assert [employee["id"] for employee in available_json] == [1]
+    assert available_json[0]["availability_status"] == "if_needed"
+    assert available_json[0]["assigned_hours"] >= 8
+
+
+def test_manual_schedule_editing_access_and_company_scope(client: TestClient) -> None:
+    seed_second_company_scope_data()
+    with psycopg.connect(PSYCOPG_DSN) as connection:
+        with connection.cursor() as cursor:
+            cursor.execute("UPDATE employees SET branch_id = 1, position_id = 1 WHERE id = 1")
+            cursor.execute("SELECT id FROM companies WHERE invite_code = %s", (SECOND_COMPANY_INVITE_CODE,))
+            other_company_id = cursor.fetchone()[0]
+            cursor.execute("SELECT id FROM positions WHERE company_id = %s", (other_company_id,))
+            other_position_id = cursor.fetchone()[0]
+            cursor.execute("SELECT id FROM employees WHERE company_id = %s", (other_company_id,))
+            other_employee_id = cursor.fetchone()[0]
+            cursor.execute(
+                """
+                INSERT INTO schedules (company_id, start_date, end_date, status)
+                VALUES (%s, '2026-06-15', '2026-06-21', 'draft')
+                RETURNING id
+                """,
+                (other_company_id,),
+            )
+            other_schedule_id = cursor.fetchone()[0]
+
+    manager_headers = login_json(client, "manager@example.com", "manager123")
+    employee_headers = login_json(client, "ivan@example.com", "employee123")
+    payload = {
+        "date": "2026-06-16",
+        "start_time": "12:00:00",
+        "end_time": "20:00:00",
+        "position_id": 1,
+        "employee_id": 1,
+    }
+
+    assert client.post("/schedule/1/shifts", headers=employee_headers, json=payload).status_code == 403
+    assert client.patch("/schedule/1/shifts/1", headers=employee_headers, json={"employee_id": 1}).status_code == 403
+    assert client.delete("/schedule/1/shifts/1", headers=employee_headers).status_code == 403
+    assert client.post("/schedule/1/requirements/1/assign", headers=employee_headers, json={"employee_id": 1}).status_code == 403
+    assert client.get(
+        "/schedule/1/employees/available?date=2026-06-16&start_time=12:00:00&end_time=20:00:00&position_id=1",
+        headers=employee_headers,
+    ).status_code == 403
+
+    assert client.post(f"/schedule/{other_schedule_id}/shifts", headers=manager_headers, json=payload).status_code == 403
+    assert client.get(
+        f"/schedule/{other_schedule_id}/employees/available"
+        "?date=2026-06-16&start_time=12:00:00&end_time=20:00:00&position_id=1",
+        headers=manager_headers,
+    ).status_code == 403
+    assert client.post(
+        "/schedule/1/shifts",
+        headers=manager_headers,
+        json={**payload, "position_id": other_position_id, "employee_id": None},
+    ).status_code == 403
+    assert client.post(
+        "/schedule/1/shifts",
+        headers=manager_headers,
+        json={**payload, "employee_id": other_employee_id},
+    ).status_code == 403
 
 
 def test_manager_generation_is_company_scoped_and_publishable(client: TestClient) -> None:

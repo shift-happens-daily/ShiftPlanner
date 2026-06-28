@@ -21,7 +21,7 @@ export default function LanguageSwitcher({ onLanguageChange, variant = 'light' }
     light: {
       langBtn: {
         background: '#F4FAFF',
-        border: '2px solid #002642',
+        border: 'none',
         padding: '8px 16px',
         borderRadius: '20px',
         color: '#002642',
@@ -29,14 +29,14 @@ export default function LanguageSwitcher({ onLanguageChange, variant = 'light' }
         fontWeight: '700',
         cursor: 'pointer',
         transition: 'all 0.2s ease',
-        boxShadow: '0 2px 8px rgba(0, 38, 66, 0.08)',
+        boxShadow: 'none',
       },
     },
     dark: {
       langBtn: {
         background: 'rgba(244,250,255,0.2)',
         backdropFilter: 'blur(10px)',
-        border: '2px solid rgba(244, 250, 255, 0.75)',
+        border: 'none',
         padding: '8px 16px',
         borderRadius: '20px',
         color: '#F4FAFF',
@@ -44,7 +44,7 @@ export default function LanguageSwitcher({ onLanguageChange, variant = 'light' }
         fontWeight: '700',
         cursor: 'pointer',
         transition: 'all 0.2s ease',
-        boxShadow: '0 2px 10px rgba(0, 0, 0, 0.12)',
+        boxShadow: 'none',
       },
     },
   };
@@ -53,7 +53,6 @@ export default function LanguageSwitcher({ onLanguageChange, variant = 'light' }
 
   return (
     <button type="button" onClick={toggleLanguage} style={currentStyle.langBtn}>
-      {language === 'ru' ? 'RU' : 'EN'}
-    </button>
-  );
+      {language === 'ru' ? 'ENG' : 'RU'}
+    </button>  );
 }

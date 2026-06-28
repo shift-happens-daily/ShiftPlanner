@@ -1,0 +1,9 @@
+#!/bin/sh
+set -eu
+
+marker=/run/shiftplanner-nginx-certbot-stopped
+
+if [ -f "$marker" ]; then
+    docker start shiftplanner_nginx
+    rm -f "$marker"
+fi

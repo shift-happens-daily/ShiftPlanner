@@ -3,14 +3,19 @@ import * as XLSX from 'xlsx';
 import { listEmployees } from '../../services/employeeService';
 import { extractApiErrorMessage, localizeBackendMessage } from '../../services/error';
 import {
+  assignRequirement,
   createExchangeRequest,
   defaultSchedulePeriod,
+  deleteShift,
   generateSchedule,
   getMySchedule,
+  getSchedule,
+  listAvailableEmployees,
   mergePublishedSchedule,
   publishSchedule,
   updateShift,
 } from '../../services/scheduleService';
+import { useTabResponsive } from '../../utils/tabResponsive';
 
 function defaultPeriod() {
   return defaultSchedulePeriod();
@@ -26,6 +31,14 @@ function normalizeArray(value) {
 
 function formatTime(value) {
   return String(value || '').slice(0, 5);
+}
+
+function formatTimeForApi(value) {
+  const raw = String(value || '').trim();
+  if (!raw) return raw;
+  if (/^\d{2}:\d{2}:\d{2}$/.test(raw)) return raw;
+  if (/^\d{2}:\d{2}$/.test(raw)) return `${raw}:00`;
+  return raw.slice(0, 8);
 }
 
 function parseTimeToHours(value) {
@@ -159,6 +172,7 @@ function exportScheduleDraftToXlsx(schedule, translations) {
 
 export default function ScheduleTab({ language, userRole }) {
   const isManager = userRole === 'manager';
+  const r = useTabResponsive(1280);
 
   const [periodForm, setPeriodForm] = useState(defaultPeriod);
 
@@ -183,6 +197,9 @@ export default function ScheduleTab({ language, userRole }) {
   const [employees, setEmployees] = useState([]);
   const [exchangeNotes, setExchangeNotes] = useState({});
   const [reassignEmployeeIds, setReassignEmployeeIds] = useState({});
+  const [availableByShift, setAvailableByShift] = useState({});
+  const [assignEmployeeIds, setAssignEmployeeIds] = useState({});
+  const [availableByRequirement, setAvailableByRequirement] = useState({});
   const [isLoading, setIsLoading] = useState(true);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
@@ -205,7 +222,7 @@ export default function ScheduleTab({ language, userRole }) {
       remove: 'Убрать сотрудника',
       noSchedule: 'Расписание ещё не сгенерировано',
       noScheduleHint: 'Выберите неделю (Пн–Вс) и нажмите «Сгенерировать черновик».',
-      noScheduleRequirements: 'Перед генерацией должны быть настроены шаблоны потребности, часы филиала и availability сотрудников.',
+      noScheduleRequirements: 'Перед генерацией должны быть настроены шаблоны потребности, часы филиала и доступность сотрудников.',
       loading: 'Загрузка...',
       unfilled: 'Незаполненные требования',
       shifts: 'Смены',
@@ -228,6 +245,10 @@ export default function ScheduleTab({ language, userRole }) {
       schedulePreview: 'Предпросмотр расписания',
       chooseEmployee: 'Выберите сотрудника',
       noEmployeesForPosition: 'Нет сотрудников этой позиции',
+      assign: 'Назначить',
+      loadEmployees: 'Загрузить кандидатов',
+      assigned: 'Сотрудник назначен на смену.',
+      assignError: 'Не удалось назначить сотрудника.',
       noPublishedScheduleTitle: 'Пока нет опубликованных смен',
       noPublishedScheduleHint: 'Когда менеджер опубликует расписание, ваши смены появятся здесь.',
       noPublishedScheduleStep1: 'Дождитесь публикации от менеджера',
@@ -277,6 +298,10 @@ export default function ScheduleTab({ language, userRole }) {
       schedulePreview: 'Schedule preview',
       chooseEmployee: 'Choose employee',
       noEmployeesForPosition: 'No employees for this position',
+      assign: 'Assign',
+      loadEmployees: 'Load candidates',
+      assigned: 'Employee assigned to shift.',
+      assignError: 'Failed to assign employee.',
       noPublishedScheduleTitle: 'No published shifts yet',
       noPublishedScheduleHint: 'When your manager publishes the schedule, your shifts will appear here.',
       noPublishedScheduleStep1: 'Wait for the manager to publish the schedule',
@@ -434,22 +459,90 @@ export default function ScheduleTab({ language, userRole }) {
     setSuccessMessage(t.scheduleCleared);
   };
 
-  const handleShiftAction = async (shiftId, action) => {
+  const handleShiftAction = async (shiftId, action, shift) => {
     if (!schedule?.id) return;
 
     clearMessages();
     setIsSubmitting(true);
 
     try {
-      const payload = action === 'remove'
-        ? { action }
-        : { action, employee_id: Number(reassignEmployeeIds[shiftId]) };
-
-      const updatedSchedule = await updateShift(schedule.id, shiftId, payload);
-      setSchedule(updatedSchedule);
+      if (action === 'remove') {
+        await deleteShift(schedule.id, shiftId);
+        const updatedSchedule = await getSchedule(schedule.id);
+        setSchedule(updatedSchedule);
+      } else {
+        const updatedSchedule = await updateShift(schedule.id, shiftId, {
+          action: 'reassign',
+          employee_id: Number(reassignEmployeeIds[shiftId]),
+        });
+        setSchedule(updatedSchedule);
+      }
       setSuccessMessage(t.shiftUpdated);
     } catch (error) {
       setErrorMessage(extractApiErrorMessage(error, null, language));
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const handleLoadAvailableForShift = async (shift) => {
+    if (!schedule?.id || !shift) return;
+
+    const shiftId = getShiftId(shift);
+    const positionId = getShiftPositionId(shift);
+    if (!positionId) return;
+
+    try {
+      const employees = await listAvailableEmployees(schedule.id, {
+        date: shift.date,
+        start_time: formatTimeForApi(shift.start_time),
+        end_time: formatTimeForApi(shift.end_time),
+        position_id: positionId,
+      });
+      setAvailableByShift((prev) => ({
+        ...prev,
+        [shiftId]: Array.isArray(employees) ? employees : [],
+      }));
+    } catch (error) {
+      setErrorMessage(extractApiErrorMessage(error, t.assignError, language));
+    }
+  };
+
+  const handleLoadAvailableForRequirement = async (item) => {
+    if (!schedule?.id || !item?.requirement_id) return;
+
+    try {
+      const employees = await listAvailableEmployees(schedule.id, {
+        date: item.date,
+        start_time: formatTimeForApi(item.start_time),
+        end_time: formatTimeForApi(item.end_time),
+        position_id: item.position_id,
+      });
+      setAvailableByRequirement((prev) => ({
+        ...prev,
+        [item.requirement_id]: Array.isArray(employees) ? employees : [],
+      }));
+    } catch (error) {
+      setErrorMessage(extractApiErrorMessage(error, t.assignError, language));
+    }
+  };
+
+  const handleAssignRequirement = async (requirementId) => {
+    const employeeId = assignEmployeeIds[requirementId];
+    if (!schedule?.id || !requirementId || !employeeId) return;
+
+    clearMessages();
+    setIsSubmitting(true);
+
+    try {
+      const updatedSchedule = await assignRequirement(schedule.id, requirementId, {
+        employee_id: Number(employeeId),
+      });
+      setSchedule(updatedSchedule);
+      setAssignEmployeeIds((prev) => ({ ...prev, [requirementId]: '' }));
+      setSuccessMessage(t.assigned);
+    } catch (error) {
+      setErrorMessage(extractApiErrorMessage(error, t.assignError, language));
     } finally {
       setIsSubmitting(false);
     }
@@ -483,8 +576,8 @@ export default function ScheduleTab({ language, userRole }) {
 
   if (isLoading) {
     return (
-      <section style={styles.page}>
-        <div style={styles.shell}>
+      <section style={{ ...styles.page, ...r.page }}>
+        <div style={{ ...styles.shell, ...r.shell }}>
           <div style={styles.emptyBox}>{t.loading}</div>
         </div>
       </section>
@@ -492,13 +585,13 @@ export default function ScheduleTab({ language, userRole }) {
   }
 
   return (
-    <section style={styles.page}>
-      <div style={styles.shell}>
+    <section style={{ ...styles.page, ...r.page }}>
+      <div style={{ ...styles.shell, ...r.shell }}>
         {renderToast()}
 
-        <header style={styles.header}>
+        <header style={{ ...styles.header, ...r.header }}>
           <div>
-            <h2 style={styles.title}>{isManager ? t.titleManager : t.titleEmployee}</h2>
+            <h2 style={{ ...styles.title, ...r.title }}>{isManager ? t.titleManager : t.titleEmployee}</h2>
             <p style={styles.subtitle}>{isManager ? t.subtitleManager : t.subtitleEmployee}</p>
           </div>
 
@@ -511,7 +604,7 @@ export default function ScheduleTab({ language, userRole }) {
         </header>
 
         {isManager ? (
-          <div style={styles.managerLayout}>
+          <div style={{ ...styles.managerLayout, ...r.splitLayout('300px minmax(0, 1fr)') }}>
             <aside style={styles.sidebar}>
               <section style={styles.panel}>
                 <h3 style={styles.panelTitle}>{t.period}</h3>
@@ -623,10 +716,7 @@ export default function ScheduleTab({ language, userRole }) {
                       <div style={styles.shiftList}>
                         {scheduleShifts.map((shift) => {
                           const shiftId = getShiftId(shift);
-                          const shiftPositionId = getShiftPositionId(shift);
-                          const availableEmployees = employees.filter((employee) => (
-                            String(getEmployeePositionId(employee)) === String(shiftPositionId)
-                          ));
+                          const availableEmployees = availableByShift[shiftId] || [];
 
                           return (
                             <div key={shiftId} style={styles.shiftCard}>
@@ -640,6 +730,15 @@ export default function ScheduleTab({ language, userRole }) {
                               </div>
 
                               <div style={styles.shiftActions}>
+                                <button
+                                  type="button"
+                                  onClick={() => handleLoadAvailableForShift(shift)}
+                                  style={styles.smallSecondaryButton}
+                                  disabled={isSubmitting}
+                                >
+                                  {t.loadEmployees}
+                                </button>
+
                                 <select
                                   value={reassignEmployeeIds[shiftId] || ''}
                                   onChange={(event) =>
@@ -648,6 +747,7 @@ export default function ScheduleTab({ language, userRole }) {
                                       [shiftId]: event.target.value,
                                     }))
                                   }
+                                  onFocus={() => handleLoadAvailableForShift(shift)}
                                   style={styles.select}
                                 >
                                   <option value="">
@@ -662,7 +762,7 @@ export default function ScheduleTab({ language, userRole }) {
 
                                 <button
                                   type="button"
-                                  onClick={() => handleShiftAction(shiftId, 'reassign')}
+                                  onClick={() => handleShiftAction(shiftId, 'reassign', shift)}
                                   style={styles.smallPrimaryButton}
                                   disabled={!reassignEmployeeIds[shiftId] || isSubmitting}
                                 >
@@ -671,7 +771,7 @@ export default function ScheduleTab({ language, userRole }) {
 
                                 <button
                                   type="button"
-                                  onClick={() => handleShiftAction(shiftId, 'remove')}
+                                  onClick={() => handleShiftAction(shiftId, 'remove', shift)}
                                   style={styles.smallSecondaryButton}
                                   disabled={isSubmitting}
                                 >
@@ -693,8 +793,12 @@ export default function ScheduleTab({ language, userRole }) {
                         <p style={styles.emptyText}>{t.empty}</p>
                       ) : (
                         <div style={styles.compactList}>
-                          {unfilledRequirements.map((item) => (
-                            <div key={item.requirement_id} style={styles.compactItem}>
+                          {unfilledRequirements.map((item) => {
+                            const requirementId = item.requirement_id;
+                            const available = availableByRequirement[requirementId] || [];
+
+                            return (
+                            <div key={requirementId} style={styles.compactItem}>
                               <strong style={styles.itemTitle}>{item.position_title}</strong>
                               <span style={styles.itemMeta}>{item.date}</span>
                               <span style={styles.itemMeta}>
@@ -703,8 +807,43 @@ export default function ScheduleTab({ language, userRole }) {
                               <span style={styles.staffBadge}>
                                 {t.missingStaff}: {item.missing_staff}
                               </span>
+                              <div style={styles.shiftActions}>
+                                <button
+                                  type="button"
+                                  onClick={() => handleLoadAvailableForRequirement(item)}
+                                  style={styles.smallSecondaryButton}
+                                  disabled={isSubmitting}
+                                >
+                                  {t.loadEmployees}
+                                </button>
+                                <select
+                                  value={assignEmployeeIds[requirementId] || ''}
+                                  onChange={(event) => setAssignEmployeeIds((prev) => ({
+                                    ...prev,
+                                    [requirementId]: event.target.value,
+                                  }))}
+                                  style={styles.select}
+                                  disabled={isSubmitting}
+                                >
+                                  <option value="">{t.chooseEmployee}</option>
+                                  {available.map((employee) => (
+                                    <option key={employee.id} value={employee.id}>
+                                      {employee.full_name}
+                                    </option>
+                                  ))}
+                                </select>
+                                <button
+                                  type="button"
+                                  onClick={() => handleAssignRequirement(requirementId)}
+                                  style={styles.smallPrimaryButton}
+                                  disabled={isSubmitting || !assignEmployeeIds[requirementId]}
+                                >
+                                  {t.assign}
+                                </button>
+                              </div>
                             </div>
-                          ))}
+                            );
+                          })}
                         </div>
                       )}
                     </section>
@@ -734,25 +873,20 @@ export default function ScheduleTab({ language, userRole }) {
             </main>
           </div>
         ) : (
-          <main style={styles.employeeArea}>
-            <section style={styles.panel}>
-              <div style={styles.panelHeader}>
-                <div>
-                  <h3 style={styles.panelTitle}>{t.titleEmployee}</h3>
-                  <p style={styles.panelHint}>{t.subtitleEmployee}</p>
-                </div>
-
-                <div style={styles.modeSegment}>
+          <main style={{ ...styles.employeeArea, ...r.employeeArea }}>
+            <section style={{ ...styles.panel, ...r.employeePanel }}>
+              <div style={{ ...styles.panelHeader, ...r.panelHeader }}>
+                <div style={{ ...styles.modeSegment, ...r.modeSegment }}>
                   {['day', 'week', 'month'].map((mode) => (
                     <button
                       key={mode}
                       type="button"
                       onClick={() => setEmployeeViewMode(mode)}
-                      style={
-                        employeeViewMode === mode
-                          ? { ...styles.modeButton, ...styles.modeButtonActive }
-                          : styles.modeButton
-                      }
+                      style={{
+                        ...styles.modeButton,
+                        ...(employeeViewMode === mode ? styles.modeButtonActive : {}),
+                        ...r.modeButton,
+                      }}
                     >
                       {t[mode] || mode}
                     </button>
@@ -761,7 +895,7 @@ export default function ScheduleTab({ language, userRole }) {
               </div>
 
               {employeeSchedule.length === 0 ? (
-                <div style={styles.emptyHero}>
+                <div style={{ ...styles.emptyHero, ...(r.isMobile ? { padding: '32px 16px' } : {}) }}>
                   <div style={styles.emptyHeroInner}>
                     <div style={styles.emptyIcon}>🕒</div>
                     <h3 style={styles.emptyTitle}>{t.noPublishedScheduleTitle}</h3>
@@ -777,7 +911,11 @@ export default function ScheduleTab({ language, userRole }) {
                   </div>
                 </div>
               ) : (
-                <div style={styles.employeeTimelineScroll}>
+                <div style={{
+                  ...styles.employeeTimelineScroll,
+                  ...(r.isMobile ? { overflowY: 'visible', flex: 'none' } : {}),
+                }}
+                >
                   <div style={styles.employeeTimeline}>
                     {employeeTimelineDates.map((date) => {
                       const shiftsForDate = normalizeArray(employeeSchedule).filter(
@@ -785,8 +923,16 @@ export default function ScheduleTab({ language, userRole }) {
                       );
 
                       return (
-                        <section key={date} style={styles.timelineDay}>
-                          <div style={styles.timelineDayHeader}>
+                        <section key={date} style={{
+                          ...styles.timelineDay,
+                          ...(r.isMobile ? { padding: 14, borderRadius: 16 } : {}),
+                        }}
+                        >
+                          <div style={{
+                            ...styles.timelineDayHeader,
+                            ...(r.isMobile ? { flexDirection: 'column', alignItems: 'flex-start', gap: 4 } : {}),
+                          }}
+                          >
                             <strong style={styles.itemTitle}>{formatDisplayDate(date)}</strong>
                             <span style={styles.itemMeta}>{date}</span>
                           </div>
@@ -797,6 +943,41 @@ export default function ScheduleTab({ language, userRole }) {
                             <div style={styles.shiftList}>
                               {shiftsForDate.map((shift) => {
                                 const shiftId = getShiftId(shift);
+                                const timeLabel = `${formatTime(shift.start_time)} — ${formatTime(shift.end_time)}`;
+
+                                if (r.isMobile) {
+                                  return (
+                                    <div
+                                      key={shiftId}
+                                      style={{
+                                        padding: '14px 16px',
+                                        borderRadius: 14,
+                                        background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+                                        color: '#fff',
+                                        border: '1px solid rgba(255,255,255,0.12)',
+                                        boxShadow: '0 2px 8px rgba(102,126,234,0.25)',
+                                      }}
+                                    >
+                                      <div style={{ fontWeight: 800, fontSize: 15, marginBottom: 4 }}>
+                                        {getShiftPosition(shift)}
+                                      </div>
+                                      <div style={{ fontSize: 13, opacity: 0.92, marginBottom: 6 }}>
+                                        {getShiftCompany(shift)}
+                                      </div>
+                                      <div style={{
+                                        display: 'inline-block',
+                                        padding: '4px 10px',
+                                        borderRadius: 999,
+                                        background: 'rgba(255,255,255,0.18)',
+                                        fontSize: 13,
+                                        fontWeight: 700,
+                                      }}
+                                      >
+                                        {timeLabel}
+                                      </div>
+                                    </div>
+                                  );
+                                }
 
                                 return (
                                   <div key={shiftId} style={styles.shiftCard}>
@@ -804,9 +985,7 @@ export default function ScheduleTab({ language, userRole }) {
                                       <div style={styles.shiftRow}>
                                         <strong style={styles.itemTitle}>{getShiftPosition(shift)}</strong>
                                         <span style={styles.itemMeta}>· {getShiftCompany(shift)}</span>
-                                        <span style={styles.timeBadge}>
-                                          {formatTime(shift.start_time)} — {formatTime(shift.end_time)}
-                                        </span>
+                                        <span style={styles.timeBadge}>{timeLabel}</span>
                                       </div>
                                     </div>
                                   </div>
@@ -864,13 +1043,12 @@ const styles = {
     borderRadius: '30px',
     background: '#ffffff',
     border: '1px solid rgba(222, 231, 231, 0.95)',
-    boxShadow: '0 22px 58px rgba(0, 38, 66, 0.18)',
+    boxShadow: 'none',
     display: 'flex',
     flexDirection: 'column',
     overflow: 'hidden',
     position: 'relative',
-  },
-  header: {
+  },  header: {
     flexShrink: 0,
     display: 'flex',
     justifyContent: 'space-between',

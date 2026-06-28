@@ -5,8 +5,10 @@ import { useAuth } from '../context/useAuth';
 import DashboardTabs from '../components/DashboardTabs';
 import LanguageSwitcher from '../components/LanguageSwitcher';
 import { getStoredLanguage } from '../services/language';
+import { useIsMobile } from '../hooks/useMediaQuery';
 
 export default function ManagerDashboard() {
+  const isMobile = useIsMobile();
   const { user, logout } = useAuth();
   const navigate = useNavigate();
   const [language, setLanguage] = useState(getStoredLanguage);
@@ -42,7 +44,11 @@ export default function ManagerDashboard() {
         rightSlot={(
           <div style={styles.headerRight}>
             <LanguageSwitcher onLanguageChange={handleLanguageChange} variant="light" />
-            <button type="button" onClick={handleLogout} style={styles.logoutBtn}>
+            <button type="button" onClick={handleLogout} style={{
+              ...styles.logoutBtn,
+              ...(isMobile ? styles.logoutBtnMobile : {}),
+            }}
+            >
               {t.logout}
             </button>
           </div>
@@ -77,6 +83,13 @@ const styles = {
     fontWeight: '900',
     fontSize: '15px',
     cursor: 'pointer',
+  },
+
+  logoutBtnMobile: {
+    height: '36px',
+    padding: '0 12px',
+    borderRadius: '12px',
+    fontSize: '12px',
   },
 };
 
