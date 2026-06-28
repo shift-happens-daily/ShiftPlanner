@@ -8,6 +8,7 @@ import {
   generateScheduleForPeriod,
   getFourWeekPeriodRange,
   clearMergedScheduleBundle,
+  loadMergedScheduleBundle,
   persistMergedScheduleBundle,
   publishScheduleForPeriod,
   assignRequirement,
@@ -134,10 +135,8 @@ function isMissingCompanyError(error) {
   );
 }
 
-function countVisibleShifts(scheduleRead, realEmployeeIds) {
-  return normalizeArray(scheduleRead?.shifts).filter((shift) => (
-    realEmployeeIds.has(String(shift.employee_id))
-  )).length;
+function countVisibleShifts(scheduleRead) {
+  return normalizeArray(scheduleRead?.shifts).filter((shift) => Boolean(shift?.employee_id)).length;
 }
 
 function matchesRequirementSlot(shift, requirement) {
@@ -691,18 +690,9 @@ export default function ScheduleReview({ language }) {
 
     return {
       ...schedule,
-      shifts: normalizeArray(schedule.shifts).filter((shift) => {
-        if (!shift?.employee_id) return false;
-        if (!employeesLoaded) return false;
-        return realEmployeeIds.size === 0 || realEmployeeIds.has(String(shift.employee_id));
-      }),
+      shifts: normalizeArray(schedule.shifts).filter((shift) => Boolean(shift?.employee_id)),
     };
-  }, [schedule, employeesLoaded, realEmployeeIds]);
-
-  const basePeriod = useMemo(
-    () => deriveSchedulePeriod(schedule, periodForm),
-    [periodForm, schedule],
-  );
+  }, [schedule, employeesLoaded]);
 
   const monthViewRange = useMemo(() => (
     getFourWeekPeriodRange(periodForm.start_date)
@@ -720,56 +710,47 @@ export default function ScheduleReview({ language }) {
     return range;
   }, []);
 
-  const resolveViewAnchorDate = useCallback(() => {
-    const sparseDates = mergeScheduleDates(displaySchedule, unfilledNotFoundRequirements)
-      .map((day) => day.date)
-      .filter(Boolean);
-
-    if (sparseDates.length > 0) {
-      const safeIndex = Math.max(0, Math.min(selectedDateIndex, sparseDates.length - 1));
-      return sparseDates[safeIndex];
-    }
-
-    return periodForm.start_date || formatLocalDate(new Date());
-  }, [displaySchedule, periodForm.start_date, selectedDateIndex, unfilledNotFoundRequirements]);
-
   const activateMonthView = useCallback(() => {
-    applyMonthRangeFromStart(resolveViewAnchorDate());
+    applyMonthRangeFromStart(periodForm.start_date || formatLocalDate(new Date()));
     setViewMode('month');
-  }, [applyMonthRangeFromStart, resolveViewAnchorDate]);
+  }, [applyMonthRangeFromStart, periodForm.start_date]);
 
-  const scheduleStartDate = viewMode === 'month'
-    ? monthViewRange.start_date
-    : basePeriod.start_date;
-  const scheduleEndDate = viewMode === 'month'
-    ? monthViewRange.end_date
-    : basePeriod.end_date;
-
-  const sparseSchedules = useMemo(
-    () => mergeScheduleDates(displaySchedule, unfilledNotFoundRequirements),
-    [displaySchedule, unfilledNotFoundRequirements]
-  );
-
-  const schedules = useMemo(() => {
-    if (viewMode !== 'month') {
-      return sparseSchedules;
+  const viewPeriod = useMemo(() => {
+    if (generatedPeriod?.start_date && generatedPeriod?.end_date) {
+      return generatedPeriod;
     }
-    return buildFullScheduleRange(
+    if (viewMode === 'month') {
+      return monthViewRange || deriveSchedulePeriod(schedule, periodForm);
+    }
+    return deriveSchedulePeriod(schedule, periodForm);
+  }, [generatedPeriod, monthViewRange, periodForm, schedule, viewMode]);
+
+  const scheduleStartDate = viewPeriod.start_date;
+  const scheduleEndDate = viewPeriod.end_date;
+
+  const schedules = useMemo(
+    () => buildFullScheduleRange(
       displaySchedule,
       unfilledNotFoundRequirements,
       scheduleStartDate,
-      scheduleEndDate
-    );
-  }, [
-    displaySchedule,
-    unfilledNotFoundRequirements,
-    scheduleEndDate,
-    scheduleStartDate,
-    sparseSchedules,
-    viewMode,
-  ]);
+      scheduleEndDate,
+    ),
+    [
+      displaySchedule,
+      unfilledNotFoundRequirements,
+      scheduleEndDate,
+      scheduleStartDate,
+    ],
+  );
 
   const dates = useMemo(() => schedules.map((s) => s.date), [schedules]);
+
+  const maxVisibleStartIndex = useMemo(() => {
+    if (!dates.length) return 0;
+    if (viewMode === 'month') return 0;
+    const pageSize = viewMode === 'day' ? 1 : 3;
+    return Math.max(0, dates.length - pageSize);
+  }, [dates.length, viewMode]);
 
   const currentDateKey = dates[selectedDateIndex] || dates[0] || '';
   const mobileDayEntries = useMemo(
@@ -782,10 +763,10 @@ export default function ScheduleReview({ language }) {
   const visibleDates = useMemo(() => {
     if (!dates.length) return [];
     if (viewMode === 'month') return dates;
-    const start = Math.max(0, Math.min(selectedDateIndex, dates.length - 1));
+    const start = Math.max(0, Math.min(selectedDateIndex, maxVisibleStartIndex));
     const pageSize = viewMode === 'day' ? 1 : 3;
     return dates.slice(start, start + pageSize);
-  }, [dates, selectedDateIndex, viewMode]);
+  }, [dates, maxVisibleStartIndex, selectedDateIndex, viewMode]);
 
   const dateIndexForVisible = useMemo(
     () => visibleDates
@@ -837,7 +818,7 @@ export default function ScheduleReview({ language }) {
         ? (getFourWeekPeriodRange(periodForm.start_date) || period)
         : period;
       const generated = await generateScheduleForPeriod(generationPeriod);
-      const visibleShiftCount = countVisibleShifts(generated, realEmployeeIds);
+      const visibleShiftCount = countVisibleShifts(generated);
 
       setGeneratedPeriod({
         start_date: generationPeriod.start_date,
@@ -850,7 +831,7 @@ export default function ScheduleReview({ language }) {
 
       if (visibleShiftCount > 0) {
         setSuccess(t.generated);
-      } else if (realEmployeeIds.size === 0 && !hasStaffingRequirements(generated)) {
+      } else if (!hasStaffingRequirements(generated)) {
         setError(t.noEmployeesAndRequirements);
       } else {
         setError(t.noScheduleHint);
@@ -860,7 +841,7 @@ export default function ScheduleReview({ language }) {
     } finally {
       setIsSubmitting(false);
     }
-  }, [language, periodForm.start_date, realEmployeeIds, t.generated, t.noEmployeesAndRequirements, t.noScheduleHint, viewMode]);
+  }, [language, periodForm.start_date, t.generated, t.noEmployeesAndRequirements, t.noScheduleHint, viewMode]);
 
   useEffect(() => {
     if (isAuthLoading) {
@@ -937,18 +918,19 @@ export default function ScheduleReview({ language }) {
       const published = await publishScheduleForPeriod(schedule);
       persistMergedScheduleBundle('published', published);
       clearMergedScheduleBundle('draft');
+      const reloadedPublished = await loadMergedScheduleBundle('published');
       setGeneratedPeriod(
         getFourWeekPeriodRange(periodForm.start_date) || {
           start_date: periodForm.start_date,
           end_date: periodForm.end_date,
         },
       );
-      setScheduleVersions((prev) => ({
-        ...prev,
+      setScheduleVersions({
         draft: null,
-        published,
-      }));
+        published: reloadedPublished || published,
+      });
       setActiveVersion('published');
+      setSelectedDateIndex(0);
       setSuccess(t.publishedDone);
     } catch (e) {
       setError(extractApiErrorMessage(e, null, language));
@@ -1022,7 +1004,7 @@ export default function ScheduleReview({ language }) {
 
   if (isLoading || isAuthLoading) return <div style={{ padding: 20 }}>{t.loading}</div>;
 
-  const hasShifts = normalizeArray(displaySchedule?.shifts).length > 0;
+  const hasShifts = normalizeArray(schedule?.shifts).some((shift) => Boolean(shift?.employee_id));
   const hasGridContent = hasShifts || unfilledNotFoundRequirements.length > 0;
   const versionOptions = [
     { id: 'draft', label: t.viewDraft, schedule: scheduleVersions.draft },
@@ -1412,14 +1394,14 @@ export default function ScheduleReview({ language }) {
             <strong style={{ color: '#002642' }}>{navigationLabel}</strong>
             <button
               type="button"
-              onClick={() => setSelectedDateIndex((index) => Math.min(Math.max(dates.length - 1, 0), index + navStep))}
-              disabled={viewMode === 'month' || selectedDateIndex >= Math.max(dates.length - 1, 0)}
+              onClick={() => setSelectedDateIndex((index) => Math.min(maxVisibleStartIndex, index + navStep))}
+              disabled={viewMode === 'month' || selectedDateIndex >= maxVisibleStartIndex}
               style={{
                 border: 'none',
                 background: 'transparent',
-                cursor: viewMode === 'month' || selectedDateIndex >= Math.max(dates.length - 1, 0) ? 'default' : 'pointer',
+                cursor: viewMode === 'month' || selectedDateIndex >= maxVisibleStartIndex ? 'default' : 'pointer',
                 fontSize: 18,
-                opacity: viewMode === 'month' || selectedDateIndex >= Math.max(dates.length - 1, 0) ? 0.35 : 1,
+                opacity: viewMode === 'month' || selectedDateIndex >= maxVisibleStartIndex ? 0.35 : 1,
               }}
             >
               &rarr;

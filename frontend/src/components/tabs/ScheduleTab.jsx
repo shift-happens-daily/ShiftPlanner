@@ -13,6 +13,7 @@ import {
   listAvailableEmployees,
   listExchangeRequests,
   mergePublishedSchedule,
+  persistMergedScheduleBundle,
   publishScheduleForPeriod,
   updateExchangeRequest,
   updateShift,
@@ -456,6 +457,7 @@ export default function ScheduleTab({ language, userRole }) {
 
     try {
       const publishedSchedule = await publishScheduleForPeriod(schedule);
+      persistMergedScheduleBundle('published', publishedSchedule);
       setSchedule(publishedSchedule);
       setSuccessMessage(t.publishedDone);
     } catch (error) {

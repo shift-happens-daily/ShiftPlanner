@@ -154,11 +154,41 @@ export function persistMergedScheduleBundle(kind, schedule) {
 
   localStorage.setItem(MERGED_SCHEDULE_STORAGE_KEYS[kind], JSON.stringify({
     scheduleIds,
+    start_date: schedule.start_date || null,
+    end_date: schedule.end_date || null,
+    shifts: schedule.shifts || [],
+    unfilled_requirements: schedule.unfilled_requirements || [],
+    conflicts: schedule.conflicts || [],
   }));
 }
 
 export function clearMergedScheduleBundle(kind) {
   localStorage.removeItem(MERGED_SCHEDULE_STORAGE_KEYS[kind]);
+}
+
+function mergeStoredScheduleSnapshot(stored, mergedFromApi, kind) {
+  const scheduleIds = Array.isArray(stored?.scheduleIds) ? stored.scheduleIds : [];
+  const storedShifts = Array.isArray(stored?.shifts) ? stored.shifts : [];
+  const apiShifts = mergedFromApi?.shifts || [];
+  const shifts = apiShifts.length >= storedShifts.length ? apiShifts : storedShifts;
+
+  if (!mergedFromApi && !storedShifts.length) {
+    return null;
+  }
+
+  return {
+    ...(mergedFromApi || {}),
+    id: mergedFromApi?.id || scheduleIds[scheduleIds.length - 1],
+    status: kind,
+    scheduleIds,
+    start_date: stored.start_date || mergedFromApi?.start_date,
+    end_date: stored.end_date || mergedFromApi?.end_date,
+    shifts,
+    unfilled_requirements: (mergedFromApi?.unfilled_requirements?.length
+      ? mergedFromApi.unfilled_requirements
+      : stored.unfilled_requirements) || [],
+    conflicts: mergedFromApi?.conflicts || stored.conflicts || [],
+  };
 }
 
 export async function loadMergedScheduleBundle(kind) {
@@ -178,14 +208,16 @@ export async function loadMergedScheduleBundle(kind) {
       scheduleIds.map((id) => getSchedule(id).catch(() => null)),
     );
     const schedules = responses.filter(Boolean);
-    if (!schedules.length) {
-      return null;
-    }
+    const mergedFromApi = schedules.length
+      ? mergeScheduleReads(schedules, {
+        status: kind,
+        scheduleIds,
+        start_date: stored.start_date,
+        end_date: stored.end_date,
+      })
+      : null;
 
-    return mergeScheduleReads(schedules, {
-      status: kind,
-      scheduleIds,
-    });
+    return mergeStoredScheduleSnapshot(stored, mergedFromApi, kind);
   } catch {
     return null;
   }
@@ -224,7 +256,9 @@ export async function fetchScheduleVersions() {
 
   return {
     draft: storedDraft || normalizeScheduleBundle(latestDraft),
-    published: storedPublished || normalizeScheduleBundle(latestPublished),
+    published: storedPublished || (latestPublished
+      ? mergePublishedSchedule(null, normalizeScheduleBundle(latestPublished))
+      : null),
   };
 }
 
@@ -305,24 +339,24 @@ export async function publishScheduleForPeriod(schedule) {
     throw new Error('No schedule id to publish.');
   }
 
-  const publishedItems = [];
   for (const id of ids) {
-    const response = await api.post(`/schedule/${id}/publish`);
-    publishedItems.push(response.data);
+    await api.post(`/schedule/${id}/publish`);
   }
 
-  const mergedPublished = mergeScheduleReads(publishedItems, {
+  const freshSchedules = await Promise.all(
+    ids.map((id) => getSchedule(id).catch(() => null)),
+  );
+  const mergedPublished = mergeScheduleReads(freshSchedules.filter(Boolean), {
     status: 'published',
     scheduleIds: ids,
     start_date: schedule.start_date,
     end_date: schedule.end_date,
   });
 
-  return mergePublishedSchedule(schedule, {
-    ...mergedPublished,
-    shifts: schedule.shifts?.length ? schedule.shifts : (mergedPublished?.shifts || []),
-    unfilled_requirements: schedule.unfilled_requirements ?? mergedPublished?.unfilled_requirements ?? [],
-    conflicts: schedule.conflicts ?? mergedPublished?.conflicts ?? [],
+  return mergePublishedSchedule(schedule, mergedPublished || {
+    ...schedule,
+    status: 'published',
+    scheduleIds: ids,
   });
 }
 
@@ -422,9 +456,26 @@ export async function updateExchangeRequest(exchangeRequestId, payload) {
   return response.data;
 }
 
-export async function getMySchedule() {
-  const response = await api.get('/schedule/my');
-  return response.data;
+/** Same source as ShiftsTab mobile: calendar-summary returns all published shifts. */
+export async function getMySchedule(params = {}) {
+  const response = await api.get('/employees/me/calendar-summary', { params });
+  const summary = response.data || {};
+  const employee = summary.employee || {};
+  const positionName = employee.position?.name || '';
+
+  return (summary.shifts || []).map((shift) => ({
+    id: shift.shift_id,
+    shift_id: shift.shift_id,
+    schedule_id: shift.schedule_id,
+    date: shift.date,
+    start_time: shift.start_time,
+    end_time: shift.end_time,
+    status: shift.status,
+    employee_id: employee.id,
+    employee_name: employee.full_name,
+    position: positionName,
+    position_title: positionName,
+  }));
 }
 
 export async function createExchangeRequest(payload) {
