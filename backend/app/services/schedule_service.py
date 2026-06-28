@@ -750,8 +750,6 @@ def _build_schedule_read(
         start_date=schedule.start_date,
         end_date=schedule.end_date,
         status=status_value,
-        start_date=schedule.start_date,
-        end_date=schedule.end_date,
         shifts=[_build_shift_read(row) for row in rows],
         conflicts=[],
         unfilled_requirements=[UnfilledRequirementRead(**item) for item in unfilled],
