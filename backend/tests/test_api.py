@@ -69,13 +69,27 @@ def build_requirements_workbook(rows: list[list[object]]) -> bytes:
     return buffer.getvalue()
 
 
+def set_employee_assignment(cursor, employee_id: int, *, branch_id: int | None = None, position_id: int | None = None) -> None:
+    cursor.execute("DELETE FROM employee_branches WHERE employee_id = %s", (employee_id,))
+    cursor.execute("DELETE FROM employee_positions WHERE employee_id = %s", (employee_id,))
+    if branch_id is not None:
+        cursor.execute(
+            "INSERT INTO employee_branches (employee_id, branch_id, is_primary) VALUES (%s, %s, TRUE)",
+            (employee_id, branch_id),
+        )
+    if position_id is not None:
+        cursor.execute(
+            "INSERT INTO employee_positions (employee_id, position_id, is_primary) VALUES (%s, %s, TRUE)",
+            (employee_id, position_id),
+        )
+
+
 def seed_second_company_scope_data() -> None:
     manager_password_hash = "$2b$12$oo5ryRPAlz/TOfenPoE3JuFYJsdljzAhv.FLXcvx6vrvCPcCA1kTm"
     employee_password_hash = "$2b$12$uSYcqEdeSEBbX1C4vnns9.33t2QvChgi0eQ5RxJBGg8jCHGqu3w8a"
 
     with psycopg.connect(PSYCOPG_DSN) as connection:
         with connection.cursor() as cursor:
-            cursor.execute("UPDATE companies SET manager_user_id = 1 WHERE id = 1")
             cursor.execute(
                 """
                 INSERT INTO users (full_name, email, password_hash, role)
@@ -87,13 +101,20 @@ def seed_second_company_scope_data() -> None:
             second_manager_id = cursor.fetchone()[0]
             cursor.execute(
                 """
-                INSERT INTO companies (name, invite_code, manager_user_id)
-                VALUES ('Other Company', %s, %s)
+                INSERT INTO companies (name, invite_code)
+                VALUES ('Other Company', %s)
                 RETURNING id
                 """,
-                (SECOND_COMPANY_INVITE_CODE, second_manager_id),
+                (SECOND_COMPANY_INVITE_CODE,),
             )
             second_company_id = cursor.fetchone()[0]
+            cursor.execute(
+                """
+                INSERT INTO company_managers (company_id, user_id, manager_role)
+                VALUES (%s, %s, 'owner')
+                """,
+                (second_company_id, second_manager_id),
+            )
             cursor.execute(
                 """
                 INSERT INTO branches (company_id, name, address)
@@ -123,10 +144,18 @@ def seed_second_company_scope_data() -> None:
             second_employee_user_id = cursor.fetchone()[0]
             cursor.execute(
                 """
-                INSERT INTO employees (user_id, company_id, branch_id, position_id, max_hours_per_week)
-                VALUES (%s, %s, %s, %s, 40)
+                INSERT INTO employees (user_id, company_id, max_hours_per_week)
+                VALUES (%s, %s, 40)
+                RETURNING id
                 """,
-                (second_employee_user_id, second_company_id, second_branch_id, second_position_id),
+                (second_employee_user_id, second_company_id),
+            )
+            second_employee_id = cursor.fetchone()[0]
+            set_employee_assignment(
+                cursor,
+                second_employee_id,
+                branch_id=second_branch_id,
+                position_id=second_position_id,
             )
 
 
@@ -147,8 +176,8 @@ def test_auth_token_and_profile_endpoints(client: TestClient) -> None:
     assert employee_json["role"] == "employee"
     assert employee_json["employee_id"] == 1
     assert employee_json["company"]["invite_code"] == SEED_INVITE_CODE
-    assert employee_json["branch"] is None
-    assert employee_json["position"] is None
+    assert employee_json["branch"] == {"id": 1, "name": "Main Branch"}
+    assert employee_json["position"] == {"id": 1, "name": "Barista"}
 
     unauthorized = client.get("/auth/me")
     assert unauthorized.status_code == 401
@@ -330,7 +359,7 @@ def test_link_user_validates_target_access_and_assignments(client: TestClient) -
 def test_employee_without_assigned_position_returns_null(client: TestClient) -> None:
     with psycopg.connect(PSYCOPG_DSN) as connection:
         with connection.cursor() as cursor:
-            cursor.execute("UPDATE employees SET position_id = NULL WHERE id = 1")
+            set_employee_assignment(cursor, 1, branch_id=1, position_id=None)
 
     employee_headers = login_json(client, "ivan@example.com", "employee123")
     manager_headers = login_json(client, "manager@example.com", "manager123")
@@ -349,7 +378,7 @@ def test_employee_without_assigned_position_returns_null(client: TestClient) -> 
 def test_employees_list_includes_position_and_role(client: TestClient) -> None:
     with psycopg.connect(PSYCOPG_DSN) as connection:
         with connection.cursor() as cursor:
-            cursor.execute("UPDATE employees SET branch_id = 1, position_id = 1 WHERE id = 1")
+            set_employee_assignment(cursor, 1, branch_id=1, position_id=1)
 
     manager_headers = login_json(client, "manager@example.com", "manager123")
 
@@ -1665,7 +1694,7 @@ def test_latest_schedule_returns_404_when_company_has_no_schedules(client: TestC
 def test_manager_can_manually_add_edit_and_delete_shifts(client: TestClient) -> None:
     with psycopg.connect(PSYCOPG_DSN) as connection:
         with connection.cursor() as cursor:
-            cursor.execute("UPDATE employees SET branch_id = 1, position_id = 1 WHERE id = 1")
+            set_employee_assignment(cursor, 1, branch_id=1, position_id=1)
 
     manager_headers = login_json(client, "manager@example.com", "manager123")
 
@@ -1733,7 +1762,7 @@ def test_manager_can_manually_add_edit_and_delete_shifts(client: TestClient) -> 
 def test_manager_can_assign_employee_to_unfilled_requirement(client: TestClient) -> None:
     with psycopg.connect(PSYCOPG_DSN) as connection:
         with connection.cursor() as cursor:
-            cursor.execute("UPDATE employees SET branch_id = 1, position_id = 1 WHERE id = 1")
+            set_employee_assignment(cursor, 1, branch_id=1, position_id=1)
 
     manager_headers = login_json(client, "manager@example.com", "manager123")
     requirement = client.post(
@@ -1779,7 +1808,7 @@ def test_available_employees_filters_position_absence_availability_and_overlap(c
     password_hash = "$2b$12$uSYcqEdeSEBbX1C4vnns9.33t2QvChgi0eQ5RxJBGg8jCHGqu3w8a"
     with psycopg.connect(PSYCOPG_DSN) as connection:
         with connection.cursor() as cursor:
-            cursor.execute("UPDATE employees SET branch_id = 1, position_id = 1 WHERE id = 1")
+            set_employee_assignment(cursor, 1, branch_id=1, position_id=1)
             created_employee_ids = []
             for full_name, email, position_id in [
                 ("Absent Barista", "absent-barista@example.com", 1),
@@ -1798,13 +1827,15 @@ def test_available_employees_filters_position_absence_availability_and_overlap(c
                 user_id = cursor.fetchone()[0]
                 cursor.execute(
                     """
-                    INSERT INTO employees (user_id, company_id, branch_id, position_id)
-                    VALUES (%s, 1, 1, %s)
+                    INSERT INTO employees (user_id, company_id)
+                    VALUES (%s, 1)
                     RETURNING id
                     """,
-                    (user_id, position_id),
+                    (user_id,),
                 )
-                created_employee_ids.append(cursor.fetchone()[0])
+                employee_id = cursor.fetchone()[0]
+                set_employee_assignment(cursor, employee_id, branch_id=1, position_id=position_id)
+                created_employee_ids.append(employee_id)
 
             absent_id, busy_id, wrong_position_id, _no_availability_id = created_employee_ids
             cursor.execute(
@@ -1854,7 +1885,7 @@ def test_manual_schedule_editing_access_and_company_scope(client: TestClient) ->
     seed_second_company_scope_data()
     with psycopg.connect(PSYCOPG_DSN) as connection:
         with connection.cursor() as cursor:
-            cursor.execute("UPDATE employees SET branch_id = 1, position_id = 1 WHERE id = 1")
+            set_employee_assignment(cursor, 1, branch_id=1, position_id=1)
             cursor.execute("SELECT id FROM companies WHERE invite_code = %s", (SECOND_COMPANY_INVITE_CODE,))
             other_company_id = cursor.fetchone()[0]
             cursor.execute("SELECT id FROM positions WHERE company_id = %s", (other_company_id,))
@@ -1912,7 +1943,7 @@ def test_manager_generation_is_company_scoped_and_publishable(client: TestClient
     seed_second_company_scope_data()
     with psycopg.connect(PSYCOPG_DSN) as connection:
         with connection.cursor() as cursor:
-            cursor.execute("UPDATE employees SET position_id = 1 WHERE id = 1")
+            set_employee_assignment(cursor, 1, branch_id=1, position_id=1)
             cursor.execute("SELECT id FROM companies WHERE invite_code = %s", (SECOND_COMPANY_INVITE_CODE,))
             other_company_id = cursor.fetchone()[0]
             cursor.execute("SELECT id FROM branches WHERE company_id = %s", (other_company_id,))
@@ -1965,7 +1996,7 @@ def test_manager_generation_is_company_scoped_and_publishable(client: TestClient
 def test_repeated_generation_does_not_stack_shifts_or_reported_hours(client: TestClient) -> None:
     with psycopg.connect(PSYCOPG_DSN) as connection:
         with connection.cursor() as cursor:
-            cursor.execute("UPDATE employees SET position_id = 1 WHERE id = 1")
+            set_employee_assignment(cursor, 1, branch_id=1, position_id=1)
 
     manager_headers = login_json(client, "manager@example.com", "manager123")
     employee_headers = login_json(client, "ivan@example.com", "employee123")
@@ -2101,7 +2132,7 @@ def test_manager_cannot_publish_another_company_schedule(client: TestClient) -> 
 def test_calendar_summary_reports_and_exchange_flow(client: TestClient) -> None:
     with psycopg.connect(PSYCOPG_DSN) as connection:
         with connection.cursor() as cursor:
-            cursor.execute("UPDATE employees SET branch_id = 1, position_id = 1 WHERE id = 1")
+            set_employee_assignment(cursor, 1, branch_id=1, position_id=1)
 
     manager_headers = login_json(client, "manager@example.com", "manager123")
     employee_headers = login_json(client, "ivan@example.com", "employee123")

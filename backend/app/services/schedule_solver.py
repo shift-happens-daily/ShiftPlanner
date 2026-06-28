@@ -258,14 +258,18 @@ def _load_data(
         text(
             """
             SELECT
-                id,
-                position_id,
+                employees.id,
+                employee_positions.position_id,
                 weekly_target_minutes,
                 min_daily_minutes,
                 max_daily_minutes
             FROM employees
+            JOIN employee_branches
+              ON employee_branches.employee_id = employees.id
+             AND employee_branches.branch_id = :branch_id
+            JOIN employee_positions
+              ON employee_positions.employee_id = employees.id
             WHERE company_id = :company_id
-              AND branch_id = :branch_id
               AND is_active = TRUE
             ORDER BY id
             """
@@ -337,8 +341,10 @@ def _load_data(
                 availability.availability_status
             FROM employee_availability AS availability
             JOIN employees ON employees.id = availability.employee_id
+            JOIN employee_branches
+              ON employee_branches.employee_id = employees.id
+             AND employee_branches.branch_id = :branch_id
             WHERE employees.company_id = :company_id
-              AND employees.branch_id = :branch_id
               AND employees.is_active = TRUE
               AND availability.availability_date BETWEEN :start_date AND :end_date
             """
@@ -365,8 +371,10 @@ def _load_data(
             SELECT absences.employee_id, absences.start_date, absences.end_date
             FROM absences
             JOIN employees ON employees.id = absences.employee_id
+            JOIN employee_branches
+              ON employee_branches.employee_id = employees.id
+             AND employee_branches.branch_id = :branch_id
             WHERE employees.company_id = :company_id
-              AND employees.branch_id = :branch_id
               AND employees.is_active = TRUE
               AND absences.start_date <= :end_date
               AND absences.end_date >= :start_date

@@ -43,6 +43,11 @@ class EmployeePositionRead(BaseModel):
     name: str
 
 
+class EmployeeBranchRead(BaseModel):
+    id: int
+    name: str
+
+
 class EmployeePositionUpdate(BaseModel):
     position_id: int | None = Field(ge=1)
 
@@ -60,6 +65,7 @@ class EmployeeRead(BaseModel):
     branch_id: int | None
     position_id: int | None
     position_title: str
+    branch: EmployeeBranchRead | None = None
     position: EmployeePositionRead | None = None
     availability: AvailabilityRead | None = None
 

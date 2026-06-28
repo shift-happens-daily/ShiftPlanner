@@ -3,7 +3,7 @@ from datetime import UTC, date, datetime
 from sqlalchemy import delete, func, select, text, update
 from sqlalchemy.orm import Session
 
-from app.models import Absence, Branch, Employee, Position, Schedule, Shift, ShiftAssignment, ShiftExchangeRequest, ShiftRequirement, User
+from app.models import Absence, Branch, Employee, EmployeeBranch, EmployeePosition, Position, Schedule, Shift, ShiftAssignment, ShiftExchangeRequest, ShiftRequirement, User
 
 
 def create_requirement(
@@ -424,17 +424,19 @@ def list_candidate_employee_rows(
             Branch.name.label("branch_name"),
         )
         .join(User, User.id == Employee.user_id)
-        .join(Position, Position.id == Employee.position_id)
-        .outerjoin(Branch, Branch.id == Employee.branch_id)
+        .join(EmployeePosition, EmployeePosition.employee_id == Employee.id)
+        .join(Position, Position.id == EmployeePosition.position_id)
+        .outerjoin(EmployeeBranch, EmployeeBranch.employee_id == Employee.id)
+        .outerjoin(Branch, Branch.id == EmployeeBranch.branch_id)
         .where(
             Employee.company_id == company_id,
-            Employee.position_id == position_id,
+            EmployeePosition.position_id == position_id,
             Employee.is_active.is_(True),
         )
         .order_by(User.full_name, Employee.id)
     )
     if branch_id is not None:
-        query = query.where(Employee.branch_id == branch_id)
+        query = query.where(EmployeeBranch.branch_id == branch_id)
     return list(db.execute(query).mappings())
 
 

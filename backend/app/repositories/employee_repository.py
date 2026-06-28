@@ -3,15 +3,15 @@ from datetime import date
 from sqlalchemy import delete, select
 from sqlalchemy.orm import Session, joinedload, selectinload
 
-from app.models import Absence, Employee, EmployeeAvailability, EmployeeDesiredDayOff, User
+from app.models import Absence, Employee, EmployeeAvailability, EmployeeBranch, EmployeeDesiredDayOff, EmployeePosition, User
 
 
 def _employee_options():
     return (
         joinedload(Employee.user),
         joinedload(Employee.company),
-        joinedload(Employee.branch),
-        joinedload(Employee.position),
+        selectinload(Employee.branch_links).joinedload(EmployeeBranch.branch),
+        selectinload(Employee.position_links).joinedload(EmployeePosition.position),
         selectinload(Employee.availability_blocks),
         selectinload(Employee.desired_days_off),
     )
@@ -74,13 +74,14 @@ def create_employee(
     employee = Employee(
         user_id=user_id,
         company_id=company_id,
-        branch_id=branch_id,
-        position_id=position_id,
     )
 
     db.add(employee)
+    db.flush()
+    _replace_employee_branch(db, employee.id, branch_id)
+    _replace_employee_position(db, employee.id, position_id)
     db.commit()
-    db.refresh(employee)
+    db.expire_all()
 
     return get_employee_by_id(db, employee.id)
 
@@ -94,12 +95,13 @@ def update_employee_membership(
     position_id: int | None,
 ) -> Employee:
     employee.company_id = company_id
-    employee.branch_id = branch_id
-    employee.position_id = position_id
 
     db.add(employee)
+    db.flush()
+    _replace_employee_branch(db, employee.id, branch_id)
+    _replace_employee_position(db, employee.id, position_id)
     db.commit()
-    db.refresh(employee)
+    db.expire_all()
 
     return get_employee_by_id(db, employee.id)
 
@@ -110,10 +112,11 @@ def update_employee_position(
     employee: Employee,
     position_id: int | None,
 ) -> Employee:
-    employee.position_id = position_id
     db.add(employee)
+    db.flush()
+    _replace_employee_position(db, employee.id, position_id)
     db.commit()
-    db.refresh(employee)
+    db.expire_all()
     return get_employee_by_id(db, employee.id)
 
 
@@ -123,10 +126,11 @@ def update_employee_branch(
     employee: Employee,
     branch_id: int | None,
 ) -> Employee:
-    employee.branch_id = branch_id
     db.add(employee)
+    db.flush()
+    _replace_employee_branch(db, employee.id, branch_id)
     db.commit()
-    db.refresh(employee)
+    db.expire_all()
     return get_employee_by_id(db, employee.id)
 
 
@@ -175,11 +179,32 @@ def list_employees_by_position(db: Session, position_id: int) -> list[Employee]:
     return list(
         db.scalars(
             select(Employee)
+            .join(EmployeePosition, EmployeePosition.employee_id == Employee.id)
             .options(*_employee_options())
-            .where(Employee.position_id == position_id, Employee.is_active.is_(True))
+            .where(EmployeePosition.position_id == position_id, Employee.is_active.is_(True))
             .order_by(Employee.id)
         )
     )
+
+
+def employee_has_position(db: Session, employee_id: int, position_id: int) -> bool:
+    return db.scalar(
+        select(EmployeePosition.id)
+        .where(EmployeePosition.employee_id == employee_id, EmployeePosition.position_id == position_id)
+        .limit(1)
+    ) is not None
+
+
+def _replace_employee_branch(db: Session, employee_id: int, branch_id: int | None) -> None:
+    db.execute(delete(EmployeeBranch).where(EmployeeBranch.employee_id == employee_id))
+    if branch_id is not None:
+        db.add(EmployeeBranch(employee_id=employee_id, branch_id=branch_id, is_primary=True))
+
+
+def _replace_employee_position(db: Session, employee_id: int, position_id: int | None) -> None:
+    db.execute(delete(EmployeePosition).where(EmployeePosition.employee_id == employee_id))
+    if position_id is not None:
+        db.add(EmployeePosition(employee_id=employee_id, position_id=position_id, is_primary=True))
 
 
 def list_absences(
