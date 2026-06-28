@@ -166,6 +166,294 @@ function mergeScheduleDates(scheduleRead, unfilledItems) {
     .map((date) => byDate[date]);
 }
 
+function enumerateDates(startDate, endDate) {
+  if (!startDate || !endDate) return [];
+
+  const start = new Date(`${startDate}T12:00:00`);
+  const end = new Date(`${endDate}T12:00:00`);
+  if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime()) || start > end) {
+    return [];
+  }
+
+  const dates = [];
+  const cursor = new Date(start);
+  while (cursor <= end) {
+    dates.push(cursor.toISOString().slice(0, 10));
+    cursor.setDate(cursor.getDate() + 1);
+  }
+  return dates;
+}
+
+function buildFullScheduleRange(scheduleRead, unfilledItems, startDate, endDate) {
+  const sparse = mergeScheduleDates(scheduleRead, unfilledItems);
+  const range = enumerateDates(startDate, endDate);
+  if (!range.length) {
+    return sparse;
+  }
+
+  const sparseByDate = Object.fromEntries(sparse.map((day) => [day.date, day]));
+
+  return range.map((date) => sparseByDate[date] || { date, shifts: [] });
+}
+
+function DayScheduleTable({
+  dateKey,
+  day,
+  employees,
+  unfilledItems,
+  employeeLabel,
+  notFoundLabel,
+  emptyDayLabel,
+  cellWidth,
+  slotsPerDay,
+}) {
+  const dayWidth = slotsPerDay * cellWidth;
+
+  return (
+    <div style={{ overflowX: 'auto' }}>
+      <table style={{
+        borderCollapse: 'collapse',
+        minWidth: 200 + dayWidth,
+        tableLayout: 'fixed',
+        width: '100%',
+        background: '#ffffff',
+        borderRadius: '18px',
+        overflow: 'hidden',
+        boxShadow: '0 8px 24px rgba(0, 38, 66, 0.08)',
+      }}
+      >
+        <thead>
+          <tr>
+            <th style={{
+              position: 'sticky',
+              left: 0,
+              zIndex: 10,
+              background: '#f4faff',
+              padding: '10px 16px',
+              borderBottom: '2px solid #dee7e7',
+              width: '200px',
+              minWidth: '200px',
+              maxWidth: '200px',
+              textAlign: 'left',
+              fontSize: '14px',
+              fontWeight: '700',
+              color: '#002642',
+            }}
+            >
+              {employeeLabel}
+            </th>
+            <th style={{
+              padding: '10px 4px',
+              borderBottom: '2px solid #dee7e7',
+              textAlign: 'center',
+              fontSize: '14px',
+              fontWeight: '600',
+              color: '#4f646f',
+              background: '#f4faff',
+              width: dayWidth,
+              minWidth: dayWidth,
+              maxWidth: dayWidth,
+            }}
+            >
+              {dateKey}
+            </th>
+          </tr>
+          <tr>
+            <th style={{
+              position: 'sticky',
+              left: 0,
+              zIndex: 10,
+              background: '#f4faff',
+              padding: '4px 16px',
+              borderBottom: '2px solid #dee7e7',
+              width: '200px',
+              minWidth: '200px',
+              maxWidth: '200px',
+            }}
+            />
+            <th style={{
+              padding: '4px 2px',
+              borderBottom: '2px solid #dee7e7',
+              background: '#f4faff',
+            }}
+            >
+              <div style={{ display: 'flex', gap: 0 }}>
+                {Array.from({ length: slotsPerDay }).map((_, slotIndex) => {
+                  const isHalfHour = slotIndex % 2 === 1;
+                  return (
+                    <div
+                      key={slotIndex}
+                      style={{
+                        flex: `0 0 ${cellWidth}px`,
+                        boxSizing: 'border-box',
+                        borderRight: isHalfHour
+                          ? '1px solid rgba(79, 100, 111, 0.12)'
+                          : '1px solid rgba(79, 100, 111, 0.28)',
+                        textAlign: 'center',
+                        fontSize: isHalfHour ? 8 : 9,
+                        color: isHalfHour ? '#8a9aa3' : '#4f646f',
+                        fontWeight: isHalfHour ? 500 : 600,
+                        lineHeight: 1.1,
+                        paddingTop: 1,
+                      }}
+                    >
+                      {formatScheduleSlotLabel(slotIndex)}
+                    </div>
+                  );
+                })}
+              </div>
+            </th>
+          </tr>
+        </thead>
+        <tbody>
+          {employees.length === 0 && unfilledItems.length === 0 ? (
+            <tr>
+              <td
+                colSpan={2}
+                style={{
+                  padding: '24px 16px',
+                  textAlign: 'center',
+                  color: '#4f646f',
+                  fontWeight: 600,
+                  fontSize: 14,
+                  background: '#f8faff',
+                }}
+              >
+                {emptyDayLabel}
+              </td>
+            </tr>
+          ) : null}
+          {employees.map((emp, rowIndex) => {
+            const myShifts = (day?.shifts || []).filter((shift) => {
+              const ids = (shift.assigned_employees || shift.candidate_employees || []).map((e) => String(e.id));
+              return ids.includes(String(emp.id));
+            });
+
+            return (
+              <tr key={emp.id} style={{ background: rowIndex % 2 === 0 ? '#ffffff' : '#f8faff' }}>
+                <td style={{
+                  position: 'sticky',
+                  left: 0,
+                  zIndex: 5,
+                  background: rowIndex % 2 === 0 ? '#ffffff' : '#f8faff',
+                  padding: '12px 16px',
+                  borderBottom: '1px solid #f0f0f0',
+                  width: '220px',
+                  minWidth: '220px',
+                  maxWidth: '220px',
+                  fontWeight: '600',
+                  fontSize: '14px',
+                  color: '#002642',
+                }}
+                >
+                  {emp.full_name || emp.name || emp.email || `#${emp.id}`}
+                </td>
+                <td style={{
+                  padding: 0,
+                  borderBottom: '1px solid #f0f0f0',
+                  height: 72,
+                  position: 'relative',
+                  ...scheduleSlotGridStyle(cellWidth, rowIndex % 2 === 0 ? '#ffffff' : '#f8faff'),
+                  width: dayWidth,
+                  minWidth: dayWidth,
+                  maxWidth: dayWidth,
+                }}
+                >
+                  <div style={{ position: 'relative', width: '100%', height: '100%' }}>
+                    {myShifts.map((shift) => {
+                      const startSlots = timeToSlotOffset(shift.start_time);
+                      const endSlots = timeToSlotOffset(shift.end_time || shift.start_time);
+                      const leftPx = startSlots * cellWidth;
+                      const widthPx = Math.max((endSlots - startSlots) * cellWidth, 20);
+                      return (
+                        <div
+                          key={shift.id}
+                          style={{
+                            position: 'absolute',
+                            left: `${leftPx}px`,
+                            width: `${widthPx}px`,
+                            top: 12,
+                            height: 48,
+                            background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+                            color: '#fff',
+                            borderRadius: 8,
+                            padding: '0px 0px',
+                            fontSize: 11,
+                            overflow: 'hidden',
+                            whiteSpace: 'nowrap',
+                            textOverflow: 'ellipsis',
+                            boxShadow: '0 2px 8px rgba(102,126,234,0.25)',
+                            border: '1px solid rgba(255,255,255,0.1)',
+                          }}
+                        >
+                          <div style={{ fontWeight: 700, fontSize: 11 }}>
+                            {shift.position_title || '—'}
+                          </div>
+                          <div style={{ fontSize: 10, opacity: 0.9 }}>
+                            {`${String(shift.start_time || '').slice(0, 5)} - ${String(shift.end_time || '').slice(0, 5)}`}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </td>
+              </tr>
+            );
+          })}
+          {unfilledItems.map((item) => {
+            const rowBg = '#fff6f0';
+            return (
+              <tr key={`unfilled-${item.requirement_id}`} style={{ background: rowBg }}>
+                <td style={{
+                  position: 'sticky',
+                  left: 0,
+                  zIndex: 5,
+                  background: rowBg,
+                  padding: '12px 16px',
+                  borderBottom: '1px solid #f0f0f0',
+                  width: '220px',
+                  minWidth: '220px',
+                  maxWidth: '220px',
+                  fontWeight: '600',
+                  fontSize: '14px',
+                  color: '#8d1d1d',
+                }}
+                >
+                  {item.position_title || '—'}
+                </td>
+                <td style={{
+                  padding: 0,
+                  borderBottom: '1px solid #f0f0f0',
+                  height: 72,
+                  position: 'relative',
+                  ...scheduleSlotGridStyle(cellWidth, rowBg),
+                  width: dayWidth,
+                  minWidth: dayWidth,
+                  maxWidth: dayWidth,
+                }}
+                >
+                  <div style={{ position: 'relative', width: '100%', height: '100%' }}>
+                    {renderTimeSlotBlock({
+                      startTime: item.start_time,
+                      endTime: item.end_time,
+                      title: notFoundLabel,
+                      subtitle: `${String(item.start_time || '').slice(0, 5)} - ${String(item.end_time || '').slice(0, 5)}`,
+                      cellWidth,
+                      background: 'linear-gradient(135deg, #ffd6a5 0%, #ffb085 100%)',
+                      color: '#5a1a1a',
+                      border: '2px dashed #8d1d1d',
+                    })}
+                  </div>
+                </td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
 function buildDayScheduleEntries(dateKey, displaySchedule, unfilledNotFoundRequirements) {
   const shiftEntries = normalizeArray(displaySchedule?.shifts)
     .filter((shift) => formatDate(shift.date) === dateKey)
@@ -418,10 +706,33 @@ export default function ScheduleReview({ language }) {
     };
   }, [schedule, employeesLoaded, realEmployeeIds]);
 
-  const schedules = useMemo(
+  const scheduleStartDate = schedule?.start_date || schedule?.period_start || periodForm.start_date;
+  const scheduleEndDate = schedule?.end_date || schedule?.period_end || periodForm.end_date;
+
+  const sparseSchedules = useMemo(
     () => mergeScheduleDates(displaySchedule, unfilledNotFoundRequirements),
     [displaySchedule, unfilledNotFoundRequirements]
   );
+
+  const schedules = useMemo(() => {
+    if (viewMode !== 'month') {
+      return sparseSchedules;
+    }
+    return buildFullScheduleRange(
+      displaySchedule,
+      unfilledNotFoundRequirements,
+      scheduleStartDate,
+      scheduleEndDate
+    );
+  }, [
+    displaySchedule,
+    unfilledNotFoundRequirements,
+    scheduleEndDate,
+    scheduleStartDate,
+    sparseSchedules,
+    viewMode,
+  ]);
+
   const dates = useMemo(() => schedules.map((s) => s.date), [schedules]);
 
   const currentDateKey = dates[selectedDateIndex] || dates[0] || '';
@@ -430,23 +741,31 @@ export default function ScheduleReview({ language }) {
     [currentDateKey, displaySchedule, unfilledNotFoundRequirements],
   );
 
-  const pageSize = viewMode === 'day' ? 1 : viewMode === '3day' ? 3 : 30;
+  const navStep = viewMode === '3day' ? 3 : 1;
 
   const visibleDates = useMemo(() => {
     if (!dates.length) return [];
+    if (viewMode === 'month') return dates;
     const start = Math.max(0, Math.min(selectedDateIndex, dates.length - 1));
+    const pageSize = viewMode === 'day' ? 1 : 3;
     return dates.slice(start, start + pageSize);
-  }, [dates, selectedDateIndex, pageSize]);
+  }, [dates, selectedDateIndex, viewMode]);
 
-  const dateIndexForVisible = useMemo(() => {
-    const out = [];
-    const start = Math.max(0, Math.min(selectedDateIndex, schedules.length - 1));
-    for (let i = 0; i < pageSize; i += 1) {
-      const idx = start + i;
-      if (idx >= 0 && idx < schedules.length) out.push(idx);
+  const dateIndexForVisible = useMemo(
+    () => visibleDates
+      .map((dateKey) => schedules.findIndex((day) => day.date === dateKey))
+      .filter((index) => index >= 0),
+    [schedules, visibleDates]
+  );
+
+  const navigationLabel = useMemo(() => {
+    if (viewMode === 'month') {
+      if (!scheduleStartDate || !scheduleEndDate) return '—';
+      return `${scheduleStartDate} — ${scheduleEndDate}`;
     }
-    return out;
-  }, [schedules, selectedDateIndex, pageSize]);
+    if (visibleDates.length === 1) return visibleDates[0] || '—';
+    return `${visibleDates[0]} — ${visibleDates[visibleDates.length - 1]}`;
+  }, [scheduleEndDate, scheduleStartDate, viewMode, visibleDates]);
 
   const employeesForView = useMemo(() => {
     const fromGrid = buildEmployeeListFromIndexes(schedules, dateIndexForVisible);
@@ -643,7 +962,6 @@ export default function ScheduleReview({ language }) {
 
   if (isLoading || isAuthLoading) return <div style={{ padding: 20 }}>{t.loading}</div>;
 
-  const totalWidth = visibleDates.length * slotsPerDay * cellWidth;
   const hasShifts = normalizeArray(displaySchedule?.shifts).length > 0 && employeesForView.length > 0;
   const hasGridContent = hasShifts || unfilledNotFoundRequirements.length > 0;
   const versionOptions = [
@@ -976,9 +1294,35 @@ export default function ScheduleReview({ language }) {
             boxSizing: 'border-box',
           }}
           >
-            <button onClick={() => setSelectedDateIndex((i) => Math.max(0, i - 1))} style={{ border: 'none', background: 'transparent', cursor: 'pointer', fontSize: 18 }}>&larr;</button>
-            <strong style={{ color: '#002642' }}>{dates[selectedDateIndex] || '—'}</strong>
-            <button onClick={() => setSelectedDateIndex((i) => Math.min(dates.length - 1, i + 1))} style={{ border: 'none', background: 'transparent', cursor: 'pointer', fontSize: 18 }}>&rarr;</button>
+            <button
+              type="button"
+              onClick={() => setSelectedDateIndex((index) => Math.max(0, index - navStep))}
+              disabled={viewMode === 'month' || selectedDateIndex <= 0}
+              style={{
+                border: 'none',
+                background: 'transparent',
+                cursor: viewMode === 'month' || selectedDateIndex <= 0 ? 'default' : 'pointer',
+                fontSize: 18,
+                opacity: viewMode === 'month' || selectedDateIndex <= 0 ? 0.35 : 1,
+              }}
+            >
+              &larr;
+            </button>
+            <strong style={{ color: '#002642' }}>{navigationLabel}</strong>
+            <button
+              type="button"
+              onClick={() => setSelectedDateIndex((index) => Math.min(Math.max(dates.length - 1, 0), index + navStep))}
+              disabled={viewMode === 'month' || selectedDateIndex >= Math.max(dates.length - 1, 0)}
+              style={{
+                border: 'none',
+                background: 'transparent',
+                cursor: viewMode === 'month' || selectedDateIndex >= Math.max(dates.length - 1, 0) ? 'default' : 'pointer',
+                fontSize: 18,
+                opacity: viewMode === 'month' || selectedDateIndex >= Math.max(dates.length - 1, 0) ? 0.35 : 1,
+              }}
+            >
+              &rarr;
+            </button>
           </div>
 
           {!isMobile && (
@@ -986,7 +1330,11 @@ export default function ScheduleReview({ language }) {
               {['day', '3day', 'month'].map((mode) => (
                 <button
                   key={mode}
-                  onClick={() => setViewMode(mode)}
+                  type="button"
+                  onClick={() => {
+                    setViewMode(mode);
+                    setSelectedDateIndex(0);
+                  }}
                   style={{
                     fontWeight: viewMode === mode ? 700 : 400,
                     padding: '6px 12px',
@@ -1082,246 +1430,33 @@ export default function ScheduleReview({ language }) {
             )}
           </div>
         ) : (
-          <div style={{ overflowX: 'auto' }}>
-            <table style={{
-              borderCollapse: 'collapse',
-              minWidth: 200 + totalWidth,
-              tableLayout: 'fixed',
-              background: '#ffffff',
-              borderRadius: '18px',
-              overflow: 'hidden',
-              boxShadow: '0 8px 24px rgba(0, 38, 66, 0.08)',
-            }}>
-              <thead>
-                <tr>
-                  <th style={{
-                    position: 'sticky',
-                    left: 0,
-                    zIndex: 10,
-                    background: '#f4faff',
-                    padding: '10px 16px',
-                    borderBottom: '2px solid #dee7e7',
-                    width: '200px',
-                    minWidth: '200px',
-                    maxWidth: '200px',
-                    textAlign: 'left',
-                    fontSize: '14px',
-                    fontWeight: '700',
-                    color: '#002642',
-                  }}>
-                    {t.employee}
-                  </th>
-                  {visibleDates.map((d) => (
-                    <th key={d} style={{
-                      padding: '10px 4px',
-                      borderBottom: '2px solid #dee7e7',
-                      textAlign: 'center',
-                      fontSize: '14px',
-                      fontWeight: '600',
-                      color: '#4f646f',
-                      background: '#f4faff',
-                      width: slotsPerDay * cellWidth,
-                      minWidth: slotsPerDay * cellWidth,
-                      maxWidth: slotsPerDay * cellWidth,
-                    }}>
-                      {d}
-                    </th>
-                  ))}
-                </tr>
-                <tr>
-                  <th style={{
-                    position: 'sticky',
-                    left: 0,
-                    zIndex: 10,
-                    background: '#f4faff',
-                    padding: '4px 16px',
-                    borderBottom: '2px solid #dee7e7',
-                    width: '200px',
-                    minWidth: '200px',
-                    maxWidth: '200px',
-                  }} />
-                  {visibleDates.map((d) => (
-                    <th key={`${d}-time`} style={{
-                      padding: '4px 2px',
-                      borderBottom: '2px solid #dee7e7',
-                      background: '#f4faff',
-                    }}>
-                      <div style={{ display: 'flex', gap: 0 }}>
-                        {Array.from({ length: slotsPerDay }).map((_, slotIndex) => {
-                          const isHalfHour = slotIndex % 2 === 1;
-                          return (
-                          <div key={slotIndex} style={{
-                            flex: `0 0 ${cellWidth}px`,
-                            boxSizing: 'border-box',
-                            borderRight: isHalfHour
-                              ? '1px solid rgba(79, 100, 111, 0.12)'
-                              : '1px solid rgba(79, 100, 111, 0.28)',
-                            textAlign: 'center',
-                            fontSize: isHalfHour ? 8 : 9,
-                            color: isHalfHour ? '#8a9aa3' : '#4f646f',
-                            fontWeight: isHalfHour ? 500 : 600,
-                            lineHeight: 1.1,
-                            paddingTop: 1,
-                          }}>
-                            {formatScheduleSlotLabel(slotIndex)}
-                          </div>
-                          );
-                        })}
-                      </div>
-                    </th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {employeesForView.map((emp, rowIndex) => (
-                  <tr key={emp.id} style={{ background: rowIndex % 2 === 0 ? '#ffffff' : '#f8faff' }}>
-                    <td style={{
-                      position: 'sticky',
-                      left: 0,
-                      zIndex: 5,
-                      background: rowIndex % 2 === 0 ? '#ffffff' : '#f8faff',
-                      padding: '12px 16px',
-                      borderBottom: '1px solid #f0f0f0',
-                      width: '220px',
-                      minWidth: '220px',
-                      maxWidth: '220px',
-                      fontWeight: '600',
-                      fontSize: '14px',
-                      color: '#002642',
-                    }}>
-                      {emp.full_name || emp.name || emp.email || `#${emp.id}`}
-                    </td>
-                    {visibleDates.map((d, idx) => {
-                      const di = dateIndexForVisible[idx];
-                      const day = schedules[di];
-                      if (!day) {
-                        return <td key={`${d}-${emp.id}`} style={{
-                          padding: 0,
-                          borderBottom: '1px solid #f0f0f0',
-                          height: 72,
-                          ...scheduleSlotGridStyle(cellWidth, rowIndex % 2 === 0 ? '#ffffff' : '#f8faff'),
-                          width: slotsPerDay * cellWidth,
-                          minWidth: slotsPerDay * cellWidth,
-                          maxWidth: slotsPerDay * cellWidth,
-                        }} />;
-                      }
+          <div style={{ display: 'flex', flexDirection: 'column', gap: viewMode === 'month' ? 20 : 24 }}>
+            {visibleDates.map((dateKey) => {
+              const dayIndex = schedules.findIndex((day) => day.date === dateKey);
+              const day = dayIndex >= 0 ? schedules[dayIndex] : { date: dateKey, shifts: [] };
+              const dayEmployees = buildEmployeeListFromIndexes(
+                schedules,
+                dayIndex >= 0 ? [dayIndex] : [],
+              );
+              const dayUnfilled = unfilledNotFoundRequirements.filter(
+                (item) => formatDate(item.date) === dateKey,
+              );
 
-                      const myShifts = (day.shifts || []).filter((shift) => {
-                        const ids = (shift.assigned_employees || shift.candidate_employees || []).map((e) => String(e.id));
-                        return ids.includes(String(emp.id));
-                      });
-
-                      return (
-                        <td key={`${d}-${emp.id}`} style={{
-                          padding: 0,
-                          borderBottom: '1px solid #f0f0f0',
-                          height: 72,
-                          position: 'relative',
-                          ...scheduleSlotGridStyle(cellWidth, rowIndex % 2 === 0 ? '#ffffff' : '#f8faff'),
-                          width: slotsPerDay * cellWidth,
-                          minWidth: slotsPerDay * cellWidth,
-                          maxWidth: slotsPerDay * cellWidth,
-                        }}>
-                          <div style={{ position: 'relative', width: '100%', height: '100%' }}>
-                            {myShifts.map((shift) => {
-                              const startSlots = timeToSlotOffset(shift.start_time);
-                              const endSlots = timeToSlotOffset(shift.end_time || shift.start_time);
-                              const minWidthPx = 20;
-                              const leftPx = startSlots * cellWidth;
-                              const widthPx = Math.max((endSlots - startSlots) * cellWidth, minWidthPx);
-                              return (
-                                <div
-                                  key={shift.id}
-                                  style={{
-                                    position: 'absolute',
-                                    left: `${leftPx}px`,
-                                    width: `${widthPx}px`,
-                                    top: 12,
-                                    height: 48,
-                                    background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
-                                    color: '#fff',
-                                    borderRadius: 8,
-                                    padding: '0px 0px',
-                                    fontSize: 11,
-                                    overflow: 'hidden',
-                                    whiteSpace: 'nowrap',
-                                    textOverflow: 'ellipsis',
-                                    boxShadow: '0 2px 8px rgba(102,126,234,0.25)',
-                                    border: '1px solid rgba(255,255,255,0.1)',
-                                  }}
-                                >
-                                  <div style={{ fontWeight: 700, fontSize: 11 }}>
-                                    {shift.position_title || '—'}
-                                  </div>
-                                  <div style={{ fontSize: 10, opacity: 0.9 }}>
-                                    {`${String(shift.start_time || '').slice(0, 5)} - ${String(shift.end_time || '').slice(0, 5)}`}
-                                  </div>
-                                </div>
-                              );
-                            })}
-                          </div>
-                        </td>
-                      );
-                    })}
-                  </tr>
-                ))}
-                {unfilledNotFoundRequirements.map((item) => {
-                  const rowBg = '#fff6f0';
-                  const itemDate = formatDate(item.date);
-
-                  return (
-                    <tr key={`unfilled-${item.requirement_id}`} style={{ background: rowBg }}>
-                      <td style={{
-                        position: 'sticky',
-                        left: 0,
-                        zIndex: 5,
-                        background: rowBg,
-                        padding: '12px 16px',
-                        borderBottom: '1px solid #f0f0f0',
-                        width: '220px',
-                        minWidth: '220px',
-                        maxWidth: '220px',
-                        fontWeight: '600',
-                        fontSize: '14px',
-                        color: '#8d1d1d',
-                      }}>
-                        {item.position_title || '—'}
-                      </td>
-                      {visibleDates.map((d) => (
-                        <td
-                          key={`${d}-unfilled-${item.requirement_id}`}
-                          style={{
-                            padding: 0,
-                            borderBottom: '1px solid #f0f0f0',
-                            height: 72,
-                            position: 'relative',
-                            ...scheduleSlotGridStyle(cellWidth, rowBg),
-                            width: slotsPerDay * cellWidth,
-                            minWidth: slotsPerDay * cellWidth,
-                            maxWidth: slotsPerDay * cellWidth,
-                          }}
-                        >
-                          {d === itemDate ? (
-                            <div style={{ position: 'relative', width: '100%', height: '100%' }}>
-                              {renderTimeSlotBlock({
-                                startTime: item.start_time,
-                                endTime: item.end_time,
-                                title: t.notFound,
-                                subtitle: `${String(item.start_time || '').slice(0, 5)} - ${String(item.end_time || '').slice(0, 5)}`,
-                                cellWidth,
-                                background: 'linear-gradient(135deg, #ffd6a5 0%, #ffb085 100%)',
-                                color: '#5a1a1a',
-                                border: '2px dashed #8d1d1d',
-                              })}
-                            </div>
-                          ) : null}
-                        </td>
-                      ))}
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
+              return (
+                <DayScheduleTable
+                  key={dateKey}
+                  dateKey={dateKey}
+                  day={day}
+                  employees={dayEmployees}
+                  unfilledItems={dayUnfilled}
+                  employeeLabel={t.employee}
+                  notFoundLabel={t.notFound}
+                  emptyDayLabel={t.noShiftsThisDay}
+                  cellWidth={cellWidth}
+                  slotsPerDay={slotsPerDay}
+                />
+              );
+            })}
           </div>
         )}
       </div>
