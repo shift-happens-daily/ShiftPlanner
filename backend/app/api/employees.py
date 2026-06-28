@@ -7,6 +7,7 @@ from app.api.dependencies import (
     ensure_employee_user,
     ensure_manager_or_employee_self,
     get_current_user,
+    require_active_manager,
     require_role,
 )
 from app.api.responses import (
@@ -55,10 +56,10 @@ def get_employees(
 )
 def create_employee(
     payload: EmployeeCreate,
-    _: UserRead = Depends(require_role("manager")),
+    current_user: UserRead = Depends(require_active_manager),
     db: Session = Depends(get_db),
 ) -> EmployeeRead:
-    return employee_service.create_employee(db, payload)
+    return employee_service.create_employee(db, payload, current_user)
 
 
 @router.patch(
@@ -69,7 +70,7 @@ def create_employee(
 def update_employee_position(
     employee_id: int,
     payload: EmployeePositionUpdate,
-    current_user: UserRead = Depends(require_role("manager")),
+    current_user: UserRead = Depends(require_active_manager),
     db: Session = Depends(get_db),
 ) -> EmployeeRead:
     return employee_service.update_employee_position(db, employee_id, payload, current_user)
@@ -83,7 +84,7 @@ def update_employee_position(
 def update_employee_branch(
     employee_id: int,
     payload: EmployeeBranchUpdate,
-    current_user: UserRead = Depends(require_role("manager")),
+    current_user: UserRead = Depends(require_active_manager),
     db: Session = Depends(get_db),
 ) -> EmployeeRead:
     return employee_service.update_employee_branch(db, employee_id, payload, current_user)

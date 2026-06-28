@@ -32,7 +32,18 @@ def list_employees_by_company(db: Session, company_id: int) -> list[Employee]:
         db.scalars(
             select(Employee)
             .options(*_employee_options())
-            .where(Employee.company_id == company_id)
+            .where(Employee.company_id == company_id, Employee.is_active.is_(True))
+            .order_by(Employee.id)
+        )
+    )
+
+
+def list_pending_employees_by_company(db: Session, company_id: int) -> list[Employee]:
+    return list(
+        db.scalars(
+            select(Employee)
+            .options(*_employee_options())
+            .where(Employee.company_id == company_id, Employee.is_active.is_(False))
             .order_by(Employee.id)
         )
     )
@@ -70,10 +81,12 @@ def create_employee(
     company_id: int,
     branch_id: int | None,
     position_id: int | None,
+    is_active: bool = True,
 ) -> Employee:
     employee = Employee(
         user_id=user_id,
         company_id=company_id,
+        is_active=is_active,
     )
 
     db.add(employee)
@@ -93,8 +106,11 @@ def update_employee_membership(
     company_id: int,
     branch_id: int | None,
     position_id: int | None,
+    is_active: bool | None = None,
 ) -> Employee:
     employee.company_id = company_id
+    if is_active is not None:
+        employee.is_active = is_active
 
     db.add(employee)
     db.flush()
@@ -103,6 +119,19 @@ def update_employee_membership(
     db.commit()
     db.expire_all()
 
+    return get_employee_by_id(db, employee.id)
+
+
+def update_employee_status(
+    db: Session,
+    *,
+    employee: Employee,
+    is_active: bool,
+) -> Employee:
+    employee.is_active = is_active
+    db.add(employee)
+    db.commit()
+    db.expire_all()
     return get_employee_by_id(db, employee.id)
 
 
@@ -259,5 +288,10 @@ def get_absence_by_id(db: Session, absence_id: int) -> Absence | None:
 
 def delete_absence(db: Session, absence: Absence) -> None:
     db.delete(absence)
+    db.commit()
+
+
+def delete_employee(db: Session, employee: Employee) -> None:
+    db.delete(employee)
     db.commit()
 

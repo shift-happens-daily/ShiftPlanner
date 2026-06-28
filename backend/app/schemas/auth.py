@@ -18,6 +18,9 @@ class UserRead(BaseModel):
     role: Role
     employee_id: int | None = None
     company_id: int | None = None
+    manager_status: str | None = None
+    manager_role: str | None = None
+    employee_status: str | None = None
 
 
 class LoginResponse(BaseModel):

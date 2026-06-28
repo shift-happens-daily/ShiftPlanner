@@ -21,6 +21,18 @@ class CompanyLinkUserRequest(BaseModel):
         return normalized
 
 
+class CompanyUserPublicIdRequest(BaseModel):
+    user_public_id: str = Field(..., min_length=16, max_length=16)
+
+    @field_validator("user_public_id")
+    @classmethod
+    def validate_user_public_id(cls, value: str) -> str:
+        normalized = value.strip().upper()
+        if not PUBLIC_ID_PATTERN.fullmatch(normalized):
+            raise ValueError("User public ID must be a 16-character alphanumeric code.")
+        return normalized
+
+
 class LinkedEmployeePositionRead(BaseModel):
     id: int
     name: str
@@ -63,6 +75,52 @@ class CompanyRead(CompanySummaryRead):
     invite_code: str
     invite_code_generated_at: datetime
     invite_code_expires_at: datetime | None = None
+
+
+class ManagerInviteCodeRead(BaseModel):
+    manager_invite_code: str
+    manager_invite_code_generated_at: datetime | None = None
+    manager_invite_code_expires_at: datetime | None = None
+
+
+class CompanyManagerJoinRequest(BaseModel):
+    invite_code: str
+
+    @field_validator("invite_code", mode="before")
+    @classmethod
+    def validate_invite_code(cls, value: str) -> str:
+        return normalize_invite_code(value)
+
+
+class ManagerRequestRead(BaseModel):
+    id: int
+    company_id: int
+    user_id: int
+    public_id: str
+    full_name: str
+    email: str
+    manager_role: str
+    membership_status: str
+    created_at: datetime
+    updated_at: datetime | None = None
+
+
+class EmployeeRequestRead(BaseModel):
+    id: int
+    company_id: int
+    user_id: int
+    public_id: str
+    full_name: str
+    email: str
+    branch_id: int | None = None
+    position_id: int | None = None
+    position: LinkedEmployeePositionRead | None = None
+    is_active: bool
+
+
+class EmployeeRequestAcceptRequest(BaseModel):
+    branch_id: int | None = Field(default=None, ge=1)
+    position_id: int | None = Field(default=None, ge=1)
 
 
 class BranchRead(BaseModel):

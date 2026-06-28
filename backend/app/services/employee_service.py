@@ -27,6 +27,11 @@ from app.services import auth_service
 
 def list_employees(db: Session, current_user: UserRead) -> list[EmployeeRead]:
     if current_user.company_id is None:
+        if current_user.role == "manager":
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Manager is not linked to a company.",
+            )
         return []
 
     return [
@@ -35,14 +40,25 @@ def list_employees(db: Session, current_user: UserRead) -> list[EmployeeRead]:
     ]
 
 
-def create_employee(db: Session, payload: EmployeeCreate) -> EmployeeRead:
+def create_employee(db: Session, payload: EmployeeCreate, current_user: UserRead) -> EmployeeRead:
+    if current_user.company_id is None:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Manager is not linked to a company.",
+        )
+
     position = position_repository.get_position_by_id(db, payload.position_id)
     if position is None:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Position {payload.position_id} was not found.")
+    if position.company_id != current_user.company_id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Position does not belong to the authenticated user's company.",
+        )
     if user_repository.get_user_by_email(db, payload.email) is not None:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="A user with this email already exists.")
 
-    branch = company_repository.get_default_branch_for_company(db, position.company_id)
+    branch = company_repository.get_default_branch_for_company(db, current_user.company_id)
     user = user_repository.create_user(
         db,
         full_name=payload.full_name,
@@ -54,9 +70,10 @@ def create_employee(db: Session, payload: EmployeeCreate) -> EmployeeRead:
     employee = employee_repository.create_employee(
         db,
         user_id=user.id,
-        company_id=position.company_id,
+        company_id=current_user.company_id,
         branch_id=branch.id if branch else None,
         position_id=position.id,
+        is_active=True,
     )
     return _build_employee_read(employee)
 

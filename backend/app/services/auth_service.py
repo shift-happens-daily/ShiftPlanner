@@ -144,11 +144,21 @@ def _build_user_read(db: Session, user) -> UserRead:
     employee = employee_repository.get_employee_by_user_id(db, user.id)
     company_id = None
 
+    manager_status = None
+    manager_role = None
+    employee_status = None
+
     if user.role == "manager":
-        company = company_repository.get_company_by_manager_user_id(db, user.id)
-        company_id = company.id if company else None
+        membership = company_repository.get_latest_manager_membership_by_user_id(db, user.id)
+        if membership is not None:
+            manager_status = membership.membership_status
+            manager_role = membership.manager_role
+            if membership.membership_status == "active":
+                company_id = membership.company_id
     elif employee is not None:
-        company_id = employee.company_id
+        employee_status = "active" if employee.is_active else "pending"
+        if employee.is_active:
+            company_id = employee.company_id
 
     return UserRead(
         id=user.id,
@@ -158,12 +168,15 @@ def _build_user_read(db: Session, user) -> UserRead:
         role=user.role,
         employee_id=employee.id if employee else None,
         company_id=company_id,
+        manager_status=manager_status,
+        manager_role=manager_role,
+        employee_status=employee_status,
     )
 
 
 def _build_register_response(db: Session, user) -> RegisterResponse:
     employee = employee_repository.get_employee_by_user_id(db, user.id)
-    company_id = employee.company_id if employee else None
+    company_id = employee.company_id if employee and employee.is_active else None
 
     return RegisterResponse(
         id=user.id,
@@ -173,6 +186,7 @@ def _build_register_response(db: Session, user) -> RegisterResponse:
         role=user.role,
         employee_id=employee.id if employee else None,
         company_id=company_id,
+        employee_status=("active" if employee.is_active else "pending") if employee else None,
     )
 
 
@@ -182,9 +196,16 @@ def _build_current_user_response(db: Session, user) -> CurrentUserResponse:
     company_id = None
     branch = None
     position = None
+    manager_status = None
+    manager_role = None
+    employee_status = None
 
     if user.role == "manager":
-        company_model = company_repository.get_company_by_manager_user_id(db, user.id)
+        membership = company_repository.get_latest_manager_membership_by_user_id(db, user.id)
+        company_model = membership.company if membership and membership.membership_status == "active" else None
+        if membership is not None:
+            manager_status = membership.membership_status
+            manager_role = membership.manager_role
 
         if company_model is not None:
             company_id = company_model.id
@@ -198,22 +219,24 @@ def _build_current_user_response(db: Session, user) -> CurrentUserResponse:
         employee = employee_repository.get_employee_by_user_id(db, user.id)
 
         if employee is not None:
-            company_id = employee.company_id
+            employee_status = "active" if employee.is_active else "pending"
+            if employee.is_active:
+                company_id = employee.company_id
 
-            if employee.company is not None:
+            if employee.is_active and employee.company is not None:
                 company = CurrentUserCompanyRead(
                     id=employee.company.id,
                     name=employee.company.name,
                     invite_code=employee.company.invite_code or "",
                 )
 
-            if employee.branch is not None:
+            if employee.is_active and employee.branch is not None:
                 branch = CurrentUserBranchRead(
                     id=employee.branch.id,
                     name=employee.branch.name,
                 )
 
-            if employee.position is not None:
+            if employee.is_active and employee.position is not None:
                 position = CurrentUserPositionRead(
                     id=employee.position.id,
                     name=employee.position.name,
@@ -227,8 +250,11 @@ def _build_current_user_response(db: Session, user) -> CurrentUserResponse:
         role=user.role,
         employee_id=employee.id if employee else None,
         company_id=company_id,
-        branch_id=employee.branch_id if employee else None,
-        position_id=employee.position_id if employee else None,
+        manager_status=manager_status,
+        manager_role=manager_role,
+        employee_status=employee_status,
+        branch_id=employee.branch_id if employee and employee.is_active else None,
+        position_id=employee.position_id if employee and employee.is_active else None,
         company=company,
         branch=branch,
         position=position,

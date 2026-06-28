@@ -35,9 +35,13 @@ CREATE TABLE companies (
     invite_code VARCHAR(16) UNIQUE NOT NULL DEFAULT generate_alphanumeric_code(16),
     invite_code_generated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     invite_code_expires_at TIMESTAMP,
+    manager_invite_code VARCHAR(16) UNIQUE DEFAULT generate_alphanumeric_code(16),
+    manager_invite_code_generated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    manager_invite_code_expires_at TIMESTAMP,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    CHECK (invite_code ~ '^[A-Za-z0-9]{16}$')
+    CHECK (invite_code ~ '^[A-Za-z0-9]{16}$'),
+    CHECK (manager_invite_code IS NULL OR manager_invite_code ~ '^[A-Za-z0-9]{16}$')
 );
 
 CREATE TABLE company_managers (
@@ -46,7 +50,10 @@ CREATE TABLE company_managers (
     user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     manager_role VARCHAR(50) NOT NULL DEFAULT 'manager'
         CHECK (manager_role IN ('owner', 'manager')),
+    membership_status VARCHAR(50) NOT NULL DEFAULT 'active'
+        CHECK (membership_status IN ('pending', 'active', 'declined')),
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     UNIQUE (company_id, user_id)
 );
 
