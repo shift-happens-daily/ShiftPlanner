@@ -10,6 +10,8 @@ PUBLIC_ID_PATTERN = re.compile(r"^[A-Z0-9]{16}$")
 class CompanyLinkUserRequest(BaseModel):
     user_public_id: str = Field(..., min_length=16, max_length=16)
     branch_id: int | None = None
+    branch_ids: list[int] | None = None
+    primary_branch_id: int | None = Field(default=None, ge=1)
     position_id: int | None = None
 
     @field_validator("user_public_id")
@@ -38,6 +40,12 @@ class LinkedEmployeePositionRead(BaseModel):
     name: str
 
 
+class LinkedEmployeeBranchRead(BaseModel):
+    id: int
+    name: str
+    is_primary: bool
+
+
 class LinkedEmployeeRead(BaseModel):
     id: int
     public_id: str
@@ -45,6 +53,7 @@ class LinkedEmployeeRead(BaseModel):
     email: str
     branch_id: int | None = None
     position_id: int | None = None
+    branches: list[LinkedEmployeeBranchRead] = Field(default_factory=list)
     position: LinkedEmployeePositionRead | None = None
 
 def normalize_invite_code(value: str) -> str:
@@ -114,12 +123,15 @@ class EmployeeRequestRead(BaseModel):
     email: str
     branch_id: int | None = None
     position_id: int | None = None
+    branches: list[LinkedEmployeeBranchRead] = Field(default_factory=list)
     position: LinkedEmployeePositionRead | None = None
     is_active: bool
 
 
 class EmployeeRequestAcceptRequest(BaseModel):
     branch_id: int | None = Field(default=None, ge=1)
+    branch_ids: list[int] | None = None
+    primary_branch_id: int | None = Field(default=None, ge=1)
     position_id: int | None = Field(default=None, ge=1)
 
 
@@ -162,6 +174,8 @@ class CompanyInvitePreviewRead(BaseModel):
 class CompanyJoinRequest(BaseModel):
     invite_code: str
     branch_id: int | None = Field(default=None, ge=1)
+    branch_ids: list[int] | None = None
+    primary_branch_id: int | None = Field(default=None, ge=1)
     position_id: int | None = Field(default=None, ge=1)
 
     @field_validator("invite_code", mode="before")

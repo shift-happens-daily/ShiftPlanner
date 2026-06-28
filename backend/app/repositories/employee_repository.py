@@ -81,6 +81,8 @@ def create_employee(
     company_id: int,
     branch_id: int | None,
     position_id: int | None,
+    branch_ids: list[int] | None = None,
+    primary_branch_id: int | None = None,
     is_active: bool = True,
 ) -> Employee:
     employee = Employee(
@@ -91,7 +93,10 @@ def create_employee(
 
     db.add(employee)
     db.flush()
-    _replace_employee_branch(db, employee.id, branch_id)
+    if branch_ids is None:
+        _replace_employee_branch(db, employee.id, branch_id)
+    else:
+        replace_employee_branches(db, employee_id=employee.id, branch_ids=branch_ids, primary_branch_id=primary_branch_id)
     _replace_employee_position(db, employee.id, position_id)
     db.commit()
     db.expire_all()
@@ -106,6 +111,8 @@ def update_employee_membership(
     company_id: int,
     branch_id: int | None,
     position_id: int | None,
+    branch_ids: list[int] | None = None,
+    primary_branch_id: int | None = None,
     is_active: bool | None = None,
 ) -> Employee:
     employee.company_id = company_id
@@ -114,7 +121,10 @@ def update_employee_membership(
 
     db.add(employee)
     db.flush()
-    _replace_employee_branch(db, employee.id, branch_id)
+    if branch_ids is None:
+        _replace_employee_branch(db, employee.id, branch_id)
+    else:
+        replace_employee_branches(db, employee_id=employee.id, branch_ids=branch_ids, primary_branch_id=primary_branch_id)
     _replace_employee_position(db, employee.id, position_id)
     db.commit()
     db.expire_all()
@@ -158,6 +168,26 @@ def update_employee_branch(
     db.add(employee)
     db.flush()
     _replace_employee_branch(db, employee.id, branch_id)
+    db.commit()
+    db.expire_all()
+    return get_employee_by_id(db, employee.id)
+
+
+def update_employee_branches(
+    db: Session,
+    *,
+    employee: Employee,
+    branch_ids: list[int],
+    primary_branch_id: int,
+) -> Employee:
+    db.add(employee)
+    db.flush()
+    replace_employee_branches(
+        db,
+        employee_id=employee.id,
+        branch_ids=branch_ids,
+        primary_branch_id=primary_branch_id,
+    )
     db.commit()
     db.expire_all()
     return get_employee_by_id(db, employee.id)
@@ -225,9 +255,26 @@ def employee_has_position(db: Session, employee_id: int, position_id: int) -> bo
 
 
 def _replace_employee_branch(db: Session, employee_id: int, branch_id: int | None) -> None:
+    branch_ids = [] if branch_id is None else [branch_id]
+    replace_employee_branches(db, employee_id=employee_id, branch_ids=branch_ids, primary_branch_id=branch_id)
+
+
+def replace_employee_branches(
+    db: Session,
+    *,
+    employee_id: int,
+    branch_ids: list[int],
+    primary_branch_id: int | None,
+) -> None:
     db.execute(delete(EmployeeBranch).where(EmployeeBranch.employee_id == employee_id))
-    if branch_id is not None:
-        db.add(EmployeeBranch(employee_id=employee_id, branch_id=branch_id, is_primary=True))
+    for branch_id in branch_ids:
+        db.add(
+            EmployeeBranch(
+                employee_id=employee_id,
+                branch_id=branch_id,
+                is_primary=primary_branch_id is not None and branch_id == primary_branch_id,
+            )
+        )
 
 
 def _replace_employee_position(db: Session, employee_id: int, position_id: int | None) -> None:

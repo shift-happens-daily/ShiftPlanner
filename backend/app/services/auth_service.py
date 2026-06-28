@@ -6,6 +6,7 @@ from sqlalchemy.orm import Session
 
 from app.repositories import company_repository, employee_repository, user_repository
 from app.schemas.auth import (
+    CurrentUserBranchAssignmentRead,
     CurrentUserBranchRead,
     CurrentUserCompanyRead,
     CurrentUserPositionRead,
@@ -195,6 +196,7 @@ def _build_current_user_response(db: Session, user) -> CurrentUserResponse:
     company = None
     company_id = None
     branch = None
+    branches = []
     position = None
     manager_status = None
     manager_role = None
@@ -236,6 +238,17 @@ def _build_current_user_response(db: Session, user) -> CurrentUserResponse:
                     name=employee.branch.name,
                 )
 
+            if employee.is_active:
+                branches = [
+                    CurrentUserBranchAssignmentRead(
+                        id=link.branch.id,
+                        name=link.branch.name,
+                        is_primary=link.is_primary,
+                    )
+                    for link in sorted(employee.branch_links, key=lambda item: (not item.is_primary, item.branch_id))
+                    if link.branch is not None
+                ]
+
             if employee.is_active and employee.position is not None:
                 position = CurrentUserPositionRead(
                     id=employee.position.id,
@@ -257,6 +270,7 @@ def _build_current_user_response(db: Session, user) -> CurrentUserResponse:
         position_id=employee.position_id if employee and employee.is_active else None,
         company=company,
         branch=branch,
+        branches=branches,
         position=position,
     )
 

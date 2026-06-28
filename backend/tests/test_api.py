@@ -69,13 +69,25 @@ def build_requirements_workbook(rows: list[list[object]]) -> bytes:
     return buffer.getvalue()
 
 
-def set_employee_assignment(cursor, employee_id: int, *, branch_id: int | None = None, position_id: int | None = None) -> None:
+def set_employee_assignment(
+    cursor,
+    employee_id: int,
+    *,
+    branch_id: int | None = None,
+    branch_ids: list[int] | None = None,
+    primary_branch_id: int | None = None,
+    position_id: int | None = None,
+) -> None:
     cursor.execute("DELETE FROM employee_branches WHERE employee_id = %s", (employee_id,))
     cursor.execute("DELETE FROM employee_positions WHERE employee_id = %s", (employee_id,))
-    if branch_id is not None:
+    resolved_branch_ids = branch_ids if branch_ids is not None else ([] if branch_id is None else [branch_id])
+    resolved_primary_branch_id = primary_branch_id if primary_branch_id is not None else branch_id
+    if resolved_primary_branch_id is None and resolved_branch_ids:
+        resolved_primary_branch_id = resolved_branch_ids[0]
+    for resolved_branch_id in resolved_branch_ids:
         cursor.execute(
-            "INSERT INTO employee_branches (employee_id, branch_id, is_primary) VALUES (%s, %s, TRUE)",
-            (employee_id, branch_id),
+            "INSERT INTO employee_branches (employee_id, branch_id, is_primary) VALUES (%s, %s, %s)",
+            (employee_id, resolved_branch_id, resolved_branch_id == resolved_primary_branch_id),
         )
     if position_id is not None:
         cursor.execute(
@@ -181,6 +193,85 @@ def test_auth_token_and_profile_endpoints(client: TestClient) -> None:
 
     unauthorized = client.get("/auth/me")
     assert unauthorized.status_code == 401
+
+
+def test_employee_branch_endpoints_and_response_shapes(client: TestClient) -> None:
+    manager_headers = login_json(client, "manager@example.com", "manager123")
+    employee_headers = login_json(client, "ivan@example.com", "employee123")
+
+    with psycopg.connect(PSYCOPG_DSN) as connection:
+        with connection.cursor() as cursor:
+            cursor.execute(
+                "INSERT INTO branches (company_id, name, address) VALUES (1, 'Second Branch', 'North') RETURNING id"
+            )
+            second_branch_id = cursor.fetchone()[0]
+
+    initial = client.get("/employees/1/branches", headers=manager_headers)
+    assert initial.status_code == 200, initial.text
+    assert initial.json() == [{"id": 1, "name": "Main Branch", "is_primary": True}]
+
+    employee_self = client.get("/employees/1/branches", headers=employee_headers)
+    assert employee_self.status_code == 200, employee_self.text
+
+    replaced = client.put(
+        "/employees/1/branches",
+        headers=manager_headers,
+        json={"branch_ids": [1, second_branch_id], "primary_branch_id": second_branch_id},
+    )
+    assert replaced.status_code == 200, replaced.text
+    assert replaced.json() == [
+        {"id": second_branch_id, "name": "Second Branch", "is_primary": True},
+        {"id": 1, "name": "Main Branch", "is_primary": False},
+    ]
+
+    listed = client.get("/employees/", headers=manager_headers)
+    assert listed.status_code == 200, listed.text
+    employee = listed.json()[0]
+    assert employee["branch_id"] == second_branch_id
+    assert employee["branch"] == {"id": second_branch_id, "name": "Second Branch"}
+    assert employee["branches"] == replaced.json()
+
+    detail = client.get("/employees/1", headers=manager_headers)
+    assert detail.status_code == 200, detail.text
+    assert detail.json()["branch_id"] == second_branch_id
+    assert detail.json()["branches"] == replaced.json()
+
+    profile = client.get("/auth/me", headers=employee_headers)
+    assert profile.status_code == 200, profile.text
+    assert profile.json()["branch_id"] == second_branch_id
+    assert profile.json()["branch"] == {"id": second_branch_id, "name": "Second Branch"}
+    assert profile.json()["branches"] == replaced.json()
+
+
+def test_employee_branch_endpoint_rejects_cross_company_and_invalid_primary(client: TestClient) -> None:
+    seed_second_company_scope_data()
+    manager_headers = login_json(client, "manager@example.com", "manager123")
+
+    with psycopg.connect(PSYCOPG_DSN) as connection:
+        with connection.cursor() as cursor:
+            cursor.execute("SELECT id FROM companies WHERE invite_code = %s", (SECOND_COMPANY_INVITE_CODE,))
+            other_company_id = cursor.fetchone()[0]
+            cursor.execute("SELECT id FROM branches WHERE company_id = %s", (other_company_id,))
+            other_branch_id = cursor.fetchone()[0]
+            cursor.execute("SELECT id FROM employees WHERE company_id = %s", (other_company_id,))
+            other_employee_id = cursor.fetchone()[0]
+
+    cross_company_read = client.get(f"/employees/{other_employee_id}/branches", headers=manager_headers)
+    assert cross_company_read.status_code == 403
+
+    foreign_branch = client.put(
+        "/employees/1/branches",
+        headers=manager_headers,
+        json={"branch_ids": [1, other_branch_id], "primary_branch_id": 1},
+    )
+    assert foreign_branch.status_code == 403
+
+    missing_primary = client.put(
+        "/employees/1/branches",
+        headers=manager_headers,
+        json={"branch_ids": [1], "primary_branch_id": other_branch_id},
+    )
+    assert missing_primary.status_code == 400
 
 
 def test_registered_user_receives_public_id_in_profile_without_membership(client: TestClient) -> None:
@@ -306,6 +397,63 @@ def test_manager_links_existing_user_by_public_id(client: TestClient) -> None:
         json={"user_public_id": public_id},
     )
     assert duplicate.status_code == 409
+
+
+def test_manager_links_existing_user_with_multiple_branches(client: TestClient) -> None:
+    registered = client.post(
+        "/auth/register",
+        json={
+            "full_name": "Multi Branch Link Target",
+            "email": "multi-branch-link@example.com",
+            "password": "employee456",
+            "role": "employee",
+        },
+    )
+    assert registered.status_code == 201, registered.text
+    public_id = registered.json()["public_id"]
+    manager_headers = login_json(client, "manager@example.com", "manager123")
+
+    with psycopg.connect(PSYCOPG_DSN) as connection:
+        with connection.cursor() as cursor:
+            cursor.execute(
+                "INSERT INTO branches (company_id, name, address) VALUES (1, 'Second Branch', 'North') RETURNING id"
+            )
+            second_branch_id = cursor.fetchone()[0]
+
+    linked = client.post(
+        "/companies/me/link-user",
+        headers=manager_headers,
+        json={
+            "user_public_id": public_id,
+            "branch_ids": [1, second_branch_id],
+            "primary_branch_id": second_branch_id,
+            "position_id": 1,
+        },
+    )
+    assert linked.status_code == 200, linked.text
+    assert linked.json()["branch_id"] == second_branch_id
+    assert linked.json()["branches"] == [
+        {"id": second_branch_id, "name": "Second Branch", "is_primary": True},
+        {"id": 1, "name": "Main Branch", "is_primary": False},
+    ]
+
+    requests = client.get("/companies/me/employee-requests", headers=manager_headers)
+    assert requests.status_code == 200, requests.text
+    request = next(item for item in requests.json() if item["public_id"] == public_id)
+    assert request["branch_id"] == second_branch_id
+    assert request["branches"] == linked.json()["branches"]
+
+    accepted = client.post(
+        f"/companies/me/employee-requests/{request['id']}/accept",
+        headers=manager_headers,
+        json={},
+    )
+    assert accepted.status_code == 200, accepted.text
+
+    employees = client.get("/employees/", headers=manager_headers)
+    employee = next(item for item in employees.json() if item["public_id"] == public_id)
+    assert employee["branch_id"] == second_branch_id
+    assert employee["branches"] == linked.json()["branches"]
 
 
 def test_link_user_validates_target_access_and_assignments(client: TestClient) -> None:
@@ -1111,6 +1259,64 @@ def test_employee_joins_with_partial_optional_assignments(client: TestClient) ->
     by_email = {request["email"]: request for request in requests.json()}
     assert by_email["position-only@example.com"]["position_id"] == 1
     assert by_email["branch-only@example.com"]["branch_id"] == 1
+
+
+def test_employee_joins_with_multiple_branches(client: TestClient) -> None:
+    registered = client.post(
+        "/auth/register",
+        json={
+            "full_name": "Multi Branch Join Employee",
+            "email": "multi-branch-join@example.com",
+            "password": "employee456",
+            "role": "employee",
+        },
+    )
+    assert registered.status_code == 201, registered.text
+
+    with psycopg.connect(PSYCOPG_DSN) as connection:
+        with connection.cursor() as cursor:
+            cursor.execute(
+                "INSERT INTO branches (company_id, name, address) VALUES (1, 'Second Branch', 'North') RETURNING id"
+            )
+            second_branch_id = cursor.fetchone()[0]
+
+    employee_headers = login_json(client, "multi-branch-join@example.com", "employee456")
+    joined = client.post(
+        "/companies/join",
+        headers=employee_headers,
+        json={
+            "invite_code": SEED_INVITE_CODE,
+            "branch_ids": [1, second_branch_id],
+            "primary_branch_id": second_branch_id,
+            "position_id": 1,
+        },
+    )
+    assert joined.status_code == 200, joined.text
+    assert joined.json()["employee_status"] == "pending"
+    assert joined.json()["branch_id"] is None
+    assert joined.json()["branches"] == []
+
+    manager_headers = login_json(client, "manager@example.com", "manager123")
+    requests = client.get("/companies/me/employee-requests", headers=manager_headers)
+    assert requests.status_code == 200, requests.text
+    request = next(item for item in requests.json() if item["email"] == "multi-branch-join@example.com")
+    assert request["branch_id"] == second_branch_id
+    assert request["branches"] == [
+        {"id": second_branch_id, "name": "Second Branch", "is_primary": True},
+        {"id": 1, "name": "Main Branch", "is_primary": False},
+    ]
+
+    accepted = client.post(
+        f"/companies/me/employee-requests/{request['id']}/accept",
+        headers=manager_headers,
+        json={},
+    )
+    assert accepted.status_code == 200, accepted.text
+
+    profile = client.get("/auth/me", headers=employee_headers)
+    assert profile.status_code == 200, profile.text
+    assert profile.json()["branch_id"] == second_branch_id
+    assert profile.json()["branches"] == request["branches"]
 
 
 def test_join_rejects_branch_and_position_from_another_company(client: TestClient) -> None:

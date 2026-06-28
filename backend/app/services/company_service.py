@@ -18,6 +18,7 @@ from app.schemas.company import (
     CompanyUserPublicIdRequest,
     EmployeeRequestAcceptRequest,
     EmployeeRequestRead,
+    LinkedEmployeeBranchRead,
     LinkedEmployeePositionRead,
     LinkedEmployeeRead,
     ManagerInviteCodeRead,
@@ -98,9 +99,63 @@ def _build_employee_request_read(employee) -> EmployeeRequestRead:
         email=employee.user.email,
         branch_id=employee.branch_id,
         position_id=employee.position_id,
+        branches=_build_linked_employee_branches(employee),
         position=position,
         is_active=employee.is_active,
     )
+
+
+def _build_linked_employee_branches(employee) -> list[LinkedEmployeeBranchRead]:
+    return [
+        LinkedEmployeeBranchRead(
+            id=link.branch.id,
+            name=link.branch.name,
+            is_primary=link.is_primary,
+        )
+        for link in sorted(employee.branch_links, key=lambda item: (not item.is_primary, item.branch_id))
+        if link.branch is not None
+    ]
+
+
+def _resolve_branch_assignment(
+    db: Session,
+    *,
+    company_id: int,
+    branch_id: int | None,
+    branch_ids: list[int] | None,
+    primary_branch_id: int | None,
+    error_status: int,
+    detail: str,
+) -> tuple[list[int], int | None]:
+    if branch_ids is None:
+        resolved_branch_ids = [] if branch_id is None else [branch_id]
+    else:
+        resolved_branch_ids = list(branch_ids)
+
+    if primary_branch_id is None:
+        if branch_id is not None and branch_id in resolved_branch_ids:
+            primary_branch_id = branch_id
+        elif resolved_branch_ids:
+            primary_branch_id = resolved_branch_ids[0]
+
+    if len(set(resolved_branch_ids)) != len(resolved_branch_ids):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Branch IDs must be unique.",
+        )
+
+    if primary_branch_id is not None and primary_branch_id not in resolved_branch_ids:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Primary branch must be included in branch_ids.",
+        )
+
+    for resolved_branch_id in resolved_branch_ids:
+        branch = company_repository.get_branch_by_id(db, resolved_branch_id)
+        if branch is None or branch.company_id != company_id:
+            raise HTTPException(status_code=error_status, detail=detail)
+
+    return resolved_branch_ids, primary_branch_id
 
 
 def create_company(db: Session, payload: CompanyCreate, current_user: UserRead) -> CompanyRead:
@@ -412,13 +467,15 @@ def link_user_to_manager_company(
             detail="User is already linked to this company.",
         )
 
-    if payload.branch_id is not None:
-        branch = company_repository.get_branch_by_id(db, payload.branch_id)
-        if branch is None or branch.company_id != company_id:
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="Branch does not belong to the authenticated manager's company.",
-            )
+    branch_ids, primary_branch_id = _resolve_branch_assignment(
+        db,
+        company_id=company_id,
+        branch_id=payload.branch_id,
+        branch_ids=payload.branch_ids,
+        primary_branch_id=payload.primary_branch_id,
+        error_status=status.HTTP_403_FORBIDDEN,
+        detail="Branch does not belong to the authenticated manager's company.",
+    )
 
     if payload.position_id is not None:
         position = position_repository.get_position_by_id(db, payload.position_id)
@@ -433,7 +490,9 @@ def link_user_to_manager_company(
             db=db,
             user_id=target_user.id,
             company_id=company_id,
-            branch_id=payload.branch_id,
+            branch_id=primary_branch_id,
+            branch_ids=branch_ids,
+            primary_branch_id=primary_branch_id,
             position_id=payload.position_id,
             is_active=False,
         )
@@ -442,7 +501,9 @@ def link_user_to_manager_company(
             db=db,
             employee=employee,
             company_id=company_id,
-            branch_id=payload.branch_id,
+            branch_id=primary_branch_id,
+            branch_ids=branch_ids,
+            primary_branch_id=primary_branch_id,
             position_id=payload.position_id,
             is_active=False,
         )
@@ -454,6 +515,7 @@ def link_user_to_manager_company(
         email=linked_employee.user.email,
         branch_id=linked_employee.branch_id,
         position_id=linked_employee.position_id,
+        branches=_build_linked_employee_branches(linked_employee),
         position=(
             LinkedEmployeePositionRead(
                 id=linked_employee.position.id,
@@ -490,13 +552,15 @@ def join_company_by_invite(
         detail="Company invite code has expired.",
     )
 
-    if payload.branch_id is not None:
-        branch = company_repository.get_branch_by_id(db, payload.branch_id)
-        if branch is None or branch.company_id != company.id:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Branch does not belong to company.",
-            )
+    branch_ids, primary_branch_id = _resolve_branch_assignment(
+        db,
+        company_id=company.id,
+        branch_id=payload.branch_id,
+        branch_ids=payload.branch_ids,
+        primary_branch_id=payload.primary_branch_id,
+        error_status=status.HTTP_400_BAD_REQUEST,
+        detail="Branch does not belong to company.",
+    )
 
     if payload.position_id is not None:
         position = position_repository.get_position_by_id(db, payload.position_id)
@@ -518,7 +582,9 @@ def join_company_by_invite(
             db=db,
             user_id=current_user.id,
             company_id=company.id,
-            branch_id=payload.branch_id,
+            branch_id=primary_branch_id,
+            branch_ids=branch_ids,
+            primary_branch_id=primary_branch_id,
             position_id=payload.position_id,
             is_active=False,
         )
@@ -527,7 +593,9 @@ def join_company_by_invite(
             db=db,
             employee=employee,
             company_id=company.id,
-            branch_id=payload.branch_id,
+            branch_id=primary_branch_id,
+            branch_ids=branch_ids,
+            primary_branch_id=primary_branch_id,
             position_id=payload.position_id,
             is_active=False,
         )
@@ -705,16 +773,25 @@ def accept_employee_request(
     if employee.is_active:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Employee request is not pending.")
 
-    branch_id = payload.branch_id if "branch_id" in payload.model_fields_set else employee.branch_id
-    position_id = payload.position_id if "position_id" in payload.model_fields_set else employee.position_id
+    branch_fields_set = any(
+        field_name in payload.model_fields_set
+        for field_name in ("branch_id", "branch_ids", "primary_branch_id")
+    )
+    if branch_fields_set:
+        branch_ids, primary_branch_id = _resolve_branch_assignment(
+            db,
+            company_id=company_id,
+            branch_id=payload.branch_id if "branch_id" in payload.model_fields_set else None,
+            branch_ids=payload.branch_ids if "branch_ids" in payload.model_fields_set else None,
+            primary_branch_id=payload.primary_branch_id if "primary_branch_id" in payload.model_fields_set else None,
+            error_status=status.HTTP_403_FORBIDDEN,
+            detail="Branch does not belong to the authenticated manager's company.",
+        )
+    else:
+        branch_ids = [link.branch_id for link in employee.branch_links]
+        primary_branch_id = employee.branch_id
 
-    if branch_id is not None:
-        branch = company_repository.get_branch_by_id(db, branch_id)
-        if branch is None or branch.company_id != company_id:
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="Branch does not belong to the authenticated manager's company.",
-            )
+    position_id = payload.position_id if "position_id" in payload.model_fields_set else employee.position_id
 
     if position_id is not None:
         position = position_repository.get_position_by_id(db, position_id)
@@ -728,7 +805,9 @@ def accept_employee_request(
         db,
         employee=employee,
         company_id=company_id,
-        branch_id=branch_id,
+        branch_id=primary_branch_id,
+        branch_ids=branch_ids,
+        primary_branch_id=primary_branch_id,
         position_id=position_id,
         is_active=True,
     )
