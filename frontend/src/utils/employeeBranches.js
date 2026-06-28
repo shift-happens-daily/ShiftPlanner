@@ -103,14 +103,15 @@ export function seedStoredBranchIds(employee) {
 export function getEmployeeBranchIds(employee) {
   if (!employee) return [];
 
-  const apiIds = branchIdsFromApiList(employee.branches);
-  if (apiIds.length > 0) return apiIds;
-
   const stored = getStoredBranchIds(employee.id);
-  if (stored.length > 0) return stored;
-
+  const apiIds = branchIdsFromApiList(employee.branches);
   const primaryId = normalizeBranchId(getPrimaryBranchId(employee));
-  return primaryId ? [primaryId] : [];
+
+  return Array.from(new Set([
+    ...stored,
+    ...apiIds,
+    ...(primaryId ? [primaryId] : []),
+  ]));
 }
 
 export function resolveBranchById(branchId, allBranches = [], employee = null) {
@@ -203,17 +204,16 @@ export function removeBranchFromAllStoredAssignments(branchId) {
 export function getUserBranchIds(user) {
   if (!user) return [];
 
-  const apiIds = branchIdsFromApiList(user.branches);
-  if (apiIds.length > 0) return apiIds;
-
   const employeeId = user.employeeId ?? user.employee_id;
-  if (employeeId) {
-    const stored = getStoredBranchIds(employeeId);
-    if (stored.length > 0) return stored;
-  }
-
+  const stored = employeeId ? getStoredBranchIds(employeeId) : [];
+  const apiIds = branchIdsFromApiList(user.branches);
   const primaryId = normalizeBranchId(user.branch?.id ?? user.branch_id);
-  return primaryId ? [primaryId] : [];
+
+  return Array.from(new Set([
+    ...stored,
+    ...apiIds,
+    ...(primaryId ? [primaryId] : []),
+  ]));
 }
 
 export function resolveUserBranches(user, allBranches = []) {
