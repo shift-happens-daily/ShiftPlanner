@@ -9,11 +9,12 @@ from app.schemas.employee import (
     AbsenceRead,
     AvailabilityRead,
     AvailabilityUpsert,
+    EmployeeBranchRead,
+    EmployeeBranchUpdate,
     EmployeeCalendarEmployeeRead,
     EmployeeCalendarPositionRead,
     EmployeeCalendarShiftRead,
     EmployeeCalendarSummaryRead,
-    EmployeeBranchUpdate,
     EmployeeCreate,
     EmployeePositionRead,
     EmployeePositionUpdate,
@@ -330,6 +331,10 @@ def get_calendar_summary(
 
 
 def _build_employee_read(employee) -> EmployeeRead:
+    branch = None
+    if employee.branch is not None:
+        branch = EmployeeBranchRead(id=employee.branch.id, name=employee.branch.name)
+
     position = None
     if employee.position is not None:
         position = EmployeePositionRead(id=employee.position.id, name=employee.position.name)
@@ -343,6 +348,7 @@ def _build_employee_read(employee) -> EmployeeRead:
         branch_id=employee.branch_id,
         position_id=employee.position_id,
         position_title=employee.position.name if employee.position is not None else "",
+        branch=branch,
         position=position,
         availability=_build_availability_read(employee),
     )

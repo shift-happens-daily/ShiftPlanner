@@ -5,7 +5,7 @@ from datetime import UTC, datetime
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.models import Branch, Company, Employee, ShiftRequirement
+from app.models import Branch, Company, CompanyManager, EmployeeBranch, ShiftRequirement
 
 
 def list_companies(db: Session) -> list[Company]:
@@ -22,10 +22,12 @@ def create_company(
         invite_code=_generate_unique_invite_code(db),
         invite_code_generated_at=datetime.now(UTC).replace(tzinfo=None),
         invite_code_expires_at=None,
-        manager_user_id=manager_user_id,
     )
 
     db.add(company)
+    db.flush()
+    if manager_user_id is not None:
+        db.add(CompanyManager(company_id=company.id, user_id=manager_user_id, manager_role="owner"))
     db.commit()
     db.refresh(company)
 
@@ -69,7 +71,6 @@ def get_default_company(db: Session) -> Company:
             invite_code=_generate_unique_invite_code(db),
             invite_code_generated_at=datetime.now(UTC).replace(tzinfo=None),
             invite_code_expires_at=None,
-            manager_user_id=None,
         )
         db.add(company)
         db.commit()
@@ -94,7 +95,8 @@ def get_company_by_manager_user_id(
 ) -> Company | None:
     return db.scalars(
         select(Company)
-        .where(Company.manager_user_id == manager_user_id)
+        .join(CompanyManager, CompanyManager.company_id == Company.id)
+        .where(CompanyManager.user_id == manager_user_id)
         .order_by(Company.id.desc())
     ).first()
 
@@ -152,8 +154,8 @@ def update_branch(
 
 def branch_is_in_use(db: Session, branch_id: int) -> bool:
     employee_id = db.scalar(
-        select(Employee.id)
-        .where(Employee.branch_id == branch_id)
+        select(EmployeeBranch.employee_id)
+        .where(EmployeeBranch.branch_id == branch_id)
         .limit(1)
     )
     if employee_id is not None:

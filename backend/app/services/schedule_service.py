@@ -750,6 +750,8 @@ def _build_schedule_read(
         start_date=schedule.start_date,
         end_date=schedule.end_date,
         status=status_value,
+        start_date=schedule.start_date,
+        end_date=schedule.end_date,
         shifts=[_build_shift_read(row) for row in rows],
         conflicts=[],
         unfilled_requirements=[UnfilledRequirementRead(**item) for item in unfilled],
@@ -824,7 +826,7 @@ def _validate_employee_assignment(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Employee is inactive.",
         )
-    if employee.position_id != position_id:
+    if not employee_repository.employee_has_position(db, employee.id, position_id):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Employee does not match the required position for this shift.",
