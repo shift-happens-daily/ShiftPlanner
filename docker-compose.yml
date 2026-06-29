@@ -1,0 +1,52 @@
+services:
+  postgres:
+    image: postgres:16
+    container_name: shiftplanner_postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: shiftplanner
+      POSTGRES_USER: shiftplanner_user
+      POSTGRES_PASSWORD: shiftplanner_password
+    ports:
+      - "5432:5432"
+    volumes:
+      - shiftplanner_postgres_data:/var/lib/postgresql/data
+      - ./backend/db/schema.sql:/docker-entrypoint-initdb.d/01_schema.sql:ro
+      - ./backend/db/seed.sql:/docker-entrypoint-initdb.d/02_seed.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U shiftplanner_user -d shiftplanner"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: shiftplanner_backend
+    restart: unless-stopped
+    environment:
+      DATABASE_URL: postgresql+psycopg://shiftplanner_user:shiftplanner_password@postgres:5432/shiftplanner
+      FRONTEND_ORIGINS: http://localhost:5173,http://10.0.2.2:8000
+      JWT_SECRET_KEY: change-me-in-production
+      JWT_ALGORITHM: HS256
+      ACCESS_TOKEN_EXPIRE_MINUTES: 60
+    ports:
+      - "8000:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "python -c \"import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=3).read()\"",
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 10s
+
+volumes:
+  shiftplanner_postgres_data:
