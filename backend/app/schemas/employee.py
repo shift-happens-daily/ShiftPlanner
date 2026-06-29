@@ -8,6 +8,7 @@ class AvailabilityBlock(BaseModel):
     weekday: int = Field(ge=0, le=6)
     start_time: time
     end_time: time
+    availability_status: Literal["available", "if_needed", "unavailable"] = "available"
 
     @model_validator(mode="after")
     def validate_time_range(self) -> "AvailabilityBlock":
