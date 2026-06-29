@@ -768,7 +768,7 @@ export default function CompanyTab({ language, userRole, user }) {
                   <strong style={styles.previewTitle}>{previewCompanyName}</strong>
 
                   {previewBranches.length > 0 && (
-                    <div style={styles.formStack}>
+                    <div style={styles.joinFieldCard}>
                       <label style={styles.label}>{t.branch}</label>
                       <select
                         value={selectedJoinBranchId}
@@ -786,7 +786,7 @@ export default function CompanyTab({ language, userRole, user }) {
                   )}
 
                   {previewPositions.length > 0 && (
-                    <div style={styles.formStack}>
+                    <div style={styles.joinFieldCard}>
                       <label style={styles.label}>{t.position}</label>
                       <select
                         value={selectedJoinPositionId}
@@ -1147,6 +1147,32 @@ const styles = {
     color: '#002642',
     fontSize: '15px',
     outline: 'none',
+  },
+
+  select: {
+    width: '100%',
+    height: '48px',
+    boxSizing: 'border-box',
+    borderRadius: '14px',
+    border: '2px solid #dee7e7',
+    background: '#ffffff',
+    padding: '0 15px',
+    color: '#002642',
+    fontSize: '15px',
+    fontWeight: '700',
+    outline: 'none',
+    cursor: 'pointer',
+  },
+
+  joinFieldCard: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '8px',
+    padding: '14px 16px',
+    borderRadius: '16px',
+    background: '#ffffff',
+    border: '1px solid rgba(226, 232, 240, 0.98)',
+    boxShadow: '0 8px 20px rgba(0, 38, 66, 0.04)',
   },
 
   primaryButton: {

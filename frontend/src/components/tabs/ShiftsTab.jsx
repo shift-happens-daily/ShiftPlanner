@@ -1324,25 +1324,26 @@ export default function ShiftsTab({ language, userRole, user }) {
                     />
                   </Field>
 
-                  <button
-                    type="button"
-                    onClick={applyFilters}
-                    style={{
-                      ...styles.secondaryButton,
-                      ...(isRefreshingList ? { opacity: 0.65, cursor: 'not-allowed' } : {}),
-                    }}
-                    disabled={isRefreshingList}
-                  >
-                    {isRefreshingList ? '...' : t.refresh}
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={resetRequirementFilters}
-                    style={styles.smallSecondaryButton}
-                  >
-                    {t.clearFilters}
-                  </button>
+                  <div style={styles.filterActions}>
+                    <button
+                      type="button"
+                      onClick={applyFilters}
+                      style={{
+                        ...styles.secondaryButton,
+                        ...(isRefreshingList ? { opacity: 0.65, cursor: 'not-allowed' } : {}),
+                      }}
+                      disabled={isRefreshingList}
+                    >
+                      {isRefreshingList ? '...' : t.refresh}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={resetRequirementFilters}
+                      style={styles.smallSecondaryButton}
+                    >
+                      {t.clearFilters}
+                    </button>
+                  </div>
                 </div>
 
                 {visibleRequirements.length === 0 ? (
@@ -2184,6 +2185,20 @@ const styles = {
     whiteSpace: 'nowrap',
   },
 
+  smallSecondaryButton: {
+    height: '40px',
+    padding: '0 16px',
+    background: 'rgba(215, 173, 207, 0.42)',
+    border: '1px solid rgba(215, 173, 207, 0.75)',
+    borderRadius: '13px',
+    color: '#002642',
+    fontSize: '13px',
+    fontWeight: '850',
+    cursor: 'pointer',
+    whiteSpace: 'nowrap',
+    boxShadow: '0 6px 14px rgba(0, 38, 66, 0.06)',
+  },
+
   weekNavButton: {
     width: '42px',
     height: '42px',
@@ -2275,8 +2290,10 @@ const styles = {
 
   filterActions: {
     display: 'flex',
-    gap: 8,
+    gap: 10,
     flexWrap: 'wrap',
+    alignItems: 'center',
+    marginTop: 4,
   },
 
   requirementsList: {
