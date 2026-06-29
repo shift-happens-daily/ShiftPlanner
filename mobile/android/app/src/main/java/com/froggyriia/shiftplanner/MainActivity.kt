@@ -25,7 +25,7 @@ class MainActivity : ComponentActivity() {
                     factory = AuthViewModelFactory(appContainer)
                 )
 
-                AppRoot(authViewModel = authViewModel)
+                AppRoot(authViewModel = authViewModel, appContainer = appContainer)
             }
         }
     }

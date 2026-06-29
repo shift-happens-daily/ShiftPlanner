@@ -55,6 +55,13 @@ class ApiAuthRepository(
         tokenStore.clearAccessToken()
     }
 
+    override suspend fun deleteAccount() {
+        try {
+            apiClient.api.deleteCurrentAccount()
+        } catch (_: Throwable) {}
+        tokenStore.clearAccessToken()
+    }
+
     override suspend fun getCurrentUser(): AppUser? {
         if (tokenStore.getAccessToken().isNullOrBlank()) {
             return null

@@ -120,6 +120,17 @@ class AuthViewModel(
         }
     }
 
+    fun updateUser(user: AppUser) {
+        _uiState.value = _uiState.value.copy(currentUser = user)
+    }
+
+    fun deleteAccount() {
+        viewModelScope.launch {
+            runCatching { repository.deleteAccount() }
+            _uiState.value = AuthUiState()
+        }
+    }
+
     private fun restoreSession() {
         viewModelScope.launch {
             _uiState.value = _uiState.value.copy(isLoading = true)

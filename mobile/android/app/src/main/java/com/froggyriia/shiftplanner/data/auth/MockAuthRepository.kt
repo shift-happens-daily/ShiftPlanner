@@ -98,4 +98,8 @@ class MockAuthRepository : AuthRepository {
             throw IllegalArgumentException("Password must be at least 6 characters")
         }
     }
+
+    override suspend fun deleteAccount() {
+        currentUser = null
+    }
 }
