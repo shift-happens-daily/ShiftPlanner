@@ -15,7 +15,7 @@ import {
 } from '../../services/employeeService';
 import { extractApiErrorMessage, localizeBackendMessage } from '../../services/error';
 import { mapEmployeeCalendarSummary } from '../../services/mappers';
-import { createPosition, deletePosition, listPositions } from '../../services/positionService';
+import { createPosition, deletePosition, listPositions, updatePosition } from '../../services/positionService';
 import { listBranches, acceptEmployeeRequest, linkUserToCompany } from '../../services/companyService';
 import {
   employeeHasBranch,
@@ -194,7 +194,8 @@ export default function EmployeesTab({ language, userRole, user }) {
       requiredEmployeePosition: 'Выберите позицию сотрудника.',
       duplicateEmployee: 'Пользователь или сотрудник с таким email уже существует. Используйте другой email или попросите сотрудника присоединиться по инвайт-коду.',
       positionCreated: 'Позиция создана.',
-      positionUpdated: 'Позиция обновлена локально.',
+      positionUpdated: 'Позиция обновлена.',
+      positionUpdateError: 'Не удалось обновить позицию.',
       positionDeleted: 'Позиция удалена.',
       employeeCreated: 'Сотрудник создан.',
       availabilitySaved: 'Доступность сохранена.',
@@ -284,7 +285,8 @@ export default function EmployeesTab({ language, userRole, user }) {
       requiredEmployeePosition: 'Select employee position.',
       duplicateEmployee: 'A user or employee with this email already exists. Use another email or ask the employee to join by invite code.',
       positionCreated: 'Position created.',
-      positionUpdated: 'Position updated locally.',
+      positionUpdated: 'Position updated.',
+      positionUpdateError: 'Failed to update position.',
       positionDeleted: 'Position deleted.',
       employeeCreated: 'Employee created.',
       availabilitySaved: 'Availability saved.',
@@ -762,23 +764,25 @@ export default function EmployeesTab({ language, userRole, user }) {
     setEditingPositionTitle('');
   };
 
-  const handleSaveEditedPosition = () => {
+  const handleSaveEditedPosition = async () => {
     if (!editingPositionTitle.trim()) {
       setErrorMessage(t.requiredPosition);
       return;
     }
 
-    setPositions((prev) =>
-      prev.map((position) =>
-        String(position.id) === String(editingPositionId)
-          ? { ...position, title: editingPositionTitle.trim() }
-          : position
-      )
-    );
+    clearMessages();
+    setIsSubmitting(true);
 
-    setEditingPositionId('');
-    setEditingPositionTitle('');
-    setSuccessMessage(t.positionUpdated);
+    try {
+      await updatePosition(editingPositionId, { title: editingPositionTitle.trim() });
+      await reloadPositions();
+      handleCancelEditPosition();
+      setSuccessMessage(t.positionUpdated);
+    } catch (error) {
+      setErrorMessage(getFriendlyError(error, t.positionUpdateError));
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   const handleDeletePosition = async (positionId) => {
@@ -1328,6 +1332,7 @@ export default function EmployeesTab({ language, userRole, user }) {
                                 type="button"
                                 onClick={handleSaveEditedPosition}
                                 style={{ ...styles.primaryButton, ...r.fullWidth }}
+                                disabled={isSubmitting}
                               >
                                 {t.save}
                               </button>
@@ -1335,6 +1340,7 @@ export default function EmployeesTab({ language, userRole, user }) {
                                 type="button"
                                 onClick={handleCancelEditPosition}
                                 style={{ ...styles.secondaryButton, ...r.fullWidth }}
+                                disabled={isSubmitting}
                               >
                                 {t.cancel}
                               </button>
