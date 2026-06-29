@@ -61,7 +61,8 @@ fun CompanyScreen(
     repository: CompanyRepository,
     onUserUpdated: (AppUser) -> Unit
 ) {
-    var navState by rememberSaveable { mutableStateOf<CompanyNavState>(
+    // remember (not rememberSaveable): CompanyNavState is not Parcelable/Serializable
+    var navState by remember { mutableStateOf<CompanyNavState>(
         if (user.hasCompany) CompanyNavState.Details else CompanyNavState.Landing
     ) }
 
