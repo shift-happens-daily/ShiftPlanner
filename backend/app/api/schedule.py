@@ -97,10 +97,10 @@ def get_requirements(
 )
 def create_bulk_requirements(
     payload: ScheduleRequirementBulkCreate,
-    _: UserRead = Depends(require_active_manager),
+    current_user: UserRead = Depends(require_active_manager),
     db: Session = Depends(get_db),
 ) -> ScheduleRequirementBulkRead:
-    return schedule_service.create_bulk_requirements(db, payload)
+    return schedule_service.create_bulk_requirements(db, payload, current_user)
 
 
 @router.post(
@@ -244,10 +244,10 @@ def delete_schedule(
 )
 def get_schedule(
     schedule_id: int,
-    _: UserRead = Depends(get_current_user),
+    current_user: UserRead = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> ScheduleRead:
-    return schedule_service.get_schedule(db, schedule_id)
+    return schedule_service.get_schedule(db, schedule_id, current_user)
 
 
 @router.post(
@@ -398,7 +398,7 @@ def publish_schedule(
 @router.delete("/requirements/{requirement_id}", status_code=204)
 def delete_requirement(
     requirement_id: int,
-    _current_user: UserRead = Depends(require_active_manager),
+    current_user: UserRead = Depends(require_active_manager),
     db: Session = Depends(get_db),
 ):
-    schedule_service.delete_requirement(db, requirement_id)
+    schedule_service.delete_requirement(db, requirement_id, current_user)

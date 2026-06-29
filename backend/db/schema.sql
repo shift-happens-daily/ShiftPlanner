@@ -85,6 +85,32 @@ CREATE TABLE employees (
     CHECK (employee_code ~ '^[A-Za-z0-9]{16}$')
 );
 
+CREATE TABLE employee_branches (
+    id SERIAL PRIMARY KEY,
+    employee_id INTEGER NOT NULL REFERENCES employees(id) ON DELETE CASCADE,
+    branch_id INTEGER NOT NULL REFERENCES branches(id) ON DELETE CASCADE,
+    is_primary BOOLEAN NOT NULL DEFAULT FALSE,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE (employee_id, branch_id)
+);
+
+CREATE UNIQUE INDEX employee_branches_one_primary_per_employee
+    ON employee_branches (employee_id)
+    WHERE is_primary;
+
+CREATE TABLE employee_positions (
+    id SERIAL PRIMARY KEY,
+    employee_id INTEGER NOT NULL REFERENCES employees(id) ON DELETE CASCADE,
+    position_id INTEGER NOT NULL REFERENCES positions(id) ON DELETE CASCADE,
+    is_primary BOOLEAN NOT NULL DEFAULT FALSE,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE (employee_id, position_id)
+);
+
+CREATE UNIQUE INDEX employee_positions_one_primary_per_employee
+    ON employee_positions (employee_id)
+    WHERE is_primary;
+
 CREATE TABLE employee_availability (
     id SERIAL PRIMARY KEY,
     employee_id INTEGER NOT NULL REFERENCES employees(id) ON DELETE CASCADE,

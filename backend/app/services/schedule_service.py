@@ -184,7 +184,17 @@ def update_requirement(
     return _build_requirement_read(db, updated_requirement)
 
 
-def create_bulk_requirements(db: Session, payload: ScheduleRequirementBulkCreate) -> ScheduleRequirementBulkRead:
+def create_bulk_requirements(
+    db: Session,
+    payload: ScheduleRequirementBulkCreate,
+    current_user: UserRead,
+) -> ScheduleRequirementBulkRead:
+    if current_user.company_id is None:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Manager is not linked to a company.",
+        )
+
     positions = {item.id: item for item in position_repository.list_positions(db)}
     items: list[dict] = []
     current_date = payload.start_date
@@ -197,9 +207,14 @@ def create_bulk_requirements(db: Session, payload: ScheduleRequirementBulkCreate
                         status_code=status.HTTP_400_BAD_REQUEST,
                         detail=f"Position {template.position_id} was not found.",
                     )
+                if position.company_id != current_user.company_id:
+                    raise HTTPException(
+                        status_code=status.HTTP_403_FORBIDDEN,
+                        detail="Position does not belong to the authenticated user's company.",
+                    )
                 items.append(
                     {
-                        "company_id": position.company_id,
+                        "company_id": current_user.company_id,
                         "position_id": template.position_id,
                         "shift_date": current_date,
                         "start_time": template.start_time,
@@ -295,10 +310,26 @@ def generate_schedule(
     return _build_schedule_read(db, schedule.id, schedule.status, unfilled)
 
 
-def get_schedule(db: Session, schedule_id: int) -> ScheduleRead:
+def get_schedule(db: Session, schedule_id: int, current_user: UserRead) -> ScheduleRead:
+    if current_user.company_id is None:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="User is not linked to a company.",
+        )
+
     schedule = schedule_repository.get_schedule(db, schedule_id)
     if schedule is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Schedule was not found.")
+    if schedule.company_id != current_user.company_id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Schedule does not belong to the authenticated user's company.",
+        )
+    if current_user.role == "employee" and schedule.status != "published":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Employees can only view published schedules.",
+        )
     return _build_schedule_read(db, schedule.id, schedule.status)
 
 
@@ -879,10 +910,21 @@ def _build_requirement_read(db: Session, requirement) -> ScheduleRequirementRead
         end_time=requirement.end_time,
     )
 
-def delete_requirement(db: Session, requirement_id: int) -> None:
+def delete_requirement(db: Session, requirement_id: int, current_user: UserRead) -> None:
+    if current_user.company_id is None:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Manager is not linked to a company.",
+        )
+
     requirement = schedule_repository.get_requirement_by_id(db, requirement_id)
 
     if not requirement:
         raise HTTPException(status_code=404, detail="Requirement not found")
+    if requirement.company_id != current_user.company_id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Requirement does not belong to the authenticated user's company.",
+        )
 
     schedule_repository.delete_requirement(db, requirement)

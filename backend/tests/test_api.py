@@ -219,10 +219,10 @@ def test_manager_can_delete_own_account_without_deleting_company(client: TestCli
 
     with psycopg.connect(PSYCOPG_DSN) as connection:
         with connection.cursor() as cursor:
-            cursor.execute("SELECT COUNT(*), MAX(manager_user_id) FROM companies WHERE id = 1")
-            company_count, manager_user_id = cursor.fetchone()
-            assert company_count == 1
-            assert manager_user_id is None
+            cursor.execute("SELECT COUNT(*) FROM companies WHERE id = 1")
+            assert cursor.fetchone()[0] == 1
+            cursor.execute("SELECT COUNT(*) FROM company_managers WHERE company_id = 1 AND user_id = 1")
+            assert cursor.fetchone()[0] == 0
 
 
 def test_employee_branch_endpoints_and_response_shapes(client: TestClient) -> None:
@@ -3250,3 +3250,143 @@ def test_requirements_xlsx_import(client: TestClient) -> None:
         files={"file": ("requirements.xlsx", b"not-an-xlsx", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")},
     )
     assert invalid.status_code == 400
+
+
+def test_logout_invalidates_access_token(client: TestClient) -> None:
+    headers = login_json(client, "manager@example.com", "manager123")
+
+    logged_out = client.post("/auth/logout", headers=headers)
+    assert logged_out.status_code == 200, logged_out.text
+    assert logged_out.json() == {"detail": "Logged out successfully."}
+
+    assert client.get("/auth/me", headers=headers).status_code == 401
+    assert client.post("/auth/logout", headers=headers).status_code == 401
+
+    fresh_headers = login_json(client, "manager@example.com", "manager123")
+    assert client.get("/auth/me", headers=fresh_headers).status_code == 200
+
+
+def test_validation_errors_are_normalized_by_field(client: TestClient) -> None:
+    response = client.post(
+        "/auth/register",
+        json={
+            "full_name": "",
+            "email": "ab",
+            "password": "short",
+            "role": "owner",
+        },
+    )
+
+    assert response.status_code == 422, response.text
+    errors = response.json()["detail"]
+    assert {"field", "message"} <= set(errors[0])
+    assert {"full_name", "email", "password", "role"} <= {error["field"] for error in errors}
+
+
+def test_schedule_detail_is_company_scoped_and_employees_only_read_published(client: TestClient) -> None:
+    seed_second_company_scope_data()
+    with psycopg.connect(PSYCOPG_DSN) as connection:
+        with connection.cursor() as cursor:
+            cursor.execute("SELECT id FROM companies WHERE invite_code = %s", (SECOND_COMPANY_INVITE_CODE,))
+            other_company_id = cursor.fetchone()[0]
+            cursor.execute(
+                """
+                INSERT INTO schedules (company_id, start_date, end_date, status)
+                VALUES (%s, '2026-08-01', '2026-08-07', 'draft')
+                RETURNING id
+                """,
+                (other_company_id,),
+            )
+            other_schedule_id = cursor.fetchone()[0]
+
+    manager_headers = login_json(client, "manager@example.com", "manager123")
+    second_manager_headers = login_json(client, "second-manager@example.com", "manager123")
+    employee_headers = login_json(client, "ivan@example.com", "employee123")
+
+    own_schedule = client.get("/schedule/1", headers=manager_headers)
+    assert own_schedule.status_code == 200, own_schedule.text
+    assert own_schedule.json()["status"] == "draft"
+
+    employee_draft = client.get("/schedule/1", headers=employee_headers)
+    assert employee_draft.status_code == 403
+
+    forbidden = client.get(f"/schedule/{other_schedule_id}", headers=manager_headers)
+    assert forbidden.status_code == 403
+
+    visible_to_owner = client.get(f"/schedule/{other_schedule_id}", headers=second_manager_headers)
+    assert visible_to_owner.status_code == 200, visible_to_owner.text
+    assert visible_to_owner.json()["id"] == other_schedule_id
+
+
+def test_bulk_requirements_cannot_target_another_company_position(client: TestClient) -> None:
+    seed_second_company_scope_data()
+    manager_headers = login_json(client, "manager@example.com", "manager123")
+
+    with psycopg.connect(PSYCOPG_DSN) as connection:
+        with connection.cursor() as cursor:
+            cursor.execute("SELECT id FROM companies WHERE invite_code = %s", (SECOND_COMPANY_INVITE_CODE,))
+            other_company_id = cursor.fetchone()[0]
+            cursor.execute("SELECT id FROM positions WHERE company_id = %s", (other_company_id,))
+            other_position_id = cursor.fetchone()[0]
+
+    response = client.post(
+        "/schedule/requirements/bulk",
+        headers=manager_headers,
+        json={
+            "start_date": "2026-07-06",
+            "end_date": "2026-07-06",
+            "weekdays": [0],
+            "requirements": [
+                {"position_id": other_position_id, "min_staff": 1, "start_time": "09:00:00", "end_time": "17:00:00"}
+            ],
+        },
+    )
+
+    assert response.status_code == 403
+    with psycopg.connect(PSYCOPG_DSN) as connection:
+        with connection.cursor() as cursor:
+            cursor.execute("SELECT COUNT(*) FROM shift_requirements WHERE company_id = %s", (other_company_id,))
+            assert cursor.fetchone()[0] == 0
+
+
+def test_requirement_delete_is_company_scoped(client: TestClient) -> None:
+    seed_second_company_scope_data()
+    with psycopg.connect(PSYCOPG_DSN) as connection:
+        with connection.cursor() as cursor:
+            cursor.execute("SELECT id FROM companies WHERE invite_code = %s", (SECOND_COMPANY_INVITE_CODE,))
+            other_company_id = cursor.fetchone()[0]
+            cursor.execute("SELECT id FROM branches WHERE company_id = %s", (other_company_id,))
+            other_branch_id = cursor.fetchone()[0]
+            cursor.execute("SELECT id FROM positions WHERE company_id = %s", (other_company_id,))
+            other_position_id = cursor.fetchone()[0]
+            cursor.execute(
+                """
+                INSERT INTO shift_requirements (
+                    company_id, branch_id, position_id, shift_date,
+                    start_time, end_time, required_employees
+                )
+                VALUES (%s, %s, %s, '2026-07-06', '09:00', '17:00', 1)
+                RETURNING id
+                """,
+                (other_company_id, other_branch_id, other_position_id),
+            )
+            other_requirement_id = cursor.fetchone()[0]
+
+    manager_headers = login_json(client, "manager@example.com", "manager123")
+    second_manager_headers = login_json(client, "second-manager@example.com", "manager123")
+
+    forbidden = client.delete(f"/schedule/requirements/{other_requirement_id}", headers=manager_headers)
+    assert forbidden.status_code == 403
+
+    with psycopg.connect(PSYCOPG_DSN) as connection:
+        with connection.cursor() as cursor:
+            cursor.execute("SELECT COUNT(*) FROM shift_requirements WHERE id = %s", (other_requirement_id,))
+            assert cursor.fetchone()[0] == 1
+
+    deleted = client.delete(f"/schedule/requirements/{other_requirement_id}", headers=second_manager_headers)
+    assert deleted.status_code == 204, deleted.text
+
+    with psycopg.connect(PSYCOPG_DSN) as connection:
+        with connection.cursor() as cursor:
+            cursor.execute("SELECT COUNT(*) FROM shift_requirements WHERE id = %s", (other_requirement_id,))
+            assert cursor.fetchone()[0] == 0
