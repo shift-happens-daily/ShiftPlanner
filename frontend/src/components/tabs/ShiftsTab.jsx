@@ -769,7 +769,7 @@ export default function ShiftsTab({ language, userRole, user }) {
     void loadManagerData(defaults, { silent: true });
   };
 
-  const toggleAvailability = (dateKey, slot) => {
+  const applyAvailabilityStatus = useCallback((dateKey, slot, status = brushMode) => {
     if (isPastDateKey(dateKey)) return;
 
     const nextStatus = normalizeAvailabilityStatus(status);
@@ -780,7 +780,7 @@ export default function ShiftsTab({ language, userRole, user }) {
         [slot]: nextStatus,
       },
     }));
-  }, [brushMode];
+  }, [brushMode]);
 
   const applyAvailabilityDragCell = useCallback((dayIndex, slotIndex) => {
     const dragState = dragSelectionRef.current;
