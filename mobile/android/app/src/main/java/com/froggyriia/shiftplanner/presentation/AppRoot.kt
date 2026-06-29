@@ -21,11 +21,17 @@ import androidx.compose.ui.unit.dp
 import com.froggyriia.shiftplanner.AppContainer
 import com.froggyriia.shiftplanner.domain.model.AppUser
 import com.froggyriia.shiftplanner.domain.model.UserRole
+import androidx.lifecycle.ViewModel
+import androidx.lifecycle.ViewModelProvider
+import androidx.lifecycle.viewmodel.compose.viewModel
+import androidx.compose.runtime.remember
 import com.froggyriia.shiftplanner.presentation.auth.AuthScreen
 import com.froggyriia.shiftplanner.presentation.auth.AuthViewModel
 import com.froggyriia.shiftplanner.presentation.manager.company.CompanyScreen
 import com.froggyriia.shiftplanner.presentation.manager.company.CompanyInviteSheet
 import com.froggyriia.shiftplanner.presentation.manager.company.CompanyInviteViewModel
+import com.froggyriia.shiftplanner.presentation.manager.employees.EmployeesScreen
+import com.froggyriia.shiftplanner.presentation.manager.employees.EmployeesViewModel
 
 @Composable
 fun AppRoot(
@@ -104,7 +110,23 @@ private fun ManagerShell(
                     repository = appContainer.companyRepository,
                     onUserUpdated = onUserUpdated
                 )
-                ManagerTab.EMPLOYEES -> PlaceholderScreen("Employees")
+                ManagerTab.EMPLOYEES -> {
+                    val employeesVm: EmployeesViewModel = viewModel(
+                        key = "employees_${user.company?.id}",
+                        factory = remember(user.company?.id) {
+                            object : ViewModelProvider.Factory {
+                                override fun <T : ViewModel> create(modelClass: Class<T>): T {
+                                    @Suppress("UNCHECKED_CAST")
+                                    return EmployeesViewModel(
+                                        appContainer.employeeManagementRepository(user.company?.id),
+                                        user.company?.id
+                                    ) as T
+                                }
+                            }
+                        }
+                    )
+                    EmployeesScreen(user = user, viewModel = employeesVm)
+                }
                 ManagerTab.REQUIREMENTS -> PlaceholderScreen("Requirements")
                 ManagerTab.SCHEDULE -> PlaceholderScreen("Schedule")
                 ManagerTab.PROFILE -> ProfileScreen(
