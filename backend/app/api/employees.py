@@ -7,6 +7,7 @@ from app.api.dependencies import (
     ensure_employee_user,
     ensure_manager_or_employee_self,
     get_current_user,
+    require_active_manager,
     require_role,
 )
 from app.api.responses import (
@@ -17,12 +18,14 @@ from app.api.responses import (
     VALIDATION_ERROR_RESPONSE,
 )
 from app.database import get_db
-from app.schemas.auth import UserRead
+from app.schemas.auth import CurrentUserResponse, UserRead
 from app.schemas.employee import (
     AbsenceCreate,
     AbsenceRead,
     AvailabilityRead,
     AvailabilityUpsert,
+    EmployeeBranchAssignmentRead,
+    EmployeeBranchesUpdate,
     EmployeeCalendarSummaryRead,
     EmployeeBranchUpdate,
     EmployeeCreate,
@@ -30,7 +33,7 @@ from app.schemas.employee import (
     EmployeeRead,
 )
 from app.schemas.schedule import ShiftRead
-from app.services import employee_service, schedule_service
+from app.services import auth_service, employee_service, schedule_service
 
 router = APIRouter()
 
@@ -55,10 +58,77 @@ def get_employees(
 )
 def create_employee(
     payload: EmployeeCreate,
-    _: UserRead = Depends(require_role("manager")),
+    current_user: UserRead = Depends(require_active_manager),
     db: Session = Depends(get_db),
 ) -> EmployeeRead:
-    return employee_service.create_employee(db, payload)
+    return employee_service.create_employee(db, payload, current_user)
+
+
+@router.get(
+    "/{employee_id}",
+    response_model=EmployeeRead,
+    responses={**UNAUTHORIZED_RESPONSE, **FORBIDDEN_RESPONSE, **NOT_FOUND_RESPONSE},
+)
+def get_employee(
+    employee_id: int,
+    current_user: UserRead = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> EmployeeRead:
+    return employee_service.get_employee(db, employee_id, current_user)
+
+
+@router.get(
+    "/{employee_id}/branches",
+    response_model=list[EmployeeBranchAssignmentRead],
+    responses={**UNAUTHORIZED_RESPONSE, **FORBIDDEN_RESPONSE, **NOT_FOUND_RESPONSE},
+)
+def get_employee_branches(
+    employee_id: int,
+    current_user: UserRead = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> list[EmployeeBranchAssignmentRead]:
+    return employee_service.list_employee_branches(db, employee_id, current_user)
+
+
+@router.put(
+    "/{employee_id}/branches",
+    response_model=list[EmployeeBranchAssignmentRead],
+    responses={**UNAUTHORIZED_RESPONSE, **FORBIDDEN_RESPONSE, **NOT_FOUND_RESPONSE, **VALIDATION_ERROR_RESPONSE},
+)
+def replace_employee_branches(
+    employee_id: int,
+    payload: EmployeeBranchesUpdate,
+    current_user: UserRead = Depends(require_active_manager),
+    db: Session = Depends(get_db),
+) -> list[EmployeeBranchAssignmentRead]:
+    return employee_service.replace_employee_branches(db, employee_id, payload, current_user)
+
+
+@router.delete(
+    "/me",
+    status_code=status.HTTP_204_NO_CONTENT,
+    responses={**BAD_REQUEST_RESPONSE, **UNAUTHORIZED_RESPONSE, **FORBIDDEN_RESPONSE},
+)
+def leave_company(
+    current_user: UserRead = Depends(require_role("employee")),
+    db: Session = Depends(get_db),
+) -> Response:
+    employee_service.leave_company(db, current_user)
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+@router.patch(
+    "/me/position",
+    response_model=CurrentUserResponse,
+    responses={**BAD_REQUEST_RESPONSE, **UNAUTHORIZED_RESPONSE, **FORBIDDEN_RESPONSE, **NOT_FOUND_RESPONSE, **VALIDATION_ERROR_RESPONSE},
+)
+def update_my_position(
+    payload: EmployeePositionUpdate,
+    current_user: UserRead = Depends(require_role("employee")),
+    db: Session = Depends(get_db),
+) -> CurrentUserResponse:
+    employee_service.update_own_employee_position(db, payload, current_user)
+    return auth_service.get_current_user_profile(db, current_user)
 
 
 @router.patch(
@@ -69,7 +139,7 @@ def create_employee(
 def update_employee_position(
     employee_id: int,
     payload: EmployeePositionUpdate,
-    current_user: UserRead = Depends(require_role("manager")),
+    current_user: UserRead = Depends(require_active_manager),
     db: Session = Depends(get_db),
 ) -> EmployeeRead:
     return employee_service.update_employee_position(db, employee_id, payload, current_user)
@@ -83,10 +153,24 @@ def update_employee_position(
 def update_employee_branch(
     employee_id: int,
     payload: EmployeeBranchUpdate,
-    current_user: UserRead = Depends(require_role("manager")),
+    current_user: UserRead = Depends(require_active_manager),
     db: Session = Depends(get_db),
 ) -> EmployeeRead:
     return employee_service.update_employee_branch(db, employee_id, payload, current_user)
+
+
+@router.delete(
+    "/{employee_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    responses={**UNAUTHORIZED_RESPONSE, **FORBIDDEN_RESPONSE, **NOT_FOUND_RESPONSE, **VALIDATION_ERROR_RESPONSE},
+)
+def delete_employee(
+    employee_id: int,
+    current_user: UserRead = Depends(require_role("manager")),
+    db: Session = Depends(get_db),
+) -> Response:
+    employee_service.delete_employee_from_company(db, employee_id, current_user)
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
 @router.get(

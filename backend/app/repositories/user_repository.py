@@ -73,6 +73,11 @@ def update_registration(
     return user
 
 
+def delete_user(db: Session, user: User) -> None:
+    db.delete(user)
+    db.commit()
+
+
 def get_employee_for_user(db: Session, user_id: int) -> Employee | None:
     return db.scalars(select(Employee).where(Employee.user_id == user_id)).first()
 

@@ -10,6 +10,10 @@ export async function createBranch(companyId, payload) {
   return data;
 }
 
+export async function deleteBranch(branchId) {
+  await api.delete(`/companies/branches/${branchId}`);
+}
+
 export async function listCompanies() {
   const response = await api.get('/companies/');
   return response.data;
@@ -32,6 +36,21 @@ export async function regenerateInviteCode() {
 
 export async function joinCompany(payload) {
   const response = await api.post('/companies/join', payload);
+  return response.data;
+}
+
+export async function listEmployeeRequests() {
+  const response = await api.get('/companies/me/employee-requests');
+  return response.data;
+}
+
+export async function acceptEmployeeRequest(requestId, payload = {}) {
+  const response = await api.post(`/companies/me/employee-requests/${requestId}/accept`, payload);
+  return response.data;
+}
+
+export async function declineEmployeeRequest(requestId) {
+  const response = await api.post(`/companies/me/employee-requests/${requestId}/decline`);
   return response.data;
 }
 

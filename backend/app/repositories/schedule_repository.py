@@ -3,7 +3,7 @@ from datetime import UTC, date, datetime
 from sqlalchemy import delete, func, select, text, update
 from sqlalchemy.orm import Session
 
-from app.models import Absence, Branch, Employee, Position, Schedule, Shift, ShiftAssignment, ShiftExchangeRequest, ShiftRequirement, User
+from app.models import Absence, Branch, Employee, EmployeeBranch, EmployeePosition, Position, Schedule, Shift, ShiftAssignment, ShiftExchangeRequest, ShiftRequirement, User
 
 
 def create_requirement(
@@ -108,9 +108,9 @@ def create_schedule(
         db.scalars(
             select(Schedule).where(
                 Schedule.company_id == company_id,
-                Schedule.start_date == start_date,
-                Schedule.end_date == end_date,
                 Schedule.status == "draft",
+                Schedule.start_date <= end_date,
+                Schedule.end_date >= start_date,
             )
         )
     )
@@ -144,6 +144,11 @@ def get_schedule(db: Session, schedule_id: int) -> Schedule | None:
     return db.get(Schedule, schedule_id)
 
 
+def delete_schedule(db: Session, schedule: Schedule) -> None:
+    db.delete(schedule)
+    db.commit()
+
+
 def get_latest_schedule(
     db: Session,
     *,
@@ -154,6 +159,24 @@ def get_latest_schedule(
     if schedule_status is not None:
         query = query.where(Schedule.status == schedule_status)
     return db.scalars(query.order_by(Schedule.id.desc())).first()
+
+
+def list_schedules(
+    db: Session,
+    *,
+    company_id: int,
+    start_date: date | None = None,
+    end_date: date | None = None,
+    schedule_status: str | None = None,
+) -> list[Schedule]:
+    query = select(Schedule).where(Schedule.company_id == company_id)
+    if start_date is not None:
+        query = query.where(Schedule.end_date >= start_date)
+    if end_date is not None:
+        query = query.where(Schedule.start_date <= end_date)
+    if schedule_status is not None:
+        query = query.where(Schedule.status == schedule_status)
+    return list(db.scalars(query.order_by(Schedule.start_date, Schedule.id)))
 
 
 def list_schedule_shift_rows(db: Session, schedule_id: int) -> list[dict]:
@@ -424,17 +447,19 @@ def list_candidate_employee_rows(
             Branch.name.label("branch_name"),
         )
         .join(User, User.id == Employee.user_id)
-        .join(Position, Position.id == Employee.position_id)
-        .outerjoin(Branch, Branch.id == Employee.branch_id)
+        .join(EmployeePosition, EmployeePosition.employee_id == Employee.id)
+        .join(Position, Position.id == EmployeePosition.position_id)
+        .outerjoin(EmployeeBranch, EmployeeBranch.employee_id == Employee.id)
+        .outerjoin(Branch, Branch.id == EmployeeBranch.branch_id)
         .where(
             Employee.company_id == company_id,
-            Employee.position_id == position_id,
+            EmployeePosition.position_id == position_id,
             Employee.is_active.is_(True),
         )
         .order_by(User.full_name, Employee.id)
     )
     if branch_id is not None:
-        query = query.where(Employee.branch_id == branch_id)
+        query = query.where(EmployeeBranch.branch_id == branch_id)
     return list(db.execute(query).mappings())
 
 
@@ -496,8 +521,12 @@ def list_published_shift_rows_for_employee_period(
             ShiftAssignment.status,
             Position.id.label("position_id"),
             Position.name.label("position_name"),
+            Employee.id.label("employee_id"),
+            User.full_name.label("employee_name"),
         )
         .join(ShiftAssignment, ShiftAssignment.shift_id == Shift.id)
+        .join(Employee, Employee.id == ShiftAssignment.employee_id)
+        .join(User, User.id == Employee.user_id)
         .join(Schedule, Schedule.id == Shift.schedule_id)
         .join(Position, Position.id == Shift.position_id)
         .where(

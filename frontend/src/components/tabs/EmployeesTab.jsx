@@ -9,14 +9,20 @@ import {
   getEmployeeCalendarSummary,
   listEmployeeAbsences,
   listEmployees,
+  replaceEmployeeBranches,
   updateEmployeeAvailability,
-  updateEmployeeBranch,
   updateEmployeePosition,
 } from '../../services/employeeService';
 import { extractApiErrorMessage, localizeBackendMessage } from '../../services/error';
 import { mapEmployeeCalendarSummary } from '../../services/mappers';
-import { createPosition, deletePosition, listPositions } from '../../services/positionService';
-import { listBranches, linkUserToCompany } from '../../services/companyService';
+import { createPosition, deletePosition, listPositions, updatePosition } from '../../services/positionService';
+import { listBranches, acceptEmployeeRequest, linkUserToCompany } from '../../services/companyService';
+import {
+  employeeHasBranch,
+  getEmployeeBranchIds,
+  getPrimaryBranchId,
+  resolveEmployeeBranches,
+} from '../../utils/employeeBranches';
 import { useTabResponsive } from '../../utils/tabResponsive';
 
 const WEEKDAYS = [
@@ -49,19 +55,6 @@ function getPositionLabel(position) {
 
 function getEmployeePosition(employee) {
   return employee?.position_title || employee?.position?.title || employee?.position?.name || '';
-}
-
-function getEmployeeBranch(employee, branches = []) {
-  if (!employee) return '';
-
-  const directName = employee?.branch?.name || employee?.branch_name || employee?.branch_title;
-  if (directName) return directName;
-
-  const branchId = employee?.branch?.id || employee?.branch_id || employee?.branchId;
-  if (!branchId) return '';
-
-  const matchedBranch = branches.find((branch) => String(branch.id) === String(branchId));
-  return matchedBranch?.name || matchedBranch?.title || '';
 }
 
 function isValidEmail(email) {
@@ -120,9 +113,11 @@ export default function EmployeesTab({ language, userRole, user }) {
   });
 
   const [selectedEmployeeDetails, setSelectedEmployeeDetails] = useState({
-    branch_id: '',
     position_id: '',
   });
+  const [selectedEmployeeBranchIds, setSelectedEmployeeBranchIds] = useState([]);
+  const [branchToAddId, setBranchToAddId] = useState('');
+  const [branchAssignmentsRevision, setBranchAssignmentsRevision] = useState(0);
 
   const [selectedBranchId, setSelectedBranchId] = useState('');
   const [selectedPositionId, setSelectedPositionId] = useState('');
@@ -199,7 +194,8 @@ export default function EmployeesTab({ language, userRole, user }) {
       requiredEmployeePosition: 'Выберите позицию сотрудника.',
       duplicateEmployee: 'Пользователь или сотрудник с таким email уже существует. Используйте другой email или попросите сотрудника присоединиться по инвайт-коду.',
       positionCreated: 'Позиция создана.',
-      positionUpdated: 'Позиция обновлена локально.',
+      positionUpdated: 'Позиция обновлена.',
+      positionUpdateError: 'Не удалось обновить позицию.',
       positionDeleted: 'Позиция удалена.',
       employeeCreated: 'Сотрудник создан.',
       availabilitySaved: 'Доступность сохранена.',
@@ -235,6 +231,11 @@ export default function EmployeesTab({ language, userRole, user }) {
       confirmRemoveEmployee: 'Удалить сотрудника из компании?',
       employeeRemoved: 'Сотрудник удалён из компании.',
       removeEmployeeError: 'Не удалось удалить сотрудника.',
+      branches: 'Филиалы',
+      addBranch: 'Добавить филиал',
+      removeBranch: 'Убрать',
+      noBranchesAssigned: 'Филиалы не назначены',
+      branchesPreviewHint: 'Несколько филиалов сохраняются локально до обновления API.',
     },
     en: {
       title: 'Employees',
@@ -284,7 +285,8 @@ export default function EmployeesTab({ language, userRole, user }) {
       requiredEmployeePosition: 'Select employee position.',
       duplicateEmployee: 'A user or employee with this email already exists. Use another email or ask the employee to join by invite code.',
       positionCreated: 'Position created.',
-      positionUpdated: 'Position updated locally.',
+      positionUpdated: 'Position updated.',
+      positionUpdateError: 'Failed to update position.',
       positionDeleted: 'Position deleted.',
       employeeCreated: 'Employee created.',
       availabilitySaved: 'Availability saved.',
@@ -320,6 +322,11 @@ export default function EmployeesTab({ language, userRole, user }) {
       confirmRemoveEmployee: 'Remove this employee from the company?',
       employeeRemoved: 'Employee removed from company.',
       removeEmployeeError: 'Failed to remove employee.',
+      branches: 'Branches',
+      addBranch: 'Add branch',
+      removeBranch: 'Remove',
+      noBranchesAssigned: 'No branches assigned',
+      branchesPreviewHint: 'Multiple branches are stored locally until the API supports them.',
     },
   };
 
@@ -355,15 +362,17 @@ export default function EmployeesTab({ language, userRole, user }) {
   );
 
   const selectedEmployeePosition = getEmployeePosition(selectedEmployee);
-  const selectedEmployeeBranch = getEmployeeBranch(selectedEmployee, branches);
+  const selectedEmployeeBranches = useMemo(() => {
+    if (!selectedEmployee) return [];
+    return resolveEmployeeBranches(selectedEmployee, branches);
+  }, [selectedEmployee, branches, branchAssignmentsRevision]);
 
   const filteredEmployees = useMemo(() => {
     const query = searchQuery.trim().toLowerCase();
 
     return employees.filter((employee) => {
       if (selectedBranchId) {
-        const employeeBranchId = employee.branch?.id || employee.branch_id || employee.branchId;
-        if (String(employeeBranchId) !== String(selectedBranchId)) return false;
+        if (!employeeHasBranch(employee, selectedBranchId)) return false;
       }
 
       if (selectedPositionId) {
@@ -381,7 +390,12 @@ export default function EmployeesTab({ language, userRole, user }) {
 
       return true;
     });
-  }, [employees, selectedBranchId, selectedPositionId, searchQuery]);
+  }, [employees, selectedBranchId, selectedPositionId, searchQuery, branchAssignmentsRevision]);
+
+  const availableBranchesToAdd = useMemo(() => {
+    const assigned = new Set(selectedEmployeeBranchIds.map(String));
+    return branches.filter((branch) => !assigned.has(String(branch.id)));
+  }, [branches, selectedEmployeeBranchIds]);
 
   useEffect(() => {
     if (filteredEmployees.some((employee) => String(employee.id) === String(selectedEmployeeId))) return;
@@ -390,15 +404,19 @@ export default function EmployeesTab({ language, userRole, user }) {
   }, [filteredEmployees, selectedEmployeeId]);
 
   useEffect(() => {
-    if (selectedEmployee) {
-      setSelectedEmployeeDetails({
-        branch_id: selectedEmployee.branch?.id || selectedEmployee.branch_id || '',
-        position_id: selectedEmployee.position_id || selectedEmployee.position?.id || selectedEmployee.position?.position_id || '',
-      });
-    } else {
-      setSelectedEmployeeDetails({ branch_id: '', position_id: '' });
+    if (!selectedEmployee) {
+      setSelectedEmployeeDetails({ position_id: '' });
+      setSelectedEmployeeBranchIds([]);
+      setBranchToAddId('');
+      return;
     }
-  }, [selectedEmployee]);
+
+    setSelectedEmployeeDetails({
+      position_id: selectedEmployee.position_id || selectedEmployee.position?.id || selectedEmployee.position?.position_id || '',
+    });
+    setSelectedEmployeeBranchIds(getEmployeeBranchIds(selectedEmployee));
+    setBranchToAddId('');
+  }, [selectedEmployee?.id]);
 
   useEffect(() => {
     if (userRole !== 'manager') return undefined;
@@ -551,8 +569,7 @@ export default function EmployeesTab({ language, userRole, user }) {
 
     const currentFiltered = employeesData.filter((employee) => {
       if (!selectedBranchId) return true;
-      const employeeBranchId = employee.branch?.id || employee.branch_id || employee.branchId;
-      return String(employeeBranchId) === String(selectedBranchId);
+      return employeeHasBranch(employee, selectedBranchId);
     });
 
     if (!currentFiltered.some((employee) => String(employee.id) === String(selectedEmployeeId))) {
@@ -563,6 +580,77 @@ export default function EmployeesTab({ language, userRole, user }) {
   const reloadPositions = async () => {
     const positionsData = normalizeArray(await listPositions());
     setPositions(positionsData);
+  };
+
+  const bumpBranchAssignments = () => {
+    setBranchAssignmentsRevision((value) => value + 1);
+  };
+
+  const persistEmployeeBranches = async (employee, branchIds, primaryBranchId = null) => {
+    const normalizedIds = Array.from(new Set(branchIds.map(String).filter(Boolean)));
+    if (normalizedIds.length === 0) {
+      throw new Error('branch_ids required');
+    }
+
+    const currentPrimary = normalizeBranchId(primaryBranchId ?? getPrimaryBranchId(employee));
+    const primaryId = currentPrimary && normalizedIds.includes(currentPrimary)
+      ? currentPrimary
+      : normalizedIds[0];
+
+    await replaceEmployeeBranches(employee.id, {
+      branch_ids: normalizedIds.map(Number),
+      primary_branch_id: Number(primaryId),
+    });
+  };
+
+  const normalizeBranchId = (value) => {
+    if (value == null || value === '') return null;
+    return String(value);
+  };
+
+  const handleAddEmployeeBranch = async () => {
+    if (!selectedEmployee || !branchToAddId) return;
+
+    clearMessages();
+    setIsSubmitting(true);
+
+    try {
+      const currentIds = getEmployeeBranchIds(selectedEmployee);
+      const nextIds = Array.from(new Set([...currentIds, String(branchToAddId)]));
+      await persistEmployeeBranches(selectedEmployee, nextIds);
+      await reloadEmployees(selectedEmployee.id);
+      bumpBranchAssignments();
+      setBranchToAddId('');
+      setSuccessMessage(t.assignmentsSaved);
+    } catch (error) {
+      setErrorMessage(getFriendlyError(error, t.assignmentsError));
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const handleRemoveEmployeeBranch = async (branchId) => {
+    if (!selectedEmployee) return;
+
+    clearMessages();
+    const nextIds = getEmployeeBranchIds(selectedEmployee).filter((id) => String(id) !== String(branchId));
+    if (nextIds.length === 0) {
+      setErrorMessage(t.assignmentsError);
+      return;
+    }
+
+    setIsSubmitting(true);
+
+    try {
+      await persistEmployeeBranches(selectedEmployee, nextIds);
+      await reloadEmployees(selectedEmployee.id);
+      bumpBranchAssignments();
+      setSuccessMessage(t.assignmentsSaved);
+    } catch (error) {
+      setErrorMessage(getFriendlyError(error, t.assignmentsError));
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   const handleAssignDetails = async () => {
@@ -578,13 +666,8 @@ export default function EmployeesTab({ language, userRole, user }) {
           : null,
       });
 
-      await updateEmployeeBranch(selectedEmployee.id, {
-        branch_id: selectedEmployeeDetails.branch_id
-          ? Number(selectedEmployeeDetails.branch_id)
-          : null,
-      });
-
       await reloadEmployees(selectedEmployee.id);
+      bumpBranchAssignments();
       setSuccessMessage(t.assignmentsSaved);
     } catch (error) {
       setErrorMessage(getFriendlyError(error, t.assignmentsError));
@@ -681,23 +764,25 @@ export default function EmployeesTab({ language, userRole, user }) {
     setEditingPositionTitle('');
   };
 
-  const handleSaveEditedPosition = () => {
+  const handleSaveEditedPosition = async () => {
     if (!editingPositionTitle.trim()) {
       setErrorMessage(t.requiredPosition);
       return;
     }
 
-    setPositions((prev) =>
-      prev.map((position) =>
-        String(position.id) === String(editingPositionId)
-          ? { ...position, title: editingPositionTitle.trim() }
-          : position
-      )
-    );
+    clearMessages();
+    setIsSubmitting(true);
 
-    setEditingPositionId('');
-    setEditingPositionTitle('');
-    setSuccessMessage(t.positionUpdated);
+    try {
+      await updatePosition(editingPositionId, { title: editingPositionTitle.trim() });
+      await reloadPositions();
+      handleCancelEditPosition();
+      setSuccessMessage(t.positionUpdated);
+    } catch (error) {
+      setErrorMessage(getFriendlyError(error, t.positionUpdateError));
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   const handleDeletePosition = async (positionId) => {
@@ -850,11 +935,15 @@ export default function EmployeesTab({ language, userRole, user }) {
     setIsSubmitting(true);
 
     try {
-      await linkUserToCompany({
+      const linked = await linkUserToCompany({
         user_public_id: publicId,
         branch_id: linkBranchId ? Number(linkBranchId) : null,
         position_id: linkPositionId ? Number(linkPositionId) : null,
       });
+
+      if (linked?.id) {
+        await acceptEmployeeRequest(linked.id);
+      }
 
       setLinkUserId('');
       setLinkBranchId('');
@@ -1108,7 +1197,20 @@ export default function EmployeesTab({ language, userRole, user }) {
                       <Info label={t.fullName} value={selectedEmployee?.full_name || selectedEmployee?.name || '—'} />
                       <Info label={t.email} value={selectedEmployee?.email || '—'} />
                       <Info label={t.position} value={selectedEmployeePosition || t.empty} />
-                      <Info label={t.branch} value={selectedEmployeeBranch || t.empty} />
+                      <div style={styles.cardBranchField}>
+                        <span style={styles.cardLabel}>{t.branches}</span>
+                        {selectedEmployeeBranches.length === 0 ? (
+                          <span style={styles.cardValue}>{t.noBranchesAssigned}</span>
+                        ) : (
+                          <div style={styles.branchPills}>
+                            {selectedEmployeeBranches.map((branch) => (
+                              <span key={branch.id} style={styles.branchPillReadonly}>
+                                {branch.name || branch.title || `#${branch.id}`}
+                              </span>
+                            ))}
+                          </div>
+                        )}
+                      </div>
                     </div>
 
                     <div style={styles.innerSection}>
@@ -1135,21 +1237,56 @@ export default function EmployeesTab({ language, userRole, user }) {
                       </div>
 
                       <div style={styles.stack}>
-                        <label style={styles.label}>{t.branch}</label>
-                        <select
-                          value={selectedEmployeeDetails.branch_id}
-                          onChange={(event) =>
-                            setSelectedEmployeeDetails((prev) => ({ ...prev, branch_id: event.target.value }))
-                          }
-                          style={styles.select}
-                        >
-                          <option value="">{t.selectBranch}</option>
-                          {branches.map((branch) => (
-                            <option key={branch.id} value={branch.id}>
-                              {branch.name}
-                            </option>
-                          ))}
-                        </select>
+                        <label style={styles.label}>{t.branches}</label>
+                        <p style={styles.panelHint}>{t.branchesPreviewHint}</p>
+
+                        {selectedEmployeeBranches.length === 0 ? (
+                          <div style={styles.emptyBox}>{t.noBranchesAssigned}</div>
+                        ) : (
+                          <div style={styles.branchPills}>
+                            {selectedEmployeeBranches.map((branch) => (
+                              <span key={branch.id} style={styles.branchPill}>
+                                <span>{branch.name || branch.title || `#${branch.id}`}</span>
+                                <button
+                                  type="button"
+                                  onClick={() => handleRemoveEmployeeBranch(branch.id)}
+                                  style={styles.branchPillRemove}
+                                  aria-label={`${t.removeBranch} ${branch.name || branch.id}`}
+                                  disabled={isSubmitting}
+                                >
+                                  ×
+                                </button>
+                              </span>
+                            ))}
+                          </div>
+                        )}
+
+                        <div style={{ ...styles.row, gridTemplateColumns: r.gridCols('1fr auto') }}>
+                          <select
+                            value={branchToAddId}
+                            onChange={(event) => setBranchToAddId(event.target.value)}
+                            style={styles.select}
+                            disabled={availableBranchesToAdd.length === 0 || isSubmitting}
+                          >
+                            <option value="">{t.selectBranch}</option>
+                            {availableBranchesToAdd.map((branch) => (
+                              <option key={branch.id} value={branch.id}>
+                                {branch.name}
+                              </option>
+                            ))}
+                          </select>
+                          <button
+                            type="button"
+                            onClick={handleAddEmployeeBranch}
+                            style={{
+                              ...styles.secondaryButton,
+                              ...((!branchToAddId || isSubmitting) ? { opacity: 0.65, cursor: 'default' } : {}),
+                            }}
+                            disabled={!branchToAddId || isSubmitting}
+                          >
+                            {t.addBranch}
+                          </button>
+                        </div>
                       </div>
 
                       <button type="button" onClick={handleAssignDetails} style={styles.primaryButton}>
@@ -1195,6 +1332,7 @@ export default function EmployeesTab({ language, userRole, user }) {
                                 type="button"
                                 onClick={handleSaveEditedPosition}
                                 style={{ ...styles.primaryButton, ...r.fullWidth }}
+                                disabled={isSubmitting}
                               >
                                 {t.save}
                               </button>
@@ -1202,6 +1340,7 @@ export default function EmployeesTab({ language, userRole, user }) {
                                 type="button"
                                 onClick={handleCancelEditPosition}
                                 style={{ ...styles.secondaryButton, ...r.fullWidth }}
+                                disabled={isSubmitting}
                               >
                                 {t.cancel}
                               </button>
@@ -1674,6 +1813,59 @@ const styles = {
     color: '#002642',
     fontWeight: '900',
     cursor: 'pointer',
+  },
+
+  branchPills: {
+    display: 'flex',
+    flexWrap: 'wrap',
+    gap: '8px',
+  },
+
+  branchPill: {
+    display: 'inline-flex',
+    alignItems: 'center',
+    gap: '8px',
+    minHeight: '34px',
+    padding: '0 8px 0 13px',
+    border: '1px solid #dee7e7',
+    borderRadius: '999px',
+    background: '#ffffff',
+    color: '#002642',
+    fontWeight: '700',
+    fontSize: '13px',
+  },
+
+  branchPillReadonly: {
+    display: 'inline-flex',
+    alignItems: 'center',
+    minHeight: '34px',
+    padding: '0 13px',
+    border: '1px solid #dee7e7',
+    borderRadius: '999px',
+    background: '#ffffff',
+    color: '#002642',
+    fontWeight: '700',
+    fontSize: '13px',
+  },
+
+  cardBranchField: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '8px',
+    minWidth: 0,
+  },
+
+  branchPillRemove: {
+    width: '24px',
+    height: '24px',
+    border: 'none',
+    borderRadius: '999px',
+    background: 'rgba(215, 173, 207, 0.35)',
+    color: '#8d1d1d',
+    fontSize: '16px',
+    lineHeight: 1,
+    cursor: 'pointer',
+    fontWeight: '900',
   },
 
   metricGrid: {

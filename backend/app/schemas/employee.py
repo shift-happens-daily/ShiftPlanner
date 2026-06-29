@@ -44,12 +44,26 @@ class EmployeePositionRead(BaseModel):
     name: str
 
 
+class EmployeeBranchRead(BaseModel):
+    id: int
+    name: str
+
+
+class EmployeeBranchAssignmentRead(EmployeeBranchRead):
+    is_primary: bool
+
+
 class EmployeePositionUpdate(BaseModel):
     position_id: int | None = Field(ge=1)
 
 
 class EmployeeBranchUpdate(BaseModel):
     branch_id: int | None = Field(ge=1)
+
+
+class EmployeeBranchesUpdate(BaseModel):
+    branch_ids: list[int] = Field(min_length=1)
+    primary_branch_id: int = Field(ge=1)
 
 
 class EmployeeRead(BaseModel):
@@ -61,6 +75,8 @@ class EmployeeRead(BaseModel):
     branch_id: int | None
     position_id: int | None
     position_title: str
+    branch: EmployeeBranchRead | None = None
+    branches: list[EmployeeBranchAssignmentRead] = Field(default_factory=list)
     position: EmployeePositionRead | None = None
     availability: AvailabilityRead | None = None
 

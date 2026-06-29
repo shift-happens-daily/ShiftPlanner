@@ -6,10 +6,17 @@ from openpyxl import load_workbook
 from sqlalchemy.orm import Session
 
 from app.repositories import position_repository, schedule_repository
+from app.schemas.auth import UserRead
 from app.schemas.imports import ImportRowErrorRead, RequirementsImportResultRead
 
 
-def import_requirements_xlsx(db: Session, content: bytes) -> RequirementsImportResultRead:
+def import_requirements_xlsx(db: Session, content: bytes, current_user: UserRead) -> RequirementsImportResultRead:
+    if current_user.company_id is None:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Manager is not linked to a company.",
+        )
+
     try:
         workbook = load_workbook(filename=BytesIO(content), data_only=True)
     except Exception as exc:  # noqa: BLE001
@@ -47,10 +54,12 @@ def import_requirements_xlsx(db: Session, content: bytes) -> RequirementsImportR
             position = position_repository.get_position_by_id(db, position_id)
             if position is None:
                 raise ValueError(f"Position {position_id} was not found.")
+            if position.company_id != current_user.company_id:
+                raise ValueError(f"Position {position_id} does not belong to your company.")
 
             schedule_repository.create_requirement(
                 db,
-                company_id=position.company_id,
+                company_id=current_user.company_id,
                 position_id=position_id,
                 shift_date=shift_date,
                 start_time=start_time,

@@ -1,7 +1,7 @@
 // frontend/src/components/tabs/ShiftsTab.jsx
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
-  createEmployeeAbsence,
+  createMyAbsence,
   deleteEmployeeAbsence,
   getEmployeeAvailability,
   getMyAbsences,
@@ -255,7 +255,41 @@ function currentMonthFilters() {
   return {
     start_date: new Date(today.getFullYear(), today.getMonth(), 1).toISOString().slice(0, 10),
     end_date: new Date(today.getFullYear(), today.getMonth() + 1, 0).toISOString().slice(0, 10),
+    position_id: '',
+    date: '',
   };
+}
+
+function buildRequirementListParams(filters = {}) {
+  const params = {};
+
+  if (filters.date) {
+    params.start_date = filters.date;
+    params.end_date = filters.date;
+  } else {
+    if (filters.start_date) params.start_date = filters.start_date;
+    if (filters.end_date) params.end_date = filters.end_date;
+  }
+
+  if (filters.position_id) {
+    params.position_id = Number(filters.position_id);
+  }
+
+  return params;
+}
+
+function matchesRequirementFilters(requirement, filters = {}) {
+  if (filters.date) {
+    if (requirement.date !== filters.date) return false;
+  } else if (!isDateWithinRange(requirement.date, filters.start_date, filters.end_date)) {
+    return false;
+  }
+
+  if (filters.position_id && String(requirement.position_id) !== String(filters.position_id)) {
+    return false;
+  }
+
+  return true;
 }
 
 function normalizeArray(value) {
@@ -276,7 +310,7 @@ function getPositionTitle(position) {
 }
 
 function getRequirementId(requirement) {
-  return requirement?.id || requirement?.requirement_id || requirement?.local_id;
+  return requirement?.id || requirement?.requirement_id;
 }
 
 function normalizeRequirement(requirement, positions = []) {
@@ -288,36 +322,18 @@ function normalizeRequirement(requirement, positions = []) {
   return {
     ...requirement,
     id: getRequirementId(requirement),
-    local_id: requirement.local_id,
     position_id: positionId,
     position_title: requirement.position_title || requirement.positionTitle || requirement.position?.title || requirement.position?.name || getPositionTitle(position) || 'Position',
     date: requirement.date,
     start_time: requirement.start_time || requirement.startTime,
     end_time: requirement.end_time || requirement.endTime,
     min_staff: requirement.min_staff || requirement.minStaff || 1,
-    isLocalOnly: Boolean(requirement.isLocalOnly),
   };
 }
 
 function isDateWithinRange(date, startDate, endDate) {
   if (!date || !startDate || !endDate) return true;
   return date >= startDate && date <= endDate;
-}
-
-function mergeRequirements(serverRequirements, localRequirements) {
-  const merged = [];
-  const seen = new Set();
-
-  [...serverRequirements, ...localRequirements].forEach((requirement) => {
-    if (!requirement) return;
-    const id = getRequirementId(requirement);
-    const key = id ? `id:${id}` : `${requirement.position_id}-${requirement.date}-${requirement.start_time}-${requirement.end_time}-${requirement.min_staff}`;
-    if (seen.has(key)) return;
-    seen.add(key);
-    merged.push(requirement);
-  });
-
-  return merged;
 }
 
 function normalizeError(error, fallback, language) {
@@ -337,13 +353,6 @@ export default function ShiftsTab({ language, userRole, user }) {
 
   const [filterForm, setFilterForm] = useState(currentMonthFilters);
   const [appliedFilters, setAppliedFilters] = useState(currentMonthFilters);
-
-  const localRequirementsStorageKey = 'shiftplanner_local_requirements';
-  const [localRequirements, setLocalRequirements] = useState(() => {
-    const raw = localStorage.getItem(localRequirementsStorageKey);
-    if (!raw) return [];
-    try { return JSON.parse(raw); } catch { return []; }
-  });
 
   const [availabilityForm, setAvailabilityForm] = useState({
     weekly_availability: [],
@@ -429,7 +438,10 @@ export default function ShiftsTab({ language, userRole, user }) {
       stepOne: '1. Выберите период',
       stepTwo: '2. Создайте требование',
       stepThree: '3. Проверьте список',
-      filters: 'Период списка',
+      filters: 'Фильтры',
+      allPositions: 'Все профессии',
+      filterDate: 'Конкретная дата',
+      clearFilters: 'Сбросить',
       single: 'Одно требование',
       bulk: 'Массовое создание',
       import: 'Импорт XLSX',
@@ -484,6 +496,7 @@ export default function ShiftsTab({ language, userRole, user }) {
       bulkHint: 'Создаст одинаковые требования на выбранные дни недели внутри периода.',
       singleHint: 'Например: Barista, 15.06, 09:00–18:00, нужно 2 человека.',
       localOnly: 'локально',
+      deleteNotSupported: 'Удаление через API пока недоступно.',
       available: 'Доступен',
       if_needed: 'Может быть',
       unavailable: 'Недоступен',
@@ -497,7 +510,10 @@ export default function ShiftsTab({ language, userRole, user }) {
       stepOne: '1. Choose period',
       stepTwo: '2. Create requirement',
       stepThree: '3. Check list',
-      filters: 'List period',
+      filters: 'Filters',
+      allPositions: 'All positions',
+      filterDate: 'Specific date',
+      clearFilters: 'Reset',
       single: 'Single requirement',
       bulk: 'Bulk creation',
       import: 'XLSX import',
@@ -552,6 +568,7 @@ export default function ShiftsTab({ language, userRole, user }) {
       bulkHint: 'Creates the same requirements for selected weekdays within the period.',
       singleHint: 'Example: Barista, Jun 15, 09:00–18:00, need 2 people.',
       localOnly: 'local',
+      deleteNotSupported: 'Delete is not available via API yet.',
       available: 'Available',
       if_needed: 'If needed',
       unavailable: 'Unavailable',
@@ -609,17 +626,12 @@ export default function ShiftsTab({ language, userRole, user }) {
     })
     : '—';
 
-  const visibleRequirements = useMemo(() => {
-    const server = requirements.map((requirement) => normalizeRequirement(requirement, positions)).filter(Boolean);
-    const local = localRequirements.map((requirement) => normalizeRequirement(requirement, positions)).filter(Boolean);
-    return mergeRequirements(server, local).filter((requirement) =>
-      isDateWithinRange(requirement.date, appliedFilters.start_date, appliedFilters.end_date)
-    );
-  }, [appliedFilters, localRequirements, positions, requirements]);
-
-  useEffect(() => {
-    localStorage.setItem(localRequirementsStorageKey, JSON.stringify(localRequirements));
-  }, [localRequirements]);
+  const visibleRequirements = useMemo(() => (
+    requirements
+      .map((requirement) => normalizeRequirement(requirement, positions))
+      .filter(Boolean)
+      .filter((requirement) => matchesRequirementFilters(requirement, appliedFilters))
+  ), [appliedFilters, positions, requirements]);
 
   useEffect(() => {
     if (isManager) return;
@@ -649,7 +661,7 @@ export default function ShiftsTab({ language, userRole, user }) {
 
     const [positionsData, requirementsData] = await Promise.all([
       listPositions(),
-      listRequirements(filtersToUse),
+      listRequirements(buildRequirementListParams(filtersToUse)),
     ]);
 
     const safePositions = normalizeArray(positionsData);
@@ -750,7 +762,14 @@ export default function ShiftsTab({ language, userRole, user }) {
     }
   };
 
-  const applyAvailabilityStatus = useCallback((dateKey, slot, status = brushMode) => {
+  const resetRequirementFilters = () => {
+    const defaults = currentMonthFilters();
+    setFilterForm(defaults);
+    setAppliedFilters(defaults);
+    void loadManagerData(defaults, { silent: true });
+  };
+
+  const toggleAvailability = (dateKey, slot) => {
     if (isPastDateKey(dateKey)) return;
 
     const nextStatus = normalizeAvailabilityStatus(status);
@@ -866,24 +885,11 @@ export default function ShiftsTab({ language, userRole, user }) {
     setIsSubmitting(true);
 
     try {
-      const createdRequirement = await createRequirement({
+      await createRequirement({
         ...singleRequirement,
         position_id: Number(singleRequirement.position_id),
         min_staff: Number(singleRequirement.min_staff),
       });
-
-      const fallbackRequirement = normalizeRequirement(
-        createdRequirement || {
-          ...singleRequirement,
-          local_id: `local-${Date.now()}`,
-          position_id: Number(singleRequirement.position_id),
-          min_staff: Number(singleRequirement.min_staff),
-          isLocalOnly: !createdRequirement,
-        },
-        positions
-      );
-
-      setLocalRequirements((prev) => mergeRequirements([fallbackRequirement], prev));
 
       const nextFilters = isDateWithinRange(
         singleRequirement.date,
@@ -912,30 +918,12 @@ export default function ShiftsTab({ language, userRole, user }) {
   const removeRequirement = async (requirementId) => {
     if (!requirementId) return;
 
-    const target = visibleRequirements.find(
-      (requirement) => String(getRequirementId(requirement)) === String(requirementId)
-    );
-
     clearMessages();
-
-    if (target?.isLocalOnly || String(requirementId).startsWith('local-')) {
-      setLocalRequirements((prev) =>
-        prev.filter((requirement) => String(getRequirementId(requirement)) !== String(requirementId))
-      );
-      setSuccessMessage(t.requirementDeleted);
-      return;
-    }
-
     setIsSubmitting(true);
 
     try {
       await deleteRequirement(requirementId);
-      setRequirements((prev) =>
-        prev.filter((requirement) => String(getRequirementId(requirement)) !== String(requirementId))
-      );
-      setLocalRequirements((prev) =>
-        prev.filter((requirement) => String(getRequirementId(requirement)) !== String(requirementId))
-      );
+      await loadManagerData(appliedFilters, { silent: true });
       setSuccessMessage(t.requirementDeleted);
     } catch (error) {
       const message = String(error?.message || '');
@@ -959,7 +947,7 @@ export default function ShiftsTab({ language, userRole, user }) {
     setIsSubmitting(true);
 
     try {
-      const createdRequirements = await createBulkRequirements({
+      await createBulkRequirements({
         ...bulkRequirement,
         requirements: bulkRequirement.requirements.map((item) => ({
           ...item,
@@ -967,14 +955,6 @@ export default function ShiftsTab({ language, userRole, user }) {
           min_staff: Number(item.min_staff),
         })),
       });
-
-      const returnedRequirements = normalizeArray(createdRequirements)
-        .map((requirement) => normalizeRequirement(requirement, positions))
-        .filter(Boolean);
-
-      if (returnedRequirements.length > 0) {
-        setLocalRequirements((prev) => mergeRequirements(returnedRequirements, prev));
-      }
 
       const nextFilters = {
         start_date: bulkRequirement.start_date,
@@ -1039,8 +1019,8 @@ export default function ShiftsTab({ language, userRole, user }) {
       }
 
       await updateEmployeeAvailability(employeeId, {
-        desired_days_off: availabilityForm.desired_days_off,
-        weekly_availability: convertDatesToWeeklyIntervals(availabilityByDate, weekDates),
+        desired_days_off: [],
+        weekly_availability: convertDatesToWeeklyIntervals(availabilityByDate),
       });
       await loadEmployeeData();
       setSuccessMessage(t.availabilitySaved);
@@ -1066,7 +1046,7 @@ export default function ShiftsTab({ language, userRole, user }) {
     setIsSubmitting(true);
 
     try {
-      await createEmployeeAbsence(employeeId, absenceForm);
+      await createMyAbsence(absenceForm);
       setAbsenceForm({ absence_type: 'vacation', start_date: '', end_date: '', comment: '' });
       await loadEmployeeData();
       setSuccessMessage(t.absenceAdded);
@@ -1151,12 +1131,35 @@ export default function ShiftsTab({ language, userRole, user }) {
                 <h3 style={styles.panelTitle}>{t.filters}</h3>
 
                 <div style={styles.stack}>
+                  <label style={styles.label}>{t.position}</label>
+                  <select
+                    value={filterForm.position_id}
+                    onChange={(event) => setFilterForm((prev) => ({ ...prev, position_id: event.target.value }))}
+                    style={styles.input}
+                  >
+                    <option value="">{t.allPositions}</option>
+                    {positions.map((position) => (
+                      <option key={position.id} value={position.id}>
+                        {getPositionTitle(position)}
+                      </option>
+                    ))}
+                  </select>
+
+                  <label style={styles.label}>{t.filterDate}</label>
+                  <input
+                    type="date"
+                    value={filterForm.date}
+                    onChange={(event) => setFilterForm((prev) => ({ ...prev, date: event.target.value }))}
+                    style={styles.input}
+                  />
+
                   <label style={styles.label}>{t.startDate}</label>
                   <input
                     type="date"
                     value={filterForm.start_date}
                     onChange={(event) => setFilterForm((prev) => ({ ...prev, start_date: event.target.value }))}
                     style={styles.input}
+                    disabled={Boolean(filterForm.date)}
                   />
 
                   <label style={styles.label}>{t.endDate}</label>
@@ -1165,11 +1168,17 @@ export default function ShiftsTab({ language, userRole, user }) {
                     value={filterForm.end_date}
                     onChange={(event) => setFilterForm((prev) => ({ ...prev, end_date: event.target.value }))}
                     style={styles.input}
+                    disabled={Boolean(filterForm.date)}
                   />
 
-                  <button type="button" onClick={applyFilters} style={styles.secondaryButton}>
-                    {isRefreshingList ? '...' : t.refresh}
-                  </button>
+                  <div style={styles.filterActions}>
+                    <button type="button" onClick={applyFilters} style={styles.secondaryButton}>
+                      {isRefreshingList ? '...' : t.refresh}
+                    </button>
+                    <button type="button" onClick={resetRequirementFilters} style={styles.smallSecondaryButton}>
+                      {t.clearFilters}
+                    </button>
+                  </div>
                 </div>
               </section>
 
@@ -1425,6 +1434,77 @@ export default function ShiftsTab({ language, userRole, user }) {
                   <span style={styles.countPill}>{visibleRequirements.length}</span>
                 </div>
 
+                <div style={{
+                  ...styles.requirementFilters,
+                  gridTemplateColumns: r.gridCols('repeat(4, minmax(0, 1fr)) auto auto'),
+                }}
+                >
+                  <Field label={t.position}>
+                    <select
+                      value={filterForm.position_id}
+                      onChange={(event) => setFilterForm((prev) => ({ ...prev, position_id: event.target.value }))}
+                      style={styles.input}
+                    >
+                      <option value="">{t.allPositions}</option>
+                      {positions.map((position) => (
+                        <option key={position.id} value={position.id}>
+                          {getPositionTitle(position)}
+                        </option>
+                      ))}
+                    </select>
+                  </Field>
+
+                  <Field label={t.filterDate}>
+                    <input
+                      type="date"
+                      value={filterForm.date}
+                      onChange={(event) => setFilterForm((prev) => ({ ...prev, date: event.target.value }))}
+                      style={styles.input}
+                    />
+                  </Field>
+
+                  <Field label={t.startDate}>
+                    <input
+                      type="date"
+                      value={filterForm.start_date}
+                      onChange={(event) => setFilterForm((prev) => ({ ...prev, start_date: event.target.value }))}
+                      style={styles.input}
+                      disabled={Boolean(filterForm.date)}
+                    />
+                  </Field>
+
+                  <Field label={t.endDate}>
+                    <input
+                      type="date"
+                      value={filterForm.end_date}
+                      onChange={(event) => setFilterForm((prev) => ({ ...prev, end_date: event.target.value }))}
+                      style={styles.input}
+                      disabled={Boolean(filterForm.date)}
+                    />
+                  </Field>
+
+                  <div style={styles.filterActions}>
+                    <button
+                      type="button"
+                      onClick={applyFilters}
+                      style={{
+                        ...styles.secondaryButton,
+                        ...(isRefreshingList ? { opacity: 0.65, cursor: 'not-allowed' } : {}),
+                      }}
+                      disabled={isRefreshingList}
+                    >
+                      {isRefreshingList ? '...' : t.refresh}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={resetRequirementFilters}
+                      style={styles.smallSecondaryButton}
+                    >
+                      {t.clearFilters}
+                    </button>
+                  </div>
+                </div>
+
                 {visibleRequirements.length === 0 ? (
                   <div style={styles.emptyBox}>{t.noRequirements}</div>
                 ) : (
@@ -1439,7 +1519,6 @@ export default function ShiftsTab({ language, userRole, user }) {
                           <strong style={styles.itemTitle}>{requirement.position_title}</strong>
                           <div style={styles.itemMeta}>
                             {requirement.date}
-                            {requirement.isLocalOnly ? ` · ${t.localOnly}` : ''}
                           </div>
                         </div>
 
@@ -1603,28 +1682,6 @@ export default function ShiftsTab({ language, userRole, user }) {
                     </div>
                   )}
 
-                  <div style={styles.mobileSectionLabel}>{t.desiredDaysOff}</div>
-                  <div style={styles.mobileDayOffGrid}>
-                    {WEEKDAYS.map((day) => {
-                      const checked = availabilityForm.desired_days_off.includes(day.value);
-                      return (
-                        <button
-                          key={day.value}
-                          type="button"
-                          onClick={() => setAvailabilityForm((prev) => ({
-                            ...prev,
-                            desired_days_off: checked
-                              ? prev.desired_days_off.filter((value) => value !== day.value)
-                              : [...prev.desired_days_off, day.value].sort((a, b) => a - b),
-                          }))}
-                          style={checked ? styles.mobileDayOffActive : styles.mobileDayOffButton}
-                        >
-                          {day[language] || day.ru}
-                        </button>
-                      );
-                    })}
-                  </div>
-
                   <button
                     type="button"
                     onClick={submitAvailability}
@@ -1777,30 +1834,6 @@ export default function ShiftsTab({ language, userRole, user }) {
                       })}
                     </div>
                   ))}
-                </div>
-              </div>
-
-              <div style={styles.desiredDaysOffSection}>
-                <span style={styles.desiredDaysOffLabel}>{t.desiredDaysOff}</span>
-                <div style={styles.dayPills}>
-                  {WEEKDAYS.map((day) => {
-                    const checked = availabilityForm.desired_days_off.includes(day.value);
-                    return (
-                      <button
-                        key={day.value}
-                        type="button"
-                        onClick={() => setAvailabilityForm((prev) => ({
-                          ...prev,
-                          desired_days_off: checked
-                            ? prev.desired_days_off.filter((value) => value !== day.value)
-                            : [...prev.desired_days_off, day.value].sort((a, b) => a - b),
-                        }))}
-                        style={checked ? styles.dayPillActive : styles.dayPill}
-                      >
-                        {day[language] || day.ru}
-                      </button>
-                    );
-                  })}
                 </div>
               </div>
 
@@ -2312,6 +2345,20 @@ const styles = {
     whiteSpace: 'nowrap',
   },
 
+  smallSecondaryButton: {
+    height: '40px',
+    padding: '0 16px',
+    background: 'rgba(215, 173, 207, 0.42)',
+    border: '1px solid rgba(215, 173, 207, 0.75)',
+    borderRadius: '13px',
+    color: '#002642',
+    fontSize: '13px',
+    fontWeight: '850',
+    cursor: 'pointer',
+    whiteSpace: 'nowrap',
+    boxShadow: '0 6px 14px rgba(0, 38, 66, 0.06)',
+  },
+
   weekNavButton: {
     width: '42px',
     height: '42px',
@@ -2390,6 +2437,23 @@ const styles = {
     background: '#ffffff',
     border: '1px solid rgba(79, 100, 111, 0.12)',
     overflow: 'hidden',
+  },
+
+  requirementFilters: {
+    display: 'grid',
+    gap: 12,
+    alignItems: 'end',
+    marginBottom: 16,
+    paddingBottom: 16,
+    borderBottom: '1px solid rgba(79, 100, 111, 0.12)',
+  },
+
+  filterActions: {
+    display: 'flex',
+    gap: 10,
+    flexWrap: 'wrap',
+    alignItems: 'center',
+    marginTop: 4,
   },
 
   requirementsList: {

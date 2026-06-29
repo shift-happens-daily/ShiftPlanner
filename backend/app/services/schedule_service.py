@@ -323,6 +323,31 @@ def get_latest_schedule(
     return _build_schedule_read(db, schedule.id, schedule.status)
 
 
+def list_schedules(
+    db: Session,
+    current_user: UserRead,
+    *,
+    start_date: date | None = None,
+    end_date: date | None = None,
+    schedule_status: str | None = None,
+) -> list[ScheduleRead]:
+    if current_user.company_id is None:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Manager is not linked to a company.",
+        )
+    _ensure_date_range(start_date, end_date)
+
+    schedules = schedule_repository.list_schedules(
+        db,
+        company_id=current_user.company_id,
+        start_date=start_date,
+        end_date=end_date,
+        schedule_status=schedule_status,
+    )
+    return [_build_schedule_read(db, schedule.id, schedule.status) for schedule in schedules]
+
+
 def create_manual_shift(
     db: Session,
     schedule_id: int,
@@ -600,13 +625,44 @@ def publish_schedule(db: Session, schedule_id: int, current_user: UserRead) -> S
     return _build_schedule_read(db, published_schedule.id, published_schedule.status)
 
 
-def list_my_schedule(db: Session, current_user: UserRead) -> list[ShiftRead]:
+def delete_schedule(db: Session, schedule_id: int, current_user: UserRead) -> None:
+    if current_user.company_id is None:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Manager is not linked to a company.",
+        )
+
+    schedule = schedule_repository.get_schedule(db, schedule_id)
+    if schedule is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Schedule was not found.")
+    if schedule.company_id != current_user.company_id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Schedule does not belong to the authenticated manager's company.",
+        )
+
+    schedule_repository.delete_schedule(db, schedule)
+
+
+def list_my_schedule(
+    db: Session,
+    current_user: UserRead,
+    *,
+    start_date: date | None = None,
+    end_date: date | None = None,
+) -> list[ShiftRead]:
     if current_user.employee_id is None:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="This employee account is not linked to an employee profile.",
         )
-    rows = schedule_repository.list_published_shift_rows_for_employee(db, current_user.employee_id)
+    _ensure_date_range(start_date, end_date)
+    rows = schedule_repository.list_published_shift_rows_for_employee_period(
+        db,
+        current_user.employee_id,
+        start_date=start_date,
+        end_date=end_date,
+    )
     return [_build_shift_read(row) for row in rows]
 
 
@@ -691,6 +747,8 @@ def _build_schedule_read(
                 )
     return ScheduleRead(
         id=schedule_id,
+        start_date=schedule.start_date,
+        end_date=schedule.end_date,
         status=status_value,
         shifts=[_build_shift_read(row) for row in rows],
         conflicts=[],
@@ -766,7 +824,7 @@ def _validate_employee_assignment(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Employee is inactive.",
         )
-    if employee.position_id != position_id:
+    if not employee_repository.employee_has_position(db, employee.id, position_id):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Employee does not match the required position for this shift.",
@@ -796,6 +854,14 @@ def _ensure_time_range(start_time, end_time) -> None:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail="start_time and end_time must be aligned to 5-minute steps.",
+        )
+
+
+def _ensure_date_range(start_date: date | None, end_date: date | None) -> None:
+    if start_date is not None and end_date is not None and end_date < start_date:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="date_to must be later than or equal to date_from.",
         )
 
 
