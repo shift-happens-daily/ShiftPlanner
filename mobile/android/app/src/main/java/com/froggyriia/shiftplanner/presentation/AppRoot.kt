@@ -32,6 +32,14 @@ import com.froggyriia.shiftplanner.presentation.manager.company.CompanyInviteShe
 import com.froggyriia.shiftplanner.presentation.manager.company.CompanyInviteViewModel
 import com.froggyriia.shiftplanner.presentation.manager.employees.EmployeesScreen
 import com.froggyriia.shiftplanner.presentation.manager.employees.EmployeesViewModel
+import com.froggyriia.shiftplanner.presentation.employee.availability.AvailabilityScreen
+import com.froggyriia.shiftplanner.presentation.employee.availability.AvailabilityViewModel
+import com.froggyriia.shiftplanner.presentation.manager.requirements.RequirementsScreen
+import com.froggyriia.shiftplanner.presentation.manager.requirements.RequirementsViewModel
+import com.froggyriia.shiftplanner.presentation.manager.schedule.ScheduleScreen
+import com.froggyriia.shiftplanner.presentation.manager.schedule.ScheduleViewModel
+import com.froggyriia.shiftplanner.presentation.employee.schedule.MyScheduleScreen
+import com.froggyriia.shiftplanner.presentation.employee.schedule.MyScheduleViewModel
 
 @Composable
 fun AppRoot(
@@ -127,8 +135,37 @@ private fun ManagerShell(
                     )
                     EmployeesScreen(user = user, viewModel = employeesVm)
                 }
-                ManagerTab.REQUIREMENTS -> PlaceholderScreen("Requirements")
-                ManagerTab.SCHEDULE -> PlaceholderScreen("Schedule")
+                ManagerTab.REQUIREMENTS -> {
+                    val requirementsVm: RequirementsViewModel = viewModel(
+                        key = "requirements_${user.company?.id}",
+                        factory = remember(user.company?.id) {
+                            object : ViewModelProvider.Factory {
+                                override fun <T : ViewModel> create(modelClass: Class<T>): T {
+                                    @Suppress("UNCHECKED_CAST")
+                                    return RequirementsViewModel(
+                                        appContainer.requirementsRepository,
+                                        user.company?.id
+                                    ) as T
+                                }
+                            }
+                        }
+                    )
+                    RequirementsScreen(user = user, viewModel = requirementsVm)
+                }
+                ManagerTab.SCHEDULE -> {
+                    val scheduleVm: ScheduleViewModel = viewModel(
+                        key = "manager_schedule",
+                        factory = remember {
+                            object : ViewModelProvider.Factory {
+                                override fun <T : ViewModel> create(modelClass: Class<T>): T {
+                                    @Suppress("UNCHECKED_CAST")
+                                    return ScheduleViewModel(appContainer.scheduleRepository) as T
+                                }
+                            }
+                        }
+                    )
+                    ScheduleScreen(user = user, viewModel = scheduleVm)
+                }
                 ManagerTab.PROFILE -> ProfileScreen(
                     user = user,
                     onLogout = onLogout
@@ -182,16 +219,53 @@ private fun EmployeeShell(
     ) { padding ->
         Box(modifier = Modifier.padding(padding)) {
             when (selectedTab) {
-                EmployeeTab.AVAILABILITY -> PlaceholderWithJoin(
-                    user = user,
-                    screenName = "Availability",
-                    onJoinClick = { showInviteSheet = true }
-                )
-                EmployeeTab.SCHEDULE -> PlaceholderWithJoin(
-                    user = user,
-                    screenName = "Schedule",
-                    onJoinClick = { showInviteSheet = true }
-                )
+                EmployeeTab.AVAILABILITY -> {
+                    if (!user.hasCompany || user.employeeId == null) {
+                        PlaceholderWithJoin(
+                            user = user,
+                            screenName = "Availability",
+                            onJoinClick = { showInviteSheet = true }
+                        )
+                    } else {
+                        val availVm: AvailabilityViewModel = viewModel(
+                            key = "availability_${user.employeeId}",
+                            factory = remember(user.employeeId) {
+                                object : ViewModelProvider.Factory {
+                                    override fun <T : ViewModel> create(modelClass: Class<T>): T {
+                                        @Suppress("UNCHECKED_CAST")
+                                        return AvailabilityViewModel(
+                                            appContainer.availabilityRepository,
+                                            user.employeeId
+                                        ) as T
+                                    }
+                                }
+                            }
+                        )
+                        AvailabilityScreen(viewModel = availVm)
+                    }
+                }
+                EmployeeTab.SCHEDULE -> {
+                    if (!user.hasCompany) {
+                        PlaceholderWithJoin(
+                            user = user,
+                            screenName = "Schedule",
+                            onJoinClick = { showInviteSheet = true }
+                        )
+                    } else {
+                        val myScheduleVm: MyScheduleViewModel = viewModel(
+                            key = "my_schedule",
+                            factory = remember {
+                                object : ViewModelProvider.Factory {
+                                    override fun <T : ViewModel> create(modelClass: Class<T>): T {
+                                        @Suppress("UNCHECKED_CAST")
+                                        return MyScheduleViewModel(appContainer.scheduleRepository) as T
+                                    }
+                                }
+                            }
+                        )
+                        MyScheduleScreen(user = user, viewModel = myScheduleVm)
+                    }
+                }
                 EmployeeTab.PROFILE -> ProfileScreen(
                     user = user,
                     onLogout = onLogout,
