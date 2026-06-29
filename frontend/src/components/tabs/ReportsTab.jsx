@@ -337,7 +337,6 @@ export default function ReportsTab({ language, userRole, user }) {
           return {
             ...baseRow,
             [t.hours]: item.total_hours,
-            [t.shifts]: item.total_shifts,
           };
         })
       : [
@@ -345,14 +344,17 @@ export default function ReportsTab({ language, userRole, user }) {
             [t.employee]: normalizedEmployeeReport?.full_name || '',
             [t.position]: normalizedEmployeeReport?.position || t.unknownPosition,
             [t.hours]: normalizedEmployeeReport?.total_hours || 0,
-            [t.shifts]: normalizedEmployeeReport?.total_shifts || 0,
-            [t.salary]: normalizedEmployeeReport?.total_salary || 0,
+            ...(reportMode === 'salary'
+              ? { [t.salary]: normalizedEmployeeReport?.total_salary || 0 }
+              : {}),
           },
         ];
 
     const summaryRows = [
       { metric: t.totalHours, value: totals.total_hours },
-      { metric: t.totalShifts, value: totals.total_shifts },
+      ...(reportMode === 'salary'
+        ? [{ metric: t.salary, value: totals.total_salary }]
+        : []),
       { metric: t.employees, value: totals.employees },
       { metric: t.startDate, value: appliedRange.start_date },
       { metric: t.endDate, value: appliedRange.end_date },
@@ -404,7 +406,9 @@ export default function ReportsTab({ language, userRole, user }) {
 
   const hasManagerRows = filteredManagerReport.length > 0;
   const hasEmployeeReport = Boolean(normalizedEmployeeReport);
-  const tableColumns = '1.2fr 1fr 0.8fr 0.7fr 0.7fr';
+  const tableColumns = reportMode === 'salary'
+    ? '1.2fr 1fr 0.8fr 0.7fr 0.7fr'
+    : '1.2fr 1fr 0.8fr 0.7fr';
 
   return (
     <section style={{ ...styles.page, ...r.page }}>
@@ -459,8 +463,7 @@ export default function ReportsTab({ language, userRole, user }) {
                   <div style={{ ...styles.modeSegment, ...r.modeSegment }}>
                     {[
                       { id: 'hours', label: t.hoursReport },
-                      { id: 'shifts', label: t.shiftsReport },
-                      { id: 'salary', label: t.salaryReport }
+                      { id: 'salary', label: t.salaryReport },
                     ].map((mode) => (
                       <button
                         key={mode.id}
@@ -522,10 +525,8 @@ export default function ReportsTab({ language, userRole, user }) {
               <h3 style={styles.panelTitle}>{t.summary}</h3>
 
               <Metric label={t.totalHours} value={totals.total_hours} />
-              {reportMode === 'salary' ? (
+              {reportMode === 'salary' && (
                 <Metric label={t.salary} value={totals.total_salary} />
-              ) : (
-                <Metric label={t.totalShifts} value={totals.total_shifts} />
               )}
               {isManager && <Metric label={t.employees} value={totals.employees} />}
             </section>
@@ -551,12 +552,12 @@ export default function ReportsTab({ language, userRole, user }) {
                           <span>{t.hours}</span>
                           <span style={r.reportCardValue}>{item.total_hours}</span>
                         </div>
-                        <div style={r.reportCardRow}>
-                          <span>{reportMode === 'salary' ? t.salary : t.shifts}</span>
-                          <span style={r.reportCardValue}>
-                            {reportMode === 'salary' ? item.total_salary : item.total_shifts}
-                          </span>
-                        </div>
+                        {reportMode === 'salary' && (
+                          <div style={r.reportCardRow}>
+                            <span>{t.salary}</span>
+                            <span style={r.reportCardValue}>{item.total_salary}</span>
+                          </div>
+                        )}
                       </div>
                     ))}
                     <div style={{
@@ -570,12 +571,12 @@ export default function ReportsTab({ language, userRole, user }) {
                         <span>{t.hours}</span>
                         <span style={r.reportCardValue}>{totals.total_hours}</span>
                       </div>
-                      <div style={r.reportCardRow}>
-                        <span>{reportMode === 'salary' ? t.salary : t.shifts}</span>
-                        <span style={r.reportCardValue}>
-                          {reportMode === 'salary' ? totals.total_salary : totals.total_shifts}
-                        </span>
-                      </div>
+                      {reportMode === 'salary' && (
+                        <div style={r.reportCardRow}>
+                          <span>{t.salary}</span>
+                          <span style={r.reportCardValue}>{totals.total_salary}</span>
+                        </div>
+                      )}
                     </div>
                   </div>
                 ) : (
@@ -585,7 +586,7 @@ export default function ReportsTab({ language, userRole, user }) {
                     <span>{t.position}</span>
                     <span>{t.branch}</span>
                     <span>{t.hours}</span>
-                    {reportMode !== 'salary' ? <span>{t.shifts}</span> : <span>{t.salary}</span>}
+                    {reportMode === 'salary' && <span>{t.salary}</span>}
                   </div>
 
                   <div style={styles.tableBody}>
@@ -595,9 +596,9 @@ export default function ReportsTab({ language, userRole, user }) {
                         <span style={styles.tableCell}>{item.position || t.unknownPosition}</span>
                         <span style={styles.tableCell}>{item.branch}</span>
                         <span style={styles.numberCell}>{item.total_hours}</span>
-                        <span style={styles.numberCell}>
-                          {reportMode === 'salary' ? item.total_salary : item.total_shifts}
-                        </span>
+                        {reportMode === 'salary' && (
+                          <span style={styles.numberCell}>{item.total_salary}</span>
+                        )}
                       </div>
                     ))}
                   </div>
@@ -607,7 +608,7 @@ export default function ReportsTab({ language, userRole, user }) {
                     <span />
                     <span />
                     <strong>{totals.total_hours}</strong>
-                    <strong>{reportMode === 'salary' ? totals.total_salary : totals.total_shifts}</strong>
+                    {reportMode === 'salary' && <strong>{totals.total_salary}</strong>}
                   </div>
                 </div>
                 )
@@ -637,10 +638,8 @@ export default function ReportsTab({ language, userRole, user }) {
                 }}
                 >
                   <Metric label={t.hours} value={normalizedEmployeeReport.total_hours} />
-                  {reportMode === 'salary' ? (
+                  {reportMode === 'salary' && (
                     <Metric label={t.salary} value={normalizedEmployeeReport.total_salary} />
-                  ) : (
-                    <Metric label={t.shifts} value={normalizedEmployeeReport.total_shifts} />
                   )}
                 </div>
               </div>

@@ -16,7 +16,7 @@ import {
 import { extractApiErrorMessage, localizeBackendMessage } from '../../services/error';
 import { mapEmployeeCalendarSummary } from '../../services/mappers';
 import { createPosition, deletePosition, listPositions } from '../../services/positionService';
-import { listBranches, linkUserToCompany } from '../../services/companyService';
+import { listBranches, acceptEmployeeRequest, linkUserToCompany } from '../../services/companyService';
 import {
   employeeHasBranch,
   getEmployeeBranchIds,
@@ -931,11 +931,15 @@ export default function EmployeesTab({ language, userRole, user }) {
     setIsSubmitting(true);
 
     try {
-      await linkUserToCompany({
+      const linked = await linkUserToCompany({
         user_public_id: publicId,
         branch_id: linkBranchId ? Number(linkBranchId) : null,
         position_id: linkPositionId ? Number(linkPositionId) : null,
       });
+
+      if (linked?.id) {
+        await acceptEmployeeRequest(linked.id);
+      }
 
       setLinkUserId('');
       setLinkBranchId('');
