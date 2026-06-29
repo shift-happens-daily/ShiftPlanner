@@ -135,6 +135,7 @@ class EmployeeAvailability(Base):
     weekday: Mapped[int] = mapped_column(Integer)
     start_time: Mapped[time] = mapped_column(Time)
     end_time: Mapped[time] = mapped_column(Time)
+    availability_status: Mapped[str] = mapped_column(String(20), default="available", server_default="available")
 
     employee: Mapped[Employee] = relationship(back_populates="availability_blocks")
 

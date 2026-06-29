@@ -228,6 +228,7 @@ def replace_availability(
                 weekday=block["weekday"],
                 start_time=block["start_time"],
                 end_time=block["end_time"],
+                availability_status=block.get("availability_status", "available"),
             )
         )
 

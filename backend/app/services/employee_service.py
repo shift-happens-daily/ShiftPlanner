@@ -380,6 +380,7 @@ def get_calendar_summary(
                 "weekday": block.weekday,
                 "start_time": block.start_time,
                 "end_time": block.end_time,
+                "availability_status": block.availability_status,
             }
             for block in sorted(employee.availability_blocks, key=lambda item: (item.weekday, item.start_time))
         ],
@@ -445,6 +446,7 @@ def _build_availability_read(employee) -> AvailabilityRead:
                 "weekday": block.weekday,
                 "start_time": block.start_time,
                 "end_time": block.end_time,
+                "availability_status": block.availability_status,
             }
             for block in sorted(employee.availability_blocks, key=lambda item: (item.weekday, item.start_time))
         ],

@@ -75,30 +75,14 @@ CREATE TABLE employees (
     employee_code VARCHAR(16) UNIQUE NOT NULL DEFAULT generate_alphanumeric_code(16),
     user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     company_id INTEGER NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
+    branch_id INTEGER REFERENCES branches(id) ON DELETE SET NULL,
+    position_id INTEGER REFERENCES positions(id) ON DELETE SET NULL,
     max_hours_per_week INTEGER DEFAULT 40 CHECK (max_hours_per_week > 0),
     is_active BOOLEAN DEFAULT TRUE,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     UNIQUE (user_id, company_id),
     CHECK (employee_code ~ '^[A-Za-z0-9]{16}$')
-);
-
-CREATE TABLE employee_branches (
-    id SERIAL PRIMARY KEY,
-    employee_id INTEGER NOT NULL REFERENCES employees(id) ON DELETE CASCADE,
-    branch_id INTEGER NOT NULL REFERENCES branches(id) ON DELETE CASCADE,
-    is_primary BOOLEAN NOT NULL DEFAULT FALSE,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    UNIQUE (employee_id, branch_id)
-);
-
-CREATE TABLE employee_positions (
-    id SERIAL PRIMARY KEY,
-    employee_id INTEGER NOT NULL REFERENCES employees(id) ON DELETE CASCADE,
-    position_id INTEGER NOT NULL REFERENCES positions(id) ON DELETE CASCADE,
-    is_primary BOOLEAN NOT NULL DEFAULT FALSE,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    UNIQUE (employee_id, position_id)
 );
 
 CREATE TABLE employee_availability (
