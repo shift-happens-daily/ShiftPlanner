@@ -1,5 +1,5 @@
 // frontend/src/components/tabs/ShiftsTab.jsx
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   createEmployeeAbsence,
   deleteEmployeeAbsence,
@@ -44,6 +44,9 @@ const TIME_SLOTS = Array.from(
   },
 );
 
+const TIME_SLOT_SET = new Set(TIME_SLOTS);
+const AVAILABILITY_STATUSES = new Set(['available', 'if_needed', 'unavailable']);
+
 const MOBILE_HOUR_GROUPS = TIME_SLOTS.reduce((groups, slot, index) => {
   if (index % 2 === 0) {
     groups.push({
@@ -56,9 +59,16 @@ const MOBILE_HOUR_GROUPS = TIME_SLOTS.reduce((groups, slot, index) => {
 
 const MOBILE_BRUSH_OPTIONS = [
   { id: 'available', color: '#4CAF50', textColor: '#ffffff' },
-  { id: 'maybe', color: '#FFC107', textColor: '#002642' },
+  { id: 'if_needed', color: '#FFC107', textColor: '#002642' },
   { id: 'unavailable', color: '#eef3f6', textColor: '#4f646f' },
 ];
+
+const AVAILABILITY_MODE_OPTIONS = MOBILE_BRUSH_OPTIONS;
+
+function normalizeAvailabilityStatus(status) {
+  if (status === 'maybe') return 'if_needed';
+  return AVAILABILITY_STATUSES.has(status) ? status : 'unavailable';
+}
 
 function toDateKey(date) {
   const year = date.getFullYear();
@@ -90,7 +100,13 @@ function minutesToTimeString(totalMinutes) {
   return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:00`;
 }
 
-function buildIntervalsForWeekday(weekday, slotStarts) {
+function minutesToSlotString(totalMinutes) {
+  const hours = Math.floor(totalMinutes / 60);
+  const minutes = totalMinutes % 60;
+  return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}`;
+}
+
+function buildIntervalsForWeekday(weekday, availabilityStatus, slotStarts) {
   const sorted = [...slotStarts].sort((a, b) => a - b);
   const intervals = [];
   let startMinutes = null;
@@ -112,6 +128,7 @@ function buildIntervalsForWeekday(weekday, slotStarts) {
       weekday,
       start_time: minutesToTimeString(startMinutes),
       end_time: minutesToTimeString(previousMinutes + SLOT_MINUTES),
+      availability_status: availabilityStatus,
     });
 
     startMinutes = minutes;
@@ -123,6 +140,7 @@ function buildIntervalsForWeekday(weekday, slotStarts) {
       weekday,
       start_time: minutesToTimeString(startMinutes),
       end_time: minutesToTimeString(previousMinutes + SLOT_MINUTES),
+      availability_status: availabilityStatus,
     });
   }
 
@@ -130,28 +148,75 @@ function buildIntervalsForWeekday(weekday, slotStarts) {
 }
 
 // Backend only stores a recurring weekly availability template, so when saving we
-// aggregate the per-date selections back into weekly intervals (Monday = 0).
-function convertDatesToWeeklyIntervals(availabilityByDate) {
-  const slotsByWeekday = {};
+// aggregate the visible week selections back into weekly intervals (Monday = 0).
+function convertDatesToWeeklyIntervals(availabilityByDate, dates) {
+  const slotsByWeekdayAndStatus = {};
+  const dateEntries = dates.map((date) => {
+    const dateKey = toDateKey(date);
+    return [dateKey, availabilityByDate[dateKey] || {}];
+  });
 
-  Object.entries(availabilityByDate).forEach(([dateKey, slotMap]) => {
+  dateEntries.forEach(([dateKey, slotMap]) => {
     const jsDay = new Date(`${dateKey}T00:00:00`).getDay();
     const weekday = (jsDay + 6) % 7;
 
     Object.entries(slotMap || {}).forEach(([slot, status]) => {
-      if (status === 'available' || status === 'maybe') {
-        if (!slotsByWeekday[weekday]) slotsByWeekday[weekday] = new Set();
-        slotsByWeekday[weekday].add(slotToMinutes(slot));
+      const normalizedStatus = normalizeAvailabilityStatus(status);
+      if (normalizedStatus === 'available' || normalizedStatus === 'if_needed') {
+        const key = `${weekday}:${normalizedStatus}`;
+        if (!slotsByWeekdayAndStatus[key]) slotsByWeekdayAndStatus[key] = new Set();
+        slotsByWeekdayAndStatus[key].add(slotToMinutes(slot));
       }
     });
   });
 
   const intervals = [];
-  Object.entries(slotsByWeekday).forEach(([weekday, slotStarts]) => {
-    intervals.push(...buildIntervalsForWeekday(Number(weekday), slotStarts));
+  Object.entries(slotsByWeekdayAndStatus).forEach(([key, slotStarts]) => {
+    const [weekday, availabilityStatus] = key.split(':');
+    intervals.push(...buildIntervalsForWeekday(Number(weekday), availabilityStatus, slotStarts));
   });
 
   return intervals;
+}
+
+function buildAvailabilityByDateFromWeeklyIntervals(weeklyAvailability, dates) {
+  const byDate = {};
+
+  dates.forEach((date) => {
+    const dateKey = toDateKey(date);
+    const jsDay = date.getDay();
+    const weekday = (jsDay + 6) % 7;
+    const dayMap = {};
+
+    weeklyAvailability.forEach((block) => {
+      if (Number(block?.weekday) !== weekday) return;
+
+      const status = normalizeAvailabilityStatus(block.availability_status || 'available');
+      const start = slotToMinutes(block.start_time);
+      const end = slotToMinutes(block.end_time);
+
+      for (let minutes = start; minutes < end; minutes += SLOT_MINUTES) {
+        const slot = minutesToSlotString(minutes);
+        if (TIME_SLOT_SET.has(slot)) {
+          dayMap[slot] = status;
+        }
+      }
+    });
+
+    byDate[dateKey] = dayMap;
+  });
+
+  return byDate;
+}
+
+function normalizeAvailabilityByDate(value) {
+  return Object.entries(value || {}).reduce((result, [dateKey, slotMap]) => {
+    result[dateKey] = Object.entries(slotMap || {}).reduce((dayMap, [slot, status]) => {
+      dayMap[slot] = normalizeAvailabilityStatus(status);
+      return dayMap;
+    }, {});
+    return result;
+  }, {});
 }
 
 function defaultSingleRequirement() {
@@ -289,18 +354,24 @@ export default function ShiftsTab({ language, userRole, user }) {
     ? `shiftplanner_availability_by_date_${employeeId}`
     : 'shiftplanner_availability_by_date_anon';
 
-  // Availability is tracked per calendar date: { 'YYYY-MM-DD': { [hour]: 'available' | 'maybe' } }
+  // Availability is tracked per calendar date: { 'YYYY-MM-DD': { [hour]: 'available' | 'if_needed' | 'unavailable' } }
   const [availabilityByDate, setAvailabilityByDate] = useState(() => {
     try {
       const raw = localStorage.getItem(availabilityStorageKey);
-      return raw ? JSON.parse(raw) : {};
+      return raw ? normalizeAvailabilityByDate(JSON.parse(raw)) : {};
     } catch {
       return {};
     }
   });
 
   const [selectedDate, setSelectedDate] = useState(() => new Date().toISOString().slice(0, 10));
-  const [brushMode, setBrushMode] = useState('available'); // 'available', 'maybe', 'unavailable'
+  const [brushMode, setBrushMode] = useState('available');
+  const dragSelectionRef = useRef({
+    active: false,
+    appliedKeys: new Set(),
+    lastCell: null,
+    touchIdentifier: null,
+  });
 
   const weekDates = useMemo(() => {
     const current = new Date(selectedDate);
@@ -315,13 +386,7 @@ export default function ShiftsTab({ language, userRole, user }) {
     });
   }, [selectedDate]);
 
-  const [mobileAvailabilityDay, setMobileAvailabilityDay] = useState(0);
-
-  useEffect(() => {
-    const todayKey = toDateKey(new Date());
-    const todayIndex = weekDates.findIndex((date) => toDateKey(date) === todayKey);
-    setMobileAvailabilityDay(todayIndex >= 0 ? todayIndex : 0);
-  }, [selectedDate, weekDates]);
+  const [mobileAvailabilityDay, setMobileAvailabilityDay] = useState(() => (new Date().getDay() + 6) % 7);
 
   const shiftWeek = (deltaDays) => {
     setSelectedDate((prev) => {
@@ -329,6 +394,14 @@ export default function ShiftsTab({ language, userRole, user }) {
       d.setDate(d.getDate() + deltaDays);
       return d.toISOString().slice(0, 10);
     });
+  };
+
+  const handleSelectedDateChange = (value) => {
+    setSelectedDate(value);
+    const date = new Date(`${value}T00:00:00`);
+    if (!Number.isNaN(date.getTime())) {
+      setMobileAvailabilityDay((date.getDay() + 6) % 7);
+    }
   };
 
   const [absenceForm, setAbsenceForm] = useState({
@@ -353,7 +426,6 @@ export default function ShiftsTab({ language, userRole, user }) {
     ru: {
       titleManager: 'Настройки смен',
       titleEmployee: 'Доступность',
-      subtitleEmployee: 'Сотрудник указывает, когда может работать и когда отсутствует.',
       stepOne: '1. Выберите период',
       stepTwo: '2. Создайте требование',
       stepThree: '3. Проверьте список',
@@ -413,7 +485,7 @@ export default function ShiftsTab({ language, userRole, user }) {
       singleHint: 'Например: Barista, 15.06, 09:00–18:00, нужно 2 человека.',
       localOnly: 'локально',
       available: 'Доступен',
-      maybe: 'Может быть',
+      if_needed: 'Может быть',
       unavailable: 'Недоступен',
       prevWeek: 'Предыдущая неделя',
       nextWeek: 'Следующая неделя',
@@ -422,7 +494,6 @@ export default function ShiftsTab({ language, userRole, user }) {
     en: {
       titleManager: 'Shift setup',
       titleEmployee: 'Availability',
-      subtitleEmployee: 'Employees define when they can work and when they are absent.',
       stepOne: '1. Choose period',
       stepTwo: '2. Create requirement',
       stepThree: '3. Check list',
@@ -482,7 +553,7 @@ export default function ShiftsTab({ language, userRole, user }) {
       singleHint: 'Example: Barista, Jun 15, 09:00–18:00, need 2 people.',
       localOnly: 'local',
       available: 'Available',
-      maybe: 'Maybe',
+      if_needed: 'If needed',
       unavailable: 'Unavailable',
       prevWeek: 'Previous week',
       nextWeek: 'Next week',
@@ -491,13 +562,7 @@ export default function ShiftsTab({ language, userRole, user }) {
   };
 
   const t = texts[language] || texts.ru;
-
-  const todayStr = useMemo(() => new Date().toLocaleDateString(language === 'ru' ? 'ru-RU' : 'en-US', {
-    day: 'numeric',
-    month: 'long',
-    year: 'numeric',
-    weekday: 'long'
-  }), [language]);
+  const emptyFallback = t.empty;
 
   const isToday = (date) => {
     const today = new Date();
@@ -508,21 +573,21 @@ export default function ShiftsTab({ language, userRole, user }) {
 
   const getAvailabilityCellStyle = (dateKey, time) => {
     const past = isPastDateKey(dateKey);
-    const status = availabilityByDate[dateKey]?.[time] || null;
+    const status = normalizeAvailabilityStatus(availabilityByDate[dateKey]?.[time]);
 
     if (past) return styles.gridCellLocked;
     if (status === 'available') return styles.gridCellAvailable;
-    if (status === 'maybe') return styles.gridCellMaybe;
+    if (status === 'if_needed') return styles.gridCellMaybe;
     return styles.gridCell;
   };
 
   const getAvailabilityCellTitle = (dateKey, time) => {
     const past = isPastDateKey(dateKey);
-    const status = availabilityByDate[dateKey]?.[time] || null;
+    const status = normalizeAvailabilityStatus(availabilityByDate[dateKey]?.[time]);
 
     if (past) return t.locked;
     if (status === 'available') return t.available;
-    if (status === 'maybe') return t.maybe;
+    if (status === 'if_needed') return t.if_needed;
     return t.unavailable;
   };
 
@@ -633,18 +698,22 @@ export default function ShiftsTab({ language, userRole, user }) {
       desired_days_off: normalizeArray(availabilityData?.desired_days_off),
     });
 
-    let storedByDate = {};
-    try {
-      const raw = localStorage.getItem(availabilityStorageKey);
-      storedByDate = raw ? JSON.parse(raw) : {};
-    } catch {
-      storedByDate = {};
-    }
-    setAvailabilityByDate(storedByDate);
+    const storedByDate = (() => {
+      try {
+        const raw = localStorage.getItem(availabilityStorageKey);
+        return raw ? normalizeAvailabilityByDate(JSON.parse(raw)) : {};
+      } catch {
+        return {};
+      }
+    })();
+    setAvailabilityByDate({
+      ...storedByDate,
+      ...buildAvailabilityByDateFromWeeklyIntervals(normalizedAvailability, weekDates),
+    });
 
     setAbsences(normalizeArray(absencesData));
     setSummary(mapEmployeeCalendarSummary(summaryData));
-  }, [employeeId, availabilityStorageKey]);
+  }, [employeeId, availabilityStorageKey, weekDates]);
 
   const loadData = useCallback(async () => {
     setIsLoading(true);
@@ -657,12 +726,12 @@ export default function ShiftsTab({ language, userRole, user }) {
         await loadEmployeeData();
       }
     } catch (error) {
-      setErrorMessage(normalizeError(error, t.empty, language));
+      setErrorMessage(normalizeError(error, emptyFallback, language));
     } finally {
       setIsLoading(false);
       setIsRefreshingList(false);
     }
-  }, [appliedFilters, isManager, language, loadEmployeeData, loadManagerData, t.empty]);
+  }, [appliedFilters, emptyFallback, isManager, language, loadEmployeeData, loadManagerData]);
 
   useEffect(() => {
     const timer = setTimeout(() => void loadData(), 0);
@@ -681,22 +750,112 @@ export default function ShiftsTab({ language, userRole, user }) {
     }
   };
 
-  const toggleAvailability = (dateKey, slot) => {
+  const applyAvailabilityStatus = useCallback((dateKey, slot, status = brushMode) => {
     if (isPastDateKey(dateKey)) return;
 
-    setAvailabilityByDate((prev) => {
-      const dayMap = { ...(prev[dateKey] || {}) };
-      const currentStatus = dayMap[slot] || null;
+    const nextStatus = normalizeAvailabilityStatus(status);
+    setAvailabilityByDate((prev) => ({
+      ...prev,
+      [dateKey]: {
+        ...(prev[dateKey] || {}),
+        [slot]: nextStatus,
+      },
+    }));
+  }, [brushMode]);
 
-      if (currentStatus === brushMode) {
-        delete dayMap[slot];
-      } else {
-        dayMap[slot] = brushMode;
-      }
+  const applyAvailabilityDragCell = useCallback((dayIndex, slotIndex) => {
+    const dragState = dragSelectionRef.current;
+    const lastCell = dragState.lastCell;
+    const steps = lastCell
+      ? Math.max(Math.abs(dayIndex - lastCell.dayIndex), Math.abs(slotIndex - lastCell.slotIndex))
+      : 0;
 
-      return { ...prev, [dateKey]: dayMap };
-    });
-  };
+    for (let step = 0; step <= steps; step += 1) {
+      const nextDayIndex = steps
+        ? Math.round(lastCell.dayIndex + ((dayIndex - lastCell.dayIndex) * step) / steps)
+        : dayIndex;
+      const nextSlotIndex = steps
+        ? Math.round(lastCell.slotIndex + ((slotIndex - lastCell.slotIndex) * step) / steps)
+        : slotIndex;
+      const date = weekDates[nextDayIndex];
+      const slot = TIME_SLOTS[nextSlotIndex];
+      if (!date || !slot) continue;
+
+      const dateKey = toDateKey(date);
+      const cellKey = `${dateKey}-${slot}`;
+      if (dragState.appliedKeys.has(cellKey)) continue;
+      dragState.appliedKeys.add(cellKey);
+      applyAvailabilityStatus(dateKey, slot, brushMode);
+    }
+
+    dragState.lastCell = { dayIndex, slotIndex };
+  }, [applyAvailabilityStatus, brushMode, weekDates]);
+
+  const startAvailabilityDrag = useCallback((dayIndex, slotIndex, touchIdentifier = null) => {
+    dragSelectionRef.current = {
+      active: true,
+      appliedKeys: new Set(),
+      lastCell: null,
+      touchIdentifier,
+    };
+    applyAvailabilityDragCell(dayIndex, slotIndex);
+  }, [applyAvailabilityDragCell]);
+
+  const endAvailabilityDrag = useCallback(() => {
+    dragSelectionRef.current.active = false;
+    dragSelectionRef.current.appliedKeys.clear();
+    dragSelectionRef.current.lastCell = null;
+    dragSelectionRef.current.touchIdentifier = null;
+  }, []);
+
+  const handleAvailabilityMouseDown = useCallback((event, dayIndex, slotIndex) => {
+    if (event.button !== 0) return;
+    event.preventDefault();
+    startAvailabilityDrag(dayIndex, slotIndex);
+  }, [startAvailabilityDrag]);
+
+  const handleAvailabilityMouseEnter = useCallback((dayIndex, slotIndex) => {
+    if (!dragSelectionRef.current.active || dragSelectionRef.current.touchIdentifier !== null) return;
+    applyAvailabilityDragCell(dayIndex, slotIndex);
+  }, [applyAvailabilityDragCell]);
+
+  const handleAvailabilityTouchStart = useCallback((event, dayIndex, slotIndex) => {
+    const touch = event.changedTouches[0];
+    if (!touch) return;
+    event.preventDefault();
+    startAvailabilityDrag(dayIndex, slotIndex, touch.identifier);
+  }, [startAvailabilityDrag]);
+
+  const handleAvailabilityTouchMove = useCallback((event) => {
+    const dragState = dragSelectionRef.current;
+    if (!dragState.active || dragState.touchIdentifier === null) return;
+
+    const touch = Array.from(event.changedTouches).find((item) => item.identifier === dragState.touchIdentifier)
+      || Array.from(event.touches).find((item) => item.identifier === dragState.touchIdentifier);
+    if (!touch) return;
+
+    event.preventDefault();
+    const target = document
+      .elementFromPoint(touch.clientX, touch.clientY)
+      ?.closest('[data-availability-cell="true"]');
+    if (!target) return;
+
+    applyAvailabilityDragCell(Number(target.dataset.dayIndex), Number(target.dataset.slotIndex));
+  }, [applyAvailabilityDragCell]);
+
+  useEffect(() => {
+    window.addEventListener('mouseup', endAvailabilityDrag);
+    window.addEventListener('touchend', endAvailabilityDrag);
+    window.addEventListener('touchcancel', endAvailabilityDrag);
+    window.addEventListener('blur', endAvailabilityDrag);
+
+    return () => {
+      window.removeEventListener('mouseup', endAvailabilityDrag);
+      window.removeEventListener('touchend', endAvailabilityDrag);
+      window.removeEventListener('touchcancel', endAvailabilityDrag);
+      window.removeEventListener('blur', endAvailabilityDrag);
+    };
+  }, [endAvailabilityDrag]);
   const submitManagerRequirement = async () => {
     if (!singleRequirement.position_id || !singleRequirement.date) {
       setErrorMessage(t.single);
@@ -881,7 +1040,7 @@ export default function ShiftsTab({ language, userRole, user }) {
 
       await updateEmployeeAvailability(employeeId, {
         desired_days_off: availabilityForm.desired_days_off,
-        weekly_availability: convertDatesToWeeklyIntervals(availabilityByDate),
+        weekly_availability: convertDatesToWeeklyIntervals(availabilityByDate, weekDates),
       });
       await loadEmployeeData();
       setSuccessMessage(t.availabilitySaved);
@@ -1329,7 +1488,7 @@ export default function ShiftsTab({ language, userRole, user }) {
                       <input
                         type="date"
                         value={selectedDate}
-                        onChange={(e) => setSelectedDate(e.target.value)}
+                        onChange={(e) => handleSelectedDateChange(e.target.value)}
                         style={styles.mobileWeekDateInput}
                       />
                     </div>
@@ -1408,10 +1567,11 @@ export default function ShiftsTab({ language, userRole, user }) {
                         <div key={group.hour} style={styles.mobileHourRow}>
                           <div style={styles.mobileHourLabel}>{group.hour}:00</div>
                           {group.slots.map((slot) => {
-                            const status = availabilityByDate[selectedMobileDateKey]?.[slot] || null;
+                            const status = normalizeAvailabilityStatus(availabilityByDate[selectedMobileDateKey]?.[slot]);
+                            const slotIndex = TIME_SLOTS.indexOf(slot);
                             const slotTextColor = status === 'available'
                               ? '#ffffff'
-                              : status === 'maybe'
+                              : status === 'if_needed'
                                 ? '#002642'
                                 : '#4f646f';
 
@@ -1419,10 +1579,16 @@ export default function ShiftsTab({ language, userRole, user }) {
                               <button
                                 key={slot}
                                 type="button"
-                                onClick={() => toggleAvailability(selectedMobileDateKey, slot)}
+                                onMouseDown={(event) => handleAvailabilityMouseDown(event, mobileAvailabilityDay, slotIndex)}
+                                onMouseEnter={() => handleAvailabilityMouseEnter(mobileAvailabilityDay, slotIndex)}
+                                onTouchStart={(event) => handleAvailabilityTouchStart(event, mobileAvailabilityDay, slotIndex)}
+                                onTouchMove={handleAvailabilityTouchMove}
+                                data-availability-cell="true"
+                                data-day-index={mobileAvailabilityDay}
+                                data-slot-index={slotIndex}
                                 style={{
-                                  ...styles.mobileSlotButton,
                                   ...getAvailabilityCellStyle(selectedMobileDateKey, slot),
+                                  ...styles.mobileSlotButton,
                                   color: slotTextColor,
                                 }}
                                 aria-pressed={status === 'available'}
@@ -1485,36 +1651,24 @@ export default function ShiftsTab({ language, userRole, user }) {
                   <h3 style={styles.panelTitle}>{t.availability}</h3>
 
                   <div style={styles.brushPicker}>
-                    <button
-                      type="button"
-                      onClick={() => setBrushMode('available')}
-                      style={{
-                        ...styles.brushBtn,
-                        background: '#4CAF50',
-                        border: brushMode === 'available' ? '3px solid #002642' : '3px solid transparent',
-                      }}
-                      title={t.available}
-                    />
-                    <button
-                      type="button"
-                      onClick={() => setBrushMode('maybe')}
-                      style={{
-                        ...styles.brushBtn,
-                        background: '#FFC107',
-                        border: brushMode === 'maybe' ? '3px solid #002642' : '3px solid transparent',
-                      }}
-                      title={t.maybe}
-                    />
-                    <button
-                      type="button"
-                      onClick={() => setBrushMode('unavailable')}
-                      style={{
-                        ...styles.brushBtn,
-                        background: '#eef3f6',
-                        border: brushMode === 'unavailable' ? '3px solid #002642' : '3px solid transparent',
-                      }}
-                      title={t.unavailable}
-                    />
+                    {AVAILABILITY_MODE_OPTIONS.map((option) => (
+                      <button
+                        key={option.id}
+                        type="button"
+                        onClick={() => setBrushMode(option.id)}
+                        style={{
+                          ...styles.brushBtn,
+                          background: option.color,
+                          color: option.textColor,
+                          border: brushMode === option.id ? '2px solid #002642' : '1px solid rgba(79, 100, 111, 0.18)',
+                          boxShadow: brushMode === option.id ? '0 3px 10px rgba(0, 38, 66, 0.14)' : 'none',
+                        }}
+                        aria-pressed={brushMode === option.id}
+                        title={t[option.id]}
+                      >
+                        {t[option.id]}
+                      </button>
+                    ))}
                   </div>
                 </div>
 
@@ -1537,7 +1691,7 @@ export default function ShiftsTab({ language, userRole, user }) {
                   <input
                     type="date"
                     value={selectedDate}
-                    onChange={(e) => setSelectedDate(e.target.value)}
+                    onChange={(e) => handleSelectedDateChange(e.target.value)}
                     style={{ ...styles.input, width: 'auto' }}
                   />
                   <button
@@ -1559,7 +1713,7 @@ export default function ShiftsTab({ language, userRole, user }) {
                 </div>
                 <div style={styles.legendItem}>
                   <div style={{ ...styles.legendColor, background: '#FFC107' }} />
-                  <span style={styles.legendText}>{t.maybe}</span>
+                  <span style={styles.legendText}>{t.if_needed}</span>
                 </div>
                 <div style={styles.legendItem}>
                   <div style={{ ...styles.legendColor, background: '#eef3f6', border: '1px solid #ddd' }} />
@@ -1579,14 +1733,14 @@ export default function ShiftsTab({ language, userRole, user }) {
                           ...styles.gridHeaderCell,
                           flexDirection: 'column',
                           height: 'auto',
-                          padding: '8px 4px',
+                          padding: '4px 2px',
                           background: itIsToday ? '#002642' : '#dee7e7',
                           color: itIsToday ? '#ffffff' : '#002642',
                           border: itIsToday ? 'none' : styles.gridHeaderCell.border,
                         }}
                       >
-                        <span style={{ fontSize: '11px', opacity: itIsToday ? 0.9 : 0.8 }}>{day[language] || day.ru}</span>
-                        <span style={{ fontSize: '13px', fontWeight: '900', whiteSpace: 'nowrap' }}>
+                        <span style={{ fontSize: '10px', opacity: itIsToday ? 0.9 : 0.8 }}>{day[language] || day.ru}</span>
+                        <span style={{ fontSize: '11px', fontWeight: '900', whiteSpace: 'nowrap' }}>
                           {weekDates[index].toLocaleDateString(language === 'ru' ? 'ru-RU' : 'en-US', { day: 'numeric', month: 'short' })}
                         </span>
                       </div>
@@ -1594,20 +1748,26 @@ export default function ShiftsTab({ language, userRole, user }) {
                   })}
                 </div>
                 <div style={styles.availabilityGridBody}>
-                  {TIME_SLOTS.map((time) => (
+                  {TIME_SLOTS.map((time, slotIndex) => (
                     <div key={time} style={styles.gridRow}>
                       <div style={styles.gridTimeCell}>{time}</div>
                       {WEEKDAYS.map((day, dayIndex) => {
                         const cellDate = weekDates[dayIndex];
                         const dateKey = toDateKey(cellDate);
                         const past = isPastDateKey(dateKey);
-                        const status = availabilityByDate[dateKey]?.[time] || null;
+                        const status = normalizeAvailabilityStatus(availabilityByDate[dateKey]?.[time]);
 
                         return (
                           <button
                             key={`${dateKey}-${time}`}
                             type="button"
-                            onClick={past ? undefined : () => toggleAvailability(dateKey, time)}
+                            onMouseDown={past ? undefined : (event) => handleAvailabilityMouseDown(event, dayIndex, slotIndex)}
+                            onMouseEnter={past ? undefined : () => handleAvailabilityMouseEnter(dayIndex, slotIndex)}
+                            onTouchStart={past ? undefined : (event) => handleAvailabilityTouchStart(event, dayIndex, slotIndex)}
+                            onTouchMove={past ? undefined : handleAvailabilityTouchMove}
+                            data-availability-cell="true"
+                            data-day-index={dayIndex}
+                            data-slot-index={slotIndex}
                             disabled={past}
                             style={getAvailabilityCellStyle(dateKey, time)}
                             aria-pressed={status === 'available'}
@@ -2564,36 +2724,39 @@ const styles = {
   availabilityGridWrapper: {
     display: 'flex',
     flexDirection: 'column',
-    gap: '10px',
-    marginBottom: '16px',
+    gap: '4px',
+    marginBottom: '14px',
     overflowX: 'auto',
-    paddingBottom: '8px',
+    paddingBottom: '6px',
+    userSelect: 'none',
+    WebkitUserSelect: 'none',
+    touchAction: 'none',
   },
 
   availabilityGridHeader: {
     display: 'grid',
-    gridTemplateColumns: '72px repeat(7, 80px)',
-    gap: '6px',
+    gridTemplateColumns: '58px repeat(7, 64px)',
+    gap: '3px',
     alignItems: 'center',
   },
 
   availabilityGridBody: {
     display: 'grid',
-    gap: '6px',
+    gap: '3px',
   },
 
   gridCorner: {
-    height: '34px',
-    borderRadius: '12px',
+    height: '28px',
+    borderRadius: '6px',
     background: 'transparent',
   },
 
   gridHeaderCell: {
-    minHeight: '34px',
-    borderRadius: '12px',
+    minHeight: '28px',
+    borderRadius: '6px',
     background: '#dee7e7',
     color: '#002642',
-    fontSize: '13px',
+    fontSize: '12px',
     fontWeight: '800',
     display: 'flex',
     alignItems: 'center',
@@ -2605,17 +2768,17 @@ const styles = {
 
   gridRow: {
     display: 'grid',
-    gridTemplateColumns: '72px repeat(7, 80px)',
-    gap: '6px',
+    gridTemplateColumns: '58px repeat(7, 64px)',
+    gap: '3px',
     alignItems: 'center',
   },
 
   gridTimeCell: {
-    height: '34px',
-    borderRadius: '12px',
+    height: '22px',
+    borderRadius: '6px',
     background: '#f4faff',
     color: '#4f646f',
-    fontSize: '13px',
+    fontSize: '11px',
     fontWeight: '700',
     display: 'flex',
     alignItems: 'center',
@@ -2626,57 +2789,71 @@ const styles = {
 
   gridCell: {
     width: '100%',
-    minHeight: '34px',
-    borderRadius: '12px',
+    minHeight: '22px',
+    borderRadius: '5px',
     background: '#eef3f6',
     border: '1px solid transparent',
     cursor: 'pointer',
+    userSelect: 'none',
+    WebkitUserSelect: 'none',
+    touchAction: 'none',
   },
 
   gridCellAvailable: {
     width: '100%',
-    minHeight: '34px',
-    borderRadius: '12px',
+    minHeight: '22px',
+    borderRadius: '5px',
     background: '#4CAF50',
     border: '1px solid #388E3C',
     cursor: 'pointer',
-    transition: 'all 0.15s ease',
+    transition: 'background 0.08s ease, border-color 0.08s ease',
+    userSelect: 'none',
+    WebkitUserSelect: 'none',
+    touchAction: 'none',
   },
 
   gridCellMaybe: {
     width: '100%',
-    minHeight: '34px',
-    borderRadius: '12px',
+    minHeight: '22px',
+    borderRadius: '5px',
     background: '#FFC107',
     border: '1px solid #F57C00',
     cursor: 'pointer',
-    transition: 'all 0.15s ease',
+    transition: 'background 0.08s ease, border-color 0.08s ease',
+    userSelect: 'none',
+    WebkitUserSelect: 'none',
+    touchAction: 'none',
   },
 
   brushPicker: {
     display: 'flex',
-    gap: '8px',
+    gap: '6px',
     background: '#eceff4',
-    padding: '4px 8px',
-    borderRadius: '12px',
+    padding: '4px',
+    borderRadius: '8px',
   },
 
   brushBtn: {
-    width: '24px',
-    height: '24px',
+    minWidth: '86px',
+    minHeight: '28px',
     borderRadius: '6px',
     cursor: 'pointer',
-    padding: 0,
+    padding: '3px 8px',
+    fontSize: '11px',
+    fontWeight: '850',
     transition: 'transform 0.1s ease',
   },
   gridCellLocked: {
     width: '100%',
-    minHeight: '34px',
-    borderRadius: '12px',
+    minHeight: '22px',
+    borderRadius: '5px',
     background: 'repeating-linear-gradient(45deg, #eef3f6, #eef3f6 6px, #e2e8ec 6px, #e2e8ec 12px)',
     border: '1px solid #dde5ea',
     cursor: 'not-allowed',
     opacity: 0.6,
+    userSelect: 'none',
+    WebkitUserSelect: 'none',
+    touchAction: 'none',
   },
 
   desiredDaysOffSection: {
