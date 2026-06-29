@@ -3,8 +3,11 @@ VALUES
 ('Maria Manager', 'manager@example.com', '$2b$12$oo5ryRPAlz/TOfenPoE3JuFYJsdljzAhv.FLXcvx6vrvCPcCA1kTm', 'manager'),
 ('Ivan Barista', 'ivan@example.com', '$2b$12$uSYcqEdeSEBbX1C4vnns9.33t2QvChgi0eQ5RxJBGg8jCHGqu3w8a', 'employee');
 
-INSERT INTO companies (name, address, invite_code, manager_user_id)
-VALUES ('Coffee Bar Barnaul', 'Barnaul, Lenin Street', 'A7K9P2X4M8Q1L5R3', 1);
+INSERT INTO companies (name, address, invite_code)
+VALUES ('Coffee Bar Barnaul', 'Barnaul, Lenin Street', 'A7K9P2X4M8Q1L5R3');
+
+INSERT INTO company_managers (company_id, user_id, manager_role, membership_status)
+VALUES (1, 1, 'owner', 'active');
 
 INSERT INTO branches (company_id, name, address)
 VALUES (1, 'Main Branch', 'Barnaul, Lenin Street');
@@ -17,6 +20,14 @@ VALUES
 INSERT INTO employees (user_id, company_id, branch_id, position_id, max_hours_per_week)
 VALUES
 (2, 1, 1, 1, 40);
+
+INSERT INTO employee_branches (employee_id, branch_id, is_primary)
+VALUES
+(1, 1, TRUE);
+
+INSERT INTO employee_positions (employee_id, position_id, is_primary)
+VALUES
+(1, 1, TRUE);
 
 INSERT INTO employee_availability (employee_id, weekday, start_time, end_time, availability_status)
 VALUES

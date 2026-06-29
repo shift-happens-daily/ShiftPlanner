@@ -780,7 +780,7 @@ export default function ShiftsTab({ language, userRole, user }) {
         [slot]: nextStatus,
       },
     }));
-  }, [brushMode]);
+  }, [brushMode];
 
   const applyAvailabilityDragCell = useCallback((dayIndex, slotIndex) => {
     const dragState = dragSelectionRef.current;
