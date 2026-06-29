@@ -3,16 +3,20 @@ package com.froggyriia.shiftplanner.presentation.manager.requirements
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.ChevronLeft
@@ -27,6 +31,7 @@ import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExposedDropdownMenuBox
 import androidx.compose.material3.ExposedDropdownMenuDefaults
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -54,6 +59,7 @@ import androidx.compose.ui.unit.dp
 import com.froggyriia.shiftplanner.domain.model.AppUser
 import com.froggyriia.shiftplanner.domain.model.RequirementOccurrence
 import com.froggyriia.shiftplanner.domain.model.RequirementPositionOption
+import com.froggyriia.shiftplanner.domain.model.RequirementTemplateDraft
 import java.text.SimpleDateFormat
 import java.util.Locale
 
@@ -68,8 +74,9 @@ fun RequirementsScreen(
     val state by viewModel.uiState.collectAsState()
     val snackbarHostState = remember { SnackbarHostState() }
 
-    var editDraft by rememberSaveable { mutableStateOf<RequirementDraft?>(null) }
+    var editDraft by remember { mutableStateOf<RequirementDraft?>(null) }
     var deleteTarget by remember { mutableStateOf<RequirementOccurrence?>(null) }
+    var showBulkSheet by rememberSaveable { mutableStateOf(false) }
 
     LaunchedEffect(state.statusMessage) {
         state.statusMessage?.let { snackbarHostState.showSnackbar(it); viewModel.clearMessages() }
@@ -89,22 +96,18 @@ fun RequirementsScreen(
         topBar = {
             TopAppBar(
                 title = { Text("Requirements") },
+                actions = {
+                    TextButton(onClick = { showBulkSheet = true }) { Text("Bulk create") }
+                }
             )
         },
         snackbarHost = { SnackbarHost(snackbarHostState) }
     ) { padding ->
         Column(Modifier.padding(padding)) {
-            // Week navigation bar
-            WeekNavBar(
-                label = state.weekLabel,
-                onPrev = viewModel::previousWeek,
-                onNext = viewModel::nextWeek
-            )
+            WeekNavBar(label = state.weekLabel, onPrev = viewModel::previousWeek, onNext = viewModel::nextWeek)
 
             if (state.isLoading) {
-                Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                    CircularProgressIndicator()
-                }
+                Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { CircularProgressIndicator() }
             } else {
                 LazyColumn(Modifier.fillMaxSize()) {
                     state.weekDates.forEachIndexed { index, date ->
@@ -113,9 +116,7 @@ fun RequirementsScreen(
                             DayHeader(
                                 dayLabel = DAY_LABELS[index],
                                 date = date,
-                                onAddClick = {
-                                    editDraft = RequirementDraft(date = date)
-                                }
+                                onAddClick = { editDraft = RequirementDraft(date = date) }
                             )
                         }
                         if (dayReqs.isEmpty()) {
@@ -155,7 +156,7 @@ fun RequirementsScreen(
         }
     }
 
-    // ── Edit / Create Sheet ───────────────────────────────────────────────────
+    // ── Edit / Create sheet ───────────────────────────────────────────────────
     editDraft?.let { draft ->
         RequirementEditSheet(
             draft = draft,
@@ -172,25 +173,34 @@ fun RequirementsScreen(
         )
     }
 
-    // ── Delete Confirm ────────────────────────────────────────────────────────
+    // ── Bulk create sheet ─────────────────────────────────────────────────────
+    if (showBulkSheet) {
+        BulkCreateSheet(
+            positions = state.positions,
+            defaultStart = viewModel.uiState.value.weekDates.firstOrNull() ?: "",
+            defaultEnd = viewModel.uiState.value.weekDates.lastOrNull() ?: "",
+            onSave = { start, end, weekdays, templates ->
+                viewModel.createBulk(start, end, weekdays, templates) { ok ->
+                    if (ok) showBulkSheet = false
+                }
+            },
+            onDismiss = { showBulkSheet = false }
+        )
+    }
+
+    // ── Delete confirm ────────────────────────────────────────────────────────
     deleteTarget?.let { req ->
         AlertDialog(
             onDismissRequest = { deleteTarget = null },
             title = { Text("Delete requirement?") },
-            text = {
-                Text("Remove the ${viewModel.positionName(req.positionId)} requirement? This cannot be undone.")
-            },
+            text = { Text("Remove the ${viewModel.positionName(req.positionId)} requirement? This cannot be undone.") },
             confirmButton = {
                 Button(
                     onClick = { viewModel.deleteRequirement(req); deleteTarget = null },
-                    colors = androidx.compose.material3.ButtonDefaults.buttonColors(
-                        containerColor = MaterialTheme.colorScheme.error
-                    )
+                    colors = androidx.compose.material3.ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
                 ) { Text("Delete") }
             },
-            dismissButton = {
-                TextButton(onClick = { deleteTarget = null }) { Text("Cancel") }
-            }
+            dismissButton = { TextButton(onClick = { deleteTarget = null }) { Text("Cancel") } }
         )
     }
 }
@@ -200,9 +210,7 @@ fun RequirementsScreen(
 @Composable
 private fun WeekNavBar(label: String, onPrev: () -> Unit, onNext: () -> Unit) {
     Row(
-        Modifier
-            .fillMaxWidth()
-            .padding(horizontal = 8.dp, vertical = 4.dp),
+        Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 4.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.SpaceBetween
     ) {
@@ -214,20 +222,16 @@ private fun WeekNavBar(label: String, onPrev: () -> Unit, onNext: () -> Unit) {
 
 @Composable
 private fun DayHeader(dayLabel: String, date: String, onAddClick: () -> Unit) {
+    val displayDate = remember(date) {
+        runCatching {
+            "$dayLabel, ${SimpleDateFormat("MMM d", Locale.US).format(SimpleDateFormat("yyyy-MM-dd", Locale.US).parse(date)!!)}"
+        }.getOrDefault(dayLabel)
+    }
     Row(
-        Modifier
-            .fillMaxWidth()
-            .padding(start = 16.dp, end = 4.dp, top = 12.dp, bottom = 4.dp),
+        Modifier.fillMaxWidth().padding(start = 16.dp, end = 4.dp, top = 12.dp, bottom = 4.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.SpaceBetween
     ) {
-        val displayDate = remember(date) {
-            try {
-                val sdf = SimpleDateFormat("yyyy-MM-dd", Locale.US)
-                val out = SimpleDateFormat("MMM d", Locale.US)
-                "$dayLabel, ${out.format(sdf.parse(date)!!)}"
-            } catch (_: Exception) { dayLabel }
-        }
         Text(displayDate, style = MaterialTheme.typography.titleSmall)
         IconButton(onClick = onAddClick) { Icon(Icons.Default.Add, "Add requirement") }
     }
@@ -240,15 +244,9 @@ private fun RequirementCard(
     onEdit: () -> Unit,
     onDelete: () -> Unit
 ) {
-    Card(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(horizontal = 16.dp, vertical = 4.dp)
-    ) {
+    Card(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp)) {
         Row(
-            Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 12.dp, vertical = 8.dp),
+            Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
             Column(Modifier.weight(1f)) {
@@ -265,6 +263,8 @@ private fun RequirementCard(
     }
 }
 
+// ── Edit sheet ────────────────────────────────────────────────────────────────
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun RequirementEditSheet(
@@ -276,46 +276,31 @@ private fun RequirementEditSheet(
 ) {
     ModalBottomSheet(onDismissRequest = onDismiss) {
         Column(
-            Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 16.dp)
-                .padding(bottom = 32.dp),
+            Modifier.fillMaxWidth().padding(horizontal = 16.dp).padding(bottom = 32.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
             Text(
                 if (draft.id == null) "Add Requirement" else "Edit Requirement",
                 style = MaterialTheme.typography.titleMedium
             )
-
-            // Position picker
-            SlotDropdown(
+            ReqDropdown(
                 label = "Position",
                 options = positions.map { it.id to it.name },
                 selectedId = draft.positionId,
                 onSelect = { onDraftChange(draft.copy(positionId = it)) }
             )
-
-            // Start / End time
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 Box(Modifier.weight(1f)) {
-                    SlotDropdown(
-                        label = "Start time",
-                        options = RequirementsViewModel.timeSlots,
-                        selectedId = draft.startSlot,
-                        onSelect = { onDraftChange(draft.copy(startSlot = it)) }
-                    )
+                    ReqDropdown("Start time", RequirementsViewModel.timeSlots, draft.startSlot) {
+                        onDraftChange(draft.copy(startSlot = it))
+                    }
                 }
                 Box(Modifier.weight(1f)) {
-                    SlotDropdown(
-                        label = "End time",
-                        options = RequirementsViewModel.timeSlots,
-                        selectedId = draft.endSlot,
-                        onSelect = { onDraftChange(draft.copy(endSlot = it)) }
-                    )
+                    ReqDropdown("End time", RequirementsViewModel.timeSlots, draft.endSlot) {
+                        onDraftChange(draft.copy(endSlot = it))
+                    }
                 }
             }
-
-            // Quantity
             OutlinedTextField(
                 value = draft.quantity.toString(),
                 onValueChange = { v -> v.toIntOrNull()?.let { onDraftChange(draft.copy(quantity = it.coerceAtLeast(1))) } },
@@ -324,12 +309,8 @@ private fun RequirementEditSheet(
                 singleLine = true,
                 modifier = Modifier.fillMaxWidth()
             )
-
-            Row(
-                Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                TextButton(onClick = onDismiss, modifier = Modifier.weight(1f)) { Text("Cancel") }
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                TextButton(onClick = onDismiss, Modifier.weight(1f)) { Text("Cancel") }
                 Button(
                     onClick = onSave,
                     enabled = draft.positionId != null && draft.endSlot > draft.startSlot,
@@ -340,9 +321,146 @@ private fun RequirementEditSheet(
     }
 }
 
+// ── Bulk create sheet ─────────────────────────────────────────────────────────
+
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
+@Composable
+private fun BulkCreateSheet(
+    positions: List<RequirementPositionOption>,
+    defaultStart: String,
+    defaultEnd: String,
+    onSave: (String, String, List<Int>, List<RequirementTemplateDraft>) -> Unit,
+    onDismiss: () -> Unit
+) {
+    var startDate by remember { mutableStateOf(defaultStart) }
+    var endDate by remember { mutableStateOf(defaultEnd) }
+    var selectedWeekdays by remember { mutableStateOf(setOf(0, 1, 2, 3, 4)) } // Mon–Fri default
+    var templates by remember {
+        mutableStateOf(listOf(RequirementTemplateDraft(positionId = 0, quantity = 1, startSlot = 16, endSlot = 32)))
+    }
+
+    ModalBottomSheet(onDismissRequest = onDismiss) {
+        Column(
+            Modifier
+                .fillMaxWidth()
+                .verticalScroll(rememberScrollState())
+                .padding(horizontal = 16.dp)
+                .padding(bottom = 48.dp),
+            verticalArrangement = Arrangement.spacedBy(14.dp)
+        ) {
+            Text("Bulk Create Requirements", style = MaterialTheme.typography.titleMedium)
+
+            // Date range
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                OutlinedTextField(
+                    value = startDate, onValueChange = { startDate = it },
+                    label = { Text("Start (yyyy-MM-dd)") }, singleLine = true,
+                    modifier = Modifier.weight(1f)
+                )
+                OutlinedTextField(
+                    value = endDate, onValueChange = { endDate = it },
+                    label = { Text("End (yyyy-MM-dd)") }, singleLine = true,
+                    modifier = Modifier.weight(1f)
+                )
+            }
+
+            // Weekday selector
+            Text("Repeat on", style = MaterialTheme.typography.labelMedium)
+            FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                DAY_LABELS.forEachIndexed { idx, label ->
+                    FilterChip(
+                        selected = idx in selectedWeekdays,
+                        onClick = {
+                            selectedWeekdays = if (idx in selectedWeekdays)
+                                selectedWeekdays - idx else selectedWeekdays + idx
+                        },
+                        label = { Text(label) }
+                    )
+                }
+            }
+
+            // Templates
+            Text("Requirement templates", style = MaterialTheme.typography.labelMedium)
+            templates.forEachIndexed { i, tmpl ->
+                Card(Modifier.fillMaxWidth()) {
+                    Column(
+                        Modifier.padding(12.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Row(
+                            Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text("Template ${i + 1}", style = MaterialTheme.typography.labelLarge)
+                            if (templates.size > 1) {
+                                IconButton(onClick = { templates = templates.toMutableList().also { it.removeAt(i) } }) {
+                                    Icon(Icons.Default.Delete, "Remove template")
+                                }
+                            }
+                        }
+                        ReqDropdown(
+                            label = "Position",
+                            options = positions.map { it.id to it.name },
+                            selectedId = tmpl.positionId.takeIf { it > 0 },
+                            onSelect = { newId ->
+                                templates = templates.toMutableList().also { it[i] = tmpl.copy(positionId = newId) }
+                            }
+                        )
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Box(Modifier.weight(1f)) {
+                                ReqDropdown("Start", RequirementsViewModel.timeSlots, tmpl.startSlot) { s ->
+                                    templates = templates.toMutableList().also { it[i] = tmpl.copy(startSlot = s) }
+                                }
+                            }
+                            Box(Modifier.weight(1f)) {
+                                ReqDropdown("End", RequirementsViewModel.timeSlots, tmpl.endSlot) { e ->
+                                    templates = templates.toMutableList().also { it[i] = tmpl.copy(endSlot = e) }
+                                }
+                            }
+                        }
+                        OutlinedTextField(
+                            value = tmpl.quantity.toString(),
+                            onValueChange = { v ->
+                                v.toIntOrNull()?.let { q ->
+                                    templates = templates.toMutableList().also { it[i] = tmpl.copy(quantity = q.coerceAtLeast(1)) }
+                                }
+                            },
+                            label = { Text("Quantity") },
+                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                            singleLine = true,
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                    }
+                }
+            }
+
+            TextButton(
+                onClick = {
+                    templates = templates + RequirementTemplateDraft(positionId = 0, quantity = 1, startSlot = 16, endSlot = 32)
+                },
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Icon(Icons.Default.Add, null)
+                Text("Add template")
+            }
+
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                TextButton(onClick = onDismiss, Modifier.weight(1f)) { Text("Cancel") }
+                Button(
+                    onClick = { onSave(startDate, endDate, selectedWeekdays.sorted(), templates) },
+                    modifier = Modifier.weight(1f)
+                ) { Text("Create all") }
+            }
+        }
+    }
+}
+
+// ── Shared dropdown ───────────────────────────────────────────────────────────
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun SlotDropdown(
+private fun ReqDropdown(
     label: String,
     options: List<Pair<Int, String>>,
     selectedId: Int?,
@@ -351,29 +469,16 @@ private fun SlotDropdown(
     var expanded by remember { mutableStateOf(false) }
     val selectedLabel = options.firstOrNull { it.first == selectedId }?.second ?: "Select…"
 
-    ExposedDropdownMenuBox(
-        expanded = expanded,
-        onExpandedChange = { expanded = it }
-    ) {
+    ExposedDropdownMenuBox(expanded = expanded, onExpandedChange = { expanded = it }) {
         OutlinedTextField(
-            value = selectedLabel,
-            onValueChange = {},
-            readOnly = true,
+            value = selectedLabel, onValueChange = {}, readOnly = true,
             label = { Text(label) },
             trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded) },
-            modifier = Modifier
-                .fillMaxWidth()
-                .menuAnchor()
+            modifier = Modifier.fillMaxWidth().menuAnchor()
         )
-        ExposedDropdownMenu(
-            expanded = expanded,
-            onDismissRequest = { expanded = false }
-        ) {
+        ExposedDropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
             options.forEach { (id, name) ->
-                DropdownMenuItem(
-                    text = { Text(name) },
-                    onClick = { onSelect(id); expanded = false }
-                )
+                DropdownMenuItem(text = { Text(name) }, onClick = { onSelect(id); expanded = false })
             }
         }
     }

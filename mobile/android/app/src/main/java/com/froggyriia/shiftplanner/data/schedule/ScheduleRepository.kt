@@ -31,6 +31,7 @@ interface ScheduleRepository {
     suspend fun updateScheduleRequirement(
         scheduleId: Int,
         requirementId: Int,
-        mutation: ScheduleShiftMutation
+        mutation: ScheduleShiftMutation,
+        quantity: Int = 1
     ): AppSchedule
 }

@@ -119,7 +119,8 @@ class ApiScheduleRepository(
     override suspend fun updateScheduleRequirement(
         scheduleId: Int,
         requirementId: Int,
-        mutation: ScheduleShiftMutation
+        mutation: ScheduleShiftMutation,
+        quantity: Int
     ): AppSchedule = wrap {
         apiClient.api.updateScheduleRequirement(
             scheduleId = scheduleId,
@@ -128,8 +129,8 @@ class ApiScheduleRepository(
                 branchId = null,
                 positionId = mutation.positionId,
                 date = dateFormatter.format(mutation.date),
-                minStaff = 1,
-                requiredCount = 1,
+                minStaff = quantity,
+                requiredCount = quantity,
                 startTime = minutesToTime(mutation.startMinutes),
                 endTime = minutesToTime(mutation.endMinutes)
             )

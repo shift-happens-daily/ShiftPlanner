@@ -159,7 +159,10 @@ private fun ManagerShell(
                             object : ViewModelProvider.Factory {
                                 override fun <T : ViewModel> create(modelClass: Class<T>): T {
                                     @Suppress("UNCHECKED_CAST")
-                                    return ScheduleViewModel(appContainer.scheduleRepository) as T
+                                    return ScheduleViewModel(
+                                        appContainer.scheduleRepository,
+                                        appContainer.requirementsRepository
+                                    ) as T
                                 }
                             }
                         }

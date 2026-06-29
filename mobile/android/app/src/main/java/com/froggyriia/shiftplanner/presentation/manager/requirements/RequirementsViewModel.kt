@@ -5,6 +5,7 @@ import androidx.lifecycle.viewModelScope
 import com.froggyriia.shiftplanner.data.requirements.RequirementsRepository
 import com.froggyriia.shiftplanner.domain.model.RequirementOccurrence
 import com.froggyriia.shiftplanner.domain.model.RequirementPositionOption
+import com.froggyriia.shiftplanner.domain.model.RequirementTemplateDraft
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -154,6 +155,45 @@ class RequirementsViewModel(
                 )
             } catch (e: Exception) {
                 _uiState.value = _uiState.value.copy(errorMessage = e.message)
+            }
+        }
+    }
+
+    fun createBulk(
+        startDate: String,
+        endDate: String,
+        weekdays: List<Int>,
+        templates: List<RequirementTemplateDraft>,
+        onDone: (Boolean) -> Unit
+    ) {
+        if (startDate.isBlank() || endDate.isBlank()) {
+            _uiState.value = _uiState.value.copy(errorMessage = "Start and end dates are required.")
+            onDone(false); return
+        }
+        if (weekdays.isEmpty()) {
+            _uiState.value = _uiState.value.copy(errorMessage = "Select at least one weekday.")
+            onDone(false); return
+        }
+        val validTemplates = templates.filter { it.positionId > 0 && it.endSlot > it.startSlot }
+        if (validTemplates.isEmpty()) {
+            _uiState.value = _uiState.value.copy(errorMessage = "Add at least one complete requirement template.")
+            onDone(false); return
+        }
+        viewModelScope.launch {
+            _uiState.value = _uiState.value.copy(isLoading = true, errorMessage = null)
+            try {
+                val created = repository.createRequirementsBulk(startDate, endDate, weekdays, validTemplates)
+                val merged = (_uiState.value.requirements + created)
+                    .sortedWith(compareBy({ it.date }, { it.startSlot }))
+                _uiState.value = _uiState.value.copy(
+                    requirements = merged,
+                    isLoading = false,
+                    statusMessage = "${created.size} requirement(s) created."
+                )
+                onDone(true)
+            } catch (e: Exception) {
+                _uiState.value = _uiState.value.copy(isLoading = false, errorMessage = e.message)
+                onDone(false)
             }
         }
     }
