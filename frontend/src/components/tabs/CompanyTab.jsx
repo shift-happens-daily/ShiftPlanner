@@ -695,13 +695,20 @@ export default function CompanyTab({ language, userRole, user }) {
             </section>
           </div>
         ) : (
-          <div style={{ ...styles.grid, gridTemplateColumns: r.gridCols('1fr 1fr') }}>
-            <section style={{ ...styles.card, ...r.card }}>
+          <div style={{
+            ...(isEmployee ? styles.employeeGrid : styles.grid),
+            gridTemplateColumns: r.gridCols(isEmployee ? 'minmax(0, 860px)' : '1fr 1fr'),
+          }}>
+            <section style={{
+              ...styles.card,
+              ...r.card,
+              ...(isEmployee && currentCompany ? styles.employeeCompanyCard : {}),
+            }}>
               <div style={styles.cardHeaderCompact}>
                 <h2 style={{ ...styles.title, ...r.title }}>{t.title}</h2>
               </div>
 
-              <div style={styles.section}>
+              <div style={isEmployee && currentCompany ? styles.employeeSection : styles.section}>
                 <h3 style={styles.sectionTitle}>{t.currentCompany}</h3>
 
                 {isPendingEmployee ? (
@@ -710,12 +717,21 @@ export default function CompanyTab({ language, userRole, user }) {
                     <span style={styles.pendingText}>{t.pendingText}</span>
                   </div>
                 ) : currentCompany ? (
-                  <div style={styles.companyPanel}>
-                    <strong style={styles.companyTitle}>{currentCompany.name || t.empty}</strong>
+                  <div style={isEmployee ? styles.employeeCompanyPanel : styles.companyPanel}>
+                    <div style={isEmployee ? styles.employeeCompanyHero : undefined}>
+                      {!isEmployee && <span style={styles.panelLabel}>{t.currentCompany}</span>}
+                      <strong style={isEmployee ? styles.employeeCompanyTitle : styles.companyTitle}>
+                        {currentCompany.name || t.empty}
+                      </strong>
+                    </div>
 
                     {isEmployee && (
-                      <div style={{ ...styles.infoGrid, gridTemplateColumns: r.gridCols('1fr 1fr') }}>
-                        <div style={styles.infoItem}>
+                      <div style={{
+                        ...styles.infoGrid,
+                        ...(isEmployee ? styles.employeeInfoGrid : {}),
+                        gridTemplateColumns: r.gridCols('minmax(0, 1.3fr) minmax(0, 1fr)'),
+                      }}>
+                        <div style={{ ...styles.infoItem, ...styles.employeeInfoItem }}>
                           <span style={styles.infoLabel}>{t.branches}</span>
                           {userBranches.length === 0 ? (
                             <strong style={styles.infoValue}>{t.noBranchesAssigned}</strong>
@@ -729,7 +745,11 @@ export default function CompanyTab({ language, userRole, user }) {
                             </div>
                           )}
                         </div>
-                        <InfoItem label={t.position} value={getName(currentPosition)} />
+                        <InfoItem
+                          label={t.position}
+                          value={getName(currentPosition)}
+                          style={styles.employeeInfoItem}
+                        />
                       </div>
                     )}
                   </div>
@@ -858,9 +878,9 @@ export default function CompanyTab({ language, userRole, user }) {
   );
 }
 
-function InfoItem({ label, value }) {
+function InfoItem({ label, value, style }) {
   return (
-    <div style={styles.infoItem}>
+    <div style={{ ...styles.infoItem, ...style }}>
       <span style={styles.infoLabel}>{label}</span>
       <strong style={styles.infoValue}>{value || '—'}</strong>
     </div>
@@ -923,6 +943,18 @@ const styles = {
     alignItems: 'stretch',
   },
 
+  employeeGrid: {
+    flex: '1 1 auto',
+    minHeight: 0,
+    width: '100%',
+    display: 'grid',
+    gridTemplateColumns: 'minmax(0, 860px)',
+    gap: '14px',
+    alignItems: 'center',
+    justifyContent: 'center',
+    alignContent: 'center',
+  },
+
   card: {
     boxSizing: 'border-box',
     width: '100%',
@@ -936,6 +968,13 @@ const styles = {
     flexDirection: 'column',
     gap: '12px',
     overflow: 'hidden',
+  },
+
+  employeeCompanyCard: {
+    alignSelf: 'center',
+    minHeight: 0,
+    maxHeight: 'none',
+    padding: '16px',
   },
 
   requestsCard: {
@@ -1021,6 +1060,37 @@ const styles = {
     flexDirection: 'column',
     gap: '12px',
     textAlign: 'left',
+  },
+
+  employeeSection: {
+    minHeight: 0,
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '12px',
+  },
+
+  employeeCompanyPanel: {
+    display: 'grid',
+    gridTemplateColumns: 'minmax(0, 1fr)',
+    gap: '12px',
+  },
+
+  employeeCompanyHero: {
+    padding: '16px 18px',
+    borderRadius: '12px',
+    background: '#002642',
+    color: '#ffffff',
+    display: 'flex',
+    flexDirection: 'column',
+    gap: 0,
+  },
+
+  employeeCompanyTitle: {
+    color: '#ffffff',
+    fontSize: '24px',
+    fontWeight: '900',
+    lineHeight: 1.1,
+    overflowWrap: 'anywhere',
   },
 
   panelLabel: {
@@ -1369,6 +1439,10 @@ const styles = {
     gap: '10px',
   },
 
+  employeeInfoGrid: {
+    alignItems: 'stretch',
+  },
+
   infoItem: {
     padding: '12px',
     borderRadius: '12px',
@@ -1377,6 +1451,13 @@ const styles = {
     display: 'flex',
     flexDirection: 'column',
     gap: '4px',
+  },
+
+  employeeInfoItem: {
+    minHeight: '78px',
+    padding: '14px',
+    background: '#ffffff',
+    justifyContent: 'center',
   },
 
   infoLabel: {

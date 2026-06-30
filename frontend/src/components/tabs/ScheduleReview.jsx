@@ -814,7 +814,6 @@ export default function ScheduleReview({ language }) {
   const texts = {
     ru: {
       title: 'Просмотр сгенерированного расписания',
-      subtitle: 'Выберите период, сгенерируйте смены и посмотрите их в табличном формате.',
       employee: 'Сотрудник',
       date: 'Дата',
       day: 'День',
@@ -853,7 +852,6 @@ export default function ScheduleReview({ language }) {
     },
     en: {
       title: 'Generated Schedule Review',
-      subtitle: 'Pick a period, generate shifts and review them in a table.',
       employee: 'Employee',
       date: 'Date',
       day: 'Day',
@@ -1254,6 +1252,11 @@ export default function ScheduleReview({ language }) {
     colorScheme: 'light',
     boxSizing: 'border-box',
   };
+  const dateInputStyle = {
+    ...inputStyle,
+    fontWeight: 700,
+    cursor: 'pointer',
+  };
   const primaryButtonStyle = {
     height: 40,
     padding: '0 16px',
@@ -1402,7 +1405,7 @@ export default function ScheduleReview({ language }) {
               }}
               style={{
                 width: isMobile ? '100%' : 'auto',
-                ...inputStyle,
+                ...dateInputStyle,
               }}
             />
           </label>
@@ -1429,7 +1432,7 @@ export default function ScheduleReview({ language }) {
               }}
               style={{
                 width: isMobile ? '100%' : 'auto',
-                ...inputStyle,
+                ...dateInputStyle,
                 background: viewMode === 'month' ? '#f4faff' : '#ffffff',
               }}
             />

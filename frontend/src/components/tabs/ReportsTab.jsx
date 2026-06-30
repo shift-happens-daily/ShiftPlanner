@@ -2,17 +2,19 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import * as XLSX from 'xlsx';
 import { getEmployeeReports, getMyReport } from '../../services/reportService';
 import { listBranches } from '../../services/companyService';
+import { filterRealEmployees, listEmployees } from '../../services/employeeService';
+import { listPositions } from '../../services/positionService';
 import { enrichReportRowBranch } from '../../utils/employeeBranches';
 import { extractApiErrorMessage } from '../../services/error';
 import { useTabResponsive } from '../../utils/tabResponsive';
+import { formatLocalDate } from '../../services/scheduleService';
 
 function defaultRange() {
-  const end = new Date();
-  const start = new Date(end.getFullYear(), end.getMonth(), 1);
+  const today = formatLocalDate(new Date());
 
   return {
-    start_date: start.toISOString().slice(0, 10),
-    end_date: end.toISOString().slice(0, 10),
+    start_date: today,
+    end_date: today,
   };
 }
 
@@ -40,6 +42,11 @@ function normalizeNumber(value) {
   const number = Number(value);
 
   return Number.isFinite(number) ? number : 0;
+}
+
+function uniqueSorted(values) {
+  return [...new Set(values.map((value) => String(value || '').trim()).filter(Boolean))]
+    .sort((a, b) => a.localeCompare(b));
 }
 
 const DEFAULT_HOURLY_RATE = 25;
@@ -92,6 +99,8 @@ export default function ReportsTab({ language, userRole, user }) {
   const [positionFilter, setPositionFilter] = useState('');
   const [branchFilter, setBranchFilter] = useState('');
   const [companyBranches, setCompanyBranches] = useState([]);
+  const [companyEmployees, setCompanyEmployees] = useState([]);
+  const [companyPositions, setCompanyPositions] = useState([]);
 
   const [managerReport, setManagerReport] = useState([]);
   const [employeeReport, setEmployeeReport] = useState(null);
@@ -105,8 +114,6 @@ export default function ReportsTab({ language, userRole, user }) {
     ru: {
       title: 'Отчеты',
       selfTitle: 'Мой отчет',
-      subtitleManager: 'Сводка по отработанным часам и сменам сотрудников за выбранный период.',
-      subtitleEmployee: 'Личная сводка по опубликованным сменам за выбранный период.',
       period: 'Период отчета',
       startDate: 'Начало периода',
       endDate: 'Конец периода',
@@ -118,6 +125,8 @@ export default function ReportsTab({ language, userRole, user }) {
       salary: 'Зарплата',
       branch: 'Филиал',
       allBranches: 'Все филиалы',
+      allEmployees: 'Все сотрудники',
+      allPositions: 'Все позиции',
       reportType: 'Тип отчета',
       hoursReport: 'По часам',
       shiftsReport: 'По сменам',
@@ -139,8 +148,6 @@ export default function ReportsTab({ language, userRole, user }) {
     en: {
       title: 'Reports',
       selfTitle: 'My report',
-      subtitleManager: 'Summary of employee workload by hours and shifts for the selected period.',
-      subtitleEmployee: 'Personal summary of published shifts for the selected period.',
       period: 'Report period',
       startDate: 'Start date',
       endDate: 'End date',
@@ -152,6 +159,8 @@ export default function ReportsTab({ language, userRole, user }) {
       salary: 'Salary',
       branch: 'Branch',
       allBranches: 'All branches',
+      allEmployees: 'All employees',
+      allPositions: 'All positions',
       reportType: 'Report type',
       hoursReport: 'By hours',
       shiftsReport: 'By shifts',
@@ -177,27 +186,37 @@ export default function ReportsTab({ language, userRole, user }) {
   useEffect(() => {
     let cancelled = false;
 
-    async function loadBranches() {
+    async function loadFilterOptions() {
       if (!isManager || !companyId) {
         if (!cancelled) {
           setCompanyBranches([]);
+          setCompanyEmployees([]);
+          setCompanyPositions([]);
         }
         return;
       }
 
       try {
-        const data = await listBranches(companyId);
+        const [branchesData, employeesData, positionsData] = await Promise.all([
+          listBranches(companyId),
+          listEmployees(),
+          listPositions(),
+        ]);
         if (!cancelled) {
-          setCompanyBranches(Array.isArray(data) ? data : []);
+          setCompanyBranches(Array.isArray(branchesData) ? branchesData : []);
+          setCompanyEmployees(filterRealEmployees(normalizeArray(employeesData)));
+          setCompanyPositions(normalizeArray(positionsData));
         }
       } catch {
         if (!cancelled) {
           setCompanyBranches([]);
+          setCompanyEmployees([]);
+          setCompanyPositions([]);
         }
       }
     }
 
-    void loadBranches();
+    void loadFilterOptions();
 
     return () => {
       cancelled = true;
@@ -217,6 +236,24 @@ export default function ReportsTab({ language, userRole, user }) {
       return matchesEmployee && matchesPosition && matchesBranch;
     });
   }, [normalizedManagerReport, employeeSearch, positionFilter, branchFilter]);
+
+  const employeeFilterOptions = useMemo(() => {
+    const fromEmployees = companyEmployees.map((employee) => employee.full_name || employee.name || employee.email);
+    const fromReport = normalizedManagerReport.map((item) => item.full_name);
+    return uniqueSorted([...fromEmployees, ...fromReport]);
+  }, [companyEmployees, normalizedManagerReport]);
+
+  const positionFilterOptions = useMemo(() => {
+    const fromPositions = companyPositions.map((position) => position.title || position.name);
+    const fromReport = normalizedManagerReport.map((item) => item.position);
+    return uniqueSorted([...fromPositions, ...fromReport]);
+  }, [companyPositions, normalizedManagerReport]);
+
+  const branchFilterOptions = useMemo(() => {
+    const fromBranches = companyBranches.map((branch) => branch.name || branch.title);
+    const fromReport = normalizedManagerReport.flatMap((item) => item.branchNames || item.branch);
+    return uniqueSorted([...fromBranches, ...fromReport]);
+  }, [companyBranches, normalizedManagerReport]);
 
   const normalizedEmployeeReport = useMemo(
     () => normalizeEmployeeReport(employeeReport),
@@ -267,9 +304,6 @@ export default function ReportsTab({ language, userRole, user }) {
     const requestParams = {
       ...range,
       report_type: reportMode,
-      employee_search: employeeSearch,
-      position: positionFilter,
-      branch: branchFilter,
     };
 
     setErrorMessage('');
@@ -306,11 +340,8 @@ export default function ReportsTab({ language, userRole, user }) {
     }
   }, [
     appliedRange,
-    branchFilter,
-    employeeSearch,
     isManager,
     language,
-    positionFilter,
     reportMode,
     t.empty,
     t.noPermission,
@@ -457,7 +488,7 @@ export default function ReportsTab({ language, userRole, user }) {
                     onChange={(event) =>
                       setFilterForm((prev) => ({ ...prev, start_date: event.target.value }))
                     }
-                    style={styles.input}
+                    style={styles.dateInput}
                   />
                 </Field>
 
@@ -468,7 +499,7 @@ export default function ReportsTab({ language, userRole, user }) {
                     onChange={(event) =>
                       setFilterForm((prev) => ({ ...prev, end_date: event.target.value }))
                     }
-                    style={styles.input}
+                    style={styles.dateInput}
                   />
                 </Field>
 
@@ -493,35 +524,48 @@ export default function ReportsTab({ language, userRole, user }) {
                     ))}
                   </div>
                 </Field>
-                <Field label={t.employee}>
-                  <input
-                    type="text"
-                    value={employeeSearch}
-                    onChange={(event) => setEmployeeSearch(event.target.value)}
-                    placeholder={t.employee}
-                    style={styles.input}
-                  />
-                </Field>
+                {isManager && (
+                  <>
+                    <Field label={t.employee}>
+                      <select
+                        value={employeeSearch}
+                        onChange={(event) => setEmployeeSearch(event.target.value)}
+                        style={styles.select}
+                      >
+                        <option value="">{t.allEmployees}</option>
+                        {employeeFilterOptions.map((name) => (
+                          <option key={name} value={name}>{name}</option>
+                        ))}
+                      </select>
+                    </Field>
 
-                <Field label={t.position}>
-                  <input
-                    type="text"
-                    value={positionFilter}
-                    onChange={(event) => setPositionFilter(event.target.value)}
-                    placeholder={t.position}
-                    style={styles.input}
-                  />
-                </Field>
+                    <Field label={t.position}>
+                      <select
+                        value={positionFilter}
+                        onChange={(event) => setPositionFilter(event.target.value)}
+                        style={styles.select}
+                      >
+                        <option value="">{t.allPositions}</option>
+                        {positionFilterOptions.map((position) => (
+                          <option key={position} value={position}>{position}</option>
+                        ))}
+                      </select>
+                    </Field>
 
-                <Field label={t.branch}>
-                  <input
-                    type="text"
-                    value={branchFilter}
-                    onChange={(event) => setBranchFilter(event.target.value)}
-                    placeholder={t.branch}
-                    style={styles.input}
-                  />
-                </Field>
+                    <Field label={t.branch}>
+                      <select
+                        value={branchFilter}
+                        onChange={(event) => setBranchFilter(event.target.value)}
+                        style={styles.select}
+                      >
+                        <option value="">{t.allBranches}</option>
+                        {branchFilterOptions.map((branch) => (
+                          <option key={branch} value={branch}>{branch}</option>
+                        ))}
+                      </select>
+                    </Field>
+                  </>
+                )}
 
                 <button
                   type="button"
@@ -535,7 +579,7 @@ export default function ReportsTab({ language, userRole, user }) {
             </section>
 
             <section style={styles.summaryCard}>
-              <h3 style={styles.panelTitle}>{t.summary}</h3>
+              <h3 style={styles.summaryTitle}>{t.summary}</h3>
 
               <Metric label={t.totalHours} value={totals.total_hours} />
               {reportMode === 'salary' && (
@@ -639,18 +683,22 @@ export default function ReportsTab({ language, userRole, user }) {
                 ...(r.isMobile ? { minHeight: 0, padding: 20 } : {}),
               }}
               >
-                <span style={styles.miniLabel}>{t.employee}</span>
-                <h3 style={styles.employeeReportName}>{normalizedEmployeeReport.full_name}</h3>
-                <p style={styles.employeePosition}>
-                  {normalizedEmployeeReport.position || t.unknownPosition}
-                </p>
+                <div style={styles.employeeReportHeader}>
+                  <div>
+                    <span style={styles.miniLabel}>
+                      {appliedRange.start_date} — {appliedRange.end_date}
+                    </span>
+                  </div>
+                  <span style={styles.employeeReportPill}>{reportMode === 'salary' ? t.salaryReport : t.hoursReport}</span>
+                </div>
 
                 <div style={{
                   ...styles.employeeStats,
                   ...(r.isMobile ? { gridTemplateColumns: '1fr' } : {}),
                 }}
                 >
-                  <Metric label={t.hours} value={normalizedEmployeeReport.total_hours} />
+                  <Metric label={t.totalHours} value={normalizedEmployeeReport.total_hours} />
+                  <Metric label={t.totalShifts} value={normalizedEmployeeReport.total_shifts} />
                   {reportMode === 'salary' && (
                     <Metric label={t.salary} value={normalizedEmployeeReport.total_salary} />
                   )}
@@ -775,19 +823,19 @@ const styles = {
   },
 
   panel: {
-    padding: '18px',
-    borderRadius: 14,
+    padding: '16px',
+    borderRadius: 12,
     background: '#ffffff',
     border: '1px solid #dee7e7',
-    boxShadow: '0 12px 30px rgba(0, 38, 66, 0.04)',
+    boxShadow: '0 10px 24px rgba(0, 38, 66, 0.035)',
   },
 
   summaryCard: {
-    padding: '18px',
-    borderRadius: 14,
-    background: '#ffffff',
+    padding: '16px',
+    borderRadius: 12,
+    background: '#002642',
     border: '1px solid #dee7e7',
-    boxShadow: '0 12px 30px rgba(0, 38, 66, 0.04)',
+    boxShadow: '0 10px 24px rgba(0, 38, 66, 0.035)',
     display: 'flex',
     flexDirection: 'column',
     gap: '10px',
@@ -795,9 +843,16 @@ const styles = {
 
   panelTitle: {
     margin: '0 0 12px',
-    color: '#002642',
+    color: 'inherit',
     fontSize: '18px',
     fontWeight: '850',
+  },
+
+  summaryTitle: {
+    margin: '0 0 2px',
+    color: '#ffffff',
+    fontSize: '18px',
+    fontWeight: '900',
   },
 
   stack: {
@@ -829,6 +884,37 @@ const styles = {
     color: '#002642',
     fontSize: '14px',
     outline: 'none',
+  },
+
+  select: {
+    width: '100%',
+    height: 40,
+    boxSizing: 'border-box',
+    borderRadius: 10,
+    border: '1px solid #dbe6f0',
+    background: '#ffffff',
+    padding: '0 13px',
+    color: '#002642',
+    fontSize: '14px',
+    fontWeight: '700',
+    outline: 'none',
+    cursor: 'pointer',
+  },
+
+  dateInput: {
+    width: '100%',
+    height: 40,
+    boxSizing: 'border-box',
+    borderRadius: 10,
+    border: '1px solid #dbe6f0',
+    background: '#ffffff',
+    padding: '0 13px',
+    color: '#002642',
+    colorScheme: 'light',
+    fontSize: '14px',
+    fontWeight: '700',
+    outline: 'none',
+    cursor: 'pointer',
   },
 
   modeSegment: {
@@ -883,9 +969,9 @@ const styles = {
   },
 
   metric: {
-    padding: '11px 14px',
+    padding: '12px 14px',
     borderRadius: 10,
-    background: '#f8faff',
+    background: '#f8fbfd',
     color: '#002642',
     display: 'flex',
     flexDirection: 'column',
@@ -895,23 +981,24 @@ const styles = {
 
   metricLabel: {
     fontSize: '12px',
-    color: '#4f646f',
+    color: 'currentColor',
+    opacity: 0.72,
     fontWeight: '800',
   },
 
   metricValue: {
     fontSize: '20px',
     fontWeight: '900',
-    color: '#002642',
+    color: 'currentColor',
   },
 
   tableCard: {
     height: '100%',
     minHeight: 0,
-    borderRadius: 14,
+    borderRadius: 12,
     background: '#ffffff',
     border: '1px solid #dee7e7',
-    boxShadow: '0 12px 30px rgba(0, 38, 66, 0.04)',
+    boxShadow: '0 10px 24px rgba(0, 38, 66, 0.035)',
     overflow: 'hidden',
     display: 'grid',
     gridTemplateRows: 'auto minmax(0, 1fr) auto',
@@ -921,11 +1008,11 @@ const styles = {
     display: 'grid',
     gridTemplateColumns: '1.4fr 1fr 0.7fr 0.7fr',
     gap: '10px',
-    padding: '14px 16px',
-    background: '#f4faff',
-    color: '#002642',
+    padding: '13px 16px',
+    background: '#002642',
     fontWeight: '900',
-    fontSize: '14px',
+    fontSize: '13px',
+    color: '#ffffff',
   },
 
   tableBody: {
@@ -937,7 +1024,7 @@ const styles = {
     display: 'grid',
     gridTemplateColumns: '1.4fr 1fr 0.7fr 0.7fr',
     gap: '10px',
-    padding: '12px 16px',
+    padding: '13px 16px',
     alignItems: 'center',
     borderBottom: '1px solid #edf2f2',
     color: '#002642',
@@ -964,7 +1051,7 @@ const styles = {
     gridTemplateColumns: '1.4fr 1fr 0.7fr 0.7fr',
     gap: '10px',
     padding: '12px 16px',
-    background: '#f4faff',
+    background: '#f8fbfd',
     color: '#002642',
     alignItems: 'center',
   },
@@ -972,15 +1059,38 @@ const styles = {
   employeeReportCard: {
     height: '100%',
     minHeight: '360px',
-    borderRadius: 14,
+    borderRadius: 12,
     background: '#ffffff',
     border: '1px solid #dee7e7',
-    boxShadow: '0 12px 30px rgba(0, 38, 66, 0.04)',
+    boxShadow: '0 10px 24px rgba(0, 38, 66, 0.035)',
     display: 'flex',
     flexDirection: 'column',
-    justifyContent: 'center',
-    padding: '30px',
+    justifyContent: 'space-between',
+    gap: '22px',
+    padding: '28px',
     boxSizing: 'border-box',
+  },
+
+  employeeReportHeader: {
+    display: 'flex',
+    alignItems: 'flex-start',
+    justifyContent: 'space-between',
+    gap: '16px',
+    flexWrap: 'wrap',
+  },
+
+  employeeReportPill: {
+    height: '34px',
+    padding: '0 12px',
+    borderRadius: '999px',
+    background: '#f4faff',
+    border: '1px solid #dee7e7',
+    color: '#002642',
+    display: 'inline-flex',
+    alignItems: 'center',
+    fontSize: '13px',
+    fontWeight: '850',
+    whiteSpace: 'nowrap',
   },
 
   miniLabel: {
@@ -993,7 +1103,7 @@ const styles = {
   employeeReportName: {
     margin: 0,
     color: '#002642',
-    fontSize: '28px',
+    fontSize: '30px',
     fontWeight: '900',
   },
 

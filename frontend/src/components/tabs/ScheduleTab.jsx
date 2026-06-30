@@ -3,11 +3,11 @@ import * as XLSX from 'xlsx';
 import { extractApiErrorMessage, localizeBackendMessage } from '../../services/error';
 import {
   assignRequirement,
-  buildEmployeeScheduleRange,
   createExchangeRequest,
   defaultSchedulePeriod,
   deleteShift,
   fetchScheduleVersions,
+  formatLocalDate,
   generateScheduleForPeriod,
   getMySchedule,
   getSchedule,
@@ -35,6 +35,26 @@ function formatTime(value) {
   return String(value || '').slice(0, 5);
 }
 
+function getShiftDurationLabel(shift, language) {
+  const start = String(shift?.start_time || '').split(':').map(Number);
+  const end = String(shift?.end_time || '').split(':').map(Number);
+  if (start.length < 2 || end.length < 2 || start.some(Number.isNaN) || end.some(Number.isNaN)) {
+    return '';
+  }
+
+  const startMinutes = (start[0] * 60) + start[1];
+  const endMinutes = (end[0] * 60) + end[1];
+  const duration = endMinutes - startMinutes;
+  if (duration <= 0) return '';
+
+  const hours = Math.floor(duration / 60);
+  const minutes = duration % 60;
+  if (language === 'ru') {
+    return minutes ? `${hours} ч ${minutes} мин` : `${hours} ч`;
+  }
+  return minutes ? `${hours}h ${minutes}m` : `${hours}h`;
+}
+
 function formatTimeForApi(value) {
   const raw = String(value || '').trim();
   if (!raw) return raw;
@@ -49,8 +69,7 @@ function formatDate(value) {
     return '';
   }
 
-  const iso = date.toISOString().slice(0, 10);
-  return iso;
+  return formatLocalDate(date);
 }
 
 function formatDisplayDate(value) {
@@ -64,6 +83,56 @@ function formatDisplayDate(value) {
     month: 'short',
     day: 'numeric',
   });
+}
+
+function parseDateKey(value) {
+  const date = new Date(`${value}T12:00:00`);
+  return Number.isNaN(date.getTime()) ? null : date;
+}
+
+function startOfMonthDate(value) {
+  const source = parseDateKey(value) || new Date();
+  source.setHours(12, 0, 0, 0);
+  return new Date(source.getFullYear(), source.getMonth(), 1, 12, 0, 0, 0);
+}
+
+function endOfMonthDate(value) {
+  const source = parseDateKey(value) || new Date();
+  source.setHours(12, 0, 0, 0);
+  return new Date(source.getFullYear(), source.getMonth() + 1, 0, 12, 0, 0, 0);
+}
+
+function buildCalendarGrid(anchorDateKey) {
+  const monthStart = startOfMonthDate(anchorDateKey);
+  const monthEnd = endOfMonthDate(anchorDateKey);
+  const gridStart = new Date(monthStart);
+  const startOffset = (gridStart.getDay() + 6) % 7;
+  gridStart.setDate(gridStart.getDate() - startOffset);
+
+  const gridEnd = new Date(monthEnd);
+  const endOffset = 6 - ((gridEnd.getDay() + 6) % 7);
+  gridEnd.setDate(gridEnd.getDate() + endOffset);
+
+  const days = [];
+  const cursor = new Date(gridStart);
+  while (cursor <= gridEnd) {
+    days.push({
+      date: formatLocalDate(cursor),
+      day: cursor.getDate(),
+      isCurrentMonth: cursor.getMonth() === monthStart.getMonth(),
+    });
+    cursor.setDate(cursor.getDate() + 1);
+  }
+
+  return {
+    days,
+    startDate: formatLocalDate(gridStart),
+    endDate: formatLocalDate(gridEnd),
+  };
+}
+
+function isSameDateKey(left, right) {
+  return formatDate(left) === formatDate(right);
 }
 
 function getShiftId(shift) {
@@ -168,7 +237,9 @@ export default function ScheduleTab({ language, userRole }) {
   const [schedule, setSchedule] = useState(null);
 
   const [mySchedule, setMySchedule] = useState([]);
-  const [employeeViewMode, setEmployeeViewMode] = useState('day');
+  const [employeeViewMode, setEmployeeViewMode] = useState('month');
+  const [selectedEmployeeDate, setSelectedEmployeeDate] = useState(() => formatLocalDate(new Date()));
+  const [employeeCalendarMonth, setEmployeeCalendarMonth] = useState(() => formatLocalDate(new Date()));
   const [exchangeNotes, setExchangeNotes] = useState({});
   const [exchangeRequests, setExchangeRequests] = useState([]);
   const [reassignEmployeeIds, setReassignEmployeeIds] = useState({});
@@ -183,8 +254,6 @@ export default function ScheduleTab({ language, userRole }) {
   const texts = {
     ru: {
       titleManager: 'Расписание',
-      titleEmployee: 'Мое расписание',
-      subtitleEmployee: 'Здесь отображаются опубликованные смены.',
       day: 'День',
       week: 'Неделя',
       month: 'Месяц',
@@ -246,8 +315,6 @@ export default function ScheduleTab({ language, userRole }) {
     },
     en: {
       titleManager: 'Schedule',
-      titleEmployee: 'My schedule',
-      subtitleEmployee: 'Published shifts appear here.',
       day: 'Day',
       week: 'Week',
       month: 'Month',
@@ -336,6 +403,42 @@ export default function ScheduleTab({ language, userRole }) {
     return employeeDates.slice(0, 30);
   }, [employeeDates, employeeViewMode]);
 
+  const employeeCalendarGrid = useMemo(
+    () => buildCalendarGrid(employeeCalendarMonth),
+    [employeeCalendarMonth]
+  );
+
+  const selectedEmployeeDateShifts = useMemo(
+    () => normalizeArray(groupedMySchedule[selectedEmployeeDate]).sort((a, b) =>
+      String(a.start_time || '').localeCompare(String(b.start_time || ''))
+    ),
+    [groupedMySchedule, selectedEmployeeDate]
+  );
+
+  const employeeCalendarMonthLabel = useMemo(() => {
+    const date = startOfMonthDate(employeeCalendarMonth);
+    return date.toLocaleDateString(language === 'ru' ? 'ru-RU' : 'en-US', {
+      month: 'long',
+      year: 'numeric',
+    });
+  }, [employeeCalendarMonth, language]);
+
+  const employeeCalendarMonthKey = useMemo(() => {
+    const date = startOfMonthDate(employeeCalendarMonth);
+    return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
+  }, [employeeCalendarMonth]);
+
+  const employeeWeekdayLabels = useMemo(() => {
+    const monday = new Date('2026-06-29T12:00:00');
+    return Array.from({ length: 7 }, (_, index) => {
+      const date = new Date(monday);
+      date.setDate(monday.getDate() + index);
+      return date.toLocaleDateString(language === 'ru' ? 'ru-RU' : 'en-US', { weekday: 'short' });
+    });
+  }, [language]);
+
+  const shiftDotColors = ['#007aff', '#34c759', '#ff3b30', '#ff9500'];
+
   useEffect(() => {
     if (!errorMessage && !successMessage) return undefined;
 
@@ -362,10 +465,12 @@ export default function ScheduleTab({ language, userRole }) {
   }, [periodForm]);
 
   const loadEmployeeData = useCallback(async () => {
-    const range = buildEmployeeScheduleRange(employeeViewMode);
-    const shifts = await getMySchedule(range);
+    const shifts = await getMySchedule({
+      date_from: employeeCalendarGrid.startDate,
+      date_to: employeeCalendarGrid.endDate,
+    });
     setMySchedule(normalizeArray(shifts));
-  }, [employeeViewMode]);
+  }, [employeeCalendarGrid.endDate, employeeCalendarGrid.startDate]);
 
   const loadData = useCallback(async () => {
     setIsLoading(true);
@@ -559,6 +664,23 @@ export default function ScheduleTab({ language, userRole }) {
     }
   };
 
+  const shiftEmployeeCalendarMonth = (deltaMonths) => {
+    const current = startOfMonthDate(employeeCalendarMonth);
+    current.setMonth(current.getMonth() + deltaMonths);
+    const nextMonth = formatLocalDate(current);
+    setEmployeeCalendarMonth(nextMonth);
+    setSelectedEmployeeDate(nextMonth);
+  };
+
+  const selectEmployeeCalendarDate = (dateKey) => {
+    setSelectedEmployeeDate(dateKey);
+    const selected = parseDateKey(dateKey);
+    const month = startOfMonthDate(employeeCalendarMonth);
+    if (selected && selected.getMonth() !== month.getMonth()) {
+      setEmployeeCalendarMonth(formatLocalDate(new Date(selected.getFullYear(), selected.getMonth(), 1, 12, 0, 0, 0)));
+    }
+  };
+
   const handleExchangeDecision = async (requestId, status) => {
     clearMessages();
     setIsSubmitting(true);
@@ -662,7 +784,7 @@ export default function ScheduleTab({ language, userRole }) {
                       onChange={(event) =>
                         setPeriodForm((prev) => ({ ...prev, start_date: event.target.value }))
                       }
-                      style={styles.input}
+                      style={styles.dateInput}
                     />
                   </Field>
 
@@ -673,7 +795,7 @@ export default function ScheduleTab({ language, userRole }) {
                       onChange={(event) =>
                         setPeriodForm((prev) => ({ ...prev, end_date: event.target.value }))
                       }
-                      style={styles.input}
+                      style={styles.dateInput}
                     />
                   </Field>
 
@@ -956,7 +1078,180 @@ export default function ScheduleTab({ language, userRole }) {
           </div>
         ) : (
           <main style={{ ...styles.employeeArea, ...r.employeeArea }}>
-            <section style={{ ...styles.panel, ...r.employeePanel }}>
+            <section style={{ ...styles.employeeCalendarPanel, ...r.employeePanel }}>
+              <div style={{
+                ...styles.employeeCalendarHeader,
+                ...(r.isMobile ? { alignItems: 'stretch' } : {}),
+              }}
+              >
+                <div>
+                  <h3 style={styles.employeeCalendarTitle}>{employeeCalendarMonthLabel}</h3>
+                  <p style={styles.panelHint}>{formatDisplayDate(selectedEmployeeDate)}</p>
+                </div>
+
+                <div style={styles.calendarNav}>
+                  <button
+                    type="button"
+                    onClick={() => shiftEmployeeCalendarMonth(-1)}
+                    style={styles.calendarNavButton}
+                    aria-label="Previous month"
+                  >
+                    ←
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const today = formatLocalDate(new Date());
+                      setEmployeeCalendarMonth(today);
+                      setSelectedEmployeeDate(today);
+                    }}
+                    style={styles.calendarTodayButton}
+                  >
+                    {employeeCalendarMonthKey}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => shiftEmployeeCalendarMonth(1)}
+                    style={styles.calendarNavButton}
+                    aria-label="Next month"
+                  >
+                    →
+                  </button>
+                </div>
+              </div>
+
+              <div style={styles.monthCalendar}>
+                <div style={styles.monthWeekdays}>
+                  {employeeWeekdayLabels.map((weekday) => (
+                    <div key={weekday} style={styles.monthWeekday}>{weekday}</div>
+                  ))}
+                </div>
+
+                <div style={styles.monthGrid}>
+                  {employeeCalendarGrid.days.map((calendarDay) => {
+                    const shiftsForDate = normalizeArray(groupedMySchedule[calendarDay.date]);
+                    const isSelected = calendarDay.date === selectedEmployeeDate;
+                    const isTodayDate = isSameDateKey(calendarDay.date, formatLocalDate(new Date()));
+
+                    return (
+                      <button
+                        key={calendarDay.date}
+                        type="button"
+                        onClick={() => selectEmployeeCalendarDate(calendarDay.date)}
+                        style={{
+                          ...styles.monthDayCell,
+                          ...(calendarDay.isCurrentMonth ? {} : styles.monthDayMuted),
+                          ...(isSelected ? styles.monthDaySelected : {}),
+                        }}
+                      >
+                        <span style={{
+                          ...styles.monthDayNumber,
+                          ...(isTodayDate ? styles.monthDayToday : {}),
+                          ...(isSelected ? styles.monthDayNumberSelected : {}),
+                        }}
+                        >
+                          {calendarDay.day}
+                        </span>
+
+                        <span style={styles.monthDots}>
+                          {shiftsForDate.slice(0, 4).map((shift, index) => (
+                            <span
+                              key={`${getShiftId(shift)}-${index}`}
+                              style={{
+                                ...styles.monthDot,
+                                background: shiftDotColors[index % shiftDotColors.length],
+                              }}
+                            />
+                          ))}
+                        </span>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              <section style={styles.selectedDatePanel}>
+                <div style={styles.selectedDateHeader}>
+                  <div>
+                    <h3 style={styles.panelTitle}>{formatDisplayDate(selectedEmployeeDate)}</h3>
+                    <p style={styles.panelHint}>{selectedEmployeeDate}</p>
+                  </div>
+                  <span style={styles.selectedDateCount}>{selectedEmployeeDateShifts.length}</span>
+                </div>
+
+                {selectedEmployeeDateShifts.length === 0 ? (
+                  <div style={styles.selectedDateEmpty}>
+                    <strong style={styles.emptyTitle}>
+                      {employeeSchedule.length === 0 ? t.noPublishedScheduleTitle : t.empty}
+                    </strong>
+                    <span style={styles.emptySubtitle}>
+                      {employeeSchedule.length === 0 ? t.noPublishedScheduleHint : t.empty}
+                    </span>
+                  </div>
+                ) : (
+                  <div style={styles.selectedShiftList}>
+                    {selectedEmployeeDateShifts.map((shift) => {
+                      const shiftId = getShiftId(shift);
+                      const durationLabel = getShiftDurationLabel(shift, language);
+
+                      return (
+                        <div
+                          key={shiftId}
+                          style={{
+                            ...styles.calendarShiftCard,
+                            ...(r.isMobile ? { padding: 14 } : {}),
+                          }}
+                        >
+                          <div style={{
+                            ...styles.calendarShiftInfo,
+                            ...(r.isMobile ? { alignItems: 'flex-start' } : {}),
+                          }}
+                          >
+                            <span style={styles.calendarShiftTimeInline}>
+                              {formatTime(shift.start_time)} - {formatTime(shift.end_time)}
+                            </span>
+                            <strong style={styles.calendarShiftTitle}>{getShiftPosition(shift)}</strong>
+                            {durationLabel && <span style={styles.calendarDurationBadge}>{durationLabel}</span>}
+                          </div>
+
+                          <div style={{
+                            ...styles.calendarExchangeRow,
+                            ...(r.isMobile ? { gridTemplateColumns: '1fr' } : {}),
+                          }}
+                          >
+                            <textarea
+                              value={exchangeNotes[shiftId] || ''}
+                              onChange={(event) =>
+                                setExchangeNotes((prev) => ({
+                                  ...prev,
+                                  [shiftId]: event.target.value,
+                                }))
+                              }
+                              placeholder={t.exchangeNotePlaceholder}
+                              style={styles.calendarExchangeInput}
+                              disabled={isSubmitting}
+                            />
+
+                            <button
+                              type="button"
+                              onClick={() => handleCreateExchangeRequest(shiftId)}
+                              style={{
+                                ...(isSubmitting ? styles.smallSecondaryButtonDisabled : styles.calendarExchangeButton),
+                                width: '100%',
+                              }}
+                              disabled={isSubmitting}
+                            >
+                              {t.requestExchange}
+                            </button>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </section>
+
+              <div style={{ display: 'none' }}>
               <div style={{ ...styles.panelHeader, ...r.panelHeader }}>
                 <div style={{ ...styles.modeSegment, ...r.modeSegment }}>
                   {['day', 'week', 'month'].map((mode) => (
@@ -1134,6 +1429,7 @@ export default function ScheduleTab({ language, userRole }) {
                   </div>
                 </div>
               )}
+              </div>
             </section>
           </main>
         )}
@@ -1327,6 +1623,388 @@ const styles = {
     color: '#f4faff',
   },
 
+  employeeCalendarPanel: {
+    padding: '16px',
+    borderRadius: '14px',
+    background: '#ffffff',
+    border: '1px solid #dee7e7',
+    boxShadow: '0 12px 30px rgba(0, 38, 66, 0.04)',
+    overflow: 'hidden',
+    display: 'grid',
+    gridTemplateRows: 'auto minmax(260px, 1fr) minmax(230px, 0.55fr)',
+    gap: '12px',
+    flex: 1,
+    minHeight: 0,
+  },
+
+  employeeCalendarHeader: {
+    display: 'flex',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    gap: '14px',
+    flexWrap: 'wrap',
+  },
+
+  employeeCalendarTitle: {
+    margin: 0,
+    color: '#002642',
+    fontSize: '24px',
+    fontWeight: '900',
+    textTransform: 'capitalize',
+  },
+
+  calendarNav: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '10px',
+  },
+
+  calendarNavButton: {
+    width: '48px',
+    height: '40px',
+    borderRadius: '10px',
+    border: '1px solid #dee7e7',
+    background: '#eef3f6',
+    color: '#002642',
+    fontSize: '22px',
+    fontWeight: '800',
+    cursor: 'pointer',
+  },
+
+  calendarTodayButton: {
+    height: '40px',
+    padding: '0 16px',
+    borderRadius: '10px',
+    border: '1px solid #dbe6f0',
+    background: '#ffffff',
+    color: '#002642',
+    fontSize: '14px',
+    fontWeight: '850',
+    cursor: 'pointer',
+    whiteSpace: 'nowrap',
+  },
+
+  monthCalendar: {
+    minHeight: 0,
+    display: 'grid',
+    gridTemplateRows: '28px minmax(0, 1fr)',
+    border: '1px solid #dee7e7',
+    borderRadius: '12px',
+    overflow: 'hidden',
+    background: '#ffffff',
+  },
+
+  monthWeekdays: {
+    display: 'grid',
+    gridTemplateColumns: 'repeat(7, minmax(0, 1fr))',
+    background: '#f4faff',
+    borderBottom: '1px solid #dee7e7',
+  },
+
+  monthWeekday: {
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    color: '#4f646f',
+    fontSize: '12px',
+    fontWeight: '850',
+    textTransform: 'capitalize',
+  },
+
+  monthGrid: {
+    minHeight: 0,
+    display: 'grid',
+    gridTemplateColumns: 'repeat(7, minmax(0, 1fr))',
+    gridAutoRows: 'minmax(46px, 1fr)',
+    background: '#dee7e7',
+    gap: '1px',
+  },
+
+  monthDayCell: {
+    minWidth: 0,
+    minHeight: 0,
+    border: 0,
+    background: '#ffffff',
+    color: '#002642',
+    cursor: 'pointer',
+    padding: '6px',
+    display: 'flex',
+    flexDirection: 'column',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: '4px',
+  },
+
+  monthDayMuted: {
+    background: '#f8fbfd',
+    color: '#8da0a9',
+  },
+
+  monthDaySelected: {
+    background: '#eaf6ff',
+    boxShadow: 'inset 0 0 0 2px #002642',
+  },
+
+  monthDayNumber: {
+    width: '28px',
+    height: '28px',
+    borderRadius: '50%',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    fontSize: '16px',
+    fontWeight: '800',
+  },
+
+  monthDayToday: {
+    border: '2px solid #007aff',
+    color: '#007aff',
+  },
+
+  monthDayNumberSelected: {
+    background: '#002642',
+    color: '#ffffff',
+    borderColor: '#002642',
+  },
+
+  monthDots: {
+    minHeight: '7px',
+    display: 'flex',
+    justifyContent: 'center',
+    alignItems: 'center',
+    gap: '3px',
+  },
+
+  monthDot: {
+    width: '6px',
+    height: '6px',
+    borderRadius: '50%',
+    display: 'block',
+  },
+
+  selectedDatePanel: {
+    minHeight: 0,
+    borderRadius: '12px',
+    border: '1px solid #dee7e7',
+    background: '#f8fbfd',
+    padding: '12px',
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '10px',
+    overflow: 'hidden',
+  },
+
+  selectedDateHeader: {
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: '14px',
+    flexShrink: 0,
+  },
+
+  selectedDateCount: {
+    minWidth: '40px',
+    height: '32px',
+    padding: '0 10px',
+    borderRadius: '999px',
+    background: '#002642',
+    color: '#ffffff',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    fontSize: '15px',
+    fontWeight: '900',
+  },
+
+  selectedDateEmpty: {
+    flex: 1,
+    minHeight: '100px',
+    borderRadius: '10px',
+    background: '#ffffff',
+    border: '1px solid #edf2f2',
+    display: 'flex',
+    flexDirection: 'column',
+    justifyContent: 'center',
+    gap: '6px',
+    padding: '18px',
+  },
+
+  selectedShiftList: {
+    minHeight: 0,
+    overflowY: 'auto',
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '8px',
+    paddingRight: '4px',
+  },
+
+  calendarShiftCard: {
+    padding: '14px',
+    borderRadius: '10px',
+    background: '#ffffff',
+    border: '1px solid #edf2f2',
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '10px',
+  },
+
+  calendarShiftInfo: {
+    minWidth: 0,
+    display: 'flex',
+    alignItems: 'center',
+    gap: '10px',
+    flexWrap: 'nowrap',
+    overflow: 'hidden',
+  },
+
+  calendarShiftTimeInline: {
+    height: '34px',
+    padding: '0 12px',
+    borderRadius: '9px',
+    background: '#002642',
+    color: '#ffffff',
+    display: 'inline-flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    fontSize: '15px',
+    fontWeight: '900',
+    whiteSpace: 'nowrap',
+    flexShrink: 0,
+  },
+
+  calendarDurationBadge: {
+    height: '34px',
+    padding: '0 12px',
+    borderRadius: '9px',
+    background: '#d7adcf',
+    color: '#002642',
+    border: '1px solid rgba(215, 173, 207, 0.85)',
+    display: 'inline-flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    fontSize: '13px',
+    fontWeight: '850',
+    whiteSpace: 'nowrap',
+    flexShrink: 0,
+  },
+
+  calendarShiftTime: {
+    borderRadius: '10px',
+    background: '#002642',
+    color: '#ffffff',
+    padding: '10px 8px',
+    display: 'flex',
+    flexDirection: 'column',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: '5px',
+    minHeight: '86px',
+  },
+
+  calendarShiftTimeStart: {
+    fontSize: '22px',
+    fontWeight: '900',
+    lineHeight: 1,
+  },
+
+  calendarShiftTimeLine: {
+    width: '22px',
+    height: '2px',
+    borderRadius: '999px',
+    background: 'rgba(255, 255, 255, 0.55)',
+  },
+
+  calendarShiftTimeEnd: {
+    fontSize: '16px',
+    fontWeight: '850',
+    lineHeight: 1,
+    opacity: 0.9,
+  },
+
+  calendarShiftBody: {
+    minWidth: 0,
+    display: 'flex',
+    flexDirection: 'column',
+    justifyContent: 'center',
+    gap: '10px',
+  },
+
+  calendarShiftTitle: {
+    minWidth: 0,
+    color: '#002642',
+    fontSize: '18px',
+    fontWeight: '900',
+    lineHeight: 1.2,
+    whiteSpace: 'nowrap',
+    overflow: 'hidden',
+    textOverflow: 'ellipsis',
+  },
+
+  calendarExchangeRow: {
+    display: 'grid',
+    gridTemplateColumns: 'minmax(0, 1fr) 180px',
+    gap: '10px',
+    alignItems: 'stretch',
+  },
+
+  calendarShiftMetaRow: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '8px',
+    flexWrap: 'wrap',
+  },
+
+  calendarExchangePanel: {
+    minWidth: 0,
+    display: 'grid',
+    gridTemplateRows: '1fr auto',
+    gap: '8px',
+  },
+
+  calendarExchangeTextarea: {
+    width: '100%',
+    minHeight: '62px',
+    boxSizing: 'border-box',
+    borderRadius: '10px',
+    border: '1px solid #dbe6f0',
+    background: '#f8fbfd',
+    padding: '10px 12px',
+    color: '#002642',
+    fontSize: '13px',
+    resize: 'vertical',
+    outline: 'none',
+  },
+
+  calendarExchangeInput: {
+    width: '100%',
+    height: '42px',
+    minHeight: '42px',
+    boxSizing: 'border-box',
+    borderRadius: '9px',
+    border: '1px solid #dbe6f0',
+    background: '#f8fbfd',
+    padding: '11px 12px',
+    color: '#002642',
+    fontSize: '13px',
+    resize: 'none',
+    outline: 'none',
+    overflow: 'hidden',
+  },
+
+  calendarExchangeButton: {
+    width: '100%',
+    height: '42px',
+    padding: '0 14px',
+    background: '#002642',
+    border: 'none',
+    borderRadius: '9px',
+    color: '#f4faff',
+    fontSize: '13px',
+    fontWeight: '850',
+    cursor: 'pointer',
+    whiteSpace: 'nowrap',
+  },
+
   employeeTimelineScroll: {
     flex: 1,
     overflowY: 'auto',
@@ -1384,6 +2062,22 @@ const styles = {
     color: '#002642',
     fontSize: '13px',
     outline: 'none',
+  },
+
+  dateInput: {
+    width: '100%',
+    height: '40px',
+    boxSizing: 'border-box',
+    borderRadius: '10px',
+    border: '1px solid #dbe6f0',
+    background: '#ffffff',
+    padding: '0 14px',
+    color: '#002642',
+    colorScheme: 'light',
+    fontSize: '13px',
+    fontWeight: '700',
+    outline: 'none',
+    cursor: 'pointer',
   },
 
   select: {

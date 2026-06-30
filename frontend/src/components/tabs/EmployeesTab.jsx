@@ -18,6 +18,7 @@ import {
   resolveEmployeeBranches,
 } from '../../utils/employeeBranches';
 import { useTabResponsive } from '../../utils/tabResponsive';
+import { formatLocalDate } from '../../services/scheduleService';
 
 function normalizeArray(value) {
   return Array.isArray(value) ? value : [];
@@ -434,7 +435,7 @@ export default function EmployeesTab({ language, userRole, user }) {
   }, [employees, selectedBranchId, selectedPositionId, searchQuery, branchAssignmentsRevision]);
 
   const upcomingAbsences = useMemo(() => {
-    const today = new Date().toISOString().slice(0, 10);
+    const today = formatLocalDate(new Date());
     return normalizeArray(employeeAbsences)
       .filter((absence) => !absence.end_date || String(absence.end_date) >= today)
       .sort((first, second) => getDateValue(first.start_date) - getDateValue(second.start_date))
@@ -988,7 +989,7 @@ export default function EmployeesTab({ language, userRole, user }) {
             </div>
 
             {/* Блок привязки по User ID */}
-            <div style={styles.leftCard}>
+            <div style={{ ...styles.leftCard, ...styles.leftCardGrow }}>
               <div style={styles.leftCardHeader}>
                 <span style={styles.leftCardIcon} aria-hidden="true">
                   <svg width="19" height="19" viewBox="0 0 24 24" fill="none">
@@ -1485,10 +1486,12 @@ const styles = {
     display: 'grid',
     gridTemplateColumns: '300px minmax(520px, 1fr) 320px',
     gap: '14px',
+    alignItems: 'stretch',
     overflow: 'hidden',
   },
 
   sidePanel: {
+    height: '100%',
     minHeight: 0,
     display: 'flex',
     flexDirection: 'column',
@@ -1513,6 +1516,11 @@ const styles = {
     background: '#ffffff',
     border: '1px solid #dee7e7',
     boxShadow: '0 10px 26px rgba(0, 38, 66, 0.035)',
+  },
+
+  leftCardGrow: {
+    flex: '1 1 auto',
+    minHeight: 0,
   },
 
   leftCardHeader: {
