@@ -530,31 +530,31 @@ export default function CompanyTab({ language, userRole, user }) {
   return (
     <section style={{ ...styles.page, ...r.page }}>
       <div style={{ ...styles.shell, ...r.shell }}>
-        <div style={{ ...styles.grid, gridTemplateColumns: r.gridCols('1fr 1fr') }}>
-          <div style={{ ...styles.card, ...r.card }}>
-          <div style={styles.cardHeader}>
-            <h2 style={{ ...styles.title, ...r.title }}>{t.title}</h2>
+        {(errorMessage || successMessage) && (
+          <div style={errorMessage ? styles.error : styles.success}>
+            {errorMessage || successMessage}
           </div>
-          {errorMessage && <div style={styles.error}>{errorMessage}</div>}
-          {successMessage && <div style={styles.success}>{successMessage}</div>}
+        )}
 
-          <div style={styles.section}>
-            <h3 style={styles.sectionTitle}>{t.currentCompany}</h3>
-
-            {isPendingEmployee ? (
-              <div style={styles.pendingPanel}>
-                <strong style={styles.pendingTitle}>{t.pendingTitle}</strong>
-                <span style={styles.pendingText}>{t.pendingText}</span>
+        {isManager && currentCompany ? (
+          <div style={{
+            ...styles.managerGrid,
+            gridTemplateColumns: r.gridCols('minmax(0, 1fr) minmax(0, 1fr)'),
+          }}>
+            <section style={styles.card}>
+              <div style={styles.cardHeaderCompact}>
+                <h2 style={{ ...styles.title, ...r.title }}>{t.title}</h2>
               </div>
-            ) : currentCompany ? (
-              <div style={styles.companyPanel}>
-                <span style={styles.panelLabel}>{t.company}</span>
-                <strong style={styles.companyTitle}>{currentCompany.name || t.empty}</strong>
 
-                {isManager && effectiveInviteCode && (
-                  <div style={styles.inviteBlock}>
+              <div style={styles.section}>
+                <h3 style={styles.sectionTitle}>{t.currentCompany}</h3>
+
+                <div style={styles.companyPanel}>
+                  <strong style={styles.companyTitle}>{currentCompany.name || t.empty}</strong>
+
+                  {effectiveInviteCode && (
                     <div style={styles.inviteCodeBox}>
-                      <div>
+                      <div style={styles.inviteMain}>
                         <span style={styles.inviteLabel}>{t.inviteCode}</span>
                         <strong style={styles.inviteValue}>{effectiveInviteCode}</strong>
                       </div>
@@ -576,129 +576,72 @@ export default function CompanyTab({ language, userRole, user }) {
                         </button>
                       </div>
                     </div>
-                  </div>
-                )}
-
-                {isEmployee && (
-                  <div style={{ ...styles.infoGrid, gridTemplateColumns: r.gridCols('1fr 1fr') }}>
-                    <div style={styles.infoItem}>
-                      <span style={styles.infoLabel}>{t.branches}</span>
-                      {userBranches.length === 0 ? (
-                        <strong style={styles.infoValue}>{t.noBranchesAssigned}</strong>
-                      ) : (
-                        <div style={styles.assignedBranchList}>
-                          {userBranches.map((branch) => (
-                            <span key={branch.id} style={styles.assignedBranchPill}>
-                              {getName(branch)}
-                            </span>
-                          ))}
-                        </div>
-                      )}
-                    </div>
-                    <InfoItem label={t.position} value={getName(currentPosition)} />
-                  </div>
-                )}
+                  )}
+                </div>
               </div>
-            ) : (
-              <div style={styles.emptyState}>
-                <strong style={styles.emptyTitle}>{t.noCompany}</strong>
-                <span style={styles.emptyText}>
-                  {isManager ? t.noCompanyManager : t.noCompanyEmployee}
-                </span>
+            </section>
+
+            <section style={styles.card}>
+              <div style={styles.section}>
+                <h3 style={styles.sectionTitle}>{t.branches}</h3>
+
+                <div style={styles.branchCreateRow}>
+                  <input
+                    value={branchName}
+                    onChange={(event) => setBranchName(event.target.value)}
+                    placeholder={t.branchPlaceholder}
+                    style={styles.input}
+                  />
+
+                  <button
+                    type="button"
+                    onClick={handleCreateBranch}
+                    style={isSubmitting ? styles.primaryButtonDisabled : styles.primaryButton}
+                    disabled={isSubmitting}
+                  >
+                    {isSubmitting ? '...' : t.createBranch}
+                  </button>
+                </div>
+
+                <div style={styles.branchList}>
+                  {branches.length === 0 ? (
+                    <p style={styles.emptyText}>{t.noBranches}</p>
+                  ) : (
+                    branches.map((branch) => (
+                      <div key={branch.id} style={styles.branchItem}>
+                        <span style={styles.branchItemName}>{getName(branch)}</span>
+                        <button
+                          type="button"
+                          onClick={() => handleDeleteBranch(branch)}
+                          style={
+                            isSubmitting
+                              ? { ...styles.branchDeleteButton, opacity: 0.5, cursor: 'not-allowed' }
+                              : styles.branchDeleteButton
+                          }
+                          disabled={isSubmitting}
+                          aria-label={`${t.deleteBranch} ${getName(branch)}`}
+                        >
+                          {t.deleteBranch}
+                        </button>
+                      </div>
+                    ))
+                  )}
+                </div>
               </div>
-            )}
-          </div>
-        </div>
+            </section>
 
-        {isManager && !currentCompany && (
-          <div style={{ ...styles.card, ...r.card }}>
-            <div style={styles.section}>
-              <h3 style={styles.sectionTitle}>{t.createCompany}</h3>
-
-              <div style={styles.formStack}>
-                <label style={styles.label}>{t.companyName}</label>
-                <input
-                  value={companyName}
-                  onChange={(event) => setCompanyName(event.target.value)}
-                  placeholder={t.companyName}
-                  style={styles.input}
-                />
-
-                <button
-                  type="button"
-                  onClick={handleCreateCompany}
-                  style={isSubmitting ? styles.primaryButtonDisabled : styles.primaryButton}
-                  disabled={isSubmitting}
-                >
-                  {isSubmitting ? '...' : t.saveCompany}
-                </button>
+            <section style={{
+              ...styles.requestsCard,
+              gridColumn: r.isMobile ? 'auto' : '1 / -1',
+            }}>
+              <div style={styles.requestsHeader}>
+                <h3 style={styles.sectionTitle}>{t.employeeRequests}</h3>
+                <p style={styles.hint}>{t.employeeRequestsHint}</p>
               </div>
-            </div>
-          </div>
-        )}
-
-        {isManager && currentCompany && (
-          <div style={{ ...styles.card, ...r.card }}>
-            <div style={styles.section}>
-              <h3 style={styles.sectionTitle}>{t.branches}</h3>
-              <p style={styles.hint}>{t.positionsHint}</p>
-
-              <div style={styles.formStack}>
-                <label style={styles.label}>{t.branchName}</label>
-                <input
-                  value={branchName}
-                  onChange={(event) => setBranchName(event.target.value)}
-                  placeholder={t.branchPlaceholder}
-                  style={styles.input}
-                />
-
-                <button
-                  type="button"
-                  onClick={handleCreateBranch}
-                  style={isSubmitting ? styles.primaryButtonDisabled : styles.primaryButton}
-                  disabled={isSubmitting}
-                >
-                  {isSubmitting ? '...' : t.createBranch}
-                </button>
-              </div>
-
-              <div style={styles.branchList}>
-                {branches.length === 0 ? (
-                  <p style={styles.emptyText}>{t.noBranches}</p>
-                ) : (
-                  branches.map((branch) => (
-                    <div key={branch.id} style={styles.branchItem}>
-                      <span style={styles.branchItemName}>{getName(branch)}</span>
-                      <button
-                        type="button"
-                        onClick={() => handleDeleteBranch(branch)}
-                        style={
-                          isSubmitting
-                            ? { ...styles.branchDeleteButton, opacity: 0.5, cursor: 'not-allowed' }
-                            : styles.branchDeleteButton
-                        }
-                        disabled={isSubmitting}
-                        aria-label={`${t.deleteBranch} ${getName(branch)}`}
-                      >
-                        {t.deleteBranch}
-                      </button>
-                    </div>
-                  ))
-                )}
-              </div>
-            </div>
-          </div>
-        )}
-
-        {isManager && currentCompany && (
-          <div style={{ ...styles.card, ...r.card }}>
-            <div style={styles.section}>
-              <h3 style={styles.sectionTitle}>{t.employeeRequests}</h3>
-              <p style={styles.hint}>{t.employeeRequestsHint}</p>
 
               <div style={styles.requestList}>
                 {employeeRequests.length === 0 ? (
-                  <p style={styles.emptyText}>{t.noEmployeeRequests}</p>
+                  <div style={styles.emptyRequests}>{t.noEmployeeRequests}</div>
                 ) : (
                   employeeRequests.map((request) => (
                     <div key={request.id} style={styles.requestItem}>
@@ -734,93 +677,169 @@ export default function CompanyTab({ language, userRole, user }) {
                   ))
                 )}
               </div>
-            </div>
+            </section>
           </div>
-        )}
-
-        {isEmployee && !currentCompany && !isPendingEmployee && (
-          <div style={{ ...styles.card, ...r.card }}>
-            <div style={styles.section}>
-              <h3 style={styles.sectionTitle}>{t.joinCompany}</h3>
-              <p style={styles.hint}>{t.previewHint}</p>
-
-              <div style={styles.formStack}>
-                <label style={styles.label}>{t.inviteCode}</label>
-                <input
-                  value={inviteCode}
-                  onChange={(event) => setInviteCode(event.target.value.toUpperCase())}
-                  placeholder={t.invitePlaceholder}
-                  style={styles.input}
-                />
-
-                <button
-                  type="button"
-                  onClick={handlePreview}
-                  style={isSubmitting ? styles.secondaryButtonDisabled : styles.secondaryButton}
-                  disabled={isSubmitting}
-                >
-                  {isSubmitting ? '...' : t.previewInvite}
-                </button>
+        ) : (
+          <div style={{ ...styles.grid, gridTemplateColumns: r.gridCols('1fr 1fr') }}>
+            <section style={{ ...styles.card, ...r.card }}>
+              <div style={styles.cardHeaderCompact}>
+                <h2 style={{ ...styles.title, ...r.title }}>{t.title}</h2>
               </div>
 
-              {invitePreview && (
-                <div style={styles.previewBox}>
-                  <strong style={styles.previewTitle}>{previewCompanyName}</strong>
+              <div style={styles.section}>
+                <h3 style={styles.sectionTitle}>{t.currentCompany}</h3>
 
-                  {previewBranches.length > 0 && (
-                    <div style={styles.joinFieldCard}>
-                      <label style={styles.label}>{t.branch}</label>
-                      <select
-                        value={selectedJoinBranchId}
-                        onChange={(event) => setSelectedJoinBranchId(event.target.value)}
-                        style={styles.select}
-                      >
-                        <option value="">{t.noBranchSelected}</option>
-                        {previewBranches.map((branch) => (
-                          <option key={branch.id} value={branch.id}>
-                            {getName(branch)}
-                          </option>
-                        ))}
-                      </select>
-                    </div>
-                  )}
+                {isPendingEmployee ? (
+                  <div style={styles.pendingPanel}>
+                    <strong style={styles.pendingTitle}>{t.pendingTitle}</strong>
+                    <span style={styles.pendingText}>{t.pendingText}</span>
+                  </div>
+                ) : currentCompany ? (
+                  <div style={styles.companyPanel}>
+                    <strong style={styles.companyTitle}>{currentCompany.name || t.empty}</strong>
 
-                  {previewPositions.length > 0 && (
-                    <div style={styles.joinFieldCard}>
-                      <label style={styles.label}>{t.position}</label>
-                      <select
-                        value={selectedJoinPositionId}
-                        onChange={(event) => setSelectedJoinPositionId(event.target.value)}
-                        style={styles.select}
-                      >
-                        <option value="">{t.noPositionSelected}</option>
-                        {previewPositions.map((position) => (
-                          <option key={position.id} value={position.id}>
-                            {getName(position)}
-                          </option>
-                        ))}
-                      </select>
-                    </div>
-                  )}
+                    {isEmployee && (
+                      <div style={{ ...styles.infoGrid, gridTemplateColumns: r.gridCols('1fr 1fr') }}>
+                        <div style={styles.infoItem}>
+                          <span style={styles.infoLabel}>{t.branches}</span>
+                          {userBranches.length === 0 ? (
+                            <strong style={styles.infoValue}>{t.noBranchesAssigned}</strong>
+                          ) : (
+                            <div style={styles.assignedBranchList}>
+                              {userBranches.map((branch) => (
+                                <span key={branch.id} style={styles.assignedBranchPill}>
+                                  {getName(branch)}
+                                </span>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                        <InfoItem label={t.position} value={getName(currentPosition)} />
+                      </div>
+                    )}
+                  </div>
+                ) : (
+                  <div style={styles.emptyState}>
+                    <strong style={styles.emptyTitle}>{t.noCompany}</strong>
+                    <span style={styles.emptyText}>
+                      {isManager ? t.noCompanyManager : t.noCompanyEmployee}
+                    </span>
+                  </div>
+                )}
+              </div>
+            </section>
 
-                  <button
-                    type="button"
-                    onClick={handleJoin}
-                    style={canJoin ? styles.primaryButton : styles.primaryButtonDisabled}
-                    disabled={!canJoin}
-                  >
-                    {t.joinCompany}
-                  </button>
+            {isManager && !currentCompany && (
+              <section style={{ ...styles.card, ...r.card }}>
+                <div style={styles.section}>
+                  <h3 style={styles.sectionTitle}>{t.createCompany}</h3>
+
+                  <div style={styles.formStack}>
+                    <label style={styles.label}>{t.companyName}</label>
+                    <input
+                      value={companyName}
+                      onChange={(event) => setCompanyName(event.target.value)}
+                      placeholder={t.companyName}
+                      style={styles.input}
+                    />
+
+                    <button
+                      type="button"
+                      onClick={handleCreateCompany}
+                      style={isSubmitting ? styles.primaryButtonDisabled : styles.primaryButton}
+                      disabled={isSubmitting}
+                    >
+                      {isSubmitting ? '...' : t.saveCompany}
+                    </button>
+                  </div>
                 </div>
-              )}
+              </section>
+            )}
 
-              <p style={styles.hint}>{t.employeeHint}</p>
-            </div>
+            {isEmployee && !currentCompany && !isPendingEmployee && (
+              <section style={{ ...styles.card, ...r.card }}>
+                <div style={styles.section}>
+                  <h3 style={styles.sectionTitle}>{t.joinCompany}</h3>
+                  <p style={styles.hint}>{t.previewHint}</p>
+
+                  <div style={styles.formStack}>
+                    <label style={styles.label}>{t.inviteCode}</label>
+                    <input
+                      value={inviteCode}
+                      onChange={(event) => setInviteCode(event.target.value.toUpperCase())}
+                      placeholder={t.invitePlaceholder}
+                      style={styles.input}
+                    />
+
+                    <button
+                      type="button"
+                      onClick={handlePreview}
+                      style={isSubmitting ? styles.secondaryButtonDisabled : styles.secondaryButton}
+                      disabled={isSubmitting}
+                    >
+                      {isSubmitting ? '...' : t.previewInvite}
+                    </button>
+                  </div>
+
+                  {invitePreview && (
+                    <div style={styles.previewBox}>
+                      <strong style={styles.previewTitle}>{previewCompanyName}</strong>
+
+                      {previewBranches.length > 0 && (
+                        <div style={styles.joinFieldCard}>
+                          <label style={styles.label}>{t.branch}</label>
+                          <select
+                            value={selectedJoinBranchId}
+                            onChange={(event) => setSelectedJoinBranchId(event.target.value)}
+                            style={styles.select}
+                          >
+                            <option value="">{t.noBranchSelected}</option>
+                            {previewBranches.map((branch) => (
+                              <option key={branch.id} value={branch.id}>
+                                {getName(branch)}
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+                      )}
+
+                      {previewPositions.length > 0 && (
+                        <div style={styles.joinFieldCard}>
+                          <label style={styles.label}>{t.position}</label>
+                          <select
+                            value={selectedJoinPositionId}
+                            onChange={(event) => setSelectedJoinPositionId(event.target.value)}
+                            style={styles.select}
+                          >
+                            <option value="">{t.noPositionSelected}</option>
+                            {previewPositions.map((position) => (
+                              <option key={position.id} value={position.id}>
+                                {getName(position)}
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+                      )}
+
+                      <button
+                        type="button"
+                        onClick={handleJoin}
+                        style={canJoin ? styles.primaryButton : styles.primaryButtonDisabled}
+                        disabled={!canJoin}
+                      >
+                        {t.joinCompany}
+                      </button>
+                    </div>
+                  )}
+
+                  <p style={styles.hint}>{t.employeeHint}</p>
+                </div>
+              </section>
+            )}
           </div>
         )}
       </div>
-    </div>
-  </section>
+    </section>
   );
 }
 
@@ -836,78 +855,104 @@ function InfoItem({ label, value }) {
 const styles = {
   page: {
     width: '100%',
+    height: '100%',
     boxSizing: 'border-box',
-    padding: '22px',
-    overflowX: 'hidden',
+    padding: '14px 18px 16px',
+    overflow: 'hidden',
+    background: '#f4faff',
   },
 
   shell: {
-    width: 'min(100%, 1200px)',
-    margin: '0 auto',
+    width: '100%',
+    height: '100%',
+    margin: '0',
     boxSizing: 'border-box',
-    padding: '26px',
-    borderRadius: '30px',
-    background: '#f4faff',
-    border: '1px solid rgba(222, 231, 231, 0.95)',
-    boxShadow: 'none',
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '10px',
+    minHeight: 0,
   },
+
+  managerGrid: {
+    flex: '1 1 auto',
+    minHeight: 0,
+    width: '100%',
+    display: 'grid',
+    gridTemplateColumns: 'minmax(0, 1fr) minmax(0, 1fr)',
+    gridTemplateRows: 'auto minmax(0, 1fr)',
+    gap: '14px',
+    alignItems: 'stretch',
+  },
+
   grid: {
+    flex: '1 1 auto',
+    minHeight: 0,
     width: '100%',
     display: 'grid',
     gridTemplateColumns: '1fr 1fr',
-    gap: '18px',
-    alignItems: 'start',
+    gap: '14px',
+    alignItems: 'stretch',
   },
 
   card: {
     boxSizing: 'border-box',
     width: '100%',
     minWidth: 0,
-    padding: '28px',
-    borderRadius: '30px',
+    padding: '20px 24px',
+    borderRadius: '18px',
     background: '#ffffff',
-    border: '1px solid rgba(226, 232, 240, 0.9)',
-    boxShadow: 'none',
+    border: '1px solid rgba(203, 213, 225, 0.9)',
+    boxShadow: '0 10px 24px rgba(0, 38, 66, 0.03)',
     display: 'flex',
     flexDirection: 'column',
-    gap: '20px',
+    gap: '14px',
+    overflow: 'hidden',
   },
-  cardHeader: {
+
+  requestsCard: {
+    boxSizing: 'border-box',
+    width: '100%',
+    minWidth: 0,
+    minHeight: 0,
+    padding: '20px 24px',
+    borderRadius: '18px',
+    background: '#ffffff',
+    border: '1px solid rgba(203, 213, 225, 0.9)',
+    boxShadow: '0 10px 24px rgba(0, 38, 66, 0.03)',
     display: 'flex',
-    justifyContent: 'space-between',
-    alignItems: 'center',
+    flexDirection: 'column',
     gap: '12px',
-    marginBottom: '18px',
+    overflow: 'hidden',
+  },
+
+  cardHeaderCompact: {
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: '12px',
+    marginBottom: 0,
   },
 
   title: {
-    fontSize: '28px',
-    fontWeight: '850',
+    fontSize: '24px',
+    fontWeight: '900',
     color: '#002642',
     margin: 0,
     letterSpacing: '-0.03em',
   },
 
-  rolePill: {
-    padding: '7px 12px',
-    borderRadius: '999px',
-    background: 'rgba(215, 173, 207, 0.45)',
-    color: '#002642',
-    fontSize: '13px',
-    fontWeight: '800',
-  },
-
   section: {
+    minHeight: 0,
     display: 'flex',
     flexDirection: 'column',
-    gap: '18px',
+    gap: '14px',
   },
 
   sectionTitle: {
     margin: 0,
-    color: '#0f172a',
-    fontSize: '22px',
-    fontWeight: '850',
+    color: '#002642',
+    fontSize: '20px',
+    fontWeight: '900',
     letterSpacing: '-0.03em',
     textAlign: 'left',
   },
@@ -915,29 +960,29 @@ const styles = {
   hint: {
     margin: 0,
     color: '#4f646f',
-    fontSize: '14px',
-    lineHeight: 1.4,
-    textAlign: 'center',
+    fontSize: '13px',
+    lineHeight: 1.35,
+    textAlign: 'left',
   },
 
   error: {
-    marginBottom: '14px',
-    padding: '11px 13px',
+    flexShrink: 0,
+    padding: '10px 14px',
     borderRadius: '14px',
     background: 'rgba(215, 173, 207, 0.36)',
     color: '#8d1d1d',
     fontSize: '14px',
-    fontWeight: '700',
+    fontWeight: '750',
   },
 
   success: {
-    marginBottom: '14px',
-    padding: '11px 13px',
+    flexShrink: 0,
+    padding: '10px 14px',
     borderRadius: '14px',
     background: 'rgba(222, 231, 231, 0.82)',
     color: '#002642',
     fontSize: '14px',
-    fontWeight: '700',
+    fontWeight: '750',
   },
 
   companyPanel: {
@@ -945,7 +990,7 @@ const styles = {
     minWidth: 0,
     display: 'flex',
     flexDirection: 'column',
-    gap: '18px',
+    gap: '12px',
     textAlign: 'left',
   },
 
@@ -957,8 +1002,9 @@ const styles = {
 
   companyTitle: {
     color: '#002642',
-    fontSize: '24px',
+    fontSize: '22px',
     fontWeight: '900',
+    lineHeight: 1.15,
   },
 
   inviteBlock: {
@@ -969,139 +1015,170 @@ const styles = {
     width: '100%',
     minWidth: 0,
     boxSizing: 'border-box',
-    padding: '18px 20px',
-    borderRadius: '24px',
-    border: '1px solid rgba(203, 213, 225, 0.85)',
-    background: '#f8fafc',
-    display: 'flex',
-    flexDirection: 'column',
-    alignItems: 'stretch',
-    gap: '16px',
+    padding: '14px 16px',
+    borderRadius: '16px',
+    border: '1px solid #dee7e7',
+    background: '#f8fbff',
+    display: 'grid',
+    gridTemplateColumns: 'minmax(320px, 1fr) auto',
+    alignItems: 'end',
+    gap: '12px',
+  },
+
+  inviteMain: {
+    minWidth: 0,
   },
 
   inviteActions: {
     display: 'flex',
     alignItems: 'center',
+    justifyContent: 'flex-end',
     gap: '10px',
     flexWrap: 'wrap',
   },
 
-  rotationCard: {
-    width: '100%',
-    padding: '20px',
-    borderRadius: '22px',
-    background: '#f8fafc',
-    border: '1px solid rgba(226, 232, 240, 0.95)',
-    display: 'flex',
-    flexDirection: 'column',
-    gap: '16px',
-  },
-
-  rotationRow: {
-    display: 'flex',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    gap: '14px',
-  },
-
-  rotationForm: {
-    display: 'grid',
-    gap: '16px',
-  },
-
-  rotationHint: {
-    display: 'block',
-    marginTop: '8px',
-    color: '#64748b',
-    fontSize: '13px',
-    fontWeight: '600',
-  },
-
-  toggleLabel: {
-    display: 'inline-flex',
-    alignItems: 'center',
-    gap: '10px',
-    cursor: 'pointer',
-    color: '#334155',
-    fontWeight: '700',
-  },
-
-  checkbox: {
-    width: '18px',
-    height: '18px',
-    accentColor: '#002642',
-    cursor: 'pointer',
-  },
-
-  row: {
-    display: 'flex',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    gap: '14px',
-  },
-
-  metaGrid: {
-    display: 'grid',
-    gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))',
-    gap: '12px',
-  },
-
-  metaItem: {
-    padding: '14px',
-    borderRadius: '18px',
-    background: '#f8fafc',
-    border: '1px solid rgba(226, 232, 240, 0.96)',
-  },
-
-  metaLabel: {
-    display: 'block',
-    color: '#64748b',
-    fontSize: '12px',
-    marginBottom: '6px',
-  },
-
-  metaValue: {
-    color: '#0f172a',
-    fontSize: '15px',
-    fontWeight: '800',
-  },
-
   inviteLabel: {
     display: 'block',
-    fontSize: '12px',
-    fontWeight: '800',
+    fontSize: '11px',
+    fontWeight: '850',
     color: '#64748b',
     textTransform: 'uppercase',
     letterSpacing: '0.1em',
-    marginBottom: '8px',
+    marginBottom: '6px',
   },
 
   inviteValue: {
     display: 'block',
-    fontSize: '24px',
+    fontSize: '22px',
     fontWeight: '900',
     letterSpacing: '0.08em',
     color: '#102a43',
-    wordBreak: 'break-all',
+    wordBreak: 'normal',
+    overflowWrap: 'anywhere',
   },
 
-  copyButton: {
-    minWidth: '110px',
-    padding: '12px 16px',
-    borderRadius: '14px',
-    border: '1px solid rgba(17, 24, 39, 0.12)',
-    background: '#eef2ff',
-    color: '#0f172a',
+  branchCreateRow: {
+    display: 'grid',
+    gridTemplateColumns: 'minmax(0, 1fr)',
+    gap: '8px',
+  },
+
+  branchList: {
+    minHeight: 0,
+    display: 'grid',
+    gap: '8px',
+    gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))',
+    overflowY: 'auto',
+  },
+
+  branchItem: {
+    minHeight: '38px',
+    padding: '8px 10px',
+    borderRadius: '12px',
+    background: '#f8fbff',
+    border: '1px solid #dee7e7',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: '10px',
+  },
+
+  branchItemName: {
+    color: '#002642',
+    fontSize: '14px',
+    fontWeight: '850',
+    overflowWrap: 'anywhere',
+  },
+
+  branchDeleteButton: {
+    flexShrink: 0,
+    height: '30px',
+    padding: '0 10px',
+    border: 'none',
+    borderRadius: '9px',
+    background: 'rgba(215, 173, 207, 0.42)',
+    color: '#8d1d1d',
+    fontSize: '11px',
     fontWeight: '800',
     cursor: 'pointer',
   },
 
+  requestsHeader: {
+    flexShrink: 0,
+    display: 'flex',
+    alignItems: 'baseline',
+    justifyContent: 'space-between',
+    gap: '12px',
+    paddingBottom: '10px',
+    borderBottom: '1px solid #dee7e7',
+  },
+
+  requestList: {
+    flex: '1 1 auto',
+    minHeight: 0,
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '12px',
+    overflowY: 'auto',
+  },
+
+  emptyRequests: {
+    flex: '1 1 auto',
+    minHeight: '120px',
+    borderRadius: '14px',
+    background: '#f8fbff',
+    border: '1px dashed #cfdde8',
+    color: '#4f646f',
+    fontSize: '14px',
+    fontWeight: '750',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    textAlign: 'center',
+  },
+
+  requestItem: {
+    display: 'flex',
+    flexWrap: 'wrap',
+    alignItems: 'flex-start',
+    justifyContent: 'space-between',
+    gap: '10px',
+    padding: '12px 14px',
+    borderRadius: '14px',
+    background: '#f8fbff',
+    border: '1px solid #dee7e7',
+  },
+
+  requestMain: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '4px',
+    minWidth: '220px',
+  },
+
+  requestName: {
+    color: '#002642',
+    fontSize: '14px',
+    fontWeight: '850',
+  },
+
+  requestMeta: {
+    color: '#64748b',
+    fontSize: '12px',
+  },
+
+  requestActions: {
+    display: 'flex',
+    flexWrap: 'wrap',
+    gap: '8px',
+  },
+
   emptyState: {
-    minHeight: '180px',
-    padding: '24px',
-    borderRadius: '22px',
-    background: '#ffffff',
-    border: '1px solid rgba(79, 100, 111, 0.12)',
+    minHeight: '120px',
+    padding: '16px',
+    borderRadius: '16px',
+    background: '#f8fbff',
+    border: '1px solid #dee7e7',
     display: 'flex',
     flexDirection: 'column',
     alignItems: 'center',
@@ -1112,125 +1189,135 @@ const styles = {
 
   emptyTitle: {
     color: '#002642',
-    fontSize: '20px',
+    fontSize: '18px',
     fontWeight: '850',
   },
 
   emptyText: {
     margin: 0,
     color: '#4f646f',
-    fontSize: '15px',
-    lineHeight: 1.45,
+    fontSize: '14px',
+    lineHeight: 1.4,
     textAlign: 'center',
   },
 
   formStack: {
     display: 'flex',
     flexDirection: 'column',
-    gap: '9px',
+    gap: '8px',
   },
 
   label: {
     color: '#4f646f',
     fontWeight: '750',
-    fontSize: '14px',
+    fontSize: '13px',
   },
 
   input: {
     width: '100%',
-    height: '48px',
+    height: '42px',
     boxSizing: 'border-box',
-    borderRadius: '14px',
+    borderRadius: '12px',
     border: '2px solid #dee7e7',
     background: '#ffffff',
-    padding: '0 15px',
+    padding: '0 14px',
     color: '#002642',
-    fontSize: '15px',
+    fontSize: '14px',
     outline: 'none',
   },
 
   select: {
     width: '100%',
-    height: '48px',
+    height: '42px',
     boxSizing: 'border-box',
-    borderRadius: '14px',
+    borderRadius: '12px',
     border: '2px solid #dee7e7',
     background: '#ffffff',
-    padding: '0 15px',
+    padding: '0 14px',
     color: '#002642',
-    fontSize: '15px',
+    fontSize: '14px',
     fontWeight: '700',
     outline: 'none',
     cursor: 'pointer',
   },
 
-  joinFieldCard: {
-    display: 'flex',
-    flexDirection: 'column',
-    gap: '8px',
-    padding: '14px 16px',
-    borderRadius: '16px',
-    background: '#ffffff',
-    border: '1px solid rgba(226, 232, 240, 0.98)',
-    boxShadow: '0 8px 20px rgba(0, 38, 66, 0.04)',
-  },
-
   primaryButton: {
-    height: '48px',
-    padding: '0 20px',
+    height: '42px',
+    padding: '0 16px',
     background: '#002642',
     border: 'none',
-    borderRadius: '14px',
+    borderRadius: '12px',
     color: '#f4faff',
+    fontSize: '14px',
     fontWeight: '800',
     cursor: 'pointer',
-    transition: 'transform 0.18s ease, box-shadow 0.18s ease',
+    whiteSpace: 'nowrap',
   },
 
   primaryButtonDisabled: {
-    height: '48px',
-    padding: '0 20px',
+    height: '42px',
+    padding: '0 16px',
     background: '#94a3b8',
     border: 'none',
-    borderRadius: '14px',
+    borderRadius: '12px',
     color: '#f8fafc',
+    fontSize: '14px',
     fontWeight: '800',
     cursor: 'default',
     opacity: 0.65,
+    whiteSpace: 'nowrap',
   },
 
   secondaryButton: {
-    height: '48px',
-    padding: '0 22px',
+    height: '42px',
+    padding: '0 16px',
     background: '#eef2ff',
     border: '1px solid rgba(99, 102, 241, 0.18)',
-    borderRadius: '14px',
+    borderRadius: '12px',
     color: '#3730a3',
+    fontSize: '14px',
     fontWeight: '800',
     cursor: 'pointer',
+    whiteSpace: 'nowrap',
   },
 
   secondaryButtonDisabled: {
-    height: '48px',
-    padding: '0 20px',
+    height: '42px',
+    padding: '0 16px',
     background: '#e2e8f0',
     border: 'none',
-    borderRadius: '14px',
+    borderRadius: '12px',
     color: '#475569',
+    fontSize: '14px',
     fontWeight: '850',
     cursor: 'default',
     opacity: 0.65,
+    whiteSpace: 'nowrap',
+  },
+
+  copyButton: {
+    height: '42px',
+    minWidth: '104px',
+    padding: '0 14px',
+    borderRadius: '12px',
+    border: '1px solid rgba(17, 24, 39, 0.12)',
+    background: '#eef2ff',
+    color: '#0f172a',
+    fontSize: '14px',
+    fontWeight: '800',
+    cursor: 'pointer',
+    whiteSpace: 'nowrap',
   },
 
   previewBox: {
     marginTop: '4px',
-    padding: '20px',
-    borderRadius: '22px',
-    background: '#f8fafc',
-    border: '1px solid rgba(226, 232, 240, 0.95)',
+    padding: '18px',
+    borderRadius: '18px',
+    background: '#f8fbff',
+    border: '1px solid #dee7e7',
     display: 'flex',
     flexDirection: 'column',
-    gap: '16px',
+    gap: '14px',
   },
 
   previewTitle: {
@@ -1238,6 +1325,12 @@ const styles = {
     color: '#002642',
     fontSize: '18px',
     textAlign: 'center',
+  },
+
+  joinFieldCard: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '8px',
   },
 
   infoGrid: {
@@ -1250,8 +1343,8 @@ const styles = {
   infoItem: {
     padding: '12px',
     borderRadius: '16px',
-    background: '#f4faff',
-    border: '1px solid rgba(79, 100, 111, 0.1)',
+    background: '#f8fbff',
+    border: '1px solid #dee7e7',
     display: 'flex',
     flexDirection: 'column',
     gap: '4px',
@@ -1268,42 +1361,6 @@ const styles = {
     fontSize: '15px',
     fontWeight: '850',
     overflowWrap: 'anywhere',
-  },
-
-  branchList: {
-    display: 'grid',
-    gap: '12px',
-    gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))',
-  },
-
-  branchItem: {
-    padding: '12px 14px',
-    borderRadius: '16px',
-    background: '#ffffff',
-    border: '1px solid rgba(226, 232, 240, 0.98)',
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    gap: '10px',
-  },
-
-  branchItemName: {
-    color: '#0f172a',
-    fontWeight: '850',
-    overflowWrap: 'anywhere',
-  },
-
-  branchDeleteButton: {
-    flexShrink: 0,
-    height: '32px',
-    padding: '0 12px',
-    border: 'none',
-    borderRadius: '10px',
-    background: 'rgba(215, 173, 207, 0.42)',
-    color: '#8d1d1d',
-    fontSize: '12px',
-    fontWeight: '800',
-    cursor: 'pointer',
   },
 
   assignedBranchList: {
@@ -1346,47 +1403,5 @@ const styles = {
     color: '#475569',
     fontSize: '14px',
     lineHeight: 1.5,
-  },
-
-  requestList: {
-    display: 'flex',
-    flexDirection: 'column',
-    gap: '12px',
-  },
-
-  requestItem: {
-    display: 'flex',
-    flexWrap: 'wrap',
-    alignItems: 'flex-start',
-    justifyContent: 'space-between',
-    gap: '12px',
-    padding: '16px 18px',
-    borderRadius: '18px',
-    background: '#ffffff',
-    border: '1px solid rgba(226, 232, 240, 0.98)',
-  },
-
-  requestMain: {
-    display: 'flex',
-    flexDirection: 'column',
-    gap: '4px',
-    minWidth: '220px',
-  },
-
-  requestName: {
-    color: '#002642',
-    fontSize: '15px',
-    fontWeight: '800',
-  },
-
-  requestMeta: {
-    color: '#64748b',
-    fontSize: '13px',
-  },
-
-  requestActions: {
-    display: 'flex',
-    flexWrap: 'wrap',
-    gap: '8px',
   },
 };
