@@ -1,21 +1,20 @@
 // frontend/src/components/tabs/ShiftsTab.jsx
+/* eslint-disable react-hooks/preserve-manual-memoization */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   createMyAbsence,
   deleteEmployeeAbsence,
-  getEmployeeAvailability,
   getMyAbsences,
-  getMyCalendarSummary,
   updateEmployeeAvailability,
 } from '../../services/employeeService';
 import { extractApiErrorMessage, localizeBackendMessage } from '../../services/error';
 import { importRequirementsXlsx } from '../../services/importService';
-import { mapEmployeeCalendarSummary } from '../../services/mappers';
 import { listPositions } from '../../services/positionService';
 import {
   createBulkRequirements,
   createRequirement,
   deleteRequirement,
+  formatLocalDate,
   listRequirements,
 } from '../../services/scheduleService';
 import { useTabResponsive } from '../../utils/tabResponsive';
@@ -44,7 +43,6 @@ const TIME_SLOTS = Array.from(
   },
 );
 
-const TIME_SLOT_SET = new Set(TIME_SLOTS);
 const AVAILABILITY_STATUSES = new Set(['available', 'if_needed', 'unavailable']);
 
 const MOBILE_HOUR_GROUPS = TIME_SLOTS.reduce((groups, slot, index) => {
@@ -71,6 +69,8 @@ function normalizeAvailabilityStatus(status) {
 }
 
 function toDateKey(date) {
+  if (!(date instanceof Date) || Number.isNaN(date.getTime())) return '';
+
   const year = date.getFullYear();
   const month = String(date.getMonth() + 1).padStart(2, '0');
   const day = String(date.getDate()).padStart(2, '0');
@@ -84,7 +84,11 @@ function startOfToday() {
 }
 
 function isPastDateKey(dateKey) {
+  if (!dateKey) return false;
+
   const date = new Date(`${dateKey}T00:00:00`);
+  if (Number.isNaN(date.getTime())) return false;
+
   date.setHours(0, 0, 0, 0);
   return date.getTime() < startOfToday().getTime();
 }
@@ -98,12 +102,6 @@ function minutesToTimeString(totalMinutes) {
   const hours = Math.floor(totalMinutes / 60);
   const minutes = totalMinutes % 60;
   return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:00`;
-}
-
-function minutesToSlotString(totalMinutes) {
-  const hours = Math.floor(totalMinutes / 60);
-  const minutes = totalMinutes % 60;
-  return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}`;
 }
 
 function buildIntervalsForWeekday(weekday, availabilityStatus, slotStarts) {
@@ -149,12 +147,18 @@ function buildIntervalsForWeekday(weekday, availabilityStatus, slotStarts) {
 
 // Backend only stores a recurring weekly availability template, so when saving we
 // aggregate the visible week selections back into weekly intervals (Monday = 0).
-function convertDatesToWeeklyIntervals(availabilityByDate, dates) {
+function convertDatesToWeeklyIntervals(availabilityByDate, dates = []) {
   const slotsByWeekdayAndStatus = {};
-  const dateEntries = dates.map((date) => {
-    const dateKey = toDateKey(date);
-    return [dateKey, availabilityByDate[dateKey] || {}];
-  });
+  const sourceDates = Array.isArray(dates) && dates.length > 0
+    ? dates
+    : Object.keys(availabilityByDate || {}).map((dateKey) => new Date(`${dateKey}T00:00:00`));
+
+  const dateEntries = sourceDates
+    .map((date) => {
+      const dateKey = toDateKey(date);
+      return dateKey ? [dateKey, availabilityByDate?.[dateKey] || {}] : null;
+    })
+    .filter(Boolean);
 
   dateEntries.forEach(([dateKey, slotMap]) => {
     const jsDay = new Date(`${dateKey}T00:00:00`).getDay();
@@ -179,36 +183,6 @@ function convertDatesToWeeklyIntervals(availabilityByDate, dates) {
   return intervals;
 }
 
-function buildAvailabilityByDateFromWeeklyIntervals(weeklyAvailability, dates) {
-  const byDate = {};
-
-  dates.forEach((date) => {
-    const dateKey = toDateKey(date);
-    const jsDay = date.getDay();
-    const weekday = (jsDay + 6) % 7;
-    const dayMap = {};
-
-    weeklyAvailability.forEach((block) => {
-      if (Number(block?.weekday) !== weekday) return;
-
-      const status = normalizeAvailabilityStatus(block.availability_status || 'available');
-      const start = slotToMinutes(block.start_time);
-      const end = slotToMinutes(block.end_time);
-
-      for (let minutes = start; minutes < end; minutes += SLOT_MINUTES) {
-        const slot = minutesToSlotString(minutes);
-        if (TIME_SLOT_SET.has(slot)) {
-          dayMap[slot] = status;
-        }
-      }
-    });
-
-    byDate[dateKey] = dayMap;
-  });
-
-  return byDate;
-}
-
 function normalizeAvailabilityByDate(value) {
   return Object.entries(value || {}).reduce((result, [dateKey, slotMap]) => {
     result[dateKey] = Object.entries(slotMap || {}).reduce((dayMap, [slot, status]) => {
@@ -220,7 +194,7 @@ function normalizeAvailabilityByDate(value) {
 }
 
 function defaultSingleRequirement() {
-  const today = new Date().toISOString().slice(0, 10);
+  const today = formatLocalDate(new Date());
   return {
     position_id: '',
     date: today,
@@ -230,13 +204,17 @@ function defaultSingleRequirement() {
   };
 }
 
-function defaultBulkRequirement() {
+function endOfCurrentMonth() {
   const today = new Date();
-  const start = new Date(today.getFullYear(), today.getMonth(), 1).toISOString().slice(0, 10);
-  const end = new Date(today.getFullYear(), today.getMonth() + 1, 0).toISOString().slice(0, 10);
+  return formatLocalDate(new Date(today.getFullYear(), today.getMonth() + 1, 0));
+}
+
+function defaultBulkRequirement() {
+  const today = formatLocalDate(new Date());
+  const end = endOfCurrentMonth();
 
   return {
-    start_date: start,
+    start_date: today,
     end_date: end,
     weekdays: [0, 1, 2, 3, 4],
     requirements: [
@@ -251,10 +229,10 @@ function defaultBulkRequirement() {
 }
 
 function currentMonthFilters() {
-  const today = new Date();
+  const today = formatLocalDate(new Date());
   return {
-    start_date: new Date(today.getFullYear(), today.getMonth(), 1).toISOString().slice(0, 10),
-    end_date: new Date(today.getFullYear(), today.getMonth() + 1, 0).toISOString().slice(0, 10),
+    start_date: today,
+    end_date: endOfCurrentMonth(),
     position_id: '',
     date: '',
   };
@@ -341,7 +319,7 @@ function normalizeError(error, fallback, language) {
 }
 
 export default function ShiftsTab({ language, userRole, user }) {
-  const r = useTabResponsive(1280);
+  const r = useTabResponsive(1480);
   const isManager = userRole === 'manager';
   const employeeId = user?.employeeId || user?.employee_id;
 
@@ -354,14 +332,9 @@ export default function ShiftsTab({ language, userRole, user }) {
   const [filterForm, setFilterForm] = useState(currentMonthFilters);
   const [appliedFilters, setAppliedFilters] = useState(currentMonthFilters);
 
-  const [availabilityForm, setAvailabilityForm] = useState({
-    weekly_availability: [],
-    desired_days_off: [],
-  });
-
   const availabilityStorageKey = employeeId
-    ? `shiftplanner_availability_by_date_${employeeId}`
-    : 'shiftplanner_availability_by_date_anon';
+    ? `shiftplanner_availability_by_date_v2_${employeeId}`
+    : 'shiftplanner_availability_by_date_v2_anon';
 
   // Availability is tracked per calendar date: { 'YYYY-MM-DD': { [hour]: 'available' | 'if_needed' | 'unavailable' } }
   const [availabilityByDate, setAvailabilityByDate] = useState(() => {
@@ -373,7 +346,7 @@ export default function ShiftsTab({ language, userRole, user }) {
     }
   });
 
-  const [selectedDate, setSelectedDate] = useState(() => new Date().toISOString().slice(0, 10));
+  const [selectedDate, setSelectedDate] = useState(() => formatLocalDate(new Date()));
   const [brushMode, setBrushMode] = useState('available');
   const dragSelectionRef = useRef({
     active: false,
@@ -401,7 +374,7 @@ export default function ShiftsTab({ language, userRole, user }) {
     setSelectedDate((prev) => {
       const d = new Date(prev);
       d.setDate(d.getDate() + deltaDays);
-      return d.toISOString().slice(0, 10);
+      return formatLocalDate(d);
     });
   };
 
@@ -413,15 +386,17 @@ export default function ShiftsTab({ language, userRole, user }) {
     }
   };
 
-  const [absenceForm, setAbsenceForm] = useState({
-    absence_type: 'vacation',
-    start_date: '',
-    end_date: '',
-    comment: '',
+  const [absenceForm, setAbsenceForm] = useState(() => {
+    const today = formatLocalDate(new Date());
+    return {
+      absence_type: 'vacation',
+      start_date: today,
+      end_date: today,
+      comment: '',
+    };
   });
 
   const [absences, setAbsences] = useState([]);
-  const [summary, setSummary] = useState(null);
   const [selectedFile, setSelectedFile] = useState(null);
   const [importResult, setImportResult] = useState(null);
 
@@ -433,8 +408,6 @@ export default function ShiftsTab({ language, userRole, user }) {
 
   const texts = {
     ru: {
-      titleManager: 'Настройки смен',
-      titleEmployee: 'Доступность',
       stepOne: '1. Выберите период',
       stepTwo: '2. Создайте требование',
       stepThree: '3. Проверьте список',
@@ -505,8 +478,6 @@ export default function ShiftsTab({ language, userRole, user }) {
       locked: 'Прошедшие даты изменить нельзя',
     },
     en: {
-      titleManager: 'Shift setup',
-      titleEmployee: 'Availability',
       stepOne: '1. Choose period',
       stepTwo: '2. Create requirement',
       stepThree: '3. Check list',
@@ -579,9 +550,10 @@ export default function ShiftsTab({ language, userRole, user }) {
   };
 
   const t = texts[language] || texts.ru;
-  const emptyFallback = t.empty;
 
   const isToday = (date) => {
+    if (!(date instanceof Date) || Number.isNaN(date.getTime())) return false;
+
     const today = new Date();
     return date.getDate() === today.getDate() &&
       date.getMonth() === today.getMonth() &&
@@ -589,8 +561,10 @@ export default function ShiftsTab({ language, userRole, user }) {
   };
 
   const getAvailabilityCellStyle = (dateKey, time) => {
+    if (!dateKey || !time) return styles.gridCell;
+
     const past = isPastDateKey(dateKey);
-    const status = normalizeAvailabilityStatus(availabilityByDate[dateKey]?.[time]);
+    const status = normalizeAvailabilityStatus(availabilityByDate?.[dateKey]?.[time]);
 
     if (past) return styles.gridCellLocked;
     if (status === 'available') return styles.gridCellAvailable;
@@ -599,8 +573,10 @@ export default function ShiftsTab({ language, userRole, user }) {
   };
 
   const getAvailabilityCellTitle = (dateKey, time) => {
+    if (!dateKey || !time) return t.unavailable;
+
     const past = isPastDateKey(dateKey);
-    const status = normalizeAvailabilityStatus(availabilityByDate[dateKey]?.[time]);
+    const status = normalizeAvailabilityStatus(availabilityByDate?.[dateKey]?.[time]);
 
     if (past) return t.locked;
     if (status === 'available') return t.available;
@@ -618,7 +594,7 @@ export default function ShiftsTab({ language, userRole, user }) {
   const selectedMobileDate = weekDates[mobileAvailabilityDay] || weekDates[0];
   const selectedMobileDateKey = selectedMobileDate ? toDateKey(selectedMobileDate) : '';
   const selectedMobileDatePast = selectedMobileDateKey ? isPastDateKey(selectedMobileDateKey) : false;
-  const selectedMobileDateLabel = selectedMobileDate
+  const selectedMobileDateLabel = selectedMobileDate instanceof Date && !Number.isNaN(selectedMobileDate.getTime())
     ? selectedMobileDate.toLocaleDateString(language === 'ru' ? 'ru-RU' : 'en-US', {
       weekday: 'long',
       day: 'numeric',
@@ -690,25 +666,12 @@ export default function ShiftsTab({ language, userRole, user }) {
 
   const loadEmployeeData = useCallback(async () => {
     if (!employeeId) {
-      setAvailabilityForm({ weekly_availability: [], desired_days_off: [] });
       setAvailabilityByDate({});
       setAbsences([]);
-      setSummary(null);
       return;
     }
 
-    const [availabilityData, absencesData, summaryData] = await Promise.all([
-      getEmployeeAvailability(employeeId),
-      getMyAbsences(),
-      getMyCalendarSummary(),
-    ]);
-
-    const normalizedAvailability = normalizeArray(availabilityData?.weekly_availability);
-
-    setAvailabilityForm({
-      weekly_availability: normalizedAvailability,
-      desired_days_off: normalizeArray(availabilityData?.desired_days_off),
-    });
+    const absencesData = await getMyAbsences();
 
     const storedByDate = (() => {
       try {
@@ -718,14 +681,10 @@ export default function ShiftsTab({ language, userRole, user }) {
         return {};
       }
     })();
-    setAvailabilityByDate({
-      ...storedByDate,
-      ...buildAvailabilityByDateFromWeeklyIntervals(normalizedAvailability, weekDates),
-    });
+    setAvailabilityByDate(storedByDate);
 
     setAbsences(normalizeArray(absencesData));
-    setSummary(mapEmployeeCalendarSummary(summaryData));
-  }, [employeeId, availabilityStorageKey, weekDates]);
+  }, [employeeId, availabilityStorageKey]);
 
   const loadData = useCallback(async () => {
     setIsLoading(true);
@@ -738,12 +697,12 @@ export default function ShiftsTab({ language, userRole, user }) {
         await loadEmployeeData();
       }
     } catch (error) {
-      setErrorMessage(normalizeError(error, emptyFallback, language));
+      setErrorMessage(normalizeError(error, t.empty, language));
     } finally {
       setIsLoading(false);
       setIsRefreshingList(false);
     }
-  }, [appliedFilters, emptyFallback, isManager, language, loadEmployeeData, loadManagerData]);
+  }, [appliedFilters, isManager, language, loadEmployeeData, loadManagerData, t.empty]);
 
   useEffect(() => {
     const timer = setTimeout(() => void loadData(), 0);
@@ -770,6 +729,7 @@ export default function ShiftsTab({ language, userRole, user }) {
   };
 
   const applyAvailabilityStatus = useCallback((dateKey, slot, status = brushMode) => {
+    if (!dateKey || !slot) return;
     if (isPastDateKey(dateKey)) return;
 
     const nextStatus = normalizeAvailabilityStatus(status);
@@ -842,10 +802,13 @@ export default function ShiftsTab({ language, userRole, user }) {
   }, [applyAvailabilityDragCell]);
 
   const endAvailabilityDrag = useCallback(() => {
-    dragSelectionRef.current.active = false;
-    dragSelectionRef.current.appliedKeys.clear();
-    dragSelectionRef.current.lastCell = null;
-    dragSelectionRef.current.touchIdentifier = null;
+    const dragState = dragSelectionRef.current;
+    if (!dragState) return;
+
+    dragState.active = false;
+    dragState.appliedKeys?.clear?.();
+    dragState.lastCell = null;
+    dragState.touchIdentifier = null;
   }, []);
 
   const handleAvailabilityMouseDown = useCallback((event, dayIndex, slotIndex) => {
@@ -860,7 +823,7 @@ export default function ShiftsTab({ language, userRole, user }) {
   }, [applyAvailabilityDragCell]);
 
   const handleAvailabilityTouchStart = useCallback((event, dayIndex, slotIndex) => {
-    const touch = event.changedTouches[0];
+    const touch = event.changedTouches?.[0] || event.touches?.[0];
     if (!touch) return;
     event.preventDefault();
     startAvailabilityDrag(dayIndex, slotIndex, touch.identifier);
@@ -870,8 +833,10 @@ export default function ShiftsTab({ language, userRole, user }) {
     const dragState = dragSelectionRef.current;
     if (!dragState.active || dragState.touchIdentifier === null) return;
 
-    const touch = Array.from(event.changedTouches).find((item) => item.identifier === dragState.touchIdentifier)
-      || Array.from(event.touches).find((item) => item.identifier === dragState.touchIdentifier);
+    const changedTouches = Array.from(event.changedTouches || []);
+    const activeTouches = Array.from(event.touches || []);
+    const touch = changedTouches.find((item) => item.identifier === dragState.touchIdentifier)
+      || activeTouches.find((item) => item.identifier === dragState.touchIdentifier);
     if (!touch) return;
 
     event.preventDefault();
@@ -882,6 +847,65 @@ export default function ShiftsTab({ language, userRole, user }) {
 
     applyAvailabilityDragCell(Number(target.dataset.dayIndex), Number(target.dataset.slotIndex));
   }, [applyAvailabilityDragCell]);
+
+  const renderAvailabilityGrid = () => (
+    <div style={styles.availabilityGridTable}>
+      <div style={styles.availabilityTimeHeader}>
+        <div style={styles.gridCorner} />
+        {TIME_SLOTS.map((time, slotIndex) => (
+          <div key={time} style={styles.timeHeaderCell}>
+            {slotIndex % 2 === 0 ? time : time.slice(3)}
+          </div>
+        ))}
+      </div>
+
+      {WEEKDAYS.map((day, dayIndex) => {
+        const rowDate = weekDates[dayIndex];
+        const dateKey = toDateKey(rowDate);
+        const itIsToday = isToday(rowDate);
+
+        return (
+          <div key={day.value} style={styles.dateGridRow}>
+            <div
+              style={{
+                ...styles.dateHeaderCell,
+                background: itIsToday ? '#002642' : '#f4faff',
+                color: itIsToday ? '#ffffff' : '#002642',
+              }}
+            >
+              <span style={styles.dateHeaderWeekday}>{day[language] || day.ru}</span>
+              <span style={styles.dateHeaderDate}>
+                {rowDate?.toLocaleDateString?.(language === 'ru' ? 'ru-RU' : 'en-US', { day: 'numeric', month: 'short' }) || ''}
+              </span>
+            </div>
+
+            {TIME_SLOTS.map((time, slotIndex) => {
+              const past = !dateKey || isPastDateKey(dateKey);
+              const status = normalizeAvailabilityStatus(availabilityByDate?.[dateKey]?.[time]);
+
+              return (
+                <button
+                  key={`${dateKey}-${time}`}
+                  type="button"
+                  onMouseDown={past ? undefined : (event) => handleAvailabilityMouseDown(event, dayIndex, slotIndex)}
+                  onMouseEnter={past ? undefined : () => handleAvailabilityMouseEnter(dayIndex, slotIndex)}
+                  onTouchStart={past ? undefined : (event) => handleAvailabilityTouchStart(event, dayIndex, slotIndex)}
+                  onTouchMove={past ? undefined : handleAvailabilityTouchMove}
+                  data-availability-cell="true"
+                  data-day-index={dayIndex}
+                  data-slot-index={slotIndex}
+                  disabled={past}
+                  style={getAvailabilityCellStyle(dateKey, time)}
+                  aria-pressed={status === 'available'}
+                  title={getAvailabilityCellTitle(dateKey, time)}
+                />
+              );
+            })}
+          </div>
+        );
+      })}
+    </div>
+  );
 
   useEffect(() => {
     window.addEventListener('mouseup', endAvailabilityDrag);
@@ -1041,6 +1065,8 @@ export default function ShiftsTab({ language, userRole, user }) {
 
       await updateEmployeeAvailability(employeeId, {
         desired_days_off: [],
+        // The API still accepts a weekly shape; keep that sync limited to the
+        // visible week, while the UI stores selections by exact calendar date.
         weekly_availability: convertDatesToWeeklyIntervals(availabilityByDate, weekDates),
       });
       await loadEmployeeData();
@@ -1068,7 +1094,8 @@ export default function ShiftsTab({ language, userRole, user }) {
 
     try {
       await createMyAbsence(absenceForm);
-      setAbsenceForm({ absence_type: 'vacation', start_date: '', end_date: '', comment: '' });
+      const today = formatLocalDate(new Date());
+      setAbsenceForm({ absence_type: 'vacation', start_date: today, end_date: today, comment: '' });
       await loadEmployeeData();
       setSuccessMessage(t.absenceAdded);
     } catch (error) {
@@ -1121,8 +1148,8 @@ export default function ShiftsTab({ language, userRole, user }) {
 
   if (isLoading) {
     return (
-      <section style={{ ...styles.page, ...r.page }}>
-        <div style={{ ...styles.shell, ...r.shell }}>
+      <section style={{ ...styles.page, ...r.page, ...(r.isMobile ? {} : styles.desktopPage) }}>
+        <div style={{ ...styles.shell, ...r.shell, ...(r.isMobile ? {} : styles.desktopShell) }}>
           <div style={styles.emptyBox}>{t.loading}</div>
         </div>
       </section>
@@ -1130,8 +1157,8 @@ export default function ShiftsTab({ language, userRole, user }) {
   }
 
   return (
-    <section style={{ ...styles.page, ...r.page }}>
-      <div style={{ ...styles.shell, ...r.shell }}>
+    <section style={{ ...styles.page, ...r.page, ...(r.isMobile ? {} : styles.desktopPage) }}>
+      <div style={{ ...styles.shell, ...r.shell, ...(r.isMobile ? {} : styles.desktopShell) }}>
         {renderToast()}
 
         <header style={{ ...styles.header, ...r.header }}>
@@ -1139,7 +1166,9 @@ export default function ShiftsTab({ language, userRole, user }) {
             <h2 style={{ ...styles.title, ...r.title }}>{isManager ? t.titleManager : t.titleEmployee}</h2>
             <p style={styles.subtitle}>{isManager ? t.subtitleManager : t.subtitleEmployee}</p>
           </div>
-        </header>        {isManager ? (
+        </header>
+
+        {isManager ? (
           <div style={{ ...styles.managerLayout, ...r.splitLayout('290px minmax(0, 1fr)') }}>
             <aside style={styles.sidebar}>
               <div style={styles.helpBox}>
@@ -1171,7 +1200,7 @@ export default function ShiftsTab({ language, userRole, user }) {
                     type="date"
                     value={filterForm.date}
                     onChange={(event) => setFilterForm((prev) => ({ ...prev, date: event.target.value }))}
-                    style={styles.input}
+                    style={styles.dateInput}
                   />
 
                   <label style={styles.label}>{t.startDate}</label>
@@ -1179,7 +1208,7 @@ export default function ShiftsTab({ language, userRole, user }) {
                     type="date"
                     value={filterForm.start_date}
                     onChange={(event) => setFilterForm((prev) => ({ ...prev, start_date: event.target.value }))}
-                    style={styles.input}
+                    style={styles.dateInput}
                     disabled={Boolean(filterForm.date)}
                   />
 
@@ -1188,7 +1217,7 @@ export default function ShiftsTab({ language, userRole, user }) {
                     type="date"
                     value={filterForm.end_date}
                     onChange={(event) => setFilterForm((prev) => ({ ...prev, end_date: event.target.value }))}
-                    style={styles.input}
+                    style={styles.dateInput}
                     disabled={Boolean(filterForm.date)}
                   />
 
@@ -1289,7 +1318,7 @@ export default function ShiftsTab({ language, userRole, user }) {
                         type="date"
                         value={singleRequirement.date}
                         onChange={(event) => setSingleRequirement((prev) => ({ ...prev, date: event.target.value }))}
-                        style={styles.input}
+                        style={styles.dateInput}
                       />
                     </Field>
 
@@ -1348,7 +1377,7 @@ export default function ShiftsTab({ language, userRole, user }) {
                         type="date"
                         value={bulkRequirement.start_date}
                         onChange={(event) => setBulkRequirement((prev) => ({ ...prev, start_date: event.target.value }))}
-                        style={styles.input}
+                        style={styles.dateInput}
                       />
                     </Field>
 
@@ -1357,7 +1386,7 @@ export default function ShiftsTab({ language, userRole, user }) {
                         type="date"
                         value={bulkRequirement.end_date}
                         onChange={(event) => setBulkRequirement((prev) => ({ ...prev, end_date: event.target.value }))}
-                        style={styles.input}
+                        style={styles.dateInput}
                       />
                     </Field>
 
@@ -1480,7 +1509,7 @@ export default function ShiftsTab({ language, userRole, user }) {
                       type="date"
                       value={filterForm.date}
                       onChange={(event) => setFilterForm((prev) => ({ ...prev, date: event.target.value }))}
-                      style={styles.input}
+                      style={styles.dateInput}
                     />
                   </Field>
 
@@ -1489,7 +1518,7 @@ export default function ShiftsTab({ language, userRole, user }) {
                       type="date"
                       value={filterForm.start_date}
                       onChange={(event) => setFilterForm((prev) => ({ ...prev, start_date: event.target.value }))}
-                      style={styles.input}
+                      style={styles.dateInput}
                       disabled={Boolean(filterForm.date)}
                     />
                   </Field>
@@ -1499,7 +1528,7 @@ export default function ShiftsTab({ language, userRole, user }) {
                       type="date"
                       value={filterForm.end_date}
                       onChange={(event) => setFilterForm((prev) => ({ ...prev, end_date: event.target.value }))}
-                      style={styles.input}
+                      style={styles.dateInput}
                       disabled={Boolean(filterForm.date)}
                     />
                   </Field>
@@ -1568,10 +1597,27 @@ export default function ShiftsTab({ language, userRole, user }) {
           </div>
         ) : (
           <div style={{ ...styles.employeeGrid, ...(r.isMobile ? styles.employeeGridMobile : {}) }}>
-            <section style={{ ...styles.panel, ...(r.isMobile ? r.employeePanel : {}) }}>
+            <section style={{
+              ...styles.panel,
+              ...styles.availabilityPanel,
+              ...(r.isMobile ? r.employeePanel : {}),
+            }}>
               {r.isMobile ? (
                 <>
-                  <h3 style={{ ...styles.panelTitle, marginBottom: 14 }}>{t.availability}</h3>
+                  <div style={styles.mobileAvailabilityHeader}>
+                    <h3 style={{ ...styles.panelTitle, marginBottom: 0 }}>{t.availability}</h3>
+                    <button
+                      type="button"
+                      onClick={submitAvailability}
+                      style={{
+                        ...(isSubmitting ? styles.primaryButtonDisabled : styles.primaryButton),
+                        ...styles.mobileTopSaveButton,
+                      }}
+                      disabled={isSubmitting}
+                    >
+                      {t.save}
+                    </button>
+                  </div>
 
                   <div style={styles.mobileWeekBar}>
                     <button
@@ -1628,12 +1674,14 @@ export default function ShiftsTab({ language, userRole, user }) {
                       const cellDate = weekDates[index];
                       const itIsToday = isToday(cellDate);
                       const isActive = mobileAvailabilityDay === index;
+                      const cellDateKey = toDateKey(cellDate);
 
                       return (
                         <button
                           key={day.value}
                           type="button"
                           onClick={() => setMobileAvailabilityDay(index)}
+                          disabled={!cellDateKey}
                           style={{
                             ...styles.mobileDayButton,
                             background: isActive ? '#002642' : (itIsToday ? '#dee7e7' : '#f4faff'),
@@ -1642,7 +1690,7 @@ export default function ShiftsTab({ language, userRole, user }) {
                           }}
                         >
                           <span style={styles.mobileDayButtonWeekday}>{day[language] || day.ru}</span>
-                          <span style={styles.mobileDayButtonDate}>{cellDate.getDate()}</span>
+                          <span style={styles.mobileDayButtonDate}>{cellDate?.getDate?.() || ''}</span>
                         </button>
                       );
                     })}
@@ -1703,18 +1751,6 @@ export default function ShiftsTab({ language, userRole, user }) {
                     </div>
                   )}
 
-                  <button
-                    type="button"
-                    onClick={submitAvailability}
-                    style={{
-                      ...(isSubmitting ? styles.primaryButtonDisabled : styles.primaryButton),
-                      ...r.primaryButton,
-                      ...styles.mobileStickyAction,
-                    }}
-                    disabled={isSubmitting}
-                  >
-                    {t.save}
-                  </button>
                 </>
               ) : (
                 <>
@@ -1770,7 +1806,7 @@ export default function ShiftsTab({ language, userRole, user }) {
                     type="date"
                     value={selectedDate}
                     onChange={(e) => handleSelectedDateChange(e.target.value)}
-                    style={{ ...styles.input, width: 'auto' }}
+                    style={{ ...styles.dateInput, width: 'auto' }}
                   />
                   <button
                     type="button"
@@ -1781,25 +1817,22 @@ export default function ShiftsTab({ language, userRole, user }) {
                   >
                     {'\u2192'}
                   </button>
-                </div>
-              </div>
-
-              <div style={styles.legend}>
-                <div style={styles.legendItem}>
-                  <div style={{ ...styles.legendColor, background: '#4CAF50' }} />
-                  <span style={styles.legendText}>{t.available}</span>
-                </div>
-                <div style={styles.legendItem}>
-                  <div style={{ ...styles.legendColor, background: '#FFC107' }} />
-                  <span style={styles.legendText}>{t.if_needed}</span>
-                </div>
-                <div style={styles.legendItem}>
-                  <div style={{ ...styles.legendColor, background: '#eef3f6', border: '1px solid #ddd' }} />
-                  <span style={styles.legendText}>{t.unavailable}</span>
+                  <button
+                    type="button"
+                    onClick={submitAvailability}
+                    style={{
+                      ...(isSubmitting ? styles.primaryButtonDisabled : styles.primaryButton),
+                      ...styles.topSaveButton,
+                    }}
+                    disabled={isSubmitting}
+                  >
+                    {t.save}
+                  </button>
                 </div>
               </div>
 
               <div style={styles.availabilityGridWrapper}>
+                {renderAvailabilityGrid()}
                 <div style={styles.availabilityGridHeader}>
                   <div style={styles.gridCorner} />
                   {WEEKDAYS.map((day, index) => {
@@ -1879,14 +1912,6 @@ export default function ShiftsTab({ language, userRole, user }) {
                 </div>
               </div>
 
-              <button
-                type="button"
-                onClick={submitAvailability}
-                style={isSubmitting ? styles.primaryButtonDisabled : styles.primaryButton}
-                disabled={isSubmitting}
-              >
-                {t.save}
-              </button>
                 </>
               )}
             </section>
@@ -1913,7 +1938,7 @@ export default function ShiftsTab({ language, userRole, user }) {
                       type="date"
                       value={absenceForm.start_date}
                       onChange={(event) => setAbsenceForm((prev) => ({ ...prev, start_date: event.target.value }))}
-                      style={styles.input}
+                      style={styles.dateInput}
                     />
                   </Field>
 
@@ -1922,7 +1947,7 @@ export default function ShiftsTab({ language, userRole, user }) {
                       type="date"
                       value={absenceForm.end_date}
                       onChange={(event) => setAbsenceForm((prev) => ({ ...prev, end_date: event.target.value }))}
-                      style={styles.input}
+                      style={styles.dateInput}
                     />
                   </Field>
 
@@ -1967,14 +1992,14 @@ export default function ShiftsTab({ language, userRole, user }) {
                   type="date"
                   value={absenceForm.start_date}
                   onChange={(event) => setAbsenceForm((prev) => ({ ...prev, start_date: event.target.value }))}
-                  style={styles.input}
+                  style={styles.dateInput}
                 />
 
                 <input
                   type="date"
                   value={absenceForm.end_date}
                   onChange={(event) => setAbsenceForm((prev) => ({ ...prev, end_date: event.target.value }))}
-                  style={styles.input}
+                  style={styles.dateInput}
                 />
 
                 <input
@@ -2025,23 +2050,7 @@ export default function ShiftsTab({ language, userRole, user }) {
               )}
             </section>
 
-            <section style={{ ...styles.panel, ...(r.isMobile ? r.employeePanel : {}) }}>
-              <h3 style={{ ...styles.panelTitle, ...(r.isMobile ? { marginBottom: 14 } : {}) }}>{t.shifts}</h3>
-
-              {summary ? (
-                <>
-                  <div style={{
-                    ...styles.metricGrid,
-                    ...(r.isMobile ? { marginBottom: 16 } : {}),
-                  }}
-                  >
-                    <Metric label={t.totalShifts} value={summary.workload.total_shifts} />
-                    <Metric label={t.hours} value={summary.workload.total_hours} />
-                  </div>
-
-                  {summary.shifts.length === 0 ? (
-                    <p style={styles.emptyText}>{t.empty}</p>
-                  ) : (
+            {/*
                     <div style={styles.list}>
                       {summary.shifts.map((shift) => (
                         r.isMobile ? (
@@ -2085,6 +2094,7 @@ export default function ShiftsTab({ language, userRole, user }) {
                 <p style={styles.emptyText}>{t.empty}</p>
               )}
             </section>
+            */}
           </div>
         )}
       </div>
@@ -2101,42 +2111,46 @@ function Field({ label, children }) {
   );
 }
 
-function Metric({ label, value }) {
-  return (
-    <div style={styles.metric}>
-      <span style={styles.metricLabel}>{label}</span>
-      <strong style={styles.metricValue}>{value}</strong>
-    </div>
-  );
-}
-
 const styles = {
   page: {
     width: '100%',
     height: '100%',
     boxSizing: 'border-box',
-    padding: '22px',
+    padding: '16px 24px 18px',
     overflow: 'hidden',
+    background: '#f4faff',
+  },
+
+  desktopPage: {
+    height: 'calc(100dvh - 96px)',
   },
 
   shell: {
-    width: 'min(100%, 1280px)',
+    width: '100%',
     height: '100%',
     margin: '0 auto',
     boxSizing: 'border-box',
-    padding: '26px',
-    borderRadius: '30px',
-    background: '#f4faff',
-    border: '1px solid rgba(222, 231, 231, 0.95)',
+    padding: 0,
+    borderRadius: 0,
+    background: 'transparent',
+    border: 'none',
     boxShadow: 'none',
     display: 'flex',
     flexDirection: 'column',
+    gap: 14,
     overflow: 'hidden',
     position: 'relative',
   },
+
+  desktopShell: {
+    width: '100%',
+    padding: 0,
+    borderRadius: 0,
+  },
+
   header: {
     flexShrink: 0,
-    marginBottom: '18px',
+    marginBottom: 0,
   },
 
   title: {
@@ -2144,7 +2158,7 @@ const styles = {
     color: '#002642',
     fontSize: '28px',
     fontWeight: '900',
-    letterSpacing: '-0.03em',
+    letterSpacing: 0,
   },
 
   subtitle: {
@@ -2216,7 +2230,7 @@ const styles = {
     minHeight: 0,
     display: 'grid',
     gridTemplateColumns: '290px minmax(0, 1fr)',
-    gap: '18px',
+    gap: 14,
     overflow: 'hidden',
   },
 
@@ -2224,7 +2238,7 @@ const styles = {
     minHeight: 0,
     display: 'flex',
     flexDirection: 'column',
-    gap: '14px',
+    gap: 14,
     overflowY: 'auto',
   },
 
@@ -2232,14 +2246,16 @@ const styles = {
     minHeight: 0,
     display: 'grid',
     gridTemplateRows: 'auto auto minmax(0, 1fr)',
-    gap: '14px',
+    gap: 14,
     overflow: 'hidden',
   },
 
   helpBox: {
-    padding: '16px',
-    borderRadius: '22px',
-    background: '#dee7e7',
+    padding: '14px 16px',
+    borderRadius: 14,
+    background: '#ffffff',
+    border: '1px solid #dee7e7',
+    boxShadow: '0 12px 30px rgba(0, 38, 66, 0.04)',
     color: '#002642',
     display: 'flex',
     flexDirection: 'column',
@@ -2250,9 +2266,10 @@ const styles = {
 
   panel: {
     padding: '18px',
-    borderRadius: '22px',
+    borderRadius: 14,
     background: '#ffffff',
-    border: '1px solid rgba(79, 100, 111, 0.12)',
+    border: '1px solid #dee7e7',
+    boxShadow: '0 12px 30px rgba(0, 38, 66, 0.04)',
   },
 
   panelHeader: {
@@ -2287,7 +2304,7 @@ const styles = {
   modeSwitch: {
     width: 'fit-content',
     padding: '4px',
-    borderRadius: '18px',
+    borderRadius: 10,
     background: '#dee7e7',
     display: 'flex',
     gap: '4px',
@@ -2297,7 +2314,7 @@ const styles = {
     height: '40px',
     padding: '0 18px',
     border: 'none',
-    borderRadius: '14px',
+    borderRadius: 8,
     background: 'transparent',
     color: '#4f646f',
     fontWeight: '850',
@@ -2308,12 +2325,12 @@ const styles = {
     height: '40px',
     padding: '0 18px',
     border: 'none',
-    borderRadius: '14px',
+    borderRadius: 8,
     background: '#ffffff',
     color: '#002642',
     fontWeight: '900',
     cursor: 'pointer',
-    boxShadow: '0 8px 18px rgba(0, 38, 66, 0.1)',
+    boxShadow: 'none',
   },
 
   formGrid: {
@@ -2337,10 +2354,10 @@ const styles = {
 
   input: {
     width: '100%',
-    height: '42px',
+    height: 40,
     boxSizing: 'border-box',
-    borderRadius: '13px',
-    border: '2px solid #dee7e7',
+    borderRadius: 10,
+    border: '1px solid #dbe6f0',
     background: '#ffffff',
     padding: '0 13px',
     color: '#002642',
@@ -2348,12 +2365,28 @@ const styles = {
     outline: 'none',
   },
 
+  dateInput: {
+    width: '100%',
+    height: 40,
+    boxSizing: 'border-box',
+    borderRadius: 10,
+    border: '1px solid #dbe6f0',
+    background: '#ffffff',
+    padding: '0 13px',
+    color: '#002642',
+    colorScheme: 'light',
+    fontSize: '14px',
+    fontWeight: '700',
+    outline: 'none',
+    cursor: 'pointer',
+  },
+
   primaryButton: {
-    height: '42px',
+    height: 40,
     padding: '0 18px',
     background: '#002642',
     border: 'none',
-    borderRadius: '13px',
+    borderRadius: 10,
     color: '#f4faff',
     fontWeight: '800',
     cursor: 'pointer',
@@ -2362,11 +2395,11 @@ const styles = {
   },
 
   primaryButtonDisabled: {
-    height: '42px',
+    height: 40,
     padding: '0 18px',
     background: '#4f646f',
     border: 'none',
-    borderRadius: '13px',
+    borderRadius: 10,
     color: '#f4faff',
     fontWeight: '800',
     cursor: 'default',
@@ -2379,8 +2412,8 @@ const styles = {
     height: '40px',
     padding: '0 16px',
     background: '#dee7e7',
-    border: 'none',
-    borderRadius: '13px',
+    border: '1px solid #dee7e7',
+    borderRadius: 10,
     color: '#002642',
     fontWeight: '800',
     cursor: 'pointer',
@@ -2390,15 +2423,15 @@ const styles = {
   smallSecondaryButton: {
     height: '40px',
     padding: '0 16px',
-    background: 'rgba(215, 173, 207, 0.42)',
-    border: '1px solid rgba(215, 173, 207, 0.75)',
-    borderRadius: '13px',
+    background: '#ffffff',
+    border: '1px solid #dee7e7',
+    borderRadius: 10,
     color: '#002642',
     fontSize: '13px',
     fontWeight: '850',
     cursor: 'pointer',
     whiteSpace: 'nowrap',
-    boxShadow: '0 6px 14px rgba(0, 38, 66, 0.06)',
+    boxShadow: 'none',
   },
 
   weekNavButton: {
@@ -2423,7 +2456,7 @@ const styles = {
     padding: '0 13px',
     background: 'rgba(215, 173, 207, 0.42)',
     border: 'none',
-    borderRadius: '12px',
+    borderRadius: 10,
     color: '#002642',
     fontWeight: '800',
     cursor: 'pointer',
@@ -2434,9 +2467,9 @@ const styles = {
     height: '34px',
     padding: '0 12px',
     border: 'none',
-    borderRadius: '11px',
-    background: 'rgba(215, 173, 207, 0.48)',
-    color: '#002642',
+    borderRadius: 10,
+    background: '#8d1d1d',
+    color: '#ffffff',
     fontSize: '13px',
     fontWeight: '850',
     cursor: 'pointer',
@@ -2454,7 +2487,7 @@ const styles = {
     height: '34px',
     padding: '0 13px',
     border: '1px solid #dee7e7',
-    borderRadius: '999px',
+    borderRadius: 10,
     background: '#ffffff',
     color: '#4f646f',
     fontWeight: '800',
@@ -2465,9 +2498,8 @@ const styles = {
     height: '34px',
     padding: '0 13px',
     border: '1px solid rgba(215, 173, 207, 0.8)',
-    borderRadius: '999px',
-    background: '#d7adcf',
-    color: '#002642',
+    background: '#002642',
+    color: '#ffffff',
     fontWeight: '900',
     cursor: 'pointer',
   },
@@ -2475,9 +2507,10 @@ const styles = {
   listPanel: {
     minHeight: 0,
     padding: '18px',
-    borderRadius: '22px',
+    borderRadius: 14,
     background: '#ffffff',
-    border: '1px solid rgba(79, 100, 111, 0.12)',
+    border: '1px solid #dee7e7',
+    boxShadow: '0 12px 30px rgba(0, 38, 66, 0.04)',
     overflow: 'hidden',
   },
 
@@ -2487,7 +2520,7 @@ const styles = {
     alignItems: 'end',
     marginBottom: 16,
     paddingBottom: 16,
-    borderBottom: '1px solid rgba(79, 100, 111, 0.12)',
+    borderBottom: '1px solid #edf2f2',
   },
 
   filterActions: {
@@ -2499,7 +2532,7 @@ const styles = {
   },
 
   requirementsList: {
-    height: 'calc(100% - 40px)',
+    height: 'calc(100% - 104px)',
     overflowY: 'auto',
     display: 'flex',
     flexDirection: 'column',
@@ -2507,10 +2540,10 @@ const styles = {
   },
 
   requirementItem: {
-    padding: '14px 16px',
-    borderRadius: '18px',
-    background: '#f4faff',
-    border: '1px solid rgba(79, 100, 111, 0.1)',
+    padding: '12px 14px',
+    borderRadius: 12,
+    background: '#ffffff',
+    border: '1px solid #edf2f2',
     display: 'grid',
     gridTemplateColumns: '1.2fr 1fr auto auto',
     alignItems: 'center',
@@ -2533,8 +2566,9 @@ const styles = {
   staffBadge: {
     width: 'fit-content',
     padding: '7px 11px',
-    borderRadius: '999px',
-    background: 'rgba(215, 173, 207, 0.45)',
+    borderRadius: 10,
+    background: '#f4faff',
+    border: '1px solid #dee7e7',
     color: '#002642',
     fontSize: '13px',
     fontWeight: '850',
@@ -2545,8 +2579,8 @@ const styles = {
     boxSizing: 'border-box',
     padding: '0 14px',
     margin: '12px 0',
-    borderRadius: '14px',
-    border: '2px dashed #dee7e7',
+    borderRadius: 10,
+    border: '1px dashed #c7d6df',
     background: '#f4faff',
     color: '#4f646f',
     display: 'flex',
@@ -2564,7 +2598,7 @@ const styles = {
   importBox: {
     marginTop: '12px',
     padding: '14px',
-    borderRadius: '16px',
+    borderRadius: 12,
     background: '#f4faff',
     border: '1px solid #dee7e7',
     color: '#002642',
@@ -2581,12 +2615,47 @@ const styles = {
     overflowY: 'auto',
     display: 'grid',
     gridTemplateColumns: '1fr',
-    gap: '16px',
+    gap: 14,
   },
 
   employeeGridMobile: {
     gap: 12,
     overflowY: 'visible',
+  },
+
+  availabilityPanel: {
+    minHeight: 0,
+    display: 'flex',
+    flexDirection: 'column',
+    overflow: 'hidden',
+  },
+
+  topSaveButton: {
+    marginTop: 0,
+    height: 40,
+    borderRadius: 10,
+  },
+
+  mobileAvailabilityHeader: {
+    position: 'sticky',
+    top: 0,
+    zIndex: 8,
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 12,
+    marginBottom: 12,
+    paddingBottom: 10,
+    background: '#ffffff',
+    borderBottom: '1px solid #edf2f2',
+  },
+
+  mobileTopSaveButton: {
+    marginTop: 0,
+    height: 38,
+    minWidth: 112,
+    padding: '0 14px',
+    borderRadius: 10,
   },
 
   mobileWeekBar: {
@@ -2633,15 +2702,17 @@ const styles = {
   mobileWeekDateInput: {
     width: '100%',
     maxWidth: 180,
-    height: 36,
+    height: 38,
     boxSizing: 'border-box',
     borderRadius: 10,
-    border: '1px solid #dee7e7',
+    border: '1px solid #dbe6f0',
     background: '#ffffff',
     padding: '0 10px',
     color: '#002642',
+    colorScheme: 'light',
     fontSize: 13,
-    fontWeight: 600,
+    fontWeight: 700,
+    cursor: 'pointer',
   },
 
   mobileSectionLabel: {
@@ -2656,7 +2727,7 @@ const styles = {
   mobileBrushRow: {
     display: 'flex',
     gap: 8,
-    marginBottom: 16,
+    marginBottom: 12,
   },
 
   mobileBrushButton: {
@@ -2739,12 +2810,12 @@ const styles = {
   },
 
   mobileSlotsCard: {
-    marginBottom: 18,
+    marginBottom: 0,
     padding: 12,
-    borderRadius: 16,
+    borderRadius: 14,
     background: '#f4faff',
     border: '1px solid #dee7e7',
-    maxHeight: 'min(48vh, 380px)',
+    maxHeight: 'min(54vh, 460px)',
     overflowY: 'auto',
     display: 'flex',
     flexDirection: 'column',
@@ -2828,77 +2899,100 @@ const styles = {
   },
 
   availabilityGridWrapper: {
-    display: 'flex',
-    flexDirection: 'column',
-    gap: '4px',
-    marginBottom: '14px',
+    display: 'block',
+    marginBottom: 0,
     overflowX: 'auto',
-    paddingBottom: '6px',
+    overflowY: 'visible',
+    padding: 10,
     userSelect: 'none',
     WebkitUserSelect: 'none',
     touchAction: 'none',
+    borderRadius: 12,
+    border: '1px solid #edf2f2',
+    background: '#ffffff',
   },
 
-  availabilityGridHeader: {
-    display: 'grid',
-    gridTemplateColumns: '58px repeat(7, 64px)',
-    gap: '3px',
-    alignItems: 'center',
+  availabilityGridTable: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: 0,
+    minWidth: 1320,
+    borderTop: '1px solid #dbe6f0',
+    borderLeft: '1px solid #dbe6f0',
   },
 
-  availabilityGridBody: {
+  availabilityTimeHeader: {
     display: 'grid',
-    gap: '3px',
+    gridTemplateColumns: '104px repeat(34, 36px)',
+    gap: 0,
+    alignItems: 'stretch',
+    padding: 0,
+    background: '#ffffff',
   },
 
   gridCorner: {
-    height: '28px',
-    borderRadius: '6px',
+    height: 42,
+    borderRight: '1px solid #dbe6f0',
+    borderBottom: '1px solid #dbe6f0',
     background: 'transparent',
   },
 
-  gridHeaderCell: {
-    minHeight: '28px',
-    borderRadius: '6px',
+  timeHeaderCell: {
+    height: 42,
     background: '#dee7e7',
+    borderRight: '1px solid #dbe6f0',
+    borderBottom: '1px solid #dbe6f0',
     color: '#002642',
-    fontSize: '12px',
+    fontSize: 9,
     fontWeight: '800',
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'center',
-    padding: '0 6px',
     textAlign: 'center',
     whiteSpace: 'nowrap',
   },
 
-  gridRow: {
+  dateGridRow: {
     display: 'grid',
-    gridTemplateColumns: '58px repeat(7, 64px)',
-    gap: '3px',
-    alignItems: 'center',
+    gridTemplateColumns: '104px repeat(34, 36px)',
+    gap: 0,
+    alignItems: 'stretch',
+    minHeight: 42,
   },
 
-  gridTimeCell: {
-    height: '22px',
-    borderRadius: '6px',
+  dateHeaderCell: {
+    height: 42,
     background: '#f4faff',
-    color: '#4f646f',
-    fontSize: '11px',
-    fontWeight: '700',
+    borderRight: '1px solid #dbe6f0',
+    borderBottom: '1px solid #dbe6f0',
     display: 'flex',
-    alignItems: 'center',
+    flexDirection: 'column',
     justifyContent: 'center',
     padding: '0 8px',
     whiteSpace: 'nowrap',
   },
 
+  dateHeaderWeekday: {
+    fontSize: 10,
+    fontWeight: 800,
+    opacity: 0.85,
+  },
+
+  dateHeaderDate: {
+    fontSize: 12,
+    fontWeight: 900,
+  },
+
   gridCell: {
     width: '100%',
-    minHeight: '22px',
-    borderRadius: '5px',
+    height: 42,
+    minHeight: 42,
+    padding: 0,
+    boxSizing: 'border-box',
     background: '#eef3f6',
-    border: '1px solid transparent',
+    border: 0,
+    borderRight: '1px solid #dbe6f0',
+    borderBottom: '1px solid #dbe6f0',
     cursor: 'pointer',
     userSelect: 'none',
     WebkitUserSelect: 'none',
@@ -2907,10 +3001,14 @@ const styles = {
 
   gridCellAvailable: {
     width: '100%',
-    minHeight: '22px',
-    borderRadius: '5px',
+    height: 42,
+    minHeight: 42,
+    padding: 0,
+    boxSizing: 'border-box',
     background: '#4CAF50',
-    border: '1px solid #388E3C',
+    border: 0,
+    borderRight: '1px solid #dbe6f0',
+    borderBottom: '1px solid #dbe6f0',
     cursor: 'pointer',
     transition: 'background 0.08s ease, border-color 0.08s ease',
     userSelect: 'none',
@@ -2920,10 +3018,14 @@ const styles = {
 
   gridCellMaybe: {
     width: '100%',
-    minHeight: '22px',
-    borderRadius: '5px',
+    height: 42,
+    minHeight: 42,
+    padding: 0,
+    boxSizing: 'border-box',
     background: '#FFC107',
-    border: '1px solid #F57C00',
+    border: 0,
+    borderRight: '1px solid #dbe6f0',
+    borderBottom: '1px solid #dbe6f0',
     cursor: 'pointer',
     transition: 'background 0.08s ease, border-color 0.08s ease',
     userSelect: 'none',
@@ -2951,10 +3053,14 @@ const styles = {
   },
   gridCellLocked: {
     width: '100%',
-    minHeight: '22px',
-    borderRadius: '5px',
+    height: 42,
+    minHeight: 42,
+    padding: 0,
+    boxSizing: 'border-box',
     background: 'repeating-linear-gradient(45deg, #eef3f6, #eef3f6 6px, #e2e8ec 6px, #e2e8ec 12px)',
-    border: '1px solid #dde5ea',
+    border: 0,
+    borderRight: '1px solid #dbe6f0',
+    borderBottom: '1px solid #dbe6f0',
     cursor: 'not-allowed',
     opacity: 0.6,
     userSelect: 'none',

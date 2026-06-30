@@ -2,17 +2,19 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import * as XLSX from 'xlsx';
 import { getEmployeeReports, getMyReport } from '../../services/reportService';
 import { listBranches } from '../../services/companyService';
+import { filterRealEmployees, listEmployees } from '../../services/employeeService';
+import { listPositions } from '../../services/positionService';
 import { enrichReportRowBranch } from '../../utils/employeeBranches';
 import { extractApiErrorMessage } from '../../services/error';
 import { useTabResponsive } from '../../utils/tabResponsive';
+import { formatLocalDate } from '../../services/scheduleService';
 
 function defaultRange() {
-  const end = new Date();
-  const start = new Date(end.getFullYear(), end.getMonth(), 1);
+  const today = formatLocalDate(new Date());
 
   return {
-    start_date: start.toISOString().slice(0, 10),
-    end_date: end.toISOString().slice(0, 10),
+    start_date: today,
+    end_date: today,
   };
 }
 
@@ -40,6 +42,11 @@ function normalizeNumber(value) {
   const number = Number(value);
 
   return Number.isFinite(number) ? number : 0;
+}
+
+function uniqueSorted(values) {
+  return [...new Set(values.map((value) => String(value || '').trim()).filter(Boolean))]
+    .sort((a, b) => a.localeCompare(b));
 }
 
 const DEFAULT_HOURLY_RATE = 25;
@@ -81,7 +88,7 @@ function normalizeEmployeeReport(report) {
 }
 
 export default function ReportsTab({ language, userRole, user }) {
-  const r = useTabResponsive(1200);
+  const r = useTabResponsive(1480);
   const isManager = userRole === 'manager';
   const companyId = user?.company?.id || user?.company_id || null;
 
@@ -92,6 +99,8 @@ export default function ReportsTab({ language, userRole, user }) {
   const [positionFilter, setPositionFilter] = useState('');
   const [branchFilter, setBranchFilter] = useState('');
   const [companyBranches, setCompanyBranches] = useState([]);
+  const [companyEmployees, setCompanyEmployees] = useState([]);
+  const [companyPositions, setCompanyPositions] = useState([]);
 
   const [managerReport, setManagerReport] = useState([]);
   const [employeeReport, setEmployeeReport] = useState(null);
@@ -105,8 +114,6 @@ export default function ReportsTab({ language, userRole, user }) {
     ru: {
       title: 'Отчеты',
       selfTitle: 'Мой отчет',
-      subtitleManager: 'Сводка по отработанным часам и сменам сотрудников за выбранный период.',
-      subtitleEmployee: 'Личная сводка по опубликованным сменам за выбранный период.',
       period: 'Период отчета',
       startDate: 'Начало периода',
       endDate: 'Конец периода',
@@ -118,6 +125,8 @@ export default function ReportsTab({ language, userRole, user }) {
       salary: 'Зарплата',
       branch: 'Филиал',
       allBranches: 'Все филиалы',
+      allEmployees: 'Все сотрудники',
+      allPositions: 'Все позиции',
       reportType: 'Тип отчета',
       hoursReport: 'По часам',
       shiftsReport: 'По сменам',
@@ -139,8 +148,6 @@ export default function ReportsTab({ language, userRole, user }) {
     en: {
       title: 'Reports',
       selfTitle: 'My report',
-      subtitleManager: 'Summary of employee workload by hours and shifts for the selected period.',
-      subtitleEmployee: 'Personal summary of published shifts for the selected period.',
       period: 'Report period',
       startDate: 'Start date',
       endDate: 'End date',
@@ -152,6 +159,8 @@ export default function ReportsTab({ language, userRole, user }) {
       salary: 'Salary',
       branch: 'Branch',
       allBranches: 'All branches',
+      allEmployees: 'All employees',
+      allPositions: 'All positions',
       reportType: 'Report type',
       hoursReport: 'By hours',
       shiftsReport: 'By shifts',
@@ -175,27 +184,39 @@ export default function ReportsTab({ language, userRole, user }) {
   const t = texts[language] || texts.ru;
 
   useEffect(() => {
-    if (!isManager || !companyId) {
-      setCompanyBranches([]);
-      return undefined;
-    }
-
     let cancelled = false;
 
-    async function loadBranches() {
-      try {
-        const data = await listBranches(companyId);
+    async function loadFilterOptions() {
+      if (!isManager || !companyId) {
         if (!cancelled) {
-          setCompanyBranches(Array.isArray(data) ? data : []);
+          setCompanyBranches([]);
+          setCompanyEmployees([]);
+          setCompanyPositions([]);
+        }
+        return;
+      }
+
+      try {
+        const [branchesData, employeesData, positionsData] = await Promise.all([
+          listBranches(companyId),
+          listEmployees(),
+          listPositions(),
+        ]);
+        if (!cancelled) {
+          setCompanyBranches(Array.isArray(branchesData) ? branchesData : []);
+          setCompanyEmployees(filterRealEmployees(normalizeArray(employeesData)));
+          setCompanyPositions(normalizeArray(positionsData));
         }
       } catch {
         if (!cancelled) {
           setCompanyBranches([]);
+          setCompanyEmployees([]);
+          setCompanyPositions([]);
         }
       }
     }
 
-    void loadBranches();
+    void loadFilterOptions();
 
     return () => {
       cancelled = true;
@@ -215,6 +236,24 @@ export default function ReportsTab({ language, userRole, user }) {
       return matchesEmployee && matchesPosition && matchesBranch;
     });
   }, [normalizedManagerReport, employeeSearch, positionFilter, branchFilter]);
+
+  const employeeFilterOptions = useMemo(() => {
+    const fromEmployees = companyEmployees.map((employee) => employee.full_name || employee.name || employee.email);
+    const fromReport = normalizedManagerReport.map((item) => item.full_name);
+    return uniqueSorted([...fromEmployees, ...fromReport]);
+  }, [companyEmployees, normalizedManagerReport]);
+
+  const positionFilterOptions = useMemo(() => {
+    const fromPositions = companyPositions.map((position) => position.title || position.name);
+    const fromReport = normalizedManagerReport.map((item) => item.position);
+    return uniqueSorted([...fromPositions, ...fromReport]);
+  }, [companyPositions, normalizedManagerReport]);
+
+  const branchFilterOptions = useMemo(() => {
+    const fromBranches = companyBranches.map((branch) => branch.name || branch.title);
+    const fromReport = normalizedManagerReport.flatMap((item) => item.branchNames || item.branch);
+    return uniqueSorted([...fromBranches, ...fromReport]);
+  }, [companyBranches, normalizedManagerReport]);
 
   const normalizedEmployeeReport = useMemo(
     () => normalizeEmployeeReport(employeeReport),
@@ -265,9 +304,6 @@ export default function ReportsTab({ language, userRole, user }) {
     const requestParams = {
       ...range,
       report_type: reportMode,
-      employee_search: employeeSearch,
-      position: positionFilter,
-      branch: branchFilter,
     };
 
     setErrorMessage('');
@@ -302,7 +338,15 @@ export default function ReportsTab({ language, userRole, user }) {
       setIsLoading(false);
       setIsRefreshing(false);
     }
-  }, [appliedRange, isManager, language, t.empty, t.noPermission, t.reportReady]);
+  }, [
+    appliedRange,
+    isManager,
+    language,
+    reportMode,
+    t.empty,
+    t.noPermission,
+    t.reportReady,
+  ]);
 
   useEffect(() => {
     const timer = setTimeout(() => {
@@ -396,8 +440,8 @@ export default function ReportsTab({ language, userRole, user }) {
 
   if (isLoading) {
     return (
-      <section style={{ ...styles.page, ...r.page }}>
-        <div style={{ ...styles.shell, ...r.shell }}>
+      <section style={{ ...styles.page, ...r.page, ...(r.isMobile ? {} : styles.desktopPage) }}>
+        <div style={{ ...styles.shell, ...r.shell, ...(r.isMobile ? {} : styles.desktopShell) }}>
           <div style={styles.emptyBox}>{t.loading}</div>
         </div>
       </section>
@@ -411,8 +455,8 @@ export default function ReportsTab({ language, userRole, user }) {
     : '1.2fr 1fr 0.8fr 0.7fr';
 
   return (
-    <section style={{ ...styles.page, ...r.page }}>
-      <div style={{ ...styles.shell, ...r.shell }}>
+    <section style={{ ...styles.page, ...r.page, ...(r.isMobile ? {} : styles.desktopPage) }}>
+      <div style={{ ...styles.shell, ...r.shell, ...(r.isMobile ? {} : styles.desktopShell) }}>
         {renderToast()}
 
         <header style={{ ...styles.header, ...r.header }}>
@@ -444,7 +488,7 @@ export default function ReportsTab({ language, userRole, user }) {
                     onChange={(event) =>
                       setFilterForm((prev) => ({ ...prev, start_date: event.target.value }))
                     }
-                    style={styles.input}
+                    style={styles.dateInput}
                   />
                 </Field>
 
@@ -455,7 +499,7 @@ export default function ReportsTab({ language, userRole, user }) {
                     onChange={(event) =>
                       setFilterForm((prev) => ({ ...prev, end_date: event.target.value }))
                     }
-                    style={styles.input}
+                    style={styles.dateInput}
                   />
                 </Field>
 
@@ -480,35 +524,48 @@ export default function ReportsTab({ language, userRole, user }) {
                     ))}
                   </div>
                 </Field>
-                <Field label={t.employee}>
-                  <input
-                    type="text"
-                    value={employeeSearch}
-                    onChange={(event) => setEmployeeSearch(event.target.value)}
-                    placeholder={t.employee}
-                    style={styles.input}
-                  />
-                </Field>
+                {isManager && (
+                  <>
+                    <Field label={t.employee}>
+                      <select
+                        value={employeeSearch}
+                        onChange={(event) => setEmployeeSearch(event.target.value)}
+                        style={styles.select}
+                      >
+                        <option value="">{t.allEmployees}</option>
+                        {employeeFilterOptions.map((name) => (
+                          <option key={name} value={name}>{name}</option>
+                        ))}
+                      </select>
+                    </Field>
 
-                <Field label={t.position}>
-                  <input
-                    type="text"
-                    value={positionFilter}
-                    onChange={(event) => setPositionFilter(event.target.value)}
-                    placeholder={t.position}
-                    style={styles.input}
-                  />
-                </Field>
+                    <Field label={t.position}>
+                      <select
+                        value={positionFilter}
+                        onChange={(event) => setPositionFilter(event.target.value)}
+                        style={styles.select}
+                      >
+                        <option value="">{t.allPositions}</option>
+                        {positionFilterOptions.map((position) => (
+                          <option key={position} value={position}>{position}</option>
+                        ))}
+                      </select>
+                    </Field>
 
-                <Field label={t.branch}>
-                  <input
-                    type="text"
-                    value={branchFilter}
-                    onChange={(event) => setBranchFilter(event.target.value)}
-                    placeholder={t.branch}
-                    style={styles.input}
-                  />
-                </Field>
+                    <Field label={t.branch}>
+                      <select
+                        value={branchFilter}
+                        onChange={(event) => setBranchFilter(event.target.value)}
+                        style={styles.select}
+                      >
+                        <option value="">{t.allBranches}</option>
+                        {branchFilterOptions.map((branch) => (
+                          <option key={branch} value={branch}>{branch}</option>
+                        ))}
+                      </select>
+                    </Field>
+                  </>
+                )}
 
                 <button
                   type="button"
@@ -522,7 +579,7 @@ export default function ReportsTab({ language, userRole, user }) {
             </section>
 
             <section style={styles.summaryCard}>
-              <h3 style={styles.panelTitle}>{t.summary}</h3>
+              <h3 style={styles.summaryTitle}>{t.summary}</h3>
 
               <Metric label={t.totalHours} value={totals.total_hours} />
               {reportMode === 'salary' && (
@@ -626,18 +683,22 @@ export default function ReportsTab({ language, userRole, user }) {
                 ...(r.isMobile ? { minHeight: 0, padding: 20 } : {}),
               }}
               >
-                <span style={styles.miniLabel}>{t.employee}</span>
-                <h3 style={styles.employeeReportName}>{normalizedEmployeeReport.full_name}</h3>
-                <p style={styles.employeePosition}>
-                  {normalizedEmployeeReport.position || t.unknownPosition}
-                </p>
+                <div style={styles.employeeReportHeader}>
+                  <div>
+                    <span style={styles.miniLabel}>
+                      {appliedRange.start_date} — {appliedRange.end_date}
+                    </span>
+                  </div>
+                  <span style={styles.employeeReportPill}>{reportMode === 'salary' ? t.salaryReport : t.hoursReport}</span>
+                </div>
 
                 <div style={{
                   ...styles.employeeStats,
                   ...(r.isMobile ? { gridTemplateColumns: '1fr' } : {}),
                 }}
                 >
-                  <Metric label={t.hours} value={normalizedEmployeeReport.total_hours} />
+                  <Metric label={t.totalHours} value={normalizedEmployeeReport.total_hours} />
+                  <Metric label={t.totalShifts} value={normalizedEmployeeReport.total_shifts} />
                   {reportMode === 'salary' && (
                     <Metric label={t.salary} value={normalizedEmployeeReport.total_salary} />
                   )}
@@ -681,24 +742,36 @@ const styles = {
     width: '100%',
     height: '100%',
     boxSizing: 'border-box',
-    padding: '22px',
+    padding: '16px 24px 18px',
     overflow: 'hidden',
+    background: '#f4faff',
+  },
+
+  desktopPage: {
+    height: 'calc(100dvh - 96px)',
   },
 
   shell: {
-    width: 'min(100%, 1200px)',
+    width: '100%',
     height: '100%',
     margin: '0 auto',
     boxSizing: 'border-box',
-    padding: '26px',
-    borderRadius: '30px',
-    background: '#f4faff',
-    border: '1px solid rgba(222, 231, 231, 0.95)',
-    boxShadow: '0 22px 58px rgba(0, 38, 66, 0.18)',
+    padding: 0,
+    borderRadius: 0,
+    background: 'transparent',
+    border: 'none',
+    boxShadow: 'none',
     display: 'flex',
     flexDirection: 'column',
+    gap: 14,
     overflow: 'hidden',
     position: 'relative',
+  },
+
+  desktopShell: {
+    width: '100%',
+    padding: 0,
+    borderRadius: 0,
   },
 
   header: {
@@ -706,8 +779,8 @@ const styles = {
     display: 'flex',
     justifyContent: 'space-between',
     alignItems: 'center',
-    gap: '18px',
-    marginBottom: '18px',
+    gap: 18,
+    marginBottom: 0,
   },
 
   title: {
@@ -715,7 +788,7 @@ const styles = {
     color: '#002642',
     fontSize: '28px',
     fontWeight: '900',
-    letterSpacing: '-0.03em',
+    letterSpacing: 0,
   },
 
   subtitle: {
@@ -732,7 +805,7 @@ const styles = {
     minHeight: 0,
     display: 'grid',
     gridTemplateColumns: '280px minmax(0, 1fr)',
-    gap: '18px',
+    gap: 14,
     overflow: 'hidden',
   },
 
@@ -740,7 +813,7 @@ const styles = {
     minHeight: 0,
     display: 'flex',
     flexDirection: 'column',
-    gap: '14px',
+    gap: 14,
     overflowY: 'auto',
   },
 
@@ -750,17 +823,19 @@ const styles = {
   },
 
   panel: {
-    padding: '18px',
-    borderRadius: '22px',
+    padding: '16px',
+    borderRadius: 12,
     background: '#ffffff',
-    border: '1px solid rgba(79, 100, 111, 0.12)',
+    border: '1px solid #dee7e7',
+    boxShadow: '0 10px 24px rgba(0, 38, 66, 0.035)',
   },
 
   summaryCard: {
-    padding: '18px',
-    borderRadius: '22px',
-    background: '#dee7e7',
-    border: '1px solid rgba(79, 100, 111, 0.1)',
+    padding: '16px',
+    borderRadius: 12,
+    background: '#002642',
+    border: '1px solid #dee7e7',
+    boxShadow: '0 10px 24px rgba(0, 38, 66, 0.035)',
     display: 'flex',
     flexDirection: 'column',
     gap: '10px',
@@ -768,9 +843,16 @@ const styles = {
 
   panelTitle: {
     margin: '0 0 12px',
-    color: '#002642',
+    color: 'inherit',
     fontSize: '18px',
     fontWeight: '850',
+  },
+
+  summaryTitle: {
+    margin: '0 0 2px',
+    color: '#ffffff',
+    fontSize: '18px',
+    fontWeight: '900',
   },
 
   stack: {
@@ -793,10 +875,10 @@ const styles = {
 
   input: {
     width: '100%',
-    height: '42px',
+    height: 40,
     boxSizing: 'border-box',
-    borderRadius: '13px',
-    border: '2px solid #dee7e7',
+    borderRadius: 10,
+    border: '1px solid #dbe6f0',
     background: '#ffffff',
     padding: '0 13px',
     color: '#002642',
@@ -804,10 +886,41 @@ const styles = {
     outline: 'none',
   },
 
+  select: {
+    width: '100%',
+    height: 40,
+    boxSizing: 'border-box',
+    borderRadius: 10,
+    border: '1px solid #dbe6f0',
+    background: '#ffffff',
+    padding: '0 13px',
+    color: '#002642',
+    fontSize: '14px',
+    fontWeight: '700',
+    outline: 'none',
+    cursor: 'pointer',
+  },
+
+  dateInput: {
+    width: '100%',
+    height: 40,
+    boxSizing: 'border-box',
+    borderRadius: 10,
+    border: '1px solid #dbe6f0',
+    background: '#ffffff',
+    padding: '0 13px',
+    color: '#002642',
+    colorScheme: 'light',
+    fontSize: '14px',
+    fontWeight: '700',
+    outline: 'none',
+    cursor: 'pointer',
+  },
+
   modeSegment: {
     display: 'flex',
-    borderRadius: '14px',
-    background: '#eceff4',
+    borderRadius: 10,
+    background: '#dee7e7',
     padding: '4px',
     gap: '4px',
   },
@@ -815,7 +928,7 @@ const styles = {
   modeButton: {
     flex: 1,
     border: 'none',
-    borderRadius: '11px',
+    borderRadius: 8,
     background: 'transparent',
     color: '#4f646f',
     padding: '8px 4px',
@@ -829,12 +942,14 @@ const styles = {
     background: '#ffffff',
     color: '#002642',
     boxShadow: 'none',
-  },  primaryButton: {
-    height: '42px',
+  },
+
+  primaryButton: {
+    height: 40,
     padding: '0 18px',
     background: '#002642',
     border: 'none',
-    borderRadius: '13px',
+    borderRadius: 10,
     color: '#f4faff',
     fontWeight: '850',
     cursor: 'pointer',
@@ -842,11 +957,11 @@ const styles = {
   },
 
   secondaryButton: {
-    height: '42px',
+    height: 40,
     padding: '0 18px',
     background: '#dee7e7',
-    border: 'none',
-    borderRadius: '13px',
+    border: '1px solid #dee7e7',
+    borderRadius: 10,
     color: '#002642',
     fontWeight: '850',
     cursor: 'pointer',
@@ -854,34 +969,36 @@ const styles = {
   },
 
   metric: {
-    padding: '11px 14px',
-    borderRadius: '16px',
-    background: '#ffffff',
+    padding: '12px 14px',
+    borderRadius: 10,
+    background: '#f8fbfd',
     color: '#002642',
     display: 'flex',
     flexDirection: 'column',
     gap: '3px',
-    border: '1px solid rgba(79, 100, 111, 0.08)',
+    border: '1px solid #edf2f2',
   },
 
   metricLabel: {
     fontSize: '12px',
-    color: '#4f646f',
+    color: 'currentColor',
+    opacity: 0.72,
     fontWeight: '800',
   },
 
   metricValue: {
     fontSize: '20px',
     fontWeight: '900',
-    color: '#002642',
+    color: 'currentColor',
   },
 
   tableCard: {
     height: '100%',
     minHeight: 0,
-    borderRadius: '22px',
+    borderRadius: 12,
     background: '#ffffff',
-    border: '1px solid rgba(79, 100, 111, 0.12)',
+    border: '1px solid #dee7e7',
+    boxShadow: '0 10px 24px rgba(0, 38, 66, 0.035)',
     overflow: 'hidden',
     display: 'grid',
     gridTemplateRows: 'auto minmax(0, 1fr) auto',
@@ -891,11 +1008,11 @@ const styles = {
     display: 'grid',
     gridTemplateColumns: '1.4fr 1fr 0.7fr 0.7fr',
     gap: '10px',
-    padding: '14px 16px',
+    padding: '13px 16px',
     background: '#002642',
-    color: '#f4faff',
     fontWeight: '900',
-    fontSize: '14px',
+    fontSize: '13px',
+    color: '#ffffff',
   },
 
   tableBody: {
@@ -907,9 +1024,9 @@ const styles = {
     display: 'grid',
     gridTemplateColumns: '1.4fr 1fr 0.7fr 0.7fr',
     gap: '10px',
-    padding: '14px 16px',
+    padding: '13px 16px',
     alignItems: 'center',
-    borderBottom: '1px solid #dee7e7',
+    borderBottom: '1px solid #edf2f2',
     color: '#002642',
   },
 
@@ -933,8 +1050,8 @@ const styles = {
     display: 'grid',
     gridTemplateColumns: '1.4fr 1fr 0.7fr 0.7fr',
     gap: '10px',
-    padding: '14px 16px',
-    background: '#dee7e7',
+    padding: '12px 16px',
+    background: '#f8fbfd',
     color: '#002642',
     alignItems: 'center',
   },
@@ -942,14 +1059,38 @@ const styles = {
   employeeReportCard: {
     height: '100%',
     minHeight: '360px',
-    borderRadius: '22px',
+    borderRadius: 12,
     background: '#ffffff',
-    border: '1px solid rgba(79, 100, 111, 0.12)',
+    border: '1px solid #dee7e7',
+    boxShadow: '0 10px 24px rgba(0, 38, 66, 0.035)',
     display: 'flex',
     flexDirection: 'column',
-    justifyContent: 'center',
-    padding: '30px',
+    justifyContent: 'space-between',
+    gap: '22px',
+    padding: '28px',
     boxSizing: 'border-box',
+  },
+
+  employeeReportHeader: {
+    display: 'flex',
+    alignItems: 'flex-start',
+    justifyContent: 'space-between',
+    gap: '16px',
+    flexWrap: 'wrap',
+  },
+
+  employeeReportPill: {
+    height: '34px',
+    padding: '0 12px',
+    borderRadius: '999px',
+    background: '#f4faff',
+    border: '1px solid #dee7e7',
+    color: '#002642',
+    display: 'inline-flex',
+    alignItems: 'center',
+    fontSize: '13px',
+    fontWeight: '850',
+    whiteSpace: 'nowrap',
   },
 
   miniLabel: {
@@ -962,7 +1103,7 @@ const styles = {
   employeeReportName: {
     margin: 0,
     color: '#002642',
-    fontSize: '28px',
+    fontSize: '30px',
     fontWeight: '900',
   },
 
@@ -983,9 +1124,10 @@ const styles = {
     height: '100%',
     minHeight: '320px',
     padding: '28px',
-    borderRadius: '24px',
+    borderRadius: 14,
     background: '#ffffff',
-    border: '1px solid rgba(79, 100, 111, 0.12)',
+    border: '1px solid #dee7e7',
+    boxShadow: '0 12px 30px rgba(0, 38, 66, 0.04)',
     display: 'flex',
     flexDirection: 'column',
     alignItems: 'center',
@@ -1003,8 +1145,9 @@ const styles = {
 
   emptyBox: {
     padding: '26px',
-    borderRadius: '20px',
-    background: '#f4faff',
+    borderRadius: 14,
+    background: '#ffffff',
+    border: '1px solid #dee7e7',
     color: '#4f646f',
     fontWeight: '800',
     textAlign: 'center',

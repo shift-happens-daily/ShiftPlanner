@@ -1,20 +1,14 @@
+/* eslint-disable react-hooks/set-state-in-effect */
 // frontend/src/components/tabs/EmployeesTab.jsx
 import { useEffect, useMemo, useState } from 'react';
 import {
-  createEmployee,
-  createEmployeeAbsence,
   deleteEmployee,
-  deleteEmployeeAbsence,
-  getEmployeeAvailability,
-  getEmployeeCalendarSummary,
   listEmployeeAbsences,
   listEmployees,
   replaceEmployeeBranches,
-  updateEmployeeAvailability,
   updateEmployeePosition,
 } from '../../services/employeeService';
-import { extractApiErrorMessage, localizeBackendMessage } from '../../services/error';
-import { mapEmployeeCalendarSummary } from '../../services/mappers';
+import { extractApiErrorMessage } from '../../services/error';
 import { createPosition, deletePosition, listPositions, updatePosition } from '../../services/positionService';
 import { listBranches, acceptEmployeeRequest, linkUserToCompany } from '../../services/companyService';
 import {
@@ -24,20 +18,7 @@ import {
   resolveEmployeeBranches,
 } from '../../utils/employeeBranches';
 import { useTabResponsive } from '../../utils/tabResponsive';
-
-const WEEKDAYS = [
-  { value: 0, ru: 'Пн', en: 'Mon' },
-  { value: 1, ru: 'Вт', en: 'Tue' },
-  { value: 2, ru: 'Ср', en: 'Wed' },
-  { value: 3, ru: 'Чт', en: 'Thu' },
-  { value: 4, ru: 'Пт', en: 'Fri' },
-  { value: 5, ru: 'Сб', en: 'Sat' },
-  { value: 6, ru: 'Вс', en: 'Sun' },
-];
-
-function createAvailabilityBlock() {
-  return { weekday: 0, start_time: '09:00:00', end_time: '18:00:00' };
-}
+import { formatLocalDate } from '../../services/scheduleService';
 
 function normalizeArray(value) {
   return Array.isArray(value) ? value : [];
@@ -57,12 +38,92 @@ function getEmployeePosition(employee) {
   return employee?.position_title || employee?.position?.title || employee?.position?.name || '';
 }
 
-function isValidEmail(email) {
-  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
-}
-
 function getCompanyId(company) {
   return company?.id || company?.company_id || null;
+}
+
+function getEmployeeName(employee) {
+  return employee?.full_name || employee?.name || employee?.fullName || '';
+}
+
+function getInitials(value) {
+  const parts = String(value || '')
+    .trim()
+    .split(/\s+/)
+    .filter(Boolean)
+    .slice(0, 2);
+
+  return parts.map((part) => part[0]?.toUpperCase() || '').join('') || '?';
+}
+
+function getBranchLabel(employee, branches, fallback) {
+  const employeeBranches = resolveEmployeeBranches(employee, branches);
+  if (employeeBranches.length > 0) {
+    return employeeBranches.map((branch) => branch.name || branch.title || `#${branch.id}`).join(', ');
+  }
+
+  return employee?.branch?.name || employee?.branch_name || fallback;
+}
+
+function getBranchId(branch) {
+  const value = branch?.id ?? branch?.branch_id ?? branch?.branchId;
+  return value == null || value === '' ? null : String(value);
+}
+
+function uniqueBranchIds(values) {
+  return Array.from(
+    new Set(
+      normalizeArray(values)
+        .map((value) => (value == null || value === '' ? '' : String(value)))
+        .filter(Boolean)
+    )
+  );
+}
+
+function resolveBranchesFromIds(branchIds, branches) {
+  const byId = new Map(
+    normalizeArray(branches)
+      .map((branch) => [getBranchId(branch), branch])
+      .filter(([id]) => Boolean(id))
+  );
+
+  return uniqueBranchIds(branchIds).map((branchId) => byId.get(branchId) || { id: branchId, name: `#${branchId}` });
+}
+
+function mergeBranchLists(...lists) {
+  const seen = new Set();
+  const result = [];
+
+  lists.flat().forEach((branch) => {
+    if (!branch) return;
+    const branchId = getBranchId(branch);
+    const key = branchId || branch.name || branch.title;
+    if (!key || seen.has(String(key))) return;
+    seen.add(String(key));
+    result.push(branch);
+  });
+
+  return result;
+}
+
+function getDateValue(value) {
+  const timestamp = Date.parse(value || '');
+  return Number.isNaN(timestamp) ? 0 : timestamp;
+}
+
+function formatShortDate(value) {
+  if (!value) return '';
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  return date.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+}
+
+function formatDateRange(startDate, endDate) {
+  const start = formatShortDate(startDate);
+  const end = formatShortDate(endDate);
+  if (!start && !end) return '';
+  if (!end || start === end) return start;
+  return `${start} - ${end}`;
 }
 
 export default function EmployeesTab({ language, userRole, user }) {
@@ -98,19 +159,7 @@ export default function EmployeesTab({ language, userRole, user }) {
   const [selectedEmployeeId, setSelectedEmployeeId] = useState('');
   const [isViewingEmployee, setIsViewingEmployee] = useState(true);
 
-  const [availabilityForm, setAvailabilityForm] = useState({
-    weekly_availability: [],
-    desired_days_off: [],
-  });
-
   const [employeeAbsences, setEmployeeAbsences] = useState([]);
-  const [employeeSummary, setEmployeeSummary] = useState(null);
-
-  const [employeeForm, setEmployeeForm] = useState({
-    full_name: '',
-    email: '',
-    position_id: '',
-  });
 
   const [selectedEmployeeDetails, setSelectedEmployeeDetails] = useState({
     position_id: '',
@@ -127,13 +176,6 @@ export default function EmployeesTab({ language, userRole, user }) {
   const [editingPositionId, setEditingPositionId] = useState('');
   const [editingPositionTitle, setEditingPositionTitle] = useState('');
 
-  const [absenceForm, setAbsenceForm] = useState({
-    absence_type: 'vacation',
-    start_date: '',
-    end_date: '',
-    comment: '',
-  });
-
   // Для привязки по User ID
   const [linkUserId, setLinkUserId] = useState('');
   const [linkBranchId, setLinkBranchId] = useState('');
@@ -147,11 +189,10 @@ export default function EmployeesTab({ language, userRole, user }) {
 
   const texts = {
     ru: {
-      title: 'Сотрудники',
-      subtitle: 'Позиции, сотрудники, доступность и отсутствия',
       employees: 'Сотрудники',
       positions: 'Позиции',
       availability: 'Доступность',
+      availabilityAndAbsences: 'Доступность и отсутствия',
       desiredDaysOff: 'Желаемые выходные',
       absences: 'Отсутствия',
       workload: 'Нагрузка',
@@ -210,7 +251,7 @@ export default function EmployeesTab({ language, userRole, user }) {
       cancel: 'Отменить',
       confirmDeletePosition: 'Удалить эту позицию?',
       managePositionsHint: 'Редактируйте и удаляйте позиции для компании.',
-      noPositionsMessage: 'Позиции не найдены. Создайте одну слева.',
+      noPositionsMessage: 'Нет позиций',
       allBranches: 'Все филиалы',
       allPositions: 'Все позиции',
       searchEmployee: 'Поиск сотрудника...',
@@ -235,14 +276,12 @@ export default function EmployeesTab({ language, userRole, user }) {
       addBranch: 'Добавить филиал',
       removeBranch: 'Убрать',
       noBranchesAssigned: 'Филиалы не назначены',
-      branchesPreviewHint: 'Несколько филиалов сохраняются локально до обновления API.',
     },
     en: {
-      title: 'Employees',
-      subtitle: 'Positions, employees, availability, and absences',
       employees: 'Employees',
       positions: 'Positions',
       availability: 'Availability',
+      availabilityAndAbsences: 'Availability and absences',
       desiredDaysOff: 'Desired days off',
       absences: 'Absences',
       workload: 'Workload',
@@ -301,7 +340,7 @@ export default function EmployeesTab({ language, userRole, user }) {
       cancel: 'Cancel',
       confirmDeletePosition: 'Delete this position?',
       managePositionsHint: 'Edit and delete positions for the company.',
-      noPositionsMessage: 'No positions available. Create one on the left.',
+      noPositionsMessage: 'No positions.',
       allBranches: 'All branches',
       allPositions: 'All positions',
       searchEmployee: 'Search employee...',
@@ -326,7 +365,6 @@ export default function EmployeesTab({ language, userRole, user }) {
       addBranch: 'Add branch',
       removeBranch: 'Remove',
       noBranchesAssigned: 'No branches assigned',
-      branchesPreviewHint: 'Multiple branches are stored locally until the API supports them.',
     },
   };
 
@@ -364,8 +402,12 @@ export default function EmployeesTab({ language, userRole, user }) {
   const selectedEmployeePosition = getEmployeePosition(selectedEmployee);
   const selectedEmployeeBranches = useMemo(() => {
     if (!selectedEmployee) return [];
-    return resolveEmployeeBranches(selectedEmployee, branches);
-  }, [selectedEmployee, branches, branchAssignmentsRevision]);
+
+    return mergeBranchLists(
+      resolveEmployeeBranches(selectedEmployee, branches),
+      resolveBranchesFromIds(selectedEmployeeBranchIds, branches)
+    );
+  }, [selectedEmployee, branches, selectedEmployeeBranchIds]);
 
   const filteredEmployees = useMemo(() => {
     const query = searchQuery.trim().toLowerCase();
@@ -392,10 +434,21 @@ export default function EmployeesTab({ language, userRole, user }) {
     });
   }, [employees, selectedBranchId, selectedPositionId, searchQuery, branchAssignmentsRevision]);
 
+  const upcomingAbsences = useMemo(() => {
+    const today = formatLocalDate(new Date());
+    return normalizeArray(employeeAbsences)
+      .filter((absence) => !absence.end_date || String(absence.end_date) >= today)
+      .sort((first, second) => getDateValue(first.start_date) - getDateValue(second.start_date))
+      .slice(0, 3);
+  }, [employeeAbsences]);
+
   const availableBranchesToAdd = useMemo(() => {
-    const assigned = new Set(selectedEmployeeBranchIds.map(String));
-    return branches.filter((branch) => !assigned.has(String(branch.id)));
-  }, [branches, selectedEmployeeBranchIds]);
+    const assigned = new Set(selectedEmployeeBranches.map(getBranchId).filter(Boolean));
+    return branches.filter((branch) => {
+      const branchId = getBranchId(branch);
+      return branchId && !assigned.has(branchId);
+    });
+  }, [branches, selectedEmployeeBranches]);
 
   useEffect(() => {
     if (filteredEmployees.some((employee) => String(employee.id) === String(selectedEmployeeId))) return;
@@ -411,12 +464,16 @@ export default function EmployeesTab({ language, userRole, user }) {
       return;
     }
 
+    const resolvedBranchIds = resolveEmployeeBranches(selectedEmployee, branches)
+      .map(getBranchId)
+      .filter(Boolean);
+
     setSelectedEmployeeDetails({
       position_id: selectedEmployee.position_id || selectedEmployee.position?.id || selectedEmployee.position?.position_id || '',
     });
-    setSelectedEmployeeBranchIds(getEmployeeBranchIds(selectedEmployee));
+    setSelectedEmployeeBranchIds(uniqueBranchIds([...getEmployeeBranchIds(selectedEmployee), ...resolvedBranchIds]));
     setBranchToAddId('');
-  }, [selectedEmployee?.id]);
+  }, [selectedEmployee?.id, branches]);
 
   useEffect(() => {
     if (userRole !== 'manager') return undefined;
@@ -477,9 +534,7 @@ export default function EmployeesTab({ language, userRole, user }) {
 
   useEffect(() => {
     if (!selectedEmployeeId || userRole !== 'manager') {
-      setAvailabilityForm({ weekly_availability: [], desired_days_off: [] });
       setEmployeeAbsences([]);
-      setEmployeeSummary(null);
       return undefined;
     }
 
@@ -490,29 +545,14 @@ export default function EmployeesTab({ language, userRole, user }) {
       setErrorMessage('');
 
       try {
-        const [availabilityData, absencesData, summaryData] = await Promise.all([
-          getEmployeeAvailability(selectedEmployeeId),
-          listEmployeeAbsences(selectedEmployeeId),
-          getEmployeeCalendarSummary(selectedEmployeeId),
-        ]);
+        const absencesData = await listEmployeeAbsences(selectedEmployeeId);
 
         if (!isMounted) return;
 
-        const weeklyAvailability = normalizeArray(availabilityData?.weekly_availability);
-        const desiredDaysOff = normalizeArray(availabilityData?.desired_days_off);
-
-        setAvailabilityForm({
-          weekly_availability: weeklyAvailability,
-          desired_days_off: desiredDaysOff,
-        });
-
         setEmployeeAbsences(normalizeArray(absencesData));
-        setEmployeeSummary(mapEmployeeCalendarSummary(summaryData));
       } catch (error) {
         if (isMounted) {
-          setAvailabilityForm({ weekly_availability: [], desired_days_off: [] });
           setEmployeeAbsences([]);
-          setEmployeeSummary(null);
           setErrorMessage(normalizeError(error, t.empty, language));
         }
       } finally {
@@ -587,19 +627,15 @@ export default function EmployeesTab({ language, userRole, user }) {
   };
 
   const persistEmployeeBranches = async (employee, branchIds, primaryBranchId = null) => {
-    const normalizedIds = Array.from(new Set(branchIds.map(String).filter(Boolean)));
-    if (normalizedIds.length === 0) {
-      throw new Error('branch_ids required');
-    }
-
+    const normalizedIds = uniqueBranchIds(branchIds);
     const currentPrimary = normalizeBranchId(primaryBranchId ?? getPrimaryBranchId(employee));
     const primaryId = currentPrimary && normalizedIds.includes(currentPrimary)
       ? currentPrimary
-      : normalizedIds[0];
+      : normalizedIds[0] || null;
 
     await replaceEmployeeBranches(employee.id, {
       branch_ids: normalizedIds.map(Number),
-      primary_branch_id: Number(primaryId),
+      primary_branch_id: primaryId ? Number(primaryId) : null,
     });
   };
 
@@ -608,17 +644,45 @@ export default function EmployeesTab({ language, userRole, user }) {
     return String(value);
   };
 
+  const patchEmployeeBranchesLocally = (employeeId, branchIds) => {
+    const normalizedIds = uniqueBranchIds(branchIds);
+    const branchObjects = resolveBranchesFromIds(normalizedIds, branches);
+    const primaryBranch = branchObjects[0] || null;
+
+    setEmployees((currentEmployees) =>
+      currentEmployees.map((employee) => {
+        if (String(employee.id) !== String(employeeId)) return employee;
+
+        return {
+          ...employee,
+          branch_ids: normalizedIds,
+          branches: branchObjects,
+          branch: primaryBranch,
+          branch_id: primaryBranch ? primaryBranch.id : null,
+          branch_name: primaryBranch ? primaryBranch.name || primaryBranch.title || `#${primaryBranch.id}` : '',
+        };
+      })
+    );
+  };
+
   const handleAddEmployeeBranch = async () => {
     if (!selectedEmployee || !branchToAddId) return;
 
     clearMessages();
     setIsSubmitting(true);
 
+    const currentIds = uniqueBranchIds([
+      ...getEmployeeBranchIds(selectedEmployee),
+      ...selectedEmployeeBranchIds,
+      ...selectedEmployeeBranches.map(getBranchId),
+    ]);
+    const nextIds = uniqueBranchIds([...currentIds, branchToAddId]);
+
     try {
-      const currentIds = getEmployeeBranchIds(selectedEmployee);
-      const nextIds = Array.from(new Set([...currentIds, String(branchToAddId)]));
       await persistEmployeeBranches(selectedEmployee, nextIds);
       await reloadEmployees(selectedEmployee.id);
+      setSelectedEmployeeBranchIds(nextIds);
+      patchEmployeeBranchesLocally(selectedEmployee.id, nextIds);
       bumpBranchAssignments();
       setBranchToAddId('');
       setSuccessMessage(t.assignmentsSaved);
@@ -633,17 +697,20 @@ export default function EmployeesTab({ language, userRole, user }) {
     if (!selectedEmployee) return;
 
     clearMessages();
-    const nextIds = getEmployeeBranchIds(selectedEmployee).filter((id) => String(id) !== String(branchId));
-    if (nextIds.length === 0) {
-      setErrorMessage(t.assignmentsError);
-      return;
-    }
+    const currentIds = uniqueBranchIds([
+      ...getEmployeeBranchIds(selectedEmployee),
+      ...selectedEmployeeBranchIds,
+      ...selectedEmployeeBranches.map(getBranchId),
+    ]);
+    const nextIds = currentIds.filter((id) => String(id) !== String(branchId));
 
     setIsSubmitting(true);
 
     try {
       await persistEmployeeBranches(selectedEmployee, nextIds);
       await reloadEmployees(selectedEmployee.id);
+      setSelectedEmployeeBranchIds(nextIds);
+      patchEmployeeBranchesLocally(selectedEmployee.id, nextIds);
       bumpBranchAssignments();
       setSuccessMessage(t.assignmentsSaved);
     } catch (error) {
@@ -705,53 +772,6 @@ export default function EmployeesTab({ language, userRole, user }) {
     }
   };
 
-  const validateEmployeeForm = () => {
-    if (!employeeForm.full_name.trim()) {
-      setErrorMessage(t.requiredEmployeeName);
-      return false;
-    }
-
-    if (!employeeForm.email.trim()) {
-      setErrorMessage(t.requiredEmployeeEmail);
-      return false;
-    }
-
-    if (!isValidEmail(employeeForm.email.trim())) {
-      setErrorMessage(t.invalidEmployeeEmail);
-      return false;
-    }
-
-    if (!employeeForm.position_id) {
-      setErrorMessage(t.requiredEmployeePosition);
-      return false;
-    }
-
-    return true;
-  };
-
-  const handleCreateEmployee = async () => {
-    if (!validateEmployeeForm()) return;
-
-    clearMessages();
-    setIsSubmitting(true);
-
-    try {
-      const createdEmployee = await createEmployee({
-        full_name: employeeForm.full_name.trim(),
-        email: employeeForm.email.trim(),
-        position_id: Number(employeeForm.position_id),
-      });
-
-      await reloadEmployees(createdEmployee?.id);
-      setEmployeeForm({ full_name: '', email: '', position_id: '' });
-      setSuccessMessage(t.employeeCreated);
-    } catch (error) {
-      setErrorMessage(getFriendlyError(error, t.createEmployee));
-    } finally {
-      setIsSubmitting(false);
-    }
-  };
-
   const handleStartEditingPosition = (position) => {
     setErrorMessage('');
     setSuccessMessage('');
@@ -802,95 +822,6 @@ export default function EmployeesTab({ language, userRole, user }) {
       setSuccessMessage(t.positionDeleted);
     } catch (error) {
       setErrorMessage(normalizeError(error, t.requiredPosition, language));
-    } finally {
-      setIsSubmitting(false);
-    }
-  };
-
-  const handleAvailabilityChange = (index, key, value) => {
-    setAvailabilityForm((prev) => ({
-      ...prev,
-      weekly_availability: prev.weekly_availability.map((item, itemIndex) =>
-        itemIndex === index ? { ...item, [key]: value } : item
-      ),
-    }));
-  };
-
-  const handleSaveAvailability = async () => {
-    if (!selectedEmployeeId) return;
-
-    clearMessages();
-    setIsSubmitting(true);
-
-    try {
-      await updateEmployeeAvailability(selectedEmployeeId, availabilityForm);
-
-      const [availabilityData, summaryData] = await Promise.all([
-        getEmployeeAvailability(selectedEmployeeId),
-        getEmployeeCalendarSummary(selectedEmployeeId),
-      ]);
-
-      setAvailabilityForm({
-        weekly_availability: normalizeArray(availabilityData?.weekly_availability),
-        desired_days_off: normalizeArray(availabilityData?.desired_days_off),
-      });
-
-      setEmployeeSummary(mapEmployeeCalendarSummary(summaryData));
-      setSuccessMessage(t.availabilitySaved);
-    } catch (error) {
-      setErrorMessage(normalizeError(error, t.availabilitySaved, language));
-    } finally {
-      setIsSubmitting(false);
-    }
-  };
-
-  const handleCreateAbsence = async () => {
-    if (!selectedEmployeeId || !absenceForm.start_date || !absenceForm.end_date) {
-      setErrorMessage(t.addAbsence);
-      return;
-    }
-
-    clearMessages();
-    setIsSubmitting(true);
-
-    try {
-      await createEmployeeAbsence(selectedEmployeeId, absenceForm);
-
-      const [absencesData, summaryData] = await Promise.all([
-        listEmployeeAbsences(selectedEmployeeId),
-        getEmployeeCalendarSummary(selectedEmployeeId),
-      ]);
-
-      setEmployeeAbsences(normalizeArray(absencesData));
-      setEmployeeSummary(mapEmployeeCalendarSummary(summaryData));
-      setAbsenceForm({ absence_type: 'vacation', start_date: '', end_date: '', comment: '' });
-      setSuccessMessage(t.absenceAdded);
-    } catch (error) {
-      setErrorMessage(normalizeError(error, t.addAbsence, language));
-    } finally {
-      setIsSubmitting(false);
-    }
-  };
-
-  const handleDeleteAbsence = async (absenceId) => {
-    if (!selectedEmployeeId) return;
-
-    clearMessages();
-    setIsSubmitting(true);
-
-    try {
-      await deleteEmployeeAbsence(selectedEmployeeId, absenceId);
-
-      const [absencesData, summaryData] = await Promise.all([
-        listEmployeeAbsences(selectedEmployeeId),
-        getEmployeeCalendarSummary(selectedEmployeeId),
-      ]);
-
-      setEmployeeAbsences(normalizeArray(absencesData));
-      setEmployeeSummary(mapEmployeeCalendarSummary(summaryData));
-      setSuccessMessage(t.absenceDeleted);
-    } catch (error) {
-      setErrorMessage(normalizeError(error, t.delete, language));
     } finally {
       setIsSubmitting(false);
     }
@@ -966,8 +897,25 @@ export default function EmployeesTab({ language, userRole, user }) {
   }
 
   return (
-    <section style={{ ...styles.page, ...r.page }} className="employees-tab">
-      <div style={{ ...styles.shell, ...r.shell }}>
+    <section
+      style={{
+        ...styles.page,
+        ...r.page,
+        ...(r.isMobile ? {} : styles.desktopViewportPage),
+      }}
+      className="employees-tab"
+    >
+      <div style={{
+        ...styles.shell,
+        ...r.shell,
+        width: 'min(100%, 1480px)',
+        padding: 0,
+        borderRadius: 0,
+        background: 'transparent',
+        border: 'none',
+        boxShadow: 'none',
+        ...(r.isMobile ? {} : styles.desktopScaleShell),
+      }}>
         <header style={{ ...styles.header, ...r.header }}>
           <div>
             <h2 style={{ ...styles.title, ...r.title }}>{t.title}</h2>
@@ -975,8 +923,9 @@ export default function EmployeesTab({ language, userRole, user }) {
           </div>
 
           <div style={{ ...styles.headerStats, ...r.headerStats }}>
-            <Metric label={t.employees} value={filteredEmployees.length} />
-            <Metric label={t.positions} value={visiblePositions.length} />
+            <Metric type="employees" label={t.employees} value={filteredEmployees.length} />
+            <Metric type="positions" label={t.positions} value={visiblePositions.length} />
+            <Metric type="branches" label={t.branches} value={branches.length} />
           </div>
         </header>
 
@@ -1004,25 +953,32 @@ export default function EmployeesTab({ language, userRole, user }) {
           </div>
         )}
 
-        <div style={{ ...styles.mainGrid, ...r.splitLayout('340px minmax(0, 1fr)') }}>
+        <div style={{ ...styles.mainGrid, ...r.splitLayout('300px minmax(520px, 1fr) 320px') }}>
           <aside style={styles.sidePanel}>
-            <div style={styles.panel}>
-              <h3 style={styles.panelTitle}>{t.createPosition}</h3>
-              {!currentCompanyId && <p style={styles.panelHint}>{t.noCompanyForPosition}</p>}
+            <div style={styles.leftCard}>
+              <div style={styles.leftCardHeader}>
+                <span style={styles.leftCardIcon} aria-hidden="true">
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
+                    <rect x="6" y="5" width="12" height="14" rx="2.5" stroke="currentColor" strokeWidth="2" />
+                    <path d="M9 9h6M9 13h4" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+                  </svg>
+                </span>
+                <h3 style={styles.leftCardTitle}>{t.createPosition}</h3>
+              </div>
 
-              <div style={styles.stack}>
+              <div style={styles.leftCardStack}>
                 <input
                   value={positionTitle}
                   onChange={(event) => setPositionTitle(event.target.value)}
                   placeholder={t.position}
-                  style={styles.input}
+                  style={styles.leftInput}
                 />
 
                 <button
                   type="button"
                   onClick={handleCreatePosition}
                   style={{
-                    ...(isSubmitting || !currentCompanyId ? styles.primaryButtonDisabled : styles.primaryButton),
+                    ...(isSubmitting || !currentCompanyId ? styles.leftPrimaryButtonDisabled : styles.leftPrimaryButton),
                     ...r.fullWidth,
                   }}
                   disabled={isSubmitting || !currentCompanyId}
@@ -1033,60 +989,61 @@ export default function EmployeesTab({ language, userRole, user }) {
             </div>
 
             {/* Блок привязки по User ID */}
-            <div style={styles.panel}>
-              <h3 style={styles.panelTitle}>{t.linkUserTitle}</h3>
-              <p style={styles.panelHint}>{t.linkUserHint}</p>
+            <div style={{ ...styles.leftCard, ...styles.leftCardGrow }}>
+              <div style={styles.leftCardHeader}>
+                <span style={styles.leftCardIcon} aria-hidden="true">
+                  <svg width="19" height="19" viewBox="0 0 24 24" fill="none">
+                    <path d="M10.6 13.4a4.2 4.2 0 0 0 5.94 0l2.08-2.08a4.2 4.2 0 0 0-5.94-5.94l-1.02 1.02" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" />
+                    <path d="M13.4 10.6a4.2 4.2 0 0 0-5.94 0l-2.08 2.08a4.2 4.2 0 0 0 5.94 5.94l1.02-1.02" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" />
+                  </svg>
+                </span>
+                <h3 style={styles.leftCardTitle}>{t.linkUserTitle}</h3>
+              </div>
 
-              <div style={styles.stack}>
-                <label style={styles.label}>{t.userIdLabel}</label>
+              <div style={styles.leftCardStack}>
+                <label style={styles.leftLabel}>{t.userIdLabel}</label>
                 <input
                   type="text"
                   value={linkUserId}
                   onChange={(e) => setLinkUserId(e.target.value.toUpperCase())}
                   placeholder={t.userIdPlaceholder}
                   maxLength={16}
-                  style={styles.input}
+                  style={styles.leftInput}
                 />
 
-                <div style={{ ...styles.row, gridTemplateColumns: r.gridCols('1fr 1fr') }}>
-                  <div style={styles.flex}>
-                    <label style={styles.label}>{t.branch}</label>
-                    <select
-                      value={linkBranchId}
-                      onChange={(e) => setLinkBranchId(e.target.value)}
-                      style={styles.select}
-                    >
-                      <option value="">{t.noBranchSelected}</option>
-                      {branches.map((branch) => (
-                        <option key={branch.id} value={branch.id}>
-                          {branch.name}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
+                <label style={styles.leftLabel}>{t.branch}</label>
+                <select
+                  value={linkBranchId}
+                  onChange={(e) => setLinkBranchId(e.target.value)}
+                  style={styles.leftSelect}
+                >
+                  <option value="">{t.selectBranch}</option>
+                  {branches.map((branch) => (
+                    <option key={branch.id} value={branch.id}>
+                      {branch.name}
+                    </option>
+                  ))}
+                </select>
 
-                  <div style={styles.flex}>
-                    <label style={styles.label}>{t.position}</label>
-                    <select
-                      value={linkPositionId}
-                      onChange={(e) => setLinkPositionId(e.target.value)}
-                      style={styles.select}
-                    >
-                      <option value="">{t.noPositionSelected}</option>
-                      {visiblePositions.map((position) => (
-                        <option key={position.id} value={position.id}>
-                          {getPositionLabel(position)}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-                </div>
+                <label style={styles.leftLabel}>{t.position}</label>
+                <select
+                  value={linkPositionId}
+                  onChange={(e) => setLinkPositionId(e.target.value)}
+                  style={styles.leftSelect}
+                >
+                  <option value="">{t.selectPosition}</option>
+                  {visiblePositions.map((position) => (
+                    <option key={position.id} value={position.id}>
+                      {getPositionLabel(position)}
+                    </option>
+                  ))}
+                </select>
 
                 <button
                   type="button"
                   onClick={handleLinkUser}
                   style={{
-                    ...(isSubmitting || !linkUserId ? styles.primaryButtonDisabled : styles.primaryButton),
+                    ...(isSubmitting || !linkUserId ? styles.leftLinkButtonDisabled : styles.leftLinkButton),
                     ...r.fullWidth,
                   }}
                   disabled={isSubmitting || !linkUserId}
@@ -1097,286 +1054,320 @@ export default function EmployeesTab({ language, userRole, user }) {
             </div>
           </aside>
 
-          <main style={{
-            ...styles.detailsPanel,
-            ...(r.isMobile ? { overflow: 'visible' } : {}),
-          }}
-          >
-            <div style={{
-              ...styles.detailsScroll,
-              ...(r.isMobile ? { overflowY: 'visible', minHeight: 'auto', padding: 14 } : {}),
-            }}
-            >
-              <section style={styles.innerSection}>
-                <div style={{ ...styles.listHeader, ...r.listHeader }}>
-                  <div>
-                    <h3 style={styles.panelTitle}>{t.employees}</h3>
-                    <p style={styles.panelHint}>{t.selectEmployee}</p>
-                  </div>
+          <main style={styles.tablePanel}>
+            <div style={{ ...styles.listHeader, ...r.listHeader }}>
+              <div>
+                <h3 style={styles.panelTitle}>{t.employees}</h3>
+              </div>
 
-                  <div style={{ ...styles.filterRow, ...r.filterRow }}>
-                    <input
-                      type="text"
-                      value={searchQuery}
-                      onChange={(event) => setSearchQuery(event.target.value)}
-                      placeholder={t.searchEmployee}
-                      style={{ ...styles.searchInput, ...r.searchInput }}
-                      aria-label={t.searchEmployee}
-                    />
+              <div style={{ ...styles.filterRow, ...r.filterRow }}>
+                <input
+                  type="text"
+                  value={searchQuery}
+                  onChange={(event) => setSearchQuery(event.target.value)}
+                  placeholder={t.searchEmployee}
+                  style={{ ...styles.searchInput, ...r.searchInput }}
+                  aria-label={t.searchEmployee}
+                />
+                <select
+                  id="branch-filter-select"
+                  value={selectedBranchId}
+                  onChange={(event) => setSelectedBranchId(event.target.value)}
+                  style={{ ...styles.filterSelect, ...r.filterSelect }}
+                  aria-label={t.branch}
+                >
+                  <option value="">{t.allBranches}</option>
+                  {branches.map((branch) => (
+                    <option key={branch.id} value={branch.id}>
+                      {branch.name}
+                    </option>
+                  ))}
+                </select>
+                <select
+                  id="position-filter-select"
+                  value={selectedPositionId}
+                  onChange={(event) => setSelectedPositionId(event.target.value)}
+                  style={{ ...styles.filterSelect, ...r.filterSelect }}
+                  aria-label={t.position}
+                >
+                  <option value="">{t.allPositions}</option>
+                  {visiblePositions.map((position) => (
+                    <option key={position.id} value={position.id}>
+                      {getPositionLabel(position)}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </div>
+
+            {filteredEmployees.length === 0 ? (
+              <div style={styles.emptyBox}>{t.noEmployees}</div>
+            ) : (
+              <div style={styles.tableWrap}>
+                <table style={styles.employeeTable}>
+                  <thead>
+                    <tr>
+                      <th style={styles.tableHeaderCell}>{t.employees}</th>
+                      <th style={styles.tableHeaderCell}>{t.email}</th>
+                      <th style={styles.tableHeaderCell}>{t.branch}</th>
+                      <th style={styles.tableHeaderCell}>{t.position}</th>
+                      <th style={{ ...styles.tableHeaderCell, ...styles.actionsHeader }} aria-label="Actions" />
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {filteredEmployees.map((employee) => {
+                      const employeeName = getEmployeeName(employee) || t.empty;
+                      return (
+                        <tr key={employee.id} style={styles.tableRow}>
+                          <td style={styles.tableCell}>
+                            <div style={styles.employeeIdentity}>
+                              <span style={styles.avatar}>{getInitials(employeeName)}</span>
+                              <strong style={styles.employeeName}>{employeeName}</strong>
+                            </div>
+                          </td>
+                          <td style={styles.tableCell}>{employee.email || '-'}</td>
+                          <td style={styles.tableCell}>{getBranchLabel(employee, branches, t.empty)}</td>
+                          <td style={styles.tableCell}>{getEmployeePosition(employee) || t.empty}</td>
+                          <td style={{ ...styles.tableCell, ...styles.actionsCell }}>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setSelectedEmployeeId(String(employee.id));
+                                setIsViewingEmployee(false);
+                              }}
+                              style={styles.tableActionButton}
+                              aria-label={t.edit}
+                            >
+                              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                                <path d="M12 6.7h.01M12 12h.01M12 17.3h.01" stroke="currentColor" strokeWidth="3" strokeLinecap="round" />
+                              </svg>
+                            </button>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </main>
+
+          <aside style={styles.positionsPanel}>
+            <div style={styles.positionsHeader}>
+              <h3 style={styles.panelTitle}>{t.positions}</h3>
+            </div>
+
+            {visiblePositions.length === 0 ? (
+              <div style={styles.emptyBox}>{t.noPositionsMessage}</div>
+            ) : (
+              <div style={styles.positionList}>
+                {visiblePositions.map((position) => (
+                  <div key={position.id} style={{ ...styles.positionItem, ...r.listItem }}>
+                    {String(editingPositionId) === String(position.id) ? (
+                      <>
+                        <input
+                          value={editingPositionTitle}
+                          onChange={(event) => setEditingPositionTitle(event.target.value)}
+                          style={{ ...styles.input, ...r.fullWidth }}
+                        />
+                        <div style={{ ...styles.actionGroup, ...r.actionGroup }}>
+                          <button
+                            type="button"
+                            onClick={handleSaveEditedPosition}
+                            style={{ ...styles.primaryButton, ...r.fullWidth }}
+                            disabled={isSubmitting}
+                          >
+                            {t.save}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={handleCancelEditPosition}
+                            style={{ ...styles.secondaryButton, ...r.fullWidth }}
+                            disabled={isSubmitting}
+                          >
+                            {t.cancel}
+                          </button>
+                        </div>
+                      </>
+                    ) : (
+                      <>
+                        <div style={styles.positionTitleWrap}>
+                          <PositionGlyph index={visiblePositions.indexOf(position)} />
+                          <strong style={styles.itemTitle}>{getPositionLabel(position)}</strong>
+                        </div>
+                        <div style={{ ...styles.actionGroup, ...r.actionGroup }}>
+                          <button
+                            type="button"
+                            onClick={() => handleStartEditingPosition(position)}
+                            style={{ ...styles.iconButton, ...r.fullWidth }}
+                            aria-label={t.edit}
+                          >
+                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                              <path d="M4 20h4.8L19 9.8a2.8 2.8 0 0 0-4-4L4.8 16H4v4Z" stroke="currentColor" strokeWidth="2" strokeLinejoin="round" />
+                              <path d="M13.7 7.1l3.2 3.2" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+                            </svg>
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleDeletePosition(position.id)}
+                            style={{ ...styles.iconDeleteButton, ...r.fullWidth }}
+                            aria-label={t.delete}
+                          >
+                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                              <path d="M5 7h14M10 11v6M14 11v6M9 7l.5-2h5L15 7M7 7l1 13h8l1-13" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+                            </svg>
+                          </button>
+                        </div>
+                      </>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
+          </aside>
+        </div>
+
+        {selectedEmployee && !isViewingEmployee && (
+          <div style={styles.modalOverlay}>
+            <div style={styles.modalContent}>
+              <div style={styles.actionBar}>
+                <button
+                  type="button"
+                  onClick={() => setIsViewingEmployee(true)}
+                  style={styles.secondaryButton}
+                >
+                  {t.backToList}
+                </button>
+              </div>
+
+              <div style={{ ...styles.employeeCard, gridTemplateColumns: r.gridCols('repeat(3, minmax(0, 1fr))') }}>
+                <Info label={t.fullName} value={selectedEmployee?.full_name || selectedEmployee?.name || '-'} />
+                <Info label={t.email} value={selectedEmployee?.email || '-'} />
+                <Info label={t.position} value={selectedEmployeePosition || t.empty} />
+              </div>
+
+              <div style={styles.innerSection}>
+                <div style={styles.innerHeader}>
+                  <h4 style={styles.subTitle}>{t.assignPosition}</h4>
+                </div>
+
+                <div style={styles.stack}>
+                  <label style={styles.label}>{t.position}</label>
+                  <select
+                    value={selectedEmployeeDetails.position_id}
+                    onChange={(event) =>
+                      setSelectedEmployeeDetails((prev) => ({ ...prev, position_id: event.target.value }))
+                    }
+                    style={styles.select}
+                  >
+                    <option value="">{t.selectPosition}</option>
+                    {visiblePositions.map((position) => (
+                      <option key={position.id} value={position.id}>
+                        {getPositionLabel(position)}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div style={styles.stack}>
+                  <label style={styles.label}>{t.branches}</label>
+                  <p style={styles.panelHint}>{t.branchesPreviewHint}</p>
+
+                  {selectedEmployeeBranches.length === 0 ? (
+                    <div style={styles.emptyBox}>{t.noBranchesAssigned}</div>
+                  ) : (
+                    <div style={styles.branchPills}>
+                      {selectedEmployeeBranches.map((branch) => (
+                        <span key={branch.id} style={styles.branchPill}>
+                          <span>{branch.name || branch.title || `#${branch.id}`}</span>
+                          <button
+                            type="button"
+                            onClick={() => handleRemoveEmployeeBranch(branch.id)}
+                            style={styles.branchPillRemove}
+                            aria-label={`${t.removeBranch} ${branch.name || branch.id}`}
+                            disabled={isSubmitting}
+                          >
+                            x
+                          </button>
+                        </span>
+                      ))}
+                    </div>
+                  )}
+
+                  <div style={{ ...styles.row, gridTemplateColumns: r.gridCols('1fr auto') }}>
                     <select
-                      id="branch-filter-select"
-                      value={selectedBranchId}
-                      onChange={(event) => setSelectedBranchId(event.target.value)}
-                      style={{ ...styles.filterSelect, ...r.filterSelect }}
-                      aria-label={t.branch}
+                      value={branchToAddId}
+                      onChange={(event) => setBranchToAddId(event.target.value)}
+                      style={styles.select}
+                      disabled={availableBranchesToAdd.length === 0 || isSubmitting}
                     >
-                      <option value="">{t.allBranches}</option>
-                      {branches.map((branch) => (
+                      <option value="">{t.selectBranch}</option>
+                      {availableBranchesToAdd.map((branch) => (
                         <option key={branch.id} value={branch.id}>
                           {branch.name}
                         </option>
                       ))}
                     </select>
-                    <select
-                      id="position-filter-select"
-                      value={selectedPositionId}
-                      onChange={(event) => setSelectedPositionId(event.target.value)}
-                      style={{ ...styles.filterSelect, ...r.filterSelect }}
-                      aria-label={t.position}
+                    <button
+                      type="button"
+                      onClick={handleAddEmployeeBranch}
+                      style={{
+                        ...styles.secondaryButton,
+                        ...((!branchToAddId || isSubmitting) ? { opacity: 0.65, cursor: 'default' } : {}),
+                      }}
+                      disabled={!branchToAddId || isSubmitting}
                     >
-                      <option value="">{t.allPositions}</option>
-                      {visiblePositions.map((position) => (
-                        <option key={position.id} value={position.id}>
-                          {getPositionLabel(position)}
-                        </option>
-                      ))}
-                    </select>
+                      {t.addBranch}
+                    </button>
                   </div>
                 </div>
 
-                {filteredEmployees.length === 0 ? (
-                  <div style={styles.emptyBox}>{t.noEmployees}</div>
-                ) : (
-                  <div style={styles.employeeList}>
-                    {filteredEmployees.map((employee) => (
-                      <button
-                        key={employee.id}
-                        type="button"
-                        style={styles.listButton}
-                        onClick={() => {
-                          setSelectedEmployeeId(String(employee.id));
-                          setIsViewingEmployee(false);
-                        }}
-                      >
-                        <div style={styles.listButtonContent}>
-                          <strong>{employee.full_name || employee.name || employee.fullName || '—'}</strong>
-                          <span style={styles.listButtonMeta}>
-                            {employee.email || '—'}
-                          </span>
-                        </div>
-                      </button>
-                    ))}
-                  </div>
-                )}
-              </section>
+                <button type="button" onClick={handleAssignDetails} style={styles.primaryButton}>
+                  {t.save}
+                </button>
 
-              {selectedEmployee && !isViewingEmployee && (
-                <div style={styles.modalOverlay}>
-                  <div style={styles.modalContent}>
-                    <div style={styles.actionBar}>
-                      <button
-                        type="button"
-                        onClick={() => setIsViewingEmployee(true)}
-                        style={styles.secondaryButton}
-                      >
-                        ← {t.backToList}
-                      </button>
-                    </div>
-
-                    <div style={{ ...styles.employeeCard, gridTemplateColumns: r.gridCols('repeat(3, minmax(0, 1fr))') }}>
-                      <Info label={t.fullName} value={selectedEmployee?.full_name || selectedEmployee?.name || '—'} />
-                      <Info label={t.email} value={selectedEmployee?.email || '—'} />
-                      <Info label={t.position} value={selectedEmployeePosition || t.empty} />
-                      <div style={styles.cardBranchField}>
-                        <span style={styles.cardLabel}>{t.branches}</span>
-                        {selectedEmployeeBranches.length === 0 ? (
-                          <span style={styles.cardValue}>{t.noBranchesAssigned}</span>
-                        ) : (
-                          <div style={styles.branchPills}>
-                            {selectedEmployeeBranches.map((branch) => (
-                              <span key={branch.id} style={styles.branchPillReadonly}>
-                                {branch.name || branch.title || `#${branch.id}`}
-                              </span>
-                            ))}
-                          </div>
-                        )}
-                      </div>
-                    </div>
-
-                    <div style={styles.innerSection}>
-                      <div style={styles.innerHeader}>
-                        <h4 style={styles.subTitle}>{t.assignPosition}</h4>
-                      </div>
-
-                      <div style={styles.stack}>
-                        <label style={styles.label}>{t.position}</label>
-                        <select
-                          value={selectedEmployeeDetails.position_id}
-                          onChange={(event) =>
-                            setSelectedEmployeeDetails((prev) => ({ ...prev, position_id: event.target.value }))
-                          }
-                          style={styles.select}
-                        >
-                          <option value="">{t.selectPosition}</option>
-                          {visiblePositions.map((position) => (
-                            <option key={position.id} value={position.id}>
-                              {getPositionLabel(position)}
-                            </option>
-                          ))}
-                        </select>
-                      </div>
-
-                      <div style={styles.stack}>
-                        <label style={styles.label}>{t.branches}</label>
-                        <p style={styles.panelHint}>{t.branchesPreviewHint}</p>
-
-                        {selectedEmployeeBranches.length === 0 ? (
-                          <div style={styles.emptyBox}>{t.noBranchesAssigned}</div>
-                        ) : (
-                          <div style={styles.branchPills}>
-                            {selectedEmployeeBranches.map((branch) => (
-                              <span key={branch.id} style={styles.branchPill}>
-                                <span>{branch.name || branch.title || `#${branch.id}`}</span>
-                                <button
-                                  type="button"
-                                  onClick={() => handleRemoveEmployeeBranch(branch.id)}
-                                  style={styles.branchPillRemove}
-                                  aria-label={`${t.removeBranch} ${branch.name || branch.id}`}
-                                  disabled={isSubmitting}
-                                >
-                                  ×
-                                </button>
-                              </span>
-                            ))}
-                          </div>
-                        )}
-
-                        <div style={{ ...styles.row, gridTemplateColumns: r.gridCols('1fr auto') }}>
-                          <select
-                            value={branchToAddId}
-                            onChange={(event) => setBranchToAddId(event.target.value)}
-                            style={styles.select}
-                            disabled={availableBranchesToAdd.length === 0 || isSubmitting}
-                          >
-                            <option value="">{t.selectBranch}</option>
-                            {availableBranchesToAdd.map((branch) => (
-                              <option key={branch.id} value={branch.id}>
-                                {branch.name}
-                              </option>
-                            ))}
-                          </select>
-                          <button
-                            type="button"
-                            onClick={handleAddEmployeeBranch}
-                            style={{
-                              ...styles.secondaryButton,
-                              ...((!branchToAddId || isSubmitting) ? { opacity: 0.65, cursor: 'default' } : {}),
-                            }}
-                            disabled={!branchToAddId || isSubmitting}
-                          >
-                            {t.addBranch}
-                          </button>
-                        </div>
-                      </div>
-
-                      <button type="button" onClick={handleAssignDetails} style={styles.primaryButton}>
-                        {t.save}
-                      </button>
-
-                      <button
-                        type="button"
-                        onClick={handleDeleteEmployeeFromCompany}
-                        style={styles.deleteButton}
-                        disabled={isSubmitting}
-                      >
-                        {t.removeFromCompany}
-                      </button>
-                    </div>
-                  </div>
-                </div>
-              )}
-
-              <section style={styles.innerSection}>
-                <div style={{ ...styles.listHeader, ...r.listHeader }}>
-                  <div>
-                    <h3 style={styles.panelTitle}>{t.positions}</h3>
-                    <p style={styles.panelHint}>{t.managePositionsHint}</p>
-                  </div>
-                </div>
-
-                {visiblePositions.length === 0 ? (
-                  <div style={styles.emptyBox}>{t.noPositionsMessage}</div>
-                ) : (
-                  <div style={styles.list}>
-                    {visiblePositions.map((position) => (
-                      <div key={position.id} style={{ ...styles.listItem, ...r.listItem }}>
-                        {String(editingPositionId) === String(position.id) ? (
-                          <>
-                            <input
-                              value={editingPositionTitle}
-                              onChange={(event) => setEditingPositionTitle(event.target.value)}
-                              style={{ ...styles.input, ...r.fullWidth }}
-                            />
-                            <div style={{ ...styles.actionGroup, ...r.actionGroup }}>
-                              <button
-                                type="button"
-                                onClick={handleSaveEditedPosition}
-                                style={{ ...styles.primaryButton, ...r.fullWidth }}
-                                disabled={isSubmitting}
-                              >
-                                {t.save}
-                              </button>
-                              <button
-                                type="button"
-                                onClick={handleCancelEditPosition}
-                                style={{ ...styles.secondaryButton, ...r.fullWidth }}
-                                disabled={isSubmitting}
-                              >
-                                {t.cancel}
-                              </button>
-                            </div>
-                          </>
-                        ) : (
-                          <>
-                            <div style={r.isMobile ? { width: '100%' } : undefined}>
-                              <strong style={styles.itemTitle}>{getPositionLabel(position)}</strong>
-                            </div>
-                            <div style={{ ...styles.actionGroup, ...r.actionGroup }}>
-                              <button
-                                type="button"
-                                onClick={() => handleStartEditingPosition(position)}
-                                style={{ ...styles.secondaryButton, ...r.fullWidth }}
-                              >
-                                {t.edit}
-                              </button>
-                              <button
-                                type="button"
-                                onClick={() => handleDeletePosition(position.id)}
-                                style={{ ...styles.deleteButton, ...r.fullWidth }}
-                              >
-                                {t.delete}
-                              </button>
-                            </div>
-                          </>
-                        )}
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </section>
+                <button
+                  type="button"
+                  onClick={handleDeleteEmployeeFromCompany}
+                  style={styles.deleteButton}
+                  disabled={isSubmitting}
+                >
+                  {t.removeFromCompany}
+                </button>
+              </div>
             </div>
-          </main>
-        </div>
+          </div>
+        )}
+
+        <section style={{ ...styles.availabilityPanel, ...(r.isMobile ? styles.availabilityPanelMobile : {}) }}>
+          <div style={styles.availabilityTitleBlock}>
+            <h3 style={styles.panelTitle}>{t.absences}</h3>
+          </div>
+
+          <div style={{ ...styles.availabilityContent, ...(r.isMobile ? styles.availabilityContentMobile : {}) }}>
+            <div style={{ ...styles.absenceStrip, ...(r.isMobile ? styles.absenceStripMobile : {}) }}>
+              {isDetailsLoading ? (
+                <span style={styles.emptyInline}>{t.loading}</span>
+              ) : upcomingAbsences.length === 0 ? (
+                <span style={styles.emptyInline}>{t.noAbsences}</span>
+              ) : (
+                upcomingAbsences.map((absence) => {
+                  const absenceEmployeeName = getEmployeeName(selectedEmployee) || selectedEmployee?.email || t.empty;
+
+                  return (
+                    <div key={absence.id || `${absence.start_date}-${absence.end_date}`} style={styles.absenceItem}>
+                      <div style={styles.absenceText}>
+                        <strong>{absenceEmployeeName}</strong>
+                        <span>{t[absence.absence_type] || absence.absence_type || t.absences}</span>
+                        <span>{formatDateRange(absence.start_date, absence.end_date)}</span>
+                      </div>
+                    </div>
+                  );
+                })
+              )}
+            </div>
+          </div>
+        </section>
       </div>
     </section>
   );
@@ -1388,6 +1379,24 @@ function Metric({ label, value }) {
       <span style={styles.metricLabel}>{label}</span>
       <strong style={styles.metricValue}>{value}</strong>
     </div>
+  );
+}
+
+function PositionGlyph({ index }) {
+  const paths = [
+    <path key="briefcase" d="M9 7V5.8C9 4.8 9.8 4 10.8 4h2.4c1 0 1.8.8 1.8 1.8V7M5 8h14v11H5V8ZM5 12h14" />,
+    <path key="cup" d="M6 8h10v4a5 5 0 0 1-10 0V8ZM16 9h1.5a2 2 0 0 1 0 4H16M6 20h10M8 4h.01M12 4h.01" />,
+    <path key="cash" d="M4 8h16v10H4V8ZM8 12h.01M16 14h.01M12 16a3 3 0 1 0 0-6 3 3 0 0 0 0 6Z" />,
+    <path key="shield" d="M12 3 5.5 5.6v5.1c0 4.1 2.6 7.8 6.5 9.3 3.9-1.5 6.5-5.2 6.5-9.3V5.6L12 3ZM12 8v4l2 1.4" />,
+    <path key="cap" d="M3 9.5 12 5l9 4.5-9 4.5-9-4.5ZM6.5 12v3.2c1.6 1.4 3.4 2 5.5 2s3.9-.6 5.5-2V12" />,
+  ];
+
+  return (
+    <span style={styles.positionIcon} aria-hidden="true">
+      <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+        {paths[index % paths.length]}
+      </svg>
+    </span>
   );
 }
 
@@ -1405,33 +1414,48 @@ const styles = {
     width: '100%',
     height: '100%',
     boxSizing: 'border-box',
-    padding: '22px',
+    padding: '16px 24px 18px',
+    overflowY: 'hidden',
+    overflowX: 'hidden',
+    background: '#f4faff',
+  },
+
+  desktopViewportPage: {
+    height: 'calc(100dvh - 96px)',
     overflow: 'hidden',
   },
 
   shell: {
-    width: 'min(100%, 1380px)',
+    width: 'min(100%, 1480px)',
     height: '100%',
+    minHeight: 0,
     margin: '0 auto',
     boxSizing: 'border-box',
-    padding: '26px',
-    borderRadius: '30px',
-    background: '#f4faff',
-    border: '1px solid rgba(222, 231, 231, 0.95)',
-    boxShadow: '0 22px 58px rgba(0, 38, 66, 0.18)',
+    padding: 0,
+    borderRadius: 0,
+    background: 'transparent',
+    border: 'none',
+    boxShadow: 'none',
     display: 'flex',
     flexDirection: 'column',
     overflow: 'hidden',
     position: 'relative',
   },
 
+  desktopScaleShell: {
+    width: '125%',
+    height: '125%',
+    transform: 'scale(0.8)',
+    transformOrigin: 'top left',
+  },
+
   header: {
     flexShrink: 0,
     display: 'flex',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    gap: '18px',
-    marginBottom: '18px',
+    flexDirection: 'column',
+    alignItems: 'stretch',
+    gap: '12px',
+    marginBottom: '14px',
   },
 
   title: {
@@ -1439,44 +1463,193 @@ const styles = {
     color: '#002642',
     fontSize: '28px',
     fontWeight: '900',
-    letterSpacing: '-0.03em',
+    letterSpacing: 0,
   },
 
   subtitle: {
-    margin: '5px 0 0',
+    margin: '4px 0 0',
     color: '#4f646f',
-    fontSize: '14px',
+    fontSize: '13px',
     fontWeight: '600',
   },
 
   headerStats: {
-    display: 'flex',
-    gap: '10px',
+    width: '100%',
+    display: 'grid',
+    gridTemplateColumns: 'repeat(3, minmax(0, 1fr))',
+    gap: '12px',
   },
 
   mainGrid: {
     flex: '1 1 auto',
     minHeight: 0,
     display: 'grid',
-    gridTemplateColumns: '340px minmax(0, 1fr)',
-    gap: '18px',
+    gridTemplateColumns: '300px minmax(520px, 1fr) 320px',
+    gap: '14px',
+    alignItems: 'stretch',
     overflow: 'hidden',
   },
 
   sidePanel: {
+    height: '100%',
     minHeight: 0,
     display: 'flex',
     flexDirection: 'column',
-    gap: '14px',
-    overflowY: 'auto',
-    paddingRight: '4px',
+    gap: '12px',
+    overflow: 'hidden',
+    paddingRight: 0,
   },
 
   panel: {
-    padding: '18px',
-    borderRadius: '22px',
+    padding: '18px 18px 20px',
+    borderRadius: '14px',
     background: '#ffffff',
-    border: '1px solid rgba(79, 100, 111, 0.12)',
+    border: '1px solid #dee7e7',
+    boxShadow: '0 12px 30px rgba(0, 38, 66, 0.04)',
+  },
+
+  leftCard: {
+    width: '100%',
+    boxSizing: 'border-box',
+    padding: '16px',
+    borderRadius: '12px',
+    background: '#ffffff',
+    border: '1px solid #dee7e7',
+    boxShadow: '0 10px 26px rgba(0, 38, 66, 0.035)',
+  },
+
+  leftCardGrow: {
+    flex: '1 1 auto',
+    minHeight: 0,
+  },
+
+  leftCardHeader: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '10px',
+    marginBottom: '12px',
+  },
+
+  leftCardIcon: {
+    width: '30px',
+    height: '30px',
+    borderRadius: '9px',
+    flexShrink: 0,
+    background: '#f0edff',
+    color: '#5a50ff',
+    display: 'inline-flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+
+  leftCardTitle: {
+    margin: 0,
+    color: '#002642',
+    fontSize: '17px',
+    lineHeight: 1.15,
+    fontWeight: '900',
+    letterSpacing: '-0.02em',
+  },
+
+  leftCardStack: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '8px',
+  },
+
+  leftLabel: {
+    display: 'block',
+    margin: '2px 0 -2px',
+    color: '#002642',
+    fontSize: '12px',
+    fontWeight: '850',
+  },
+
+  leftInput: {
+    width: '100%',
+    height: '40px',
+    boxSizing: 'border-box',
+    borderRadius: '10px',
+    border: '1px solid #dbe6f0',
+    background: '#ffffff',
+    padding: '0 15px',
+    color: '#002642',
+    fontSize: '13px',
+    fontWeight: '600',
+    outline: 'none',
+    boxShadow: '0 1px 2px rgba(0, 38, 66, 0.03)',
+  },
+
+  leftSelect: {
+    width: '100%',
+    height: '40px',
+    boxSizing: 'border-box',
+    borderRadius: '10px',
+    border: '1px solid #dbe6f0',
+    background: '#ffffff',
+    padding: '0 15px',
+    color: '#002642',
+    fontSize: '13px',
+    fontWeight: '600',
+    outline: 'none',
+    boxShadow: '0 1px 2px rgba(0, 38, 66, 0.03)',
+  },
+
+  leftPrimaryButton: {
+    height: '40px',
+    padding: '0 16px',
+    border: 'none',
+    borderRadius: '10px',
+    background: '#00296b',
+    color: '#ffffff',
+    fontSize: '13px',
+    fontWeight: '850',
+    cursor: 'pointer',
+    whiteSpace: 'nowrap',
+    boxShadow: '0 10px 20px rgba(0, 41, 107, 0.16)',
+  },
+
+  leftPrimaryButtonDisabled: {
+    height: '40px',
+    padding: '0 16px',
+    border: 'none',
+    borderRadius: '10px',
+    background: '#00296b',
+    color: '#ffffff',
+    fontSize: '13px',
+    fontWeight: '850',
+    cursor: 'default',
+    whiteSpace: 'nowrap',
+    opacity: 0.45,
+  },
+
+  leftLinkButton: {
+    height: '38px',
+    padding: '0 16px',
+    marginTop: '4px',
+    border: 'none',
+    borderRadius: '8px',
+    background: '#c7b8ff',
+    color: '#5647ff',
+    fontSize: '13px',
+    fontWeight: '850',
+    cursor: 'pointer',
+    whiteSpace: 'nowrap',
+  },
+
+  leftLinkButtonDisabled: {
+    height: '38px',
+    padding: '0 16px',
+    marginTop: '4px',
+    border: 'none',
+    borderRadius: '8px',
+    background: '#c7b8ff',
+    color: '#5647ff',
+    fontSize: '13px',
+    fontWeight: '850',
+    cursor: 'default',
+    whiteSpace: 'nowrap',
+    opacity: 0.7,
   },
 
   panelTitle: {
@@ -1522,6 +1695,43 @@ const styles = {
     background: '#ffffff',
     border: '1px solid rgba(79, 100, 111, 0.12)',
     overflow: 'hidden',
+  },
+
+  tablePanel: {
+    minWidth: 0,
+    minHeight: '360px',
+    padding: '18px',
+    borderRadius: '14px',
+    background: '#ffffff',
+    border: '1px solid #dee7e7',
+    boxShadow: '0 12px 30px rgba(0, 38, 66, 0.04)',
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '14px',
+    overflow: 'hidden',
+  },
+
+  positionsPanel: {
+    minWidth: 0,
+    minHeight: '360px',
+    padding: '18px',
+    borderRadius: '14px',
+    background: '#ffffff',
+    border: '1px solid #dee7e7',
+    boxShadow: '0 12px 30px rgba(0, 38, 66, 0.04)',
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '12px',
+    overflow: 'hidden',
+  },
+
+  positionsHeader: {
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: '12px',
+    paddingBottom: '12px',
+    borderBottom: '1px solid #dee7e7',
   },
 
   employeePicker: {
@@ -1601,7 +1811,7 @@ const styles = {
     display: 'flex',
     justifyContent: 'space-between',
     alignItems: 'center',
-    gap: '10px',
+    gap: '8px',
     flexWrap: 'wrap',
   },
 
@@ -1609,37 +1819,128 @@ const styles = {
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'flex-end',
-    gap: '10px',
+    gap: '8px',
     flexWrap: 'nowrap',
   },
 
   searchInput: {
     height: '40px',
-    width: '170px',
+    width: '220px',
     flexShrink: 0,
     boxSizing: 'border-box',
-    borderRadius: '13px',
-    border: '2px solid #dee7e7',
+    borderRadius: '10px',
+    border: '1px solid #dbe6f0',
     background: '#ffffff',
     padding: '0 14px',
     color: '#002642',
-    fontSize: '14px',
+    fontSize: '13px',
+    fontWeight: '650',
     outline: 'none',
   },
 
   filterSelect: {
     height: '40px',
     width: 'auto',
-    minWidth: '130px',
+    minWidth: '138px',
     flexShrink: 0,
     boxSizing: 'border-box',
-    borderRadius: '13px',
-    border: '2px solid #dee7e7',
+    borderRadius: '10px',
+    border: '1px solid #dbe6f0',
     background: '#ffffff',
     padding: '0 12px',
     color: '#002642',
     fontSize: '14px',
+    fontWeight: '750',
     outline: 'none',
+  },
+
+  tableWrap: {
+    flex: '1 1 auto',
+    minHeight: 0,
+    overflow: 'hidden',
+    borderTop: '1px solid #dee7e7',
+  },
+
+  employeeTable: {
+    width: '100%',
+    minWidth: '720px',
+    borderCollapse: 'collapse',
+    tableLayout: 'fixed',
+  },
+
+  tableHeaderCell: {
+    padding: '11px 10px',
+    color: '#4f646f',
+    fontSize: '12px',
+    fontWeight: '850',
+    textAlign: 'left',
+    borderBottom: '1px solid #dee7e7',
+    whiteSpace: 'nowrap',
+  },
+
+  tableRow: {
+    borderBottom: '1px solid #edf2f2',
+  },
+
+  tableCell: {
+    padding: '10px',
+    color: '#4f646f',
+    fontSize: '14px',
+    fontWeight: '650',
+    verticalAlign: 'middle',
+    overflowWrap: 'anywhere',
+  },
+
+  actionsHeader: {
+    width: '88px',
+    textAlign: 'right',
+  },
+
+  actionsCell: {
+    textAlign: 'right',
+  },
+
+  tableActionButton: {
+    width: '34px',
+    height: '34px',
+    padding: 0,
+    border: 'none',
+    borderRadius: '999px',
+    background: 'transparent',
+    color: '#002642',
+    display: 'inline-flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    cursor: 'pointer',
+  },
+
+  employeeIdentity: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '10px',
+    minWidth: 0,
+  },
+
+  avatar: {
+    width: '34px',
+    height: '34px',
+    borderRadius: '999px',
+    flexShrink: 0,
+    background: 'linear-gradient(135deg, rgba(108, 92, 231, 0.18), rgba(67, 160, 255, 0.18))',
+    color: '#4b4df7',
+    display: 'inline-flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    fontSize: '13px',
+    fontWeight: '900',
+  },
+
+  employeeName: {
+    minWidth: 0,
+    color: '#002642',
+    fontSize: '14px',
+    fontWeight: '850',
+    overflowWrap: 'anywhere',
   },
 
   listButton: {
@@ -1776,7 +2077,7 @@ const styles = {
 
   actionGroup: {
     display: 'flex',
-    gap: '8px',
+    gap: '14px',
     alignItems: 'center',
     flexShrink: 0,
   },
@@ -1875,26 +2176,55 @@ const styles = {
   },
 
   metric: {
-    minWidth: '90px',
-    padding: '11px 14px',
-    borderRadius: '16px',
-    background: '#dee7e7',
+    width: '100%',
+    minWidth: 0,
+    height: '46px',
+    boxSizing: 'border-box',
+    padding: '0 18px',
+    borderRadius: '12px',
+    background: '#ffffff',
+    border: '1px solid #dee7e7',
     color: '#002642',
     display: 'flex',
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: '12px',
+    boxShadow: '0 8px 20px rgba(0, 38, 66, 0.035)',
+  },
+
+  metricIcon: {
+    width: '46px',
+    height: '46px',
+    borderRadius: '12px',
+    flexShrink: 0,
+    background: 'linear-gradient(135deg, rgba(90, 80, 255, 0.13), rgba(67, 160, 255, 0.12))',
+    color: '#554cff',
+    display: 'inline-flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+
+  metricText: {
+    minWidth: 0,
+    display: 'flex',
     flexDirection: 'column',
-    gap: '3px',
+    gap: '4px',
   },
 
   metricLabel: {
-    fontSize: '12px',
+    fontSize: '13px',
     color: '#4f646f',
     fontWeight: '800',
+    whiteSpace: 'nowrap',
   },
 
   metricValue: {
-    fontSize: '19px',
+    fontSize: '24px',
+    lineHeight: 1,
     fontWeight: '900',
     color: '#002642',
+    whiteSpace: 'nowrap',
   },
 
   list: {
@@ -1907,7 +2237,7 @@ const styles = {
     display: 'flex',
     flexDirection: 'column',
     gap: '10px',
-    maxHeight: '240px',
+    maxHeight: '120px',
     overflowY: 'auto',
     paddingRight: '4px',
   },
@@ -1921,6 +2251,72 @@ const styles = {
     justifyContent: 'space-between',
     gap: '12px',
     alignItems: 'center',
+  },
+
+  positionList: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: 0,
+    minHeight: 0,
+    overflow: 'hidden',
+  },
+
+  positionItem: {
+    padding: '11px 0',
+    borderBottom: '1px solid #edf2f2',
+    display: 'flex',
+    justifyContent: 'space-between',
+    gap: '12px',
+    alignItems: 'center',
+  },
+
+  positionTitleWrap: {
+    minWidth: 0,
+    display: 'flex',
+    alignItems: 'center',
+    gap: '12px',
+  },
+
+  positionIcon: {
+    width: '24px',
+    height: '24px',
+    flexShrink: 0,
+    color: '#554cff',
+    display: 'inline-flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+
+  iconButton: {
+    width: '36px',
+    height: '36px',
+    padding: 0,
+    background: '#ffffff',
+    border: '1px solid #dee7e7',
+    borderRadius: '10px',
+    color: '#4b4df7',
+    display: 'inline-flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    fontWeight: '800',
+    cursor: 'pointer',
+    whiteSpace: 'nowrap',
+  },
+
+  iconDeleteButton: {
+    width: '36px',
+    height: '36px',
+    padding: 0,
+    background: '#ffffff',
+    border: '1px solid rgba(215, 173, 207, 0.65)',
+    borderRadius: '10px',
+    color: '#c92c5a',
+    display: 'inline-flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    fontWeight: '800',
+    cursor: 'pointer',
+    whiteSpace: 'nowrap',
   },
 
   itemTitle: {
@@ -1971,6 +2367,113 @@ const styles = {
     color: '#4f646f',
     fontSize: '14px',
     fontWeight: '650',
+  },
+
+  availabilityPanel: {
+    marginTop: '16px',
+    padding: '18px 20px',
+    borderRadius: '14px',
+    background: '#ffffff',
+    border: '1px solid #dee7e7',
+    boxShadow: '0 12px 30px rgba(0, 38, 66, 0.04)',
+    display: 'grid',
+    gridTemplateColumns: '220px minmax(0, 1fr)',
+    gap: '18px',
+    alignItems: 'center',
+  },
+
+  availabilityPanelMobile: {
+    gridTemplateColumns: '1fr',
+    alignItems: 'stretch',
+  },
+
+  availabilityTitleBlock: {
+    minWidth: 0,
+  },
+
+  availabilityContent: {
+    minWidth: 0,
+    display: 'grid',
+    gridTemplateColumns: '1fr',
+    gap: '16px',
+    alignItems: 'center',
+  },
+
+  availabilityContentMobile: {
+    gridTemplateColumns: '1fr',
+  },
+
+  compactList: {
+    display: 'flex',
+    flexWrap: 'wrap',
+    gap: '8px',
+    minWidth: 0,
+  },
+
+  compactPill: {
+    minHeight: '34px',
+    padding: '0 12px',
+    borderRadius: '999px',
+    border: '1px solid #dee7e7',
+    background: '#f4faff',
+    color: '#002642',
+    display: 'inline-flex',
+    alignItems: 'center',
+    fontSize: '13px',
+    fontWeight: '800',
+    whiteSpace: 'nowrap',
+  },
+
+  absenceStrip: {
+    minWidth: 0,
+    display: 'grid',
+    gridTemplateColumns: 'repeat(3, minmax(0, 1fr))',
+    gap: '10px',
+  },
+
+  absenceStripMobile: {
+    gridTemplateColumns: '1fr',
+  },
+
+  absenceItem: {
+    minWidth: 0,
+    padding: '10px 12px',
+    borderRadius: '12px',
+    border: '1px solid #edf2f2',
+    background: '#ffffff',
+    display: 'flex',
+    alignItems: 'center',
+    gap: '10px',
+  },
+
+  avatarSmall: {
+    width: '30px',
+    height: '30px',
+    borderRadius: '999px',
+    flexShrink: 0,
+    background: 'rgba(215, 173, 207, 0.35)',
+    color: '#002642',
+    display: 'inline-flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    fontSize: '12px',
+    fontWeight: '900',
+  },
+
+  absenceText: {
+    minWidth: 0,
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '2px',
+    color: '#4f646f',
+    fontSize: '12px',
+    fontWeight: '700',
+  },
+
+  emptyInline: {
+    color: '#4f646f',
+    fontSize: '13px',
+    fontWeight: '750',
   },
 
   modalOverlay: {
