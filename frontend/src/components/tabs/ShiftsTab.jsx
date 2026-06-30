@@ -742,6 +742,27 @@ export default function ShiftsTab({ language, userRole, user }) {
     }));
   }, [brushMode]);
 
+  const fillAvailabilityDay = useCallback((dayIndex, status = brushMode) => {
+    const date = weekDates[dayIndex];
+    if (!date) return;
+
+    const dateKey = toDateKey(date);
+    if (isPastDateKey(dateKey)) return;
+
+    setAvailabilityByDate((prev) => {
+      const nextDay = {};
+
+      TIME_SLOTS.forEach((slot) => {
+        nextDay[slot] = normalizeAvailabilityStatus(status);
+      });
+
+      return {
+        ...prev,
+        [dateKey]: nextDay,
+      };
+    });
+  }, [brushMode, weekDates]);
+
   const applyAvailabilityDragCell = useCallback((dayIndex, slotIndex) => {
     const dragState = dragSelectionRef.current;
     const lastCell = dragState.lastCell;
@@ -1812,6 +1833,83 @@ export default function ShiftsTab({ language, userRole, user }) {
 
               <div style={styles.availabilityGridWrapper}>
                 {renderAvailabilityGrid()}
+                <div style={styles.availabilityGridHeader}>
+                  <div style={styles.gridCorner} />
+                  {WEEKDAYS.map((day, index) => {
+                    const itIsToday = isToday(weekDates[index]);
+                    return (
+                      <div
+                        key={day.value}
+                        role="button"
+			tabIndex={isPastDateKey(toDateKey(weekDates[index])) ? -1 : 0}
+			onClick={() => fillAvailabilityDay(index)}
+      onDoubleClick={() => fillAvailabilityDay(index, 'unavailable')}
+			onKeyDown={(event) => {
+			  if (event.key === 'Enter' || event.key === ' ') {
+      			    event.preventDefault();
+      			    fillAvailabilityDay(index);
+    			  }
+                      }}
+  		      title={
+                          isPastDateKey(toDateKey(weekDates[index]))
+                            ? t.locked
+                            : language === 'ru'
+                              ? 'Заполнить весь день выбранным статусом'
+                              : 'Fill the whole day with selected status'
+                        }
+                        style={{
+                          ...styles.gridHeaderCell,
+                          flexDirection: 'column',
+			  height: 'auto',
+			  padding: '4px 2px',
+			  background: itIsToday ? '#002642' : '#dee7e7',
+                          color: itIsToday ? '#ffffff' : '#002642',
+                          border: itIsToday ? 'none' : styles.gridHeaderCell.border,
+			  cursor: isPastDateKey(toDateKey(weekDates[index])) ? 'not-allowed' : 'pointer',
+                          boxShadow: isPastDateKey(toDateKey(weekDates[index]))
+                            ? 'none'
+                            : '0 2px 8px rgba(0, 38, 66, 0.08)',
+                        }}
+                      >
+                        <span style={{ fontSize: '10px', opacity: itIsToday ? 0.9 : 0.8 }}>{day[language] || day.ru}</span>
+                        <span style={{ fontSize: '11px', fontWeight: '900', whiteSpace: 'nowrap' }}>
+                          {weekDates[index].toLocaleDateString(language === 'ru' ? 'ru-RU' : 'en-US', { day: 'numeric', month: 'short' })}
+                        </span>
+                      </div>
+                    );
+                  })}
+                </div>
+                <div style={styles.availabilityGridBody}>
+                  {TIME_SLOTS.map((time, slotIndex) => (
+                    <div key={time} style={styles.gridRow}>
+                      <div style={styles.gridTimeCell}>{time}</div>
+                      {WEEKDAYS.map((day, dayIndex) => {
+                        const cellDate = weekDates[dayIndex];
+                        const dateKey = toDateKey(cellDate);
+                        const past = isPastDateKey(dateKey);
+                        const status = normalizeAvailabilityStatus(availabilityByDate[dateKey]?.[time]);
+
+                        return (
+                          <button
+                            key={`${dateKey}-${time}`}
+                            type="button"
+                            onMouseDown={past ? undefined : (event) => handleAvailabilityMouseDown(event, dayIndex, slotIndex)}
+                            onMouseEnter={past ? undefined : () => handleAvailabilityMouseEnter(dayIndex, slotIndex)}
+                            onTouchStart={past ? undefined : (event) => handleAvailabilityTouchStart(event, dayIndex, slotIndex)}
+                            onTouchMove={past ? undefined : handleAvailabilityTouchMove}
+                            data-availability-cell="true"
+                            data-day-index={dayIndex}
+                            data-slot-index={slotIndex}
+                            disabled={past}
+                            style={getAvailabilityCellStyle(dateKey, time)}
+                            aria-pressed={status === 'available'}
+                            title={getAvailabilityCellTitle(dateKey, time)}
+                          />
+                        );
+                      })}
+                    </div>
+                  ))}
+                </div>
               </div>
 
                 </>
