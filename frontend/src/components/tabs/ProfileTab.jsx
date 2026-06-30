@@ -7,10 +7,7 @@ import { extractApiErrorMessage } from '../../services/error';
 import { listPositions } from '../../services/positionService';
 import { useUserBranches } from '../../hooks/useUserBranches';
 import { useTabResponsive } from '../../utils/tabResponsive';
-
-function getPositionLabel(position) {
-  return position?.title || position?.name || position?.position_title || '';
-}
+import { getBranchLabel, getPositionLabel } from '../../utils/employeeDisplay';
 
 export default function ProfileTab({ language, user }) {
   const r = useTabResponsive(1040);
@@ -55,6 +52,8 @@ export default function ProfileTab({ language, user }) {
       positionError: 'Не удалось обновить позицию.',
       positionSection: 'Моя позиция',
       positionSectionHint: 'Выберите позицию из списка компании.',
+      noPosition: 'Без позиции',
+      noBranch: 'Без филиала',
     },
     en: {
       title: 'Profile',
@@ -87,6 +86,8 @@ export default function ProfileTab({ language, user }) {
       positionError: 'Failed to update position.',
       positionSection: 'My position',
       positionSectionHint: 'Select a position from your company list.',
+      noPosition: 'No position',
+      noBranch: 'No branch',
     },
   };
 
@@ -105,7 +106,8 @@ export default function ProfileTab({ language, user }) {
   const employeeId = user?.employeeId || user?.employee_id;
 
   const companyName = user?.company?.name;
-  const positionName = user?.position?.name;
+  const positionName = getPositionLabel(user?.position, t.noPosition);
+  const branchName = getBranchLabel(branchesLabel, t.noBranch);
 
   useEffect(() => {
     if (!isEmployee || !hasCompany) {
@@ -172,13 +174,13 @@ export default function ProfileTab({ language, user }) {
       },
       {
         label: t.branch,
-        value: branchesLabel || t.empty,
-        muted: !branchesLabel,
+        value: branchName,
+        muted: branchesLabel ? false : true,
       },
       {
         label: t.position,
-        value: positionName || t.empty,
-        muted: !positionName,
+        value: positionName,
+        muted: user?.position?.name ? false : true,
       }
     );
   }

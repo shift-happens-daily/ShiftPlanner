@@ -18,6 +18,12 @@ import {
   listRequirements,
 } from '../../services/scheduleService';
 import { useTabResponsive } from '../../utils/tabResponsive';
+import {
+  DEFAULT_AVAILABILITY_STYLE,
+  getAvailabilityStyle,
+  getPositionLabel,
+  normalizeAvailabilityStatus,
+} from '../../utils/employeeDisplay';
 
 const WEEKDAYS = [
   { value: 0, ru: 'Пн', en: 'Mon' },
@@ -43,8 +49,6 @@ const TIME_SLOTS = Array.from(
   },
 );
 
-const AVAILABILITY_STATUSES = new Set(['available', 'if_needed', 'unavailable']);
-
 const MOBILE_HOUR_GROUPS = TIME_SLOTS.reduce((groups, slot, index) => {
   if (index % 2 === 0) {
     groups.push({
@@ -62,11 +66,6 @@ const MOBILE_BRUSH_OPTIONS = [
 ];
 
 const AVAILABILITY_MODE_OPTIONS = MOBILE_BRUSH_OPTIONS;
-
-function normalizeAvailabilityStatus(status) {
-  if (status === 'maybe') return 'if_needed';
-  return AVAILABILITY_STATUSES.has(status) ? status : 'unavailable';
-}
 
 function toDateKey(date) {
   if (!(date instanceof Date) || Number.isNaN(date.getTime())) return '';
@@ -283,10 +282,6 @@ function formatTime(value) {
   return String(value || '').slice(0, 5);
 }
 
-function getPositionTitle(position) {
-  return position?.title || position?.name || position?.position_title || '';
-}
-
 function getRequirementId(requirement) {
   return requirement?.id || requirement?.requirement_id;
 }
@@ -301,7 +296,7 @@ function normalizeRequirement(requirement, positions = []) {
     ...requirement,
     id: getRequirementId(requirement),
     position_id: positionId,
-    position_title: requirement.position_title || requirement.positionTitle || requirement.position?.title || requirement.position?.name || getPositionTitle(position) || 'Position',
+    position_title: requirement.position_title || requirement.positionTitle || requirement.position?.title || requirement.position?.name || getPositionLabel(position) || 'Position',
     date: requirement.date,
     start_time: requirement.start_time || requirement.startTime,
     end_time: requirement.end_time || requirement.endTime,
@@ -561,15 +556,13 @@ export default function ShiftsTab({ language, userRole, user }) {
   };
 
   const getAvailabilityCellStyle = (dateKey, time) => {
-    if (!dateKey || !time) return styles.gridCell;
+    if (!dateKey || !time) return DEFAULT_AVAILABILITY_STYLE;
 
     const past = isPastDateKey(dateKey);
-    const status = normalizeAvailabilityStatus(availabilityByDate?.[dateKey]?.[time]);
-
     if (past) return styles.gridCellLocked;
-    if (status === 'available') return styles.gridCellAvailable;
-    if (status === 'if_needed') return styles.gridCellMaybe;
-    return styles.gridCell;
+
+    const status = availabilityByDate?.[dateKey]?.[time];
+    return getAvailabilityStyle(status, AVAILABILITY_STYLE_MAP, DEFAULT_AVAILABILITY_STYLE);
   };
 
   const getAvailabilityCellTitle = (dateKey, time) => {
@@ -741,27 +734,6 @@ export default function ShiftsTab({ language, userRole, user }) {
       },
     }));
   }, [brushMode]);
-
-  const fillAvailabilityDay = useCallback((dayIndex, status = brushMode) => {
-    const date = weekDates[dayIndex];
-    if (!date) return;
-
-    const dateKey = toDateKey(date);
-    if (isPastDateKey(dateKey)) return;
-
-    setAvailabilityByDate((prev) => {
-      const nextDay = {};
-
-      TIME_SLOTS.forEach((slot) => {
-        nextDay[slot] = normalizeAvailabilityStatus(status);
-      });
-
-      return {
-        ...prev,
-        [dateKey]: nextDay,
-      };
-    });
-  }, [brushMode, weekDates]);
 
   const applyAvailabilityDragCell = useCallback((dayIndex, slotIndex) => {
     const dragState = dragSelectionRef.current;
@@ -1190,7 +1162,7 @@ export default function ShiftsTab({ language, userRole, user }) {
                     <option value="">{t.allPositions}</option>
                     {positions.map((position) => (
                       <option key={position.id} value={position.id}>
-                        {getPositionTitle(position)}
+                        {getPositionLabel(position)}
                       </option>
                     ))}
                   </select>
@@ -1307,7 +1279,7 @@ export default function ShiftsTab({ language, userRole, user }) {
                         <option value="">{positions.length ? t.choosePosition : t.noPositions}</option>
                         {positions.map((position) => (
                           <option key={position.id} value={position.id}>
-                            {getPositionTitle(position)}
+                            {getPositionLabel(position)}
                           </option>
                         ))}
                       </select>
@@ -1402,7 +1374,7 @@ export default function ShiftsTab({ language, userRole, user }) {
                         <option value="">{positions.length ? t.choosePosition : t.noPositions}</option>
                         {positions.map((position) => (
                           <option key={position.id} value={position.id}>
-                            {getPositionTitle(position)}
+                            {getPositionLabel(position)}
                           </option>
                         ))}
                       </select>
@@ -1498,7 +1470,7 @@ export default function ShiftsTab({ language, userRole, user }) {
                       <option value="">{t.allPositions}</option>
                       {positions.map((position) => (
                         <option key={position.id} value={position.id}>
-                          {getPositionTitle(position)}
+                          {getPositionLabel(position)}
                         </option>
                       ))}
                     </select>
@@ -1833,83 +1805,6 @@ export default function ShiftsTab({ language, userRole, user }) {
 
               <div style={styles.availabilityGridWrapper}>
                 {renderAvailabilityGrid()}
-                <div style={styles.availabilityGridHeader}>
-                  <div style={styles.gridCorner} />
-                  {WEEKDAYS.map((day, index) => {
-                    const itIsToday = isToday(weekDates[index]);
-                    return (
-                      <div
-                        key={day.value}
-                        role="button"
-			tabIndex={isPastDateKey(toDateKey(weekDates[index])) ? -1 : 0}
-			onClick={() => fillAvailabilityDay(index)}
-      onDoubleClick={() => fillAvailabilityDay(index, 'unavailable')}
-			onKeyDown={(event) => {
-			  if (event.key === 'Enter' || event.key === ' ') {
-      			    event.preventDefault();
-      			    fillAvailabilityDay(index);
-    			  }
-                      }}
-  		      title={
-                          isPastDateKey(toDateKey(weekDates[index]))
-                            ? t.locked
-                            : language === 'ru'
-                              ? 'Заполнить весь день выбранным статусом'
-                              : 'Fill the whole day with selected status'
-                        }
-                        style={{
-                          ...styles.gridHeaderCell,
-                          flexDirection: 'column',
-			  height: 'auto',
-			  padding: '4px 2px',
-			  background: itIsToday ? '#002642' : '#dee7e7',
-                          color: itIsToday ? '#ffffff' : '#002642',
-                          border: itIsToday ? 'none' : styles.gridHeaderCell.border,
-			  cursor: isPastDateKey(toDateKey(weekDates[index])) ? 'not-allowed' : 'pointer',
-                          boxShadow: isPastDateKey(toDateKey(weekDates[index]))
-                            ? 'none'
-                            : '0 2px 8px rgba(0, 38, 66, 0.08)',
-                        }}
-                      >
-                        <span style={{ fontSize: '10px', opacity: itIsToday ? 0.9 : 0.8 }}>{day[language] || day.ru}</span>
-                        <span style={{ fontSize: '11px', fontWeight: '900', whiteSpace: 'nowrap' }}>
-                          {weekDates[index].toLocaleDateString(language === 'ru' ? 'ru-RU' : 'en-US', { day: 'numeric', month: 'short' })}
-                        </span>
-                      </div>
-                    );
-                  })}
-                </div>
-                <div style={styles.availabilityGridBody}>
-                  {TIME_SLOTS.map((time, slotIndex) => (
-                    <div key={time} style={styles.gridRow}>
-                      <div style={styles.gridTimeCell}>{time}</div>
-                      {WEEKDAYS.map((day, dayIndex) => {
-                        const cellDate = weekDates[dayIndex];
-                        const dateKey = toDateKey(cellDate);
-                        const past = isPastDateKey(dateKey);
-                        const status = normalizeAvailabilityStatus(availabilityByDate[dateKey]?.[time]);
-
-                        return (
-                          <button
-                            key={`${dateKey}-${time}`}
-                            type="button"
-                            onMouseDown={past ? undefined : (event) => handleAvailabilityMouseDown(event, dayIndex, slotIndex)}
-                            onMouseEnter={past ? undefined : () => handleAvailabilityMouseEnter(dayIndex, slotIndex)}
-                            onTouchStart={past ? undefined : (event) => handleAvailabilityTouchStart(event, dayIndex, slotIndex)}
-                            onTouchMove={past ? undefined : handleAvailabilityTouchMove}
-                            data-availability-cell="true"
-                            data-day-index={dayIndex}
-                            data-slot-index={slotIndex}
-                            disabled={past}
-                            style={getAvailabilityCellStyle(dateKey, time)}
-                            aria-pressed={status === 'available'}
-                            title={getAvailabilityCellTitle(dateKey, time)}
-                          />
-                        );
-                      })}
-                    </div>
-                  ))}
-                </div>
               </div>
 
                 </>
@@ -3253,4 +3148,10 @@ const styles = {
     cursor: 'pointer',
     lineHeight: 1,
   },
+};
+
+const AVAILABILITY_STYLE_MAP = {
+  available: styles.gridCellAvailable,
+  if_needed: styles.gridCellMaybe,
+  unavailable: styles.gridCell,
 };

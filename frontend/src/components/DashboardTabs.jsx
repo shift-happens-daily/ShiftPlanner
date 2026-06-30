@@ -8,6 +8,7 @@ import ReportsTab from './tabs/ReportsTab';
 import ScheduleTab from './tabs/ScheduleTab';
 import ScheduleReview from './tabs/ScheduleReview';
 import ShiftsTab from './tabs/ShiftsTab';
+import { getPositionLabel } from '../utils/employeeDisplay';
 
 const TAB_ICONS = {
   schedule: (
@@ -90,6 +91,7 @@ export default function DashboardTabs({ userRole, language, title, rightSlot }) 
       manager: 'Менеджер',
       employee: 'Сотрудник',
       openProfile: 'Открыть профиль',
+      noPosition: 'Без позиции',
     },
     en: {
       profile: 'Profile',
@@ -101,6 +103,7 @@ export default function DashboardTabs({ userRole, language, title, rightSlot }) 
       manager: 'Manager',
       employee: 'Employee',
       openProfile: 'Open profile',
+      noPosition: 'No position',
     },
   };
 
@@ -147,8 +150,10 @@ export default function DashboardTabs({ userRole, language, title, rightSlot }) 
   };
 
   const fullName = user?.fullName || user?.full_name || user?.name || '';
-  const positionName = user?.position?.name
-    || (userRole === 'manager' ? t.manager : t.employee);
+  const positionName = getPositionLabel(
+    user?.position,
+    userRole === 'manager' ? t.manager : t.noPosition,
+  );
 
   const avatarInitials = (fullName.trim() || user?.email || '?')
     .split(/\s+/)
