@@ -54,11 +54,11 @@ services:
       context: ./frontend
       dockerfile: Dockerfile
       args:
-        VITE_API_URL: https://shiftplanner.online/api
+        VITE_API_URL: /api
     container_name: shiftplanner_frontend
     restart: unless-stopped
     environment:
-      VITE_API_URL: https://shiftplanner.online/api
+      VITE_API_URL: /api
     expose:
       - "80"
     depends_on:
