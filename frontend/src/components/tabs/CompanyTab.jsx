@@ -1,3 +1,4 @@
+/* eslint-disable react-hooks/set-state-in-effect */
 // frontend/src/components/tabs/CompanyTab.jsx
 import { useEffect, useState } from 'react';
 import { useAuth } from '../../context/useAuth';
@@ -79,7 +80,7 @@ function getInviteCode(company) {
 }
 
 export default function CompanyTab({ language, userRole, user }) {
-  const r = useTabResponsive(1200);
+  const r = useTabResponsive(1480);
   const { refreshUser } = useAuth();
 
   const [inviteCode, setInviteCode] = useState('');
@@ -99,7 +100,6 @@ export default function CompanyTab({ language, userRole, user }) {
 
   const texts = {
     ru: {
-      title: 'Компания',
       currentCompany: 'Текущая компания',
       company: '',
       branch: 'Филиал',
@@ -137,7 +137,6 @@ export default function CompanyTab({ language, userRole, user }) {
       previewHint: 'Проверьте инвайт-код, затем нажмите "Присоединиться".',
       copy: 'Копировать',
       copied: 'Код скопирован.',
-      noBranches: 'В компании пока нет филиалов.',
       noPositions: 'В компании пока нет позиций. Менеджеру нужно создать позицию во вкладке «Сотрудники».',
       createBranch: 'Создать филиал',
       branchName: '',
@@ -174,7 +173,6 @@ export default function CompanyTab({ language, userRole, user }) {
       requestPosition: 'Позиция в заявке',
     },
     en: {
-      title: 'Company',
       currentCompany: 'Current company',
       company: '',
       branch: 'Branch',
@@ -212,7 +210,6 @@ export default function CompanyTab({ language, userRole, user }) {
       previewHint: 'Preview the invite code first, then click "Join company".',
       copy: 'Copy',
       copied: 'Code copied.',
-      noBranches: 'This company has no branches yet.',
       noPositions: 'This company has no positions yet. A manager needs to create a position in the Employees tab.',
       createBranch: 'Create branch',
       branchName: '',
@@ -528,8 +525,26 @@ export default function CompanyTab({ language, userRole, user }) {
   };
 
   return (
-    <section style={{ ...styles.page, ...r.page }}>
-      <div style={{ ...styles.shell, ...r.shell }}>
+    <section
+      style={{
+        ...styles.page,
+        ...r.page,
+        ...(r.isMobile ? {} : styles.desktopViewportPage),
+      }}
+    >
+      <div
+        style={{
+          ...styles.shell,
+          ...r.shell,
+          width: 'min(100%, 1480px)',
+          padding: 0,
+          borderRadius: 0,
+          background: 'transparent',
+          border: 'none',
+          boxShadow: 'none',
+          ...(r.isMobile ? {} : styles.desktopScaleShell),
+        }}
+      >
         {(errorMessage || successMessage) && (
           <div style={errorMessage ? styles.error : styles.success}>
             {errorMessage || successMessage}
@@ -857,20 +872,34 @@ const styles = {
     width: '100%',
     height: '100%',
     boxSizing: 'border-box',
-    padding: '14px 18px 16px',
+    padding: '16px 24px 18px',
     overflow: 'hidden',
     background: '#f4faff',
   },
 
+  desktopViewportPage: {
+    height: 'calc(100dvh - 96px)',
+    overflow: 'hidden',
+  },
+
   shell: {
-    width: '100%',
+    width: 'min(100%, 1480px)',
     height: '100%',
-    margin: '0',
+    margin: '0 auto',
     boxSizing: 'border-box',
     display: 'flex',
     flexDirection: 'column',
-    gap: '10px',
+    gap: '14px',
     minHeight: 0,
+    overflow: 'hidden',
+    position: 'relative',
+  },
+
+  desktopScaleShell: {
+    width: '125%',
+    height: '125%',
+    transform: 'scale(0.8)',
+    transformOrigin: 'top left',
   },
 
   managerGrid: {
@@ -898,14 +927,14 @@ const styles = {
     boxSizing: 'border-box',
     width: '100%',
     minWidth: 0,
-    padding: '20px 24px',
-    borderRadius: '18px',
+    padding: '18px',
+    borderRadius: '14px',
     background: '#ffffff',
-    border: '1px solid rgba(203, 213, 225, 0.9)',
-    boxShadow: '0 10px 24px rgba(0, 38, 66, 0.03)',
+    border: '1px solid #dee7e7',
+    boxShadow: '0 12px 30px rgba(0, 38, 66, 0.04)',
     display: 'flex',
     flexDirection: 'column',
-    gap: '14px',
+    gap: '12px',
     overflow: 'hidden',
   },
 
@@ -914,11 +943,11 @@ const styles = {
     width: '100%',
     minWidth: 0,
     minHeight: 0,
-    padding: '20px 24px',
-    borderRadius: '18px',
+    padding: '18px',
+    borderRadius: '14px',
     background: '#ffffff',
-    border: '1px solid rgba(203, 213, 225, 0.9)',
-    boxShadow: '0 10px 24px rgba(0, 38, 66, 0.03)',
+    border: '1px solid #dee7e7',
+    boxShadow: '0 12px 30px rgba(0, 38, 66, 0.04)',
     display: 'flex',
     flexDirection: 'column',
     gap: '12px',
@@ -934,26 +963,26 @@ const styles = {
   },
 
   title: {
-    fontSize: '24px',
+    fontSize: '28px',
     fontWeight: '900',
     color: '#002642',
     margin: 0,
-    letterSpacing: '-0.03em',
+    letterSpacing: 0,
   },
 
   section: {
     minHeight: 0,
     display: 'flex',
     flexDirection: 'column',
-    gap: '14px',
+    gap: '12px',
   },
 
   sectionTitle: {
     margin: 0,
     color: '#002642',
-    fontSize: '20px',
+    fontSize: '18px',
     fontWeight: '900',
-    letterSpacing: '-0.03em',
+    letterSpacing: 0,
     textAlign: 'left',
   },
 
@@ -1002,7 +1031,7 @@ const styles = {
 
   companyTitle: {
     color: '#002642',
-    fontSize: '22px',
+    fontSize: '20px',
     fontWeight: '900',
     lineHeight: 1.15,
   },
@@ -1015,12 +1044,12 @@ const styles = {
     width: '100%',
     minWidth: 0,
     boxSizing: 'border-box',
-    padding: '14px 16px',
-    borderRadius: '16px',
+    padding: '12px 14px',
+    borderRadius: '12px',
     border: '1px solid #dee7e7',
     background: '#f8fbff',
     display: 'grid',
-    gridTemplateColumns: 'minmax(320px, 1fr) auto',
+    gridTemplateColumns: 'minmax(0, 1fr) auto',
     alignItems: 'end',
     gap: '12px',
   },
@@ -1049,7 +1078,7 @@ const styles = {
 
   inviteValue: {
     display: 'block',
-    fontSize: '22px',
+    fontSize: '20px',
     fontWeight: '900',
     letterSpacing: '0.08em',
     color: '#102a43',
@@ -1174,9 +1203,9 @@ const styles = {
   },
 
   emptyState: {
-    minHeight: '120px',
+    minHeight: '108px',
     padding: '16px',
-    borderRadius: '16px',
+    borderRadius: '12px',
     background: '#f8fbff',
     border: '1px solid #dee7e7',
     display: 'flex',
@@ -1215,53 +1244,53 @@ const styles = {
 
   input: {
     width: '100%',
-    height: '42px',
+    height: '40px',
     boxSizing: 'border-box',
-    borderRadius: '12px',
-    border: '2px solid #dee7e7',
+    borderRadius: '10px',
+    border: '1px solid #dbe6f0',
     background: '#ffffff',
     padding: '0 14px',
     color: '#002642',
-    fontSize: '14px',
+    fontSize: '13px',
     outline: 'none',
   },
 
   select: {
     width: '100%',
-    height: '42px',
+    height: '40px',
     boxSizing: 'border-box',
-    borderRadius: '12px',
-    border: '2px solid #dee7e7',
+    borderRadius: '10px',
+    border: '1px solid #dbe6f0',
     background: '#ffffff',
     padding: '0 14px',
     color: '#002642',
-    fontSize: '14px',
+    fontSize: '13px',
     fontWeight: '700',
     outline: 'none',
     cursor: 'pointer',
   },
 
   primaryButton: {
-    height: '42px',
+    height: '40px',
     padding: '0 16px',
     background: '#002642',
     border: 'none',
-    borderRadius: '12px',
+    borderRadius: '10px',
     color: '#f4faff',
-    fontSize: '14px',
+    fontSize: '13px',
     fontWeight: '800',
     cursor: 'pointer',
     whiteSpace: 'nowrap',
   },
 
   primaryButtonDisabled: {
-    height: '42px',
+    height: '40px',
     padding: '0 16px',
     background: '#94a3b8',
     border: 'none',
-    borderRadius: '12px',
+    borderRadius: '10px',
     color: '#f8fafc',
-    fontSize: '14px',
+    fontSize: '13px',
     fontWeight: '800',
     cursor: 'default',
     opacity: 0.65,
@@ -1269,26 +1298,26 @@ const styles = {
   },
 
   secondaryButton: {
-    height: '42px',
+    height: '40px',
     padding: '0 16px',
     background: '#eef2ff',
     border: '1px solid rgba(99, 102, 241, 0.18)',
-    borderRadius: '12px',
+    borderRadius: '10px',
     color: '#3730a3',
-    fontSize: '14px',
+    fontSize: '13px',
     fontWeight: '800',
     cursor: 'pointer',
     whiteSpace: 'nowrap',
   },
 
   secondaryButtonDisabled: {
-    height: '42px',
+    height: '40px',
     padding: '0 16px',
     background: '#e2e8f0',
     border: 'none',
-    borderRadius: '12px',
+    borderRadius: '10px',
     color: '#475569',
-    fontSize: '14px',
+    fontSize: '13px',
     fontWeight: '850',
     cursor: 'default',
     opacity: 0.65,
@@ -1296,14 +1325,14 @@ const styles = {
   },
 
   copyButton: {
-    height: '42px',
+    height: '40px',
     minWidth: '104px',
     padding: '0 14px',
-    borderRadius: '12px',
+    borderRadius: '10px',
     border: '1px solid rgba(17, 24, 39, 0.12)',
     background: '#eef2ff',
     color: '#0f172a',
-    fontSize: '14px',
+    fontSize: '13px',
     fontWeight: '800',
     cursor: 'pointer',
     whiteSpace: 'nowrap',
@@ -1311,8 +1340,8 @@ const styles = {
 
   previewBox: {
     marginTop: '4px',
-    padding: '18px',
-    borderRadius: '18px',
+    padding: '16px',
+    borderRadius: '14px',
     background: '#f8fbff',
     border: '1px solid #dee7e7',
     display: 'flex',
@@ -1342,7 +1371,7 @@ const styles = {
 
   infoItem: {
     padding: '12px',
-    borderRadius: '16px',
+    borderRadius: '12px',
     background: '#f8fbff',
     border: '1px solid #dee7e7',
     display: 'flex',
@@ -1387,8 +1416,8 @@ const styles = {
     display: 'flex',
     flexDirection: 'column',
     gap: '8px',
-    padding: '16px 18px',
-    borderRadius: '18px',
+    padding: '14px 16px',
+    borderRadius: '12px',
     background: 'rgba(215, 173, 207, 0.18)',
     border: '1px solid rgba(215, 173, 207, 0.45)',
   },

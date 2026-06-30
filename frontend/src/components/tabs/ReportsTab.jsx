@@ -81,7 +81,7 @@ function normalizeEmployeeReport(report) {
 }
 
 export default function ReportsTab({ language, userRole, user }) {
-  const r = useTabResponsive(1200);
+  const r = useTabResponsive(1480);
   const isManager = userRole === 'manager';
   const companyId = user?.company?.id || user?.company_id || null;
 
@@ -175,14 +175,16 @@ export default function ReportsTab({ language, userRole, user }) {
   const t = texts[language] || texts.ru;
 
   useEffect(() => {
-    if (!isManager || !companyId) {
-      setCompanyBranches([]);
-      return undefined;
-    }
-
     let cancelled = false;
 
     async function loadBranches() {
+      if (!isManager || !companyId) {
+        if (!cancelled) {
+          setCompanyBranches([]);
+        }
+        return;
+      }
+
       try {
         const data = await listBranches(companyId);
         if (!cancelled) {
@@ -302,7 +304,18 @@ export default function ReportsTab({ language, userRole, user }) {
       setIsLoading(false);
       setIsRefreshing(false);
     }
-  }, [appliedRange, isManager, language, t.empty, t.noPermission, t.reportReady]);
+  }, [
+    appliedRange,
+    branchFilter,
+    employeeSearch,
+    isManager,
+    language,
+    positionFilter,
+    reportMode,
+    t.empty,
+    t.noPermission,
+    t.reportReady,
+  ]);
 
   useEffect(() => {
     const timer = setTimeout(() => {
@@ -396,8 +409,8 @@ export default function ReportsTab({ language, userRole, user }) {
 
   if (isLoading) {
     return (
-      <section style={{ ...styles.page, ...r.page }}>
-        <div style={{ ...styles.shell, ...r.shell }}>
+      <section style={{ ...styles.page, ...r.page, ...(r.isMobile ? {} : styles.desktopPage) }}>
+        <div style={{ ...styles.shell, ...r.shell, ...(r.isMobile ? {} : styles.desktopShell) }}>
           <div style={styles.emptyBox}>{t.loading}</div>
         </div>
       </section>
@@ -411,8 +424,8 @@ export default function ReportsTab({ language, userRole, user }) {
     : '1.2fr 1fr 0.8fr 0.7fr';
 
   return (
-    <section style={{ ...styles.page, ...r.page }}>
-      <div style={{ ...styles.shell, ...r.shell }}>
+    <section style={{ ...styles.page, ...r.page, ...(r.isMobile ? {} : styles.desktopPage) }}>
+      <div style={{ ...styles.shell, ...r.shell, ...(r.isMobile ? {} : styles.desktopShell) }}>
         {renderToast()}
 
         <header style={{ ...styles.header, ...r.header }}>
@@ -681,24 +694,36 @@ const styles = {
     width: '100%',
     height: '100%',
     boxSizing: 'border-box',
-    padding: '22px',
+    padding: '16px 24px 18px',
     overflow: 'hidden',
+    background: '#f4faff',
+  },
+
+  desktopPage: {
+    height: 'calc(100dvh - 96px)',
   },
 
   shell: {
-    width: 'min(100%, 1200px)',
+    width: '100%',
     height: '100%',
     margin: '0 auto',
     boxSizing: 'border-box',
-    padding: '26px',
-    borderRadius: '30px',
-    background: '#f4faff',
-    border: '1px solid rgba(222, 231, 231, 0.95)',
-    boxShadow: '0 22px 58px rgba(0, 38, 66, 0.18)',
+    padding: 0,
+    borderRadius: 0,
+    background: 'transparent',
+    border: 'none',
+    boxShadow: 'none',
     display: 'flex',
     flexDirection: 'column',
+    gap: 14,
     overflow: 'hidden',
     position: 'relative',
+  },
+
+  desktopShell: {
+    width: '100%',
+    padding: 0,
+    borderRadius: 0,
   },
 
   header: {
@@ -706,8 +731,8 @@ const styles = {
     display: 'flex',
     justifyContent: 'space-between',
     alignItems: 'center',
-    gap: '18px',
-    marginBottom: '18px',
+    gap: 18,
+    marginBottom: 0,
   },
 
   title: {
@@ -715,7 +740,7 @@ const styles = {
     color: '#002642',
     fontSize: '28px',
     fontWeight: '900',
-    letterSpacing: '-0.03em',
+    letterSpacing: 0,
   },
 
   subtitle: {
@@ -732,7 +757,7 @@ const styles = {
     minHeight: 0,
     display: 'grid',
     gridTemplateColumns: '280px minmax(0, 1fr)',
-    gap: '18px',
+    gap: 14,
     overflow: 'hidden',
   },
 
@@ -740,7 +765,7 @@ const styles = {
     minHeight: 0,
     display: 'flex',
     flexDirection: 'column',
-    gap: '14px',
+    gap: 14,
     overflowY: 'auto',
   },
 
@@ -751,16 +776,18 @@ const styles = {
 
   panel: {
     padding: '18px',
-    borderRadius: '22px',
+    borderRadius: 14,
     background: '#ffffff',
-    border: '1px solid rgba(79, 100, 111, 0.12)',
+    border: '1px solid #dee7e7',
+    boxShadow: '0 12px 30px rgba(0, 38, 66, 0.04)',
   },
 
   summaryCard: {
     padding: '18px',
-    borderRadius: '22px',
-    background: '#dee7e7',
-    border: '1px solid rgba(79, 100, 111, 0.1)',
+    borderRadius: 14,
+    background: '#ffffff',
+    border: '1px solid #dee7e7',
+    boxShadow: '0 12px 30px rgba(0, 38, 66, 0.04)',
     display: 'flex',
     flexDirection: 'column',
     gap: '10px',
@@ -793,10 +820,10 @@ const styles = {
 
   input: {
     width: '100%',
-    height: '42px',
+    height: 40,
     boxSizing: 'border-box',
-    borderRadius: '13px',
-    border: '2px solid #dee7e7',
+    borderRadius: 10,
+    border: '1px solid #dbe6f0',
     background: '#ffffff',
     padding: '0 13px',
     color: '#002642',
@@ -806,8 +833,8 @@ const styles = {
 
   modeSegment: {
     display: 'flex',
-    borderRadius: '14px',
-    background: '#eceff4',
+    borderRadius: 10,
+    background: '#dee7e7',
     padding: '4px',
     gap: '4px',
   },
@@ -815,7 +842,7 @@ const styles = {
   modeButton: {
     flex: 1,
     border: 'none',
-    borderRadius: '11px',
+    borderRadius: 8,
     background: 'transparent',
     color: '#4f646f',
     padding: '8px 4px',
@@ -829,12 +856,14 @@ const styles = {
     background: '#ffffff',
     color: '#002642',
     boxShadow: 'none',
-  },  primaryButton: {
-    height: '42px',
+  },
+
+  primaryButton: {
+    height: 40,
     padding: '0 18px',
     background: '#002642',
     border: 'none',
-    borderRadius: '13px',
+    borderRadius: 10,
     color: '#f4faff',
     fontWeight: '850',
     cursor: 'pointer',
@@ -842,11 +871,11 @@ const styles = {
   },
 
   secondaryButton: {
-    height: '42px',
+    height: 40,
     padding: '0 18px',
     background: '#dee7e7',
-    border: 'none',
-    borderRadius: '13px',
+    border: '1px solid #dee7e7',
+    borderRadius: 10,
     color: '#002642',
     fontWeight: '850',
     cursor: 'pointer',
@@ -855,13 +884,13 @@ const styles = {
 
   metric: {
     padding: '11px 14px',
-    borderRadius: '16px',
-    background: '#ffffff',
+    borderRadius: 10,
+    background: '#f8faff',
     color: '#002642',
     display: 'flex',
     flexDirection: 'column',
     gap: '3px',
-    border: '1px solid rgba(79, 100, 111, 0.08)',
+    border: '1px solid #edf2f2',
   },
 
   metricLabel: {
@@ -879,9 +908,10 @@ const styles = {
   tableCard: {
     height: '100%',
     minHeight: 0,
-    borderRadius: '22px',
+    borderRadius: 14,
     background: '#ffffff',
-    border: '1px solid rgba(79, 100, 111, 0.12)',
+    border: '1px solid #dee7e7',
+    boxShadow: '0 12px 30px rgba(0, 38, 66, 0.04)',
     overflow: 'hidden',
     display: 'grid',
     gridTemplateRows: 'auto minmax(0, 1fr) auto',
@@ -892,8 +922,8 @@ const styles = {
     gridTemplateColumns: '1.4fr 1fr 0.7fr 0.7fr',
     gap: '10px',
     padding: '14px 16px',
-    background: '#002642',
-    color: '#f4faff',
+    background: '#f4faff',
+    color: '#002642',
     fontWeight: '900',
     fontSize: '14px',
   },
@@ -907,9 +937,9 @@ const styles = {
     display: 'grid',
     gridTemplateColumns: '1.4fr 1fr 0.7fr 0.7fr',
     gap: '10px',
-    padding: '14px 16px',
+    padding: '12px 16px',
     alignItems: 'center',
-    borderBottom: '1px solid #dee7e7',
+    borderBottom: '1px solid #edf2f2',
     color: '#002642',
   },
 
@@ -933,8 +963,8 @@ const styles = {
     display: 'grid',
     gridTemplateColumns: '1.4fr 1fr 0.7fr 0.7fr',
     gap: '10px',
-    padding: '14px 16px',
-    background: '#dee7e7',
+    padding: '12px 16px',
+    background: '#f4faff',
     color: '#002642',
     alignItems: 'center',
   },
@@ -942,9 +972,10 @@ const styles = {
   employeeReportCard: {
     height: '100%',
     minHeight: '360px',
-    borderRadius: '22px',
+    borderRadius: 14,
     background: '#ffffff',
-    border: '1px solid rgba(79, 100, 111, 0.12)',
+    border: '1px solid #dee7e7',
+    boxShadow: '0 12px 30px rgba(0, 38, 66, 0.04)',
     display: 'flex',
     flexDirection: 'column',
     justifyContent: 'center',
@@ -983,9 +1014,10 @@ const styles = {
     height: '100%',
     minHeight: '320px',
     padding: '28px',
-    borderRadius: '24px',
+    borderRadius: 14,
     background: '#ffffff',
-    border: '1px solid rgba(79, 100, 111, 0.12)',
+    border: '1px solid #dee7e7',
+    boxShadow: '0 12px 30px rgba(0, 38, 66, 0.04)',
     display: 'flex',
     flexDirection: 'column',
     alignItems: 'center',
@@ -1003,8 +1035,9 @@ const styles = {
 
   emptyBox: {
     padding: '26px',
-    borderRadius: '20px',
-    background: '#f4faff',
+    borderRadius: 14,
+    background: '#ffffff',
+    border: '1px solid #dee7e7',
     color: '#4f646f',
     fontWeight: '800',
     textAlign: 'center',

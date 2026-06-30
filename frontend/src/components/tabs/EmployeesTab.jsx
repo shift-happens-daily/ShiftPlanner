@@ -3,15 +3,12 @@
 import { useEffect, useMemo, useState } from 'react';
 import {
   deleteEmployee,
-  getEmployeeAvailability,
-  getEmployeeCalendarSummary,
   listEmployeeAbsences,
   listEmployees,
   replaceEmployeeBranches,
   updateEmployeePosition,
 } from '../../services/employeeService';
 import { extractApiErrorMessage } from '../../services/error';
-import { mapEmployeeCalendarSummary } from '../../services/mappers';
 import { createPosition, deletePosition, listPositions, updatePosition } from '../../services/positionService';
 import { listBranches, acceptEmployeeRequest, linkUserToCompany } from '../../services/companyService';
 import {
@@ -21,16 +18,6 @@ import {
   resolveEmployeeBranches,
 } from '../../utils/employeeBranches';
 import { useTabResponsive } from '../../utils/tabResponsive';
-
-const WEEKDAYS = [
-  { value: 0, ru: 'Пн', en: 'Mon' },
-  { value: 1, ru: 'Вт', en: 'Tue' },
-  { value: 2, ru: 'Ср', en: 'Wed' },
-  { value: 3, ru: 'Чт', en: 'Thu' },
-  { value: 4, ru: 'Пт', en: 'Fri' },
-  { value: 5, ru: 'Сб', en: 'Sat' },
-  { value: 6, ru: 'Вс', en: 'Sun' },
-];
 
 function normalizeArray(value) {
   return Array.isArray(value) ? value : [];
@@ -77,6 +64,47 @@ function getBranchLabel(employee, branches, fallback) {
   return employee?.branch?.name || employee?.branch_name || fallback;
 }
 
+function getBranchId(branch) {
+  const value = branch?.id ?? branch?.branch_id ?? branch?.branchId;
+  return value == null || value === '' ? null : String(value);
+}
+
+function uniqueBranchIds(values) {
+  return Array.from(
+    new Set(
+      normalizeArray(values)
+        .map((value) => (value == null || value === '' ? '' : String(value)))
+        .filter(Boolean)
+    )
+  );
+}
+
+function resolveBranchesFromIds(branchIds, branches) {
+  const byId = new Map(
+    normalizeArray(branches)
+      .map((branch) => [getBranchId(branch), branch])
+      .filter(([id]) => Boolean(id))
+  );
+
+  return uniqueBranchIds(branchIds).map((branchId) => byId.get(branchId) || { id: branchId, name: `#${branchId}` });
+}
+
+function mergeBranchLists(...lists) {
+  const seen = new Set();
+  const result = [];
+
+  lists.flat().forEach((branch) => {
+    if (!branch) return;
+    const branchId = getBranchId(branch);
+    const key = branchId || branch.name || branch.title;
+    if (!key || seen.has(String(key))) return;
+    seen.add(String(key));
+    result.push(branch);
+  });
+
+  return result;
+}
+
 function getDateValue(value) {
   const timestamp = Date.parse(value || '');
   return Number.isNaN(timestamp) ? 0 : timestamp;
@@ -95,10 +123,6 @@ function formatDateRange(startDate, endDate) {
   if (!start && !end) return '';
   if (!end || start === end) return start;
   return `${start} - ${end}`;
-}
-
-function formatTime(value) {
-  return String(value || '').slice(0, 5);
 }
 
 export default function EmployeesTab({ language, userRole, user }) {
@@ -134,13 +158,7 @@ export default function EmployeesTab({ language, userRole, user }) {
   const [selectedEmployeeId, setSelectedEmployeeId] = useState('');
   const [isViewingEmployee, setIsViewingEmployee] = useState(true);
 
-  const [availabilityForm, setAvailabilityForm] = useState({
-    weekly_availability: [],
-    desired_days_off: [],
-  });
-
   const [employeeAbsences, setEmployeeAbsences] = useState([]);
-  const [, setEmployeeSummary] = useState(null);
 
   const [selectedEmployeeDetails, setSelectedEmployeeDetails] = useState({
     position_id: '',
@@ -257,7 +275,6 @@ export default function EmployeesTab({ language, userRole, user }) {
       addBranch: 'Добавить филиал',
       removeBranch: 'Убрать',
       noBranchesAssigned: 'Филиалы не назначены',
-      branchesPreviewHint: 'Несколько филиалов сохраняются локально до обновления API.',
     },
     en: {
       employees: 'Employees',
@@ -347,7 +364,6 @@ export default function EmployeesTab({ language, userRole, user }) {
       addBranch: 'Add branch',
       removeBranch: 'Remove',
       noBranchesAssigned: 'No branches assigned',
-      branchesPreviewHint: 'Multiple branches are stored locally until the API supports them.',
     },
   };
 
@@ -385,8 +401,12 @@ export default function EmployeesTab({ language, userRole, user }) {
   const selectedEmployeePosition = getEmployeePosition(selectedEmployee);
   const selectedEmployeeBranches = useMemo(() => {
     if (!selectedEmployee) return [];
-    return resolveEmployeeBranches(selectedEmployee, branches);
-  }, [selectedEmployee, branches, branchAssignmentsRevision]);
+
+    return mergeBranchLists(
+      resolveEmployeeBranches(selectedEmployee, branches),
+      resolveBranchesFromIds(selectedEmployeeBranchIds, branches)
+    );
+  }, [selectedEmployee, branches, selectedEmployeeBranchIds]);
 
   const filteredEmployees = useMemo(() => {
     const query = searchQuery.trim().toLowerCase();
@@ -421,14 +441,13 @@ export default function EmployeesTab({ language, userRole, user }) {
       .slice(0, 3);
   }, [employeeAbsences]);
 
-  const compactAvailability = useMemo(() => (
-    normalizeArray(availabilityForm.weekly_availability).slice(0, 3)
-  ), [availabilityForm.weekly_availability]);
-
   const availableBranchesToAdd = useMemo(() => {
-    const assigned = new Set(selectedEmployeeBranchIds.map(String));
-    return branches.filter((branch) => !assigned.has(String(branch.id)));
-  }, [branches, selectedEmployeeBranchIds]);
+    const assigned = new Set(selectedEmployeeBranches.map(getBranchId).filter(Boolean));
+    return branches.filter((branch) => {
+      const branchId = getBranchId(branch);
+      return branchId && !assigned.has(branchId);
+    });
+  }, [branches, selectedEmployeeBranches]);
 
   useEffect(() => {
     if (filteredEmployees.some((employee) => String(employee.id) === String(selectedEmployeeId))) return;
@@ -444,12 +463,16 @@ export default function EmployeesTab({ language, userRole, user }) {
       return;
     }
 
+    const resolvedBranchIds = resolveEmployeeBranches(selectedEmployee, branches)
+      .map(getBranchId)
+      .filter(Boolean);
+
     setSelectedEmployeeDetails({
       position_id: selectedEmployee.position_id || selectedEmployee.position?.id || selectedEmployee.position?.position_id || '',
     });
-    setSelectedEmployeeBranchIds(getEmployeeBranchIds(selectedEmployee));
+    setSelectedEmployeeBranchIds(uniqueBranchIds([...getEmployeeBranchIds(selectedEmployee), ...resolvedBranchIds]));
     setBranchToAddId('');
-  }, [selectedEmployee?.id]);
+  }, [selectedEmployee?.id, branches]);
 
   useEffect(() => {
     if (userRole !== 'manager') return undefined;
@@ -510,9 +533,7 @@ export default function EmployeesTab({ language, userRole, user }) {
 
   useEffect(() => {
     if (!selectedEmployeeId || userRole !== 'manager') {
-      setAvailabilityForm({ weekly_availability: [], desired_days_off: [] });
       setEmployeeAbsences([]);
-      setEmployeeSummary(null);
       return undefined;
     }
 
@@ -523,29 +544,14 @@ export default function EmployeesTab({ language, userRole, user }) {
       setErrorMessage('');
 
       try {
-        const [availabilityData, absencesData, summaryData] = await Promise.all([
-          getEmployeeAvailability(selectedEmployeeId),
-          listEmployeeAbsences(selectedEmployeeId),
-          getEmployeeCalendarSummary(selectedEmployeeId),
-        ]);
+        const absencesData = await listEmployeeAbsences(selectedEmployeeId);
 
         if (!isMounted) return;
 
-        const weeklyAvailability = normalizeArray(availabilityData?.weekly_availability);
-        const desiredDaysOff = normalizeArray(availabilityData?.desired_days_off);
-
-        setAvailabilityForm({
-          weekly_availability: weeklyAvailability,
-          desired_days_off: desiredDaysOff,
-        });
-
         setEmployeeAbsences(normalizeArray(absencesData));
-        setEmployeeSummary(mapEmployeeCalendarSummary(summaryData));
       } catch (error) {
         if (isMounted) {
-          setAvailabilityForm({ weekly_availability: [], desired_days_off: [] });
           setEmployeeAbsences([]);
-          setEmployeeSummary(null);
           setErrorMessage(normalizeError(error, t.empty, language));
         }
       } finally {
@@ -620,19 +626,15 @@ export default function EmployeesTab({ language, userRole, user }) {
   };
 
   const persistEmployeeBranches = async (employee, branchIds, primaryBranchId = null) => {
-    const normalizedIds = Array.from(new Set(branchIds.map(String).filter(Boolean)));
-    if (normalizedIds.length === 0) {
-      throw new Error('branch_ids required');
-    }
-
+    const normalizedIds = uniqueBranchIds(branchIds);
     const currentPrimary = normalizeBranchId(primaryBranchId ?? getPrimaryBranchId(employee));
     const primaryId = currentPrimary && normalizedIds.includes(currentPrimary)
       ? currentPrimary
-      : normalizedIds[0];
+      : normalizedIds[0] || null;
 
     await replaceEmployeeBranches(employee.id, {
       branch_ids: normalizedIds.map(Number),
-      primary_branch_id: Number(primaryId),
+      primary_branch_id: primaryId ? Number(primaryId) : null,
     });
   };
 
@@ -641,17 +643,45 @@ export default function EmployeesTab({ language, userRole, user }) {
     return String(value);
   };
 
+  const patchEmployeeBranchesLocally = (employeeId, branchIds) => {
+    const normalizedIds = uniqueBranchIds(branchIds);
+    const branchObjects = resolveBranchesFromIds(normalizedIds, branches);
+    const primaryBranch = branchObjects[0] || null;
+
+    setEmployees((currentEmployees) =>
+      currentEmployees.map((employee) => {
+        if (String(employee.id) !== String(employeeId)) return employee;
+
+        return {
+          ...employee,
+          branch_ids: normalizedIds,
+          branches: branchObjects,
+          branch: primaryBranch,
+          branch_id: primaryBranch ? primaryBranch.id : null,
+          branch_name: primaryBranch ? primaryBranch.name || primaryBranch.title || `#${primaryBranch.id}` : '',
+        };
+      })
+    );
+  };
+
   const handleAddEmployeeBranch = async () => {
     if (!selectedEmployee || !branchToAddId) return;
 
     clearMessages();
     setIsSubmitting(true);
 
+    const currentIds = uniqueBranchIds([
+      ...getEmployeeBranchIds(selectedEmployee),
+      ...selectedEmployeeBranchIds,
+      ...selectedEmployeeBranches.map(getBranchId),
+    ]);
+    const nextIds = uniqueBranchIds([...currentIds, branchToAddId]);
+
     try {
-      const currentIds = getEmployeeBranchIds(selectedEmployee);
-      const nextIds = Array.from(new Set([...currentIds, String(branchToAddId)]));
       await persistEmployeeBranches(selectedEmployee, nextIds);
       await reloadEmployees(selectedEmployee.id);
+      setSelectedEmployeeBranchIds(nextIds);
+      patchEmployeeBranchesLocally(selectedEmployee.id, nextIds);
       bumpBranchAssignments();
       setBranchToAddId('');
       setSuccessMessage(t.assignmentsSaved);
@@ -666,17 +696,20 @@ export default function EmployeesTab({ language, userRole, user }) {
     if (!selectedEmployee) return;
 
     clearMessages();
-    const nextIds = getEmployeeBranchIds(selectedEmployee).filter((id) => String(id) !== String(branchId));
-    if (nextIds.length === 0) {
-      setErrorMessage(t.assignmentsError);
-      return;
-    }
+    const currentIds = uniqueBranchIds([
+      ...getEmployeeBranchIds(selectedEmployee),
+      ...selectedEmployeeBranchIds,
+      ...selectedEmployeeBranches.map(getBranchId),
+    ]);
+    const nextIds = currentIds.filter((id) => String(id) !== String(branchId));
 
     setIsSubmitting(true);
 
     try {
       await persistEmployeeBranches(selectedEmployee, nextIds);
       await reloadEmployees(selectedEmployee.id);
+      setSelectedEmployeeBranchIds(nextIds);
+      patchEmployeeBranchesLocally(selectedEmployee.id, nextIds);
       bumpBranchAssignments();
       setSuccessMessage(t.assignmentsSaved);
     } catch (error) {
@@ -1210,20 +1243,6 @@ export default function EmployeesTab({ language, userRole, user }) {
                 <Info label={t.fullName} value={selectedEmployee?.full_name || selectedEmployee?.name || '-'} />
                 <Info label={t.email} value={selectedEmployee?.email || '-'} />
                 <Info label={t.position} value={selectedEmployeePosition || t.empty} />
-                <div style={styles.cardBranchField}>
-                  <span style={styles.cardLabel}>{t.branches}</span>
-                  {selectedEmployeeBranches.length === 0 ? (
-                    <span style={styles.cardValue}>{t.noBranchesAssigned}</span>
-                  ) : (
-                    <div style={styles.branchPills}>
-                      {selectedEmployeeBranches.map((branch) => (
-                        <span key={branch.id} style={styles.branchPillReadonly}>
-                          {branch.name || branch.title || `#${branch.id}`}
-                        </span>
-                      ))}
-                    </div>
-                  )}
-                </div>
               </div>
 
               <div style={styles.innerSection}>
@@ -1321,44 +1340,29 @@ export default function EmployeesTab({ language, userRole, user }) {
 
         <section style={{ ...styles.availabilityPanel, ...(r.isMobile ? styles.availabilityPanelMobile : {}) }}>
           <div style={styles.availabilityTitleBlock}>
-            <h3 style={styles.panelTitle}>{t.availabilityAndAbsences}</h3>
-            <p style={styles.panelHint}>
-              {selectedEmployee ? getEmployeeName(selectedEmployee) || selectedEmployee.email : t.selectEmployee}
-            </p>
+            <h3 style={styles.panelTitle}>{t.absences}</h3>
           </div>
 
           <div style={{ ...styles.availabilityContent, ...(r.isMobile ? styles.availabilityContentMobile : {}) }}>
-            <div style={styles.compactList}>
-              {isDetailsLoading ? (
-                <span style={styles.emptyInline}>{t.loading}</span>
-              ) : compactAvailability.length === 0 ? (
-                <span style={styles.emptyInline}>{t.noIntervals}</span>
-              ) : (
-                compactAvailability.map((item, index) => (
-                  <span key={`${item.weekday}-${index}`} style={styles.compactPill}>
-                    {WEEKDAYS.find((day) => day.value === Number(item.weekday))?.[language] || item.weekday}
-                    {' '}
-                    {formatTime(item.start_time)}-{formatTime(item.end_time)}
-                  </span>
-                ))
-              )}
-            </div>
-
             <div style={{ ...styles.absenceStrip, ...(r.isMobile ? styles.absenceStripMobile : {}) }}>
               {isDetailsLoading ? (
                 <span style={styles.emptyInline}>{t.loading}</span>
               ) : upcomingAbsences.length === 0 ? (
                 <span style={styles.emptyInline}>{t.noAbsences}</span>
               ) : (
-                upcomingAbsences.map((absence) => (
-                  <div key={absence.id || `${absence.start_date}-${absence.end_date}`} style={styles.absenceItem}>
-                    <span style={styles.avatarSmall}>{getInitials(getEmployeeName(selectedEmployee))}</span>
-                    <div style={styles.absenceText}>
-                      <strong>{t[absence.absence_type] || absence.absence_type || t.absences}</strong>
-                      <span>{formatDateRange(absence.start_date, absence.end_date)}</span>
+                upcomingAbsences.map((absence) => {
+                  const absenceEmployeeName = getEmployeeName(selectedEmployee) || selectedEmployee?.email || t.empty;
+
+                  return (
+                    <div key={absence.id || `${absence.start_date}-${absence.end_date}`} style={styles.absenceItem}>
+                      <div style={styles.absenceText}>
+                        <strong>{absenceEmployeeName}</strong>
+                        <span>{t[absence.absence_type] || absence.absence_type || t.absences}</span>
+                        <span>{formatDateRange(absence.start_date, absence.end_date)}</span>
+                      </div>
                     </div>
-                  </div>
-                ))
+                  );
+                })
               )}
             </div>
           </div>
@@ -1374,34 +1378,6 @@ function Metric({ label, value }) {
       <span style={styles.metricLabel}>{label}</span>
       <strong style={styles.metricValue}>{value}</strong>
     </div>
-  );
-}
-
-function MetricIcon({ type }) {
-  if (type === 'positions') {
-    return (
-      <svg width="30" height="30" viewBox="0 0 24 24" fill="none">
-        <path d="M9 7V5.8C9 4.8 9.8 4 10.8 4h2.4c1 0 1.8.8 1.8 1.8V7" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
-        <rect x="4" y="7" width="16" height="12" rx="2.5" stroke="currentColor" strokeWidth="2" />
-        <path d="M4 12h16M10 12v2h4v-2" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
-      </svg>
-    );
-  }
-
-  if (type === 'branches') {
-    return (
-      <svg width="30" height="30" viewBox="0 0 24 24" fill="none">
-        <path d="M5 20V7h5v13M14 20V4h5v16M3 20h18" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
-        <path d="M7 10h1M7 13h1M7 16h1M16 8h1M16 11h1M16 14h1" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
-      </svg>
-    );
-  }
-
-  return (
-    <svg width="30" height="30" viewBox="0 0 24 24" fill="none">
-      <path d="M8.5 11.5a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7ZM3.5 19c0-3.3 2.1-5.5 5-5.5s5 2.2 5 5.5" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
-      <path d="M16.7 11.2a2.8 2.8 0 1 0 0-5.6M15.2 14.1c2.8.2 4.8 2 5.3 4.9" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
-    </svg>
   );
 }
 
@@ -2393,7 +2369,7 @@ const styles = {
     border: '1px solid #dee7e7',
     boxShadow: '0 12px 30px rgba(0, 38, 66, 0.04)',
     display: 'grid',
-    gridTemplateColumns: '260px minmax(0, 1fr)',
+    gridTemplateColumns: '220px minmax(0, 1fr)',
     gap: '18px',
     alignItems: 'center',
   },
@@ -2410,7 +2386,7 @@ const styles = {
   availabilityContent: {
     minWidth: 0,
     display: 'grid',
-    gridTemplateColumns: 'minmax(220px, 0.75fr) minmax(0, 1.25fr)',
+    gridTemplateColumns: '1fr',
     gap: '16px',
     alignItems: 'center',
   },

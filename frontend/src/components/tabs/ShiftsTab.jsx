@@ -1,4 +1,5 @@
 // frontend/src/components/tabs/ShiftsTab.jsx
+/* eslint-disable react-hooks/preserve-manual-memoization */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   createMyAbsence,
@@ -71,6 +72,8 @@ function normalizeAvailabilityStatus(status) {
 }
 
 function toDateKey(date) {
+  if (!(date instanceof Date) || Number.isNaN(date.getTime())) return '';
+
   const year = date.getFullYear();
   const month = String(date.getMonth() + 1).padStart(2, '0');
   const day = String(date.getDate()).padStart(2, '0');
@@ -84,7 +87,11 @@ function startOfToday() {
 }
 
 function isPastDateKey(dateKey) {
+  if (!dateKey) return false;
+
   const date = new Date(`${dateKey}T00:00:00`);
+  if (Number.isNaN(date.getTime())) return false;
+
   date.setHours(0, 0, 0, 0);
   return date.getTime() < startOfToday().getTime();
 }
@@ -149,12 +156,18 @@ function buildIntervalsForWeekday(weekday, availabilityStatus, slotStarts) {
 
 // Backend only stores a recurring weekly availability template, so when saving we
 // aggregate the visible week selections back into weekly intervals (Monday = 0).
-function convertDatesToWeeklyIntervals(availabilityByDate, dates) {
+function convertDatesToWeeklyIntervals(availabilityByDate, dates = []) {
   const slotsByWeekdayAndStatus = {};
-  const dateEntries = dates.map((date) => {
-    const dateKey = toDateKey(date);
-    return [dateKey, availabilityByDate[dateKey] || {}];
-  });
+  const sourceDates = Array.isArray(dates) && dates.length > 0
+    ? dates
+    : Object.keys(availabilityByDate || {}).map((dateKey) => new Date(`${dateKey}T00:00:00`));
+
+  const dateEntries = sourceDates
+    .map((date) => {
+      const dateKey = toDateKey(date);
+      return dateKey ? [dateKey, availabilityByDate?.[dateKey] || {}] : null;
+    })
+    .filter(Boolean);
 
   dateEntries.forEach(([dateKey, slotMap]) => {
     const jsDay = new Date(`${dateKey}T00:00:00`).getDay();
@@ -341,7 +354,7 @@ function normalizeError(error, fallback, language) {
 }
 
 export default function ShiftsTab({ language, userRole, user }) {
-  const r = useTabResponsive(1280);
+  const r = useTabResponsive(1480);
   const isManager = userRole === 'manager';
   const employeeId = user?.employeeId || user?.employee_id;
 
@@ -353,11 +366,6 @@ export default function ShiftsTab({ language, userRole, user }) {
 
   const [filterForm, setFilterForm] = useState(currentMonthFilters);
   const [appliedFilters, setAppliedFilters] = useState(currentMonthFilters);
-
-  const [availabilityForm, setAvailabilityForm] = useState({
-    weekly_availability: [],
-    desired_days_off: [],
-  });
 
   const availabilityStorageKey = employeeId
     ? `shiftplanner_availability_by_date_${employeeId}`
@@ -433,7 +441,6 @@ export default function ShiftsTab({ language, userRole, user }) {
 
   const texts = {
     ru: {
-      titleManager: 'Настройки смен',
       titleEmployee: 'Доступность',
       stepOne: '1. Выберите период',
       stepTwo: '2. Создайте требование',
@@ -505,7 +512,6 @@ export default function ShiftsTab({ language, userRole, user }) {
       locked: 'Прошедшие даты изменить нельзя',
     },
     en: {
-      titleManager: 'Shift setup',
       titleEmployee: 'Availability',
       stepOne: '1. Choose period',
       stepTwo: '2. Create requirement',
@@ -579,9 +585,10 @@ export default function ShiftsTab({ language, userRole, user }) {
   };
 
   const t = texts[language] || texts.ru;
-  const emptyFallback = t.empty;
 
   const isToday = (date) => {
+    if (!(date instanceof Date) || Number.isNaN(date.getTime())) return false;
+
     const today = new Date();
     return date.getDate() === today.getDate() &&
       date.getMonth() === today.getMonth() &&
@@ -589,8 +596,10 @@ export default function ShiftsTab({ language, userRole, user }) {
   };
 
   const getAvailabilityCellStyle = (dateKey, time) => {
+    if (!dateKey || !time) return styles.gridCell;
+
     const past = isPastDateKey(dateKey);
-    const status = normalizeAvailabilityStatus(availabilityByDate[dateKey]?.[time]);
+    const status = normalizeAvailabilityStatus(availabilityByDate?.[dateKey]?.[time]);
 
     if (past) return styles.gridCellLocked;
     if (status === 'available') return styles.gridCellAvailable;
@@ -599,8 +608,10 @@ export default function ShiftsTab({ language, userRole, user }) {
   };
 
   const getAvailabilityCellTitle = (dateKey, time) => {
+    if (!dateKey || !time) return t.unavailable;
+
     const past = isPastDateKey(dateKey);
-    const status = normalizeAvailabilityStatus(availabilityByDate[dateKey]?.[time]);
+    const status = normalizeAvailabilityStatus(availabilityByDate?.[dateKey]?.[time]);
 
     if (past) return t.locked;
     if (status === 'available') return t.available;
@@ -618,7 +629,7 @@ export default function ShiftsTab({ language, userRole, user }) {
   const selectedMobileDate = weekDates[mobileAvailabilityDay] || weekDates[0];
   const selectedMobileDateKey = selectedMobileDate ? toDateKey(selectedMobileDate) : '';
   const selectedMobileDatePast = selectedMobileDateKey ? isPastDateKey(selectedMobileDateKey) : false;
-  const selectedMobileDateLabel = selectedMobileDate
+  const selectedMobileDateLabel = selectedMobileDate instanceof Date && !Number.isNaN(selectedMobileDate.getTime())
     ? selectedMobileDate.toLocaleDateString(language === 'ru' ? 'ru-RU' : 'en-US', {
       weekday: 'long',
       day: 'numeric',
@@ -690,7 +701,6 @@ export default function ShiftsTab({ language, userRole, user }) {
 
   const loadEmployeeData = useCallback(async () => {
     if (!employeeId) {
-      setAvailabilityForm({ weekly_availability: [], desired_days_off: [] });
       setAvailabilityByDate({});
       setAbsences([]);
       setSummary(null);
@@ -704,11 +714,6 @@ export default function ShiftsTab({ language, userRole, user }) {
     ]);
 
     const normalizedAvailability = normalizeArray(availabilityData?.weekly_availability);
-
-    setAvailabilityForm({
-      weekly_availability: normalizedAvailability,
-      desired_days_off: normalizeArray(availabilityData?.desired_days_off),
-    });
 
     const storedByDate = (() => {
       try {
@@ -738,12 +743,12 @@ export default function ShiftsTab({ language, userRole, user }) {
         await loadEmployeeData();
       }
     } catch (error) {
-      setErrorMessage(normalizeError(error, emptyFallback, language));
+      setErrorMessage(normalizeError(error, t.empty, language));
     } finally {
       setIsLoading(false);
       setIsRefreshingList(false);
     }
-  }, [appliedFilters, emptyFallback, isManager, language, loadEmployeeData, loadManagerData]);
+  }, [appliedFilters, isManager, language, loadEmployeeData, loadManagerData, t.empty]);
 
   useEffect(() => {
     const timer = setTimeout(() => void loadData(), 0);
@@ -770,6 +775,7 @@ export default function ShiftsTab({ language, userRole, user }) {
   };
 
   const applyAvailabilityStatus = useCallback((dateKey, slot, status = brushMode) => {
+    if (!dateKey || !slot) return;
     if (isPastDateKey(dateKey)) return;
 
     const nextStatus = normalizeAvailabilityStatus(status);
@@ -821,10 +827,13 @@ export default function ShiftsTab({ language, userRole, user }) {
   }, [applyAvailabilityDragCell]);
 
   const endAvailabilityDrag = useCallback(() => {
-    dragSelectionRef.current.active = false;
-    dragSelectionRef.current.appliedKeys.clear();
-    dragSelectionRef.current.lastCell = null;
-    dragSelectionRef.current.touchIdentifier = null;
+    const dragState = dragSelectionRef.current;
+    if (!dragState) return;
+
+    dragState.active = false;
+    dragState.appliedKeys?.clear?.();
+    dragState.lastCell = null;
+    dragState.touchIdentifier = null;
   }, []);
 
   const handleAvailabilityMouseDown = useCallback((event, dayIndex, slotIndex) => {
@@ -839,7 +848,7 @@ export default function ShiftsTab({ language, userRole, user }) {
   }, [applyAvailabilityDragCell]);
 
   const handleAvailabilityTouchStart = useCallback((event, dayIndex, slotIndex) => {
-    const touch = event.changedTouches[0];
+    const touch = event.changedTouches?.[0] || event.touches?.[0];
     if (!touch) return;
     event.preventDefault();
     startAvailabilityDrag(dayIndex, slotIndex, touch.identifier);
@@ -849,8 +858,10 @@ export default function ShiftsTab({ language, userRole, user }) {
     const dragState = dragSelectionRef.current;
     if (!dragState.active || dragState.touchIdentifier === null) return;
 
-    const touch = Array.from(event.changedTouches).find((item) => item.identifier === dragState.touchIdentifier)
-      || Array.from(event.touches).find((item) => item.identifier === dragState.touchIdentifier);
+    const changedTouches = Array.from(event.changedTouches || []);
+    const activeTouches = Array.from(event.touches || []);
+    const touch = changedTouches.find((item) => item.identifier === dragState.touchIdentifier)
+      || activeTouches.find((item) => item.identifier === dragState.touchIdentifier);
     if (!touch) return;
 
     event.preventDefault();
@@ -1020,7 +1031,7 @@ export default function ShiftsTab({ language, userRole, user }) {
 
       await updateEmployeeAvailability(employeeId, {
         desired_days_off: [],
-        weekly_availability: convertDatesToWeeklyIntervals(availabilityByDate),
+        weekly_availability: convertDatesToWeeklyIntervals(availabilityByDate, weekDates),
       });
       await loadEmployeeData();
       setSuccessMessage(t.availabilitySaved);
@@ -1100,8 +1111,8 @@ export default function ShiftsTab({ language, userRole, user }) {
 
   if (isLoading) {
     return (
-      <section style={{ ...styles.page, ...r.page }}>
-        <div style={{ ...styles.shell, ...r.shell }}>
+      <section style={{ ...styles.page, ...r.page, ...(r.isMobile ? {} : styles.desktopPage) }}>
+        <div style={{ ...styles.shell, ...r.shell, ...(r.isMobile ? {} : styles.desktopShell) }}>
           <div style={styles.emptyBox}>{t.loading}</div>
         </div>
       </section>
@@ -1109,8 +1120,8 @@ export default function ShiftsTab({ language, userRole, user }) {
   }
 
   return (
-    <section style={{ ...styles.page, ...r.page }}>
-      <div style={{ ...styles.shell, ...r.shell }}>
+    <section style={{ ...styles.page, ...r.page, ...(r.isMobile ? {} : styles.desktopPage) }}>
+      <div style={{ ...styles.shell, ...r.shell, ...(r.isMobile ? {} : styles.desktopShell) }}>
         {renderToast()}
 
         <header style={{ ...styles.header, ...r.header }}>
@@ -1118,7 +1129,9 @@ export default function ShiftsTab({ language, userRole, user }) {
             <h2 style={{ ...styles.title, ...r.title }}>{isManager ? t.titleManager : t.titleEmployee}</h2>
             <p style={styles.subtitle}>{isManager ? t.subtitleManager : t.subtitleEmployee}</p>
           </div>
-        </header>        {isManager ? (
+        </header>
+
+        {isManager ? (
           <div style={{ ...styles.managerLayout, ...r.splitLayout('290px minmax(0, 1fr)') }}>
             <aside style={styles.sidebar}>
               <div style={styles.helpBox}>
@@ -1607,12 +1620,14 @@ export default function ShiftsTab({ language, userRole, user }) {
                       const cellDate = weekDates[index];
                       const itIsToday = isToday(cellDate);
                       const isActive = mobileAvailabilityDay === index;
+                      const cellDateKey = toDateKey(cellDate);
 
                       return (
                         <button
                           key={day.value}
                           type="button"
                           onClick={() => setMobileAvailabilityDay(index)}
+                          disabled={!cellDateKey}
                           style={{
                             ...styles.mobileDayButton,
                             background: isActive ? '#002642' : (itIsToday ? '#dee7e7' : '#f4faff'),
@@ -1621,7 +1636,7 @@ export default function ShiftsTab({ language, userRole, user }) {
                           }}
                         >
                           <span style={styles.mobileDayButtonWeekday}>{day[language] || day.ru}</span>
-                          <span style={styles.mobileDayButtonDate}>{cellDate.getDate()}</span>
+                          <span style={styles.mobileDayButtonDate}>{cellDate?.getDate?.() || ''}</span>
                         </button>
                       );
                     })}
@@ -1782,7 +1797,8 @@ export default function ShiftsTab({ language, userRole, user }) {
                 <div style={styles.availabilityGridHeader}>
                   <div style={styles.gridCorner} />
                   {WEEKDAYS.map((day, index) => {
-                    const itIsToday = isToday(weekDates[index]);
+                    const headerDate = weekDates[index];
+                    const itIsToday = isToday(headerDate);
                     return (
                       <div
                         key={day.value}
@@ -1795,10 +1811,10 @@ export default function ShiftsTab({ language, userRole, user }) {
                           color: itIsToday ? '#ffffff' : '#002642',
                           border: itIsToday ? 'none' : styles.gridHeaderCell.border,
                         }}
-                      >
+                        >
                         <span style={{ fontSize: '10px', opacity: itIsToday ? 0.9 : 0.8 }}>{day[language] || day.ru}</span>
                         <span style={{ fontSize: '11px', fontWeight: '900', whiteSpace: 'nowrap' }}>
-                          {weekDates[index].toLocaleDateString(language === 'ru' ? 'ru-RU' : 'en-US', { day: 'numeric', month: 'short' })}
+                          {headerDate?.toLocaleDateString?.(language === 'ru' ? 'ru-RU' : 'en-US', { day: 'numeric', month: 'short' }) || ''}
                         </span>
                       </div>
                     );
@@ -1811,8 +1827,8 @@ export default function ShiftsTab({ language, userRole, user }) {
                       {WEEKDAYS.map((day, dayIndex) => {
                         const cellDate = weekDates[dayIndex];
                         const dateKey = toDateKey(cellDate);
-                        const past = isPastDateKey(dateKey);
-                        const status = normalizeAvailabilityStatus(availabilityByDate[dateKey]?.[time]);
+                        const past = !dateKey || isPastDateKey(dateKey);
+                        const status = normalizeAvailabilityStatus(availabilityByDate?.[dateKey]?.[time]);
 
                         return (
                           <button
@@ -2073,28 +2089,41 @@ const styles = {
     width: '100%',
     height: '100%',
     boxSizing: 'border-box',
-    padding: '22px',
+    padding: '16px 24px 18px',
     overflow: 'hidden',
+    background: '#f4faff',
+  },
+
+  desktopPage: {
+    height: 'calc(100dvh - 96px)',
   },
 
   shell: {
-    width: 'min(100%, 1280px)',
+    width: '100%',
     height: '100%',
     margin: '0 auto',
     boxSizing: 'border-box',
-    padding: '26px',
-    borderRadius: '30px',
-    background: '#f4faff',
-    border: '1px solid rgba(222, 231, 231, 0.95)',
+    padding: 0,
+    borderRadius: 0,
+    background: 'transparent',
+    border: 'none',
     boxShadow: 'none',
     display: 'flex',
     flexDirection: 'column',
+    gap: 14,
     overflow: 'hidden',
     position: 'relative',
   },
+
+  desktopShell: {
+    width: '100%',
+    padding: 0,
+    borderRadius: 0,
+  },
+
   header: {
     flexShrink: 0,
-    marginBottom: '18px',
+    marginBottom: 0,
   },
 
   title: {
@@ -2102,7 +2131,7 @@ const styles = {
     color: '#002642',
     fontSize: '28px',
     fontWeight: '900',
-    letterSpacing: '-0.03em',
+    letterSpacing: 0,
   },
 
   subtitle: {
@@ -2174,7 +2203,7 @@ const styles = {
     minHeight: 0,
     display: 'grid',
     gridTemplateColumns: '290px minmax(0, 1fr)',
-    gap: '18px',
+    gap: 14,
     overflow: 'hidden',
   },
 
@@ -2182,7 +2211,7 @@ const styles = {
     minHeight: 0,
     display: 'flex',
     flexDirection: 'column',
-    gap: '14px',
+    gap: 14,
     overflowY: 'auto',
   },
 
@@ -2190,14 +2219,16 @@ const styles = {
     minHeight: 0,
     display: 'grid',
     gridTemplateRows: 'auto auto minmax(0, 1fr)',
-    gap: '14px',
+    gap: 14,
     overflow: 'hidden',
   },
 
   helpBox: {
-    padding: '16px',
-    borderRadius: '22px',
-    background: '#dee7e7',
+    padding: '14px 16px',
+    borderRadius: 14,
+    background: '#ffffff',
+    border: '1px solid #dee7e7',
+    boxShadow: '0 12px 30px rgba(0, 38, 66, 0.04)',
     color: '#002642',
     display: 'flex',
     flexDirection: 'column',
@@ -2208,9 +2239,10 @@ const styles = {
 
   panel: {
     padding: '18px',
-    borderRadius: '22px',
+    borderRadius: 14,
     background: '#ffffff',
-    border: '1px solid rgba(79, 100, 111, 0.12)',
+    border: '1px solid #dee7e7',
+    boxShadow: '0 12px 30px rgba(0, 38, 66, 0.04)',
   },
 
   panelHeader: {
@@ -2245,7 +2277,7 @@ const styles = {
   modeSwitch: {
     width: 'fit-content',
     padding: '4px',
-    borderRadius: '18px',
+    borderRadius: 10,
     background: '#dee7e7',
     display: 'flex',
     gap: '4px',
@@ -2255,7 +2287,7 @@ const styles = {
     height: '40px',
     padding: '0 18px',
     border: 'none',
-    borderRadius: '14px',
+    borderRadius: 8,
     background: 'transparent',
     color: '#4f646f',
     fontWeight: '850',
@@ -2266,12 +2298,12 @@ const styles = {
     height: '40px',
     padding: '0 18px',
     border: 'none',
-    borderRadius: '14px',
+    borderRadius: 8,
     background: '#ffffff',
     color: '#002642',
     fontWeight: '900',
     cursor: 'pointer',
-    boxShadow: '0 8px 18px rgba(0, 38, 66, 0.1)',
+    boxShadow: 'none',
   },
 
   formGrid: {
@@ -2295,10 +2327,10 @@ const styles = {
 
   input: {
     width: '100%',
-    height: '42px',
+    height: 40,
     boxSizing: 'border-box',
-    borderRadius: '13px',
-    border: '2px solid #dee7e7',
+    borderRadius: 10,
+    border: '1px solid #dbe6f0',
     background: '#ffffff',
     padding: '0 13px',
     color: '#002642',
@@ -2307,11 +2339,11 @@ const styles = {
   },
 
   primaryButton: {
-    height: '42px',
+    height: 40,
     padding: '0 18px',
     background: '#002642',
     border: 'none',
-    borderRadius: '13px',
+    borderRadius: 10,
     color: '#f4faff',
     fontWeight: '800',
     cursor: 'pointer',
@@ -2320,11 +2352,11 @@ const styles = {
   },
 
   primaryButtonDisabled: {
-    height: '42px',
+    height: 40,
     padding: '0 18px',
     background: '#4f646f',
     border: 'none',
-    borderRadius: '13px',
+    borderRadius: 10,
     color: '#f4faff',
     fontWeight: '800',
     cursor: 'default',
@@ -2337,8 +2369,8 @@ const styles = {
     height: '40px',
     padding: '0 16px',
     background: '#dee7e7',
-    border: 'none',
-    borderRadius: '13px',
+    border: '1px solid #dee7e7',
+    borderRadius: 10,
     color: '#002642',
     fontWeight: '800',
     cursor: 'pointer',
@@ -2348,15 +2380,15 @@ const styles = {
   smallSecondaryButton: {
     height: '40px',
     padding: '0 16px',
-    background: 'rgba(215, 173, 207, 0.42)',
-    border: '1px solid rgba(215, 173, 207, 0.75)',
-    borderRadius: '13px',
+    background: '#ffffff',
+    border: '1px solid #dee7e7',
+    borderRadius: 10,
     color: '#002642',
     fontSize: '13px',
     fontWeight: '850',
     cursor: 'pointer',
     whiteSpace: 'nowrap',
-    boxShadow: '0 6px 14px rgba(0, 38, 66, 0.06)',
+    boxShadow: 'none',
   },
 
   weekNavButton: {
@@ -2381,7 +2413,7 @@ const styles = {
     padding: '0 13px',
     background: 'rgba(215, 173, 207, 0.42)',
     border: 'none',
-    borderRadius: '12px',
+    borderRadius: 10,
     color: '#002642',
     fontWeight: '800',
     cursor: 'pointer',
@@ -2392,9 +2424,9 @@ const styles = {
     height: '34px',
     padding: '0 12px',
     border: 'none',
-    borderRadius: '11px',
-    background: 'rgba(215, 173, 207, 0.48)',
-    color: '#002642',
+    borderRadius: 10,
+    background: '#8d1d1d',
+    color: '#ffffff',
     fontSize: '13px',
     fontWeight: '850',
     cursor: 'pointer',
@@ -2412,7 +2444,7 @@ const styles = {
     height: '34px',
     padding: '0 13px',
     border: '1px solid #dee7e7',
-    borderRadius: '999px',
+    borderRadius: 10,
     background: '#ffffff',
     color: '#4f646f',
     fontWeight: '800',
@@ -2423,9 +2455,8 @@ const styles = {
     height: '34px',
     padding: '0 13px',
     border: '1px solid rgba(215, 173, 207, 0.8)',
-    borderRadius: '999px',
-    background: '#d7adcf',
-    color: '#002642',
+    background: '#002642',
+    color: '#ffffff',
     fontWeight: '900',
     cursor: 'pointer',
   },
@@ -2433,9 +2464,10 @@ const styles = {
   listPanel: {
     minHeight: 0,
     padding: '18px',
-    borderRadius: '22px',
+    borderRadius: 14,
     background: '#ffffff',
-    border: '1px solid rgba(79, 100, 111, 0.12)',
+    border: '1px solid #dee7e7',
+    boxShadow: '0 12px 30px rgba(0, 38, 66, 0.04)',
     overflow: 'hidden',
   },
 
@@ -2445,7 +2477,7 @@ const styles = {
     alignItems: 'end',
     marginBottom: 16,
     paddingBottom: 16,
-    borderBottom: '1px solid rgba(79, 100, 111, 0.12)',
+    borderBottom: '1px solid #edf2f2',
   },
 
   filterActions: {
@@ -2457,7 +2489,7 @@ const styles = {
   },
 
   requirementsList: {
-    height: 'calc(100% - 40px)',
+    height: 'calc(100% - 104px)',
     overflowY: 'auto',
     display: 'flex',
     flexDirection: 'column',
@@ -2465,10 +2497,10 @@ const styles = {
   },
 
   requirementItem: {
-    padding: '14px 16px',
-    borderRadius: '18px',
-    background: '#f4faff',
-    border: '1px solid rgba(79, 100, 111, 0.1)',
+    padding: '12px 14px',
+    borderRadius: 12,
+    background: '#ffffff',
+    border: '1px solid #edf2f2',
     display: 'grid',
     gridTemplateColumns: '1.2fr 1fr auto auto',
     alignItems: 'center',
@@ -2491,8 +2523,9 @@ const styles = {
   staffBadge: {
     width: 'fit-content',
     padding: '7px 11px',
-    borderRadius: '999px',
-    background: 'rgba(215, 173, 207, 0.45)',
+    borderRadius: 10,
+    background: '#f4faff',
+    border: '1px solid #dee7e7',
     color: '#002642',
     fontSize: '13px',
     fontWeight: '850',
@@ -2503,8 +2536,8 @@ const styles = {
     boxSizing: 'border-box',
     padding: '0 14px',
     margin: '12px 0',
-    borderRadius: '14px',
-    border: '2px dashed #dee7e7',
+    borderRadius: 10,
+    border: '1px dashed #c7d6df',
     background: '#f4faff',
     color: '#4f646f',
     display: 'flex',
@@ -2522,7 +2555,7 @@ const styles = {
   importBox: {
     marginTop: '12px',
     padding: '14px',
-    borderRadius: '16px',
+    borderRadius: 12,
     background: '#f4faff',
     border: '1px solid #dee7e7',
     color: '#002642',
