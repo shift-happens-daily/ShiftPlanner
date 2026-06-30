@@ -61,6 +61,22 @@ jobs:
         working-directory: backend
         run: python -m pip install --upgrade pip && pip install -r requirements.txt
 
+      - name: Install PostgreSQL client
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes postgresql-client
+
+      - name: Initialize test database
+        working-directory: backend
+        env:
+          PGPASSWORD: shiftplanner_password
+        run: |
+          until pg_isready -h localhost -p 5432 -U shiftplanner_user -d shiftplanner; do
+            sleep 2
+          done
+          psql -v ON_ERROR_STOP=1 -h localhost -U shiftplanner_user -d shiftplanner -f db/schema.sql
+          psql -v ON_ERROR_STOP=1 -h localhost -U shiftplanner_user -d shiftplanner -f db/seed.sql
+
       - name: Run backend tests
         working-directory: backend
         run: python -m pytest
