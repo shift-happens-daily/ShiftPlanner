@@ -147,7 +147,7 @@ jobs:
       - backend-tests
       - frontend-build
       - compose-check
-    if: github.event_name == 'workflow_dispatch' || github.ref == 'refs/heads/main'
+    if: github.event_name == 'workflow_dispatch' || github.ref == 'refs/heads/main' || github.ref == 'refs/heads/dev'
 
     env:
       VPS_HOST: ${{ secrets.DEPLOY_IP }}
