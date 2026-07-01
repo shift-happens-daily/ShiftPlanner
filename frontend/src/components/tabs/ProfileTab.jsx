@@ -400,11 +400,15 @@ export default function ProfileTab({ language, user }) {
 const styles = {
   page: {
     width: '100%',
+    height: '100%',
     boxSizing: 'border-box',
     padding: '24px',
+    paddingBottom: '32px',
     display: 'flex',
     justifyContent: 'center',
     alignItems: 'flex-start',
+    overflowY: 'auto',
+    overflowX: 'hidden',
   },
 
   card: {
