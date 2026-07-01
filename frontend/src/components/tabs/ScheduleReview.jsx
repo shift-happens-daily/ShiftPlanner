@@ -10,6 +10,7 @@ import {
   publishScheduleForPeriod,
   assignRequirement,
 } from '../../services/scheduleService';
+import { filterRealEmployees, listEmployees } from '../../services/employeeService';
 import { useAuth } from '../../context/useAuth';
 import { extractApiErrorMessage } from '../../services/error';
 import { useTabResponsive } from '../../utils/tabResponsive';
@@ -832,6 +833,8 @@ export default function ScheduleReview({ language }) {
   const [scheduleVersions, setScheduleVersions] = useState(EMPTY_SCHEDULE_VERSIONS);
   const [activeVersion, setActiveVersion] = useState('draft');
   const [assignEmployeeIds, setAssignEmployeeIds] = useState({});
+  const [manualEmployees, setManualEmployees] = useState([]);
+  const [manualEmployeesLoaded, setManualEmployeesLoaded] = useState(false);
   const [employeesLoaded, setEmployeesLoaded] = useState(false);
   const [selectedDateIndex, setSelectedDateIndex] = useState(0);
   const [isLoading, setIsLoading] = useState(true);
@@ -875,6 +878,7 @@ export default function ScheduleReview({ language }) {
       unfilledTitle: 'Незаполненные смены',
       assign: 'Назначить',
       chooseEmployee: 'Выберите сотрудника',
+      noEmployeesAvailable: 'Нет доступных сотрудников',
       assigned: 'Сотрудник назначен на смену.',
       assignError: 'Не удалось назначить сотрудника.',
     },
@@ -913,6 +917,7 @@ export default function ScheduleReview({ language }) {
       unfilledTitle: 'Unfilled shifts',
       assign: 'Assign',
       chooseEmployee: 'Choose employee',
+      noEmployeesAvailable: 'No available employees',
       assigned: 'Employee assigned to shift.',
       assignError: 'Failed to assign employee.',
     },
@@ -1195,6 +1200,39 @@ export default function ScheduleReview({ language }) {
 
   const showDeletePublished = activeVersion === 'published' && Boolean(scheduleVersions.published?.id);
   const canEditDraft = activeVersion === 'draft' && Boolean(schedule);
+
+  useEffect(() => {
+    if (!schedule?.id || !canEditDraft || unfilledRequirements.length === 0) {
+      setManualEmployees([]);
+      setManualEmployeesLoaded(false);
+      return undefined;
+    }
+
+    let cancelled = false;
+
+    async function loadManualEmployees() {
+      setManualEmployeesLoaded(false);
+      try {
+        const employees = filterRealEmployees(normalizeArray(await listEmployees()));
+        if (!cancelled) {
+          setManualEmployees(employees);
+          setManualEmployeesLoaded(true);
+        }
+      } catch (e) {
+        if (!cancelled) {
+          setManualEmployees([]);
+          setManualEmployeesLoaded(true);
+          setError(extractApiErrorMessage(e, t.assignError, language));
+        }
+      }
+    }
+
+    void loadManualEmployees();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [canEditDraft, language, schedule?.id, t.assignError, unfilledRequirements.length]);
 
   const handleAssignRequirement = async (requirementId) => {
     const employeeId = assignEmployeeIds[requirementId];
@@ -1598,7 +1636,19 @@ export default function ScheduleReview({ language }) {
                       }}
                       disabled={isSubmitting}
                     >
-                      <option value="">{t.chooseEmployee}</option>
+                      <option value="">
+                        {!manualEmployeesLoaded
+                          ? t.loading
+                          : manualEmployees.length
+                            ? t.chooseEmployee
+                            : t.noEmployeesAvailable}
+                      </option>
+                      {manualEmployees.map((employee) => (
+                        <option key={employee.id} value={employee.id}>
+                          {employee.full_name}
+                          {employee.position?.name ? ` (${employee.position.name})` : ''}
+                        </option>
+                      ))}
                     </select>
 
                     <button

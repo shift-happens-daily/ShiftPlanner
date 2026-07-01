@@ -17,6 +17,7 @@ import {
   updateExchangeRequest,
   updateShift,
 } from '../../services/scheduleService';
+import { filterRealEmployees, listEmployees } from '../../services/employeeService';
 import { useTabResponsive } from '../../utils/tabResponsive';
 import { getPositionLabel } from '../../utils/employeeDisplay';
 import { usePositionTitleRevision } from '../../hooks/usePositionTitleRevision';
@@ -261,7 +262,8 @@ export default function ScheduleTab({ language, userRole }) {
   const [reassignEmployeeIds, setReassignEmployeeIds] = useState({});
   const [availableByShift, setAvailableByShift] = useState({});
   const [assignEmployeeIds, setAssignEmployeeIds] = useState({});
-  const [availableByRequirement, setAvailableByRequirement] = useState({});
+  const [manualEmployees, setManualEmployees] = useState([]);
+  const [manualEmployeesLoaded, setManualEmployeesLoaded] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
@@ -305,6 +307,7 @@ export default function ScheduleTab({ language, userRole }) {
       schedulePreview: 'Предпросмотр расписания',
       chooseEmployee: 'Выберите сотрудника',
       noEmployeesForPosition: 'Нет сотрудников этой позиции',
+      noEmployeesAvailable: 'Нет доступных сотрудников',
       assign: 'Назначить',
       loadEmployees: 'Загрузить кандидатов',
       assigned: 'Сотрудник назначен на смену.',
@@ -366,6 +369,7 @@ export default function ScheduleTab({ language, userRole }) {
       schedulePreview: 'Schedule preview',
       chooseEmployee: 'Choose employee',
       noEmployeesForPosition: 'No employees for this position',
+      noEmployeesAvailable: 'No available employees',
       assign: 'Assign',
       loadEmployees: 'Load candidates',
       assigned: 'Employee assigned to shift.',
@@ -513,6 +517,39 @@ export default function ScheduleTab({ language, userRole }) {
     return () => clearTimeout(timer);
   }, [loadData]);
 
+  useEffect(() => {
+    if (!isManager || !schedule?.id || unfilledRequirements.length === 0) {
+      setManualEmployees([]);
+      setManualEmployeesLoaded(false);
+      return undefined;
+    }
+
+    let cancelled = false;
+
+    async function loadManualEmployees() {
+      setManualEmployeesLoaded(false);
+      try {
+        const employees = filterRealEmployees(normalizeArray(await listEmployees()));
+        if (!cancelled) {
+          setManualEmployees(employees);
+          setManualEmployeesLoaded(true);
+        }
+      } catch (error) {
+        if (!cancelled) {
+          setManualEmployees([]);
+          setManualEmployeesLoaded(true);
+          setErrorMessage(extractApiErrorMessage(error, t.assignError, language));
+        }
+      }
+    }
+
+    void loadManualEmployees();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [isManager, language, schedule?.id, t.assignError, unfilledRequirements.length]);
+
   const handleGenerate = async () => {
     clearMessages();
     setIsSubmitting(true);
@@ -610,25 +647,6 @@ export default function ScheduleTab({ language, userRole }) {
       setAvailableByShift((prev) => ({
         ...prev,
         [shiftId]: Array.isArray(employees) ? employees : [],
-      }));
-    } catch (error) {
-      setErrorMessage(extractApiErrorMessage(error, t.assignError, language));
-    }
-  };
-
-  const handleLoadAvailableForRequirement = async (item) => {
-    if (!schedule?.id || !item?.requirement_id) return;
-
-    try {
-      const employees = await listAvailableEmployees(schedule.id, {
-        date: item.date,
-        start_time: formatTimeForApi(item.start_time),
-        end_time: formatTimeForApi(item.end_time),
-        position_id: item.position_id,
-      });
-      setAvailableByRequirement((prev) => ({
-        ...prev,
-        [item.requirement_id]: Array.isArray(employees) ? employees : [],
       }));
     } catch (error) {
       setErrorMessage(extractApiErrorMessage(error, t.assignError, language));
@@ -1016,7 +1034,6 @@ export default function ScheduleTab({ language, userRole }) {
                         <div style={styles.compactList}>
                           {unfilledRequirements.map((item) => {
                             const requirementId = item.requirement_id;
-                            const available = availableByRequirement[requirementId] || [];
 
                             return (
                             <div key={requirementId} style={styles.compactItem}>
@@ -1034,14 +1051,6 @@ export default function ScheduleTab({ language, userRole }) {
                                 {t.missingStaff}: {item.missing_staff}
                               </span>
                               <div style={styles.shiftActions}>
-                                <button
-                                  type="button"
-                                  onClick={() => handleLoadAvailableForRequirement(item)}
-                                  style={styles.smallSecondaryButton}
-                                  disabled={isSubmitting}
-                                >
-                                  {t.loadEmployees}
-                                </button>
                                 <select
                                   value={assignEmployeeIds[requirementId] || ''}
                                   onChange={(event) => setAssignEmployeeIds((prev) => ({
@@ -1051,10 +1060,17 @@ export default function ScheduleTab({ language, userRole }) {
                                   style={styles.select}
                                   disabled={isSubmitting}
                                 >
-                                  <option value="">{t.chooseEmployee}</option>
-                                  {available.map((employee) => (
+                                  <option value="">
+                                    {!manualEmployeesLoaded
+                                      ? t.loading
+                                      : manualEmployees.length
+                                        ? t.chooseEmployee
+                                        : t.noEmployeesAvailable}
+                                  </option>
+                                  {manualEmployees.map((employee) => (
                                     <option key={employee.id} value={employee.id}>
                                       {employee.full_name}
+                                      {employee.position?.name ? ` (${employee.position.name})` : ''}
                                     </option>
                                   ))}
                                 </select>

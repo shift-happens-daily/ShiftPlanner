@@ -2497,9 +2497,29 @@ def test_manager_can_manually_add_edit_and_delete_shifts(client: TestClient) -> 
 
 
 def test_manager_can_assign_employee_to_unfilled_requirement(client: TestClient) -> None:
+    password_hash = "$2b$12$uSYcqEdeSEBbX1C4vnns9.33t2QvChgi0eQ5RxJBGg8jCHGqu3w8a"
     with psycopg.connect(PSYCOPG_DSN) as connection:
         with connection.cursor() as cursor:
             set_employee_assignment(cursor, 1, branch_id=1, position_id=1)
+            cursor.execute(
+                """
+                INSERT INTO users (full_name, email, password_hash, role)
+                VALUES ('Cashier Cover', 'cashier-cover@example.com', %s, 'employee')
+                RETURNING id
+                """,
+                (password_hash,),
+            )
+            user_id = cursor.fetchone()[0]
+            cursor.execute(
+                """
+                INSERT INTO employees (user_id, company_id)
+                VALUES (%s, 1)
+                RETURNING id
+                """,
+                (user_id,),
+            )
+            cover_employee_id = cursor.fetchone()[0]
+            set_employee_assignment(cursor, cover_employee_id, branch_id=1, position_id=2)
 
     manager_headers = login_json(client, "manager@example.com", "manager123")
     requirement = client.post(
@@ -2519,11 +2539,12 @@ def test_manager_can_assign_employee_to_unfilled_requirement(client: TestClient)
     assigned = client.post(
         f"/schedule/1/requirements/{requirement.json()['id']}/assign",
         headers=manager_headers,
-        json={"employee_id": 1},
+        json={"employee_id": cover_employee_id},
     )
     assert assigned.status_code == 200, assigned.text
     assert any(
-        shift["employee_id"] == 1
+        shift["employee_id"] == cover_employee_id
+        and shift["position_id"] == 1
         and shift["date"] == "2026-06-16"
         and shift["start_time"] == "12:00:00"
         for shift in assigned.json()["shifts"]
@@ -2536,7 +2557,7 @@ def test_manager_can_assign_employee_to_unfilled_requirement(client: TestClient)
     already_filled = client.post(
         f"/schedule/1/requirements/{requirement.json()['id']}/assign",
         headers=manager_headers,
-        json={"employee_id": 1},
+        json={"employee_id": cover_employee_id},
     )
     assert already_filled.status_code == 400
 
@@ -2616,6 +2637,17 @@ def test_available_employees_filters_position_absence_availability_and_overlap(c
     assert [employee["id"] for employee in available_json] == [1]
     assert available_json[0]["availability_status"] == "if_needed"
     assert available_json[0]["assigned_hours"] >= 8
+
+    available_with_other_positions = client.get(
+        "/schedule/1/employees/available"
+        "?date=2026-06-16&start_time=12:00:00&end_time=20:00:00&position_id=1"
+        "&include_other_positions=true",
+        headers=manager_headers,
+    )
+    assert available_with_other_positions.status_code == 200, available_with_other_positions.text
+    available_with_other_positions_json = available_with_other_positions.json()
+    assert [employee["id"] for employee in available_with_other_positions_json] == [wrong_position_id, 1]
+    assert available_with_other_positions_json[0]["position"]["id"] == 2
 
 
 def test_manual_schedule_editing_access_and_company_scope(client: TestClient) -> None:

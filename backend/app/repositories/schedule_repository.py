@@ -436,6 +436,7 @@ def list_candidate_employee_rows(
     company_id: int,
     position_id: int,
     branch_id: int | None = None,
+    include_other_positions: bool = False,
 ) -> list[dict]:
     query = (
         select(
@@ -453,11 +454,12 @@ def list_candidate_employee_rows(
         .outerjoin(Branch, Branch.id == EmployeeBranch.branch_id)
         .where(
             Employee.company_id == company_id,
-            EmployeePosition.position_id == position_id,
             Employee.is_active.is_(True),
         )
         .order_by(User.full_name, Employee.id)
     )
+    if not include_other_positions:
+        query = query.where(EmployeePosition.position_id == position_id)
     if branch_id is not None:
         query = query.where(EmployeeBranch.branch_id == branch_id)
     return list(db.execute(query).mappings())
