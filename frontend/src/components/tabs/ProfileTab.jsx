@@ -27,7 +27,6 @@ export default function ProfileTab({ language, user }) {
       fullName: 'Полное имя',
       email: 'Email',
       role: 'Роль',
-      employeeId: 'ID сотрудника',
       company: 'Компания',
       branch: 'Филиалы',
       position: 'Позиция',
@@ -61,7 +60,6 @@ export default function ProfileTab({ language, user }) {
       fullName: 'Full name',
       email: 'Email',
       role: 'Role',
-      employeeId: 'Employee ID',
       company: 'Company',
       branch: 'Branches',
       position: 'Position',
@@ -103,7 +101,6 @@ export default function ProfileTab({ language, user }) {
 
   const fullName = user?.fullName || user?.full_name || user?.name || t.empty;
   const email = user?.email || t.empty;
-  const employeeId = user?.employeeId || user?.employee_id;
 
   const companyName = user?.company?.name;
   const positionName = getPositionLabel(
@@ -173,11 +170,6 @@ export default function ProfileTab({ language, user }) {
 
   if (isEmployee) {
     rows.push(
-      {
-        label: t.employeeId,
-        value: employeeId || t.empty,
-        muted: !employeeId,
-      },
       {
         label: t.branch,
         value: branchName,
