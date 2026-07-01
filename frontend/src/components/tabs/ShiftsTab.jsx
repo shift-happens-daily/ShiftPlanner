@@ -787,6 +787,7 @@ export default function ShiftsTab({ language, userRole, user }) {
     applyAvailabilityDragCell(dayIndex, slotIndex);
   }, [applyAvailabilityDragCell]);
 
+
   const endAvailabilityDrag = useCallback(() => {
     const dragState = dragSelectionRef.current;
     if (!dragState) return;
@@ -796,6 +797,29 @@ export default function ShiftsTab({ language, userRole, user }) {
     dragState.lastCell = null;
     dragState.touchIdentifier = null;
   }, []);
+  const fillAvailabilityDay = useCallback(
+    (dateKey, status = brushMode) => {
+      if (!dateKey || isPastDateKey(dateKey)) return;
+
+      const nextStatus = normalizeAvailabilityStatus(status);
+
+      markUnsaved(AVAILABILITY_SCOPE);
+
+      setAvailabilityByDate((prev) => {
+        const nextDay = {};
+
+        TIME_SLOTS.forEach((slot) => {
+          nextDay[slot] = nextStatus;
+        });
+
+        return {
+          ...prev,
+          [dateKey]: nextDay,
+        };
+      });
+    },
+    [brushMode, markUnsaved],
+  );
 
   const handleAvailabilityMouseDown = useCallback((event, dayIndex, slotIndex) => {
     if (event.button !== 0) return;
@@ -852,18 +876,33 @@ export default function ShiftsTab({ language, userRole, user }) {
 
         return (
           <div key={day.value} style={styles.dateGridRow}>
-            <div
+            <button
+              type="button"
+              onClick={() => fillAvailabilityDay(dateKey)}
+              onDoubleClick={() => fillAvailabilityDay(dateKey, 'unavailable')}
+              disabled={!dateKey || isPastDateKey(dateKey)}
               style={{
                 ...styles.dateHeaderCell,
                 background: itIsToday ? '#002642' : '#f4faff',
                 color: itIsToday ? '#ffffff' : '#002642',
+                border: 'none',
+                borderRight: '1px solid #dbe6f0',
+                borderBottom: '1px solid #dbe6f0',
+                cursor: !dateKey || isPastDateKey(dateKey)
+                  ? 'not-allowed'
+                  : 'pointer',
               }}
             >
-              <span style={styles.dateHeaderWeekday}>{day[language] || day.ru}</span>
-              <span style={styles.dateHeaderDate}>
-                {rowDate?.toLocaleDateString?.(language === 'ru' ? 'ru-RU' : 'en-US', { day: 'numeric', month: 'short' }) || ''}
-              </span>
-            </div>
+             <span style={styles.dateHeaderWeekday}>
+               {day[language] || day.ru}
+  </span>
+  <span style={styles.dateHeaderDate}>
+    {rowDate?.toLocaleDateString?.(
+      language === 'ru' ? 'ru-RU' : 'en-US',
+      { day: 'numeric', month: 'short' }
+    ) || ''}
+  </span>
+</button>
 
             {TIME_SLOTS.map((time, slotIndex) => {
               const past = !dateKey || isPastDateKey(dateKey);
