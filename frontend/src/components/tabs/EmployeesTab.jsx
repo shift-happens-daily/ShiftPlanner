@@ -21,6 +21,13 @@ import { useTabResponsive } from '../../utils/tabResponsive';
 import { formatLocalDate } from '../../services/scheduleService';
 import { getEmployeePositionLabel, getPositionLabel } from '../../utils/employeeDisplay';
 import { usePositionTitleRevision } from '../../hooks/usePositionTitleRevision';
+import { useUnsavedChanges } from '../../context/useUnsavedChanges';
+
+const POSITION_CREATE_SCOPE = 'employees-position-create';
+const POSITION_EDIT_SCOPE = 'employees-position-edit';
+const LINK_USER_SCOPE = 'employees-link-user';
+const EMPLOYEE_POSITION_SCOPE = 'employees-employee-position';
+const EMPLOYEE_BRANCH_SCOPE = 'employees-employee-branch';
 
 function normalizeArray(value) {
   return Array.isArray(value) ? value : [];
@@ -123,6 +130,7 @@ function formatDateRange(startDate, endDate) {
 export default function EmployeesTab({ language, userRole, user }) {
   usePositionTitleRevision();
   const r = useTabResponsive(1380);
+  const { markUnsaved, markSaved } = useUnsavedChanges();
   // Добавляем глобальные стили для полей ввода
   useEffect(() => {
     const styleSheet = document.createElement('style');
@@ -680,6 +688,7 @@ export default function EmployeesTab({ language, userRole, user }) {
       patchEmployeeBranchesLocally(selectedEmployee.id, nextIds);
       bumpBranchAssignments();
       setBranchToAddId('');
+      markSaved(EMPLOYEE_BRANCH_SCOPE);
       setSuccessMessage(t.assignmentsSaved);
     } catch (error) {
       setErrorMessage(getFriendlyError(error, t.assignmentsError));
@@ -707,6 +716,7 @@ export default function EmployeesTab({ language, userRole, user }) {
       setSelectedEmployeeBranchIds(nextIds);
       patchEmployeeBranchesLocally(selectedEmployee.id, nextIds);
       bumpBranchAssignments();
+      markSaved(EMPLOYEE_BRANCH_SCOPE);
       setSuccessMessage(t.assignmentsSaved);
     } catch (error) {
       setErrorMessage(getFriendlyError(error, t.assignmentsError));
@@ -730,6 +740,7 @@ export default function EmployeesTab({ language, userRole, user }) {
 
       await reloadEmployees(selectedEmployee.id);
       bumpBranchAssignments();
+      markSaved(EMPLOYEE_POSITION_SCOPE);
       setSuccessMessage(t.assignmentsSaved);
     } catch (error) {
       setErrorMessage(getFriendlyError(error, t.assignmentsError));
@@ -759,6 +770,7 @@ export default function EmployeesTab({ language, userRole, user }) {
       });
       await reloadPositions();
       setPositionTitle('');
+      markSaved(POSITION_CREATE_SCOPE);
       setSuccessMessage(t.positionCreated);
     } catch (error) {
       setErrorMessage(normalizeError(error, t.requiredPosition, language));
@@ -777,6 +789,7 @@ export default function EmployeesTab({ language, userRole, user }) {
   const handleCancelEditPosition = () => {
     setEditingPositionId('');
     setEditingPositionTitle('');
+    markSaved(POSITION_EDIT_SCOPE);
   };
 
   const handleSaveEditedPosition = async () => {
@@ -874,6 +887,7 @@ export default function EmployeesTab({ language, userRole, user }) {
       setLinkUserId('');
       setLinkBranchId('');
       setLinkPositionId('');
+      markSaved(LINK_USER_SCOPE);
       setSuccessMessage(t.linkSuccess);
       await reloadEmployees();
     } catch (error) {
@@ -964,7 +978,10 @@ export default function EmployeesTab({ language, userRole, user }) {
               <div style={styles.leftCardStack}>
                 <input
                   value={positionTitle}
-                  onChange={(event) => setPositionTitle(event.target.value)}
+                  onChange={(event) => {
+                    setPositionTitle(event.target.value);
+                    markUnsaved(POSITION_CREATE_SCOPE);
+                  }}
                   placeholder={t.position}
                   style={styles.leftInput}
                 />
@@ -1000,7 +1017,10 @@ export default function EmployeesTab({ language, userRole, user }) {
                 <input
                   type="text"
                   value={linkUserId}
-                  onChange={(e) => setLinkUserId(e.target.value.toUpperCase())}
+                  onChange={(e) => {
+                    setLinkUserId(e.target.value.toUpperCase());
+                    markUnsaved(LINK_USER_SCOPE);
+                  }}
                   placeholder={t.userIdPlaceholder}
                   maxLength={16}
                   style={styles.leftInput}
@@ -1009,7 +1029,10 @@ export default function EmployeesTab({ language, userRole, user }) {
                 <label style={styles.leftLabel}>{t.branch}</label>
                 <select
                   value={linkBranchId}
-                  onChange={(e) => setLinkBranchId(e.target.value)}
+                  onChange={(e) => {
+                    setLinkBranchId(e.target.value);
+                    markUnsaved(LINK_USER_SCOPE);
+                  }}
                   style={styles.leftSelect}
                 >
                   <option value="">{t.selectBranch}</option>
@@ -1023,7 +1046,10 @@ export default function EmployeesTab({ language, userRole, user }) {
                 <label style={styles.leftLabel}>{t.position}</label>
                 <select
                   value={linkPositionId}
-                  onChange={(e) => setLinkPositionId(e.target.value)}
+                  onChange={(e) => {
+                    setLinkPositionId(e.target.value);
+                    markUnsaved(LINK_USER_SCOPE);
+                  }}
                   style={styles.leftSelect}
                 >
                   <option value="">{t.selectPosition}</option>
@@ -1162,7 +1188,10 @@ export default function EmployeesTab({ language, userRole, user }) {
                       <>
                         <input
                           value={editingPositionTitle}
-                          onChange={(event) => setEditingPositionTitle(event.target.value)}
+                          onChange={(event) => {
+                            setEditingPositionTitle(event.target.value);
+                            markUnsaved(POSITION_EDIT_SCOPE);
+                          }}
                           style={{ ...styles.input, ...r.fullWidth }}
                         />
                         <div style={{ ...styles.actionGroup, ...r.actionGroup }}>
@@ -1250,9 +1279,10 @@ export default function EmployeesTab({ language, userRole, user }) {
                   <label style={styles.label}>{t.position}</label>
                   <select
                     value={selectedEmployeeDetails.position_id}
-                    onChange={(event) =>
-                      setSelectedEmployeeDetails((prev) => ({ ...prev, position_id: event.target.value }))
-                    }
+                    onChange={(event) => {
+                      setSelectedEmployeeDetails((prev) => ({ ...prev, position_id: event.target.value }));
+                      markUnsaved(EMPLOYEE_POSITION_SCOPE);
+                    }}
                     style={styles.select}
                   >
                     <option value="">{t.selectPosition}</option>
@@ -1292,7 +1322,10 @@ export default function EmployeesTab({ language, userRole, user }) {
                   <div style={{ ...styles.row, gridTemplateColumns: r.gridCols('1fr auto') }}>
                     <select
                       value={branchToAddId}
-                      onChange={(event) => setBranchToAddId(event.target.value)}
+                      onChange={(event) => {
+                        setBranchToAddId(event.target.value);
+                        markUnsaved(EMPLOYEE_BRANCH_SCOPE);
+                      }}
                       style={styles.select}
                       disabled={availableBranchesToAdd.length === 0 || isSubmitting}
                     >

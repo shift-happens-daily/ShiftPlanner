@@ -15,6 +15,9 @@ import { extractApiErrorMessage } from '../../services/error';
 import { useTabResponsive } from '../../utils/tabResponsive';
 import { getPositionLabel } from '../../utils/employeeDisplay';
 import { usePositionTitleRevision } from '../../hooks/usePositionTitleRevision';
+import { useUnsavedChanges } from '../../context/useUnsavedChanges';
+
+const SCHEDULE_DRAFT_SCOPE = 'schedule-review-draft';
 
 function getShiftPositionTitle(shift) {
   return getPositionLabel({
@@ -819,6 +822,7 @@ function getStatusBadgeStyle(status) {
 export default function ScheduleReview({ language }) {
   const r = useTabResponsive(1480);
   const positionTitleRevision = usePositionTitleRevision();
+  const { markUnsaved, markSaved } = useUnsavedChanges();
   const isMobile = r.isMobile;
   const { user, isLoading: isAuthLoading } = useAuth();
   const hasCompany = Boolean(user?.company);
@@ -1063,6 +1067,7 @@ export default function ScheduleReview({ language }) {
       setScheduleVersions((prev) => ({ ...prev, draft: generated }));
       setActiveVersion('draft');
       setSelectedDateIndex(0);
+      markUnsaved(SCHEDULE_DRAFT_SCOPE);
 
       if (visibleShiftCount > 0) {
         setSuccess(t.generated);
@@ -1076,7 +1081,7 @@ export default function ScheduleReview({ language }) {
     } finally {
       setIsSubmitting(false);
     }
-  }, [language, periodForm.start_date, t.generated, t.noEmployeesAndRequirements, t.noScheduleHint, viewMode]);
+  }, [language, markUnsaved, periodForm.start_date, t.generated, t.noEmployeesAndRequirements, t.noScheduleHint, viewMode]);
 
   useEffect(() => {
     if (isAuthLoading) {
@@ -1158,6 +1163,7 @@ export default function ScheduleReview({ language }) {
       });
       setActiveVersion('published');
       setSelectedDateIndex(0);
+      markSaved(SCHEDULE_DRAFT_SCOPE);
       setSuccess(t.publishedDone);
     } catch (e) {
       setError(extractApiErrorMessage(e, null, language));

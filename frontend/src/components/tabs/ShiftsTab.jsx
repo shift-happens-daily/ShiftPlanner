@@ -19,6 +19,7 @@ import {
 } from '../../services/scheduleService';
 import { useTabResponsive } from '../../utils/tabResponsive';
 import { usePositionTitleRevision } from '../../hooks/usePositionTitleRevision';
+import { useUnsavedChanges } from '../../context/useUnsavedChanges';
 import {
   DEFAULT_AVAILABILITY_STYLE,
   getAvailabilityStyle,
@@ -67,6 +68,11 @@ const MOBILE_BRUSH_OPTIONS = [
 ];
 
 const AVAILABILITY_MODE_OPTIONS = MOBILE_BRUSH_OPTIONS;
+const SINGLE_REQUIREMENT_SCOPE = 'shifts-single-requirement';
+const BULK_REQUIREMENT_SCOPE = 'shifts-bulk-requirement';
+const IMPORT_SCOPE = 'shifts-import';
+const AVAILABILITY_SCOPE = 'shifts-availability';
+const ABSENCE_SCOPE = 'shifts-absence';
 
 function toDateKey(date) {
   if (!(date instanceof Date) || Number.isNaN(date.getTime())) return '';
@@ -321,6 +327,7 @@ function normalizeError(error, fallback, language) {
 export default function ShiftsTab({ language, userRole, user }) {
   const positionTitleRevision = usePositionTitleRevision();
   const r = useTabResponsive(1480);
+  const { markUnsaved, markSaved } = useUnsavedChanges();
   const isManager = userRole === 'manager';
   const employeeId = user?.employeeId || user?.employee_id;
 
@@ -732,6 +739,7 @@ export default function ShiftsTab({ language, userRole, user }) {
     if (isPastDateKey(dateKey)) return;
 
     const nextStatus = normalizeAvailabilityStatus(status);
+    markUnsaved(AVAILABILITY_SCOPE);
     setAvailabilityByDate((prev) => ({
       ...prev,
       [dateKey]: {
@@ -739,7 +747,7 @@ export default function ShiftsTab({ language, userRole, user }) {
         [slot]: nextStatus,
       },
     }));
-  }, [brushMode]);
+  }, [brushMode, markUnsaved]);
 
   const applyAvailabilityDragCell = useCallback((dayIndex, slotIndex) => {
     const dragState = dragSelectionRef.current;
@@ -929,6 +937,7 @@ export default function ShiftsTab({ language, userRole, user }) {
       setAppliedFilters(nextFilters);
 
       await loadManagerData(nextFilters, { silent: true });
+      markSaved(SINGLE_REQUIREMENT_SCOPE);
       setSuccessMessage(t.requirementCreated);
     } catch (error) {
       setErrorMessage(normalizeError(error, t.requirements, language));
@@ -988,6 +997,7 @@ export default function ShiftsTab({ language, userRole, user }) {
       setAppliedFilters(nextFilters);
 
       await loadManagerData(nextFilters, { silent: true });
+      markSaved(BULK_REQUIREMENT_SCOPE);
       setSuccessMessage(t.bulkCreated);
     } catch (error) {
       setErrorMessage(normalizeError(error, t.bulk, language));
@@ -1016,6 +1026,7 @@ export default function ShiftsTab({ language, userRole, user }) {
       const result = await importRequirementsXlsx(selectedFile);
       setImportResult(result);
       await loadManagerData(appliedFilters, { silent: true });
+      markSaved(IMPORT_SCOPE);
       setSuccessMessage(t.importDone);
     } catch (error) {
       setErrorMessage(normalizeError(error, t.import, language));
@@ -1048,6 +1059,7 @@ export default function ShiftsTab({ language, userRole, user }) {
         weekly_availability: convertDatesToWeeklyIntervals(availabilityByDate, weekDates),
       });
       await loadEmployeeData();
+      markSaved(AVAILABILITY_SCOPE);
       setSuccessMessage(t.availabilitySaved);
     } catch (error) {
       setErrorMessage(normalizeError(error, t.availability, language));
@@ -1075,6 +1087,7 @@ export default function ShiftsTab({ language, userRole, user }) {
       const today = formatLocalDate(new Date());
       setAbsenceForm({ absence_type: 'vacation', start_date: today, end_date: today, comment: '' });
       await loadEmployeeData();
+      markSaved(ABSENCE_SCOPE);
       setSuccessMessage(t.absenceAdded);
     } catch (error) {
       setErrorMessage(normalizeError(error, t.addAbsence, language));
@@ -1218,7 +1231,10 @@ export default function ShiftsTab({ language, userRole, user }) {
                   <input
                     type="file"
                     accept=".xlsx"
-                    onChange={(event) => setSelectedFile(event.target.files?.[0] || null)}
+                    onChange={(event) => {
+                      setSelectedFile(event.target.files?.[0] || null);
+                      markUnsaved(IMPORT_SCOPE);
+                    }}
                     style={styles.hiddenFileInput}
                   />
                   <span>{selectedFile?.name || t.selectFile}</span>
@@ -1279,7 +1295,10 @@ export default function ShiftsTab({ language, userRole, user }) {
                     <Field label={t.position}>
                       <select
                         value={singleRequirement.position_id}
-                        onChange={(event) => setSingleRequirement((prev) => ({ ...prev, position_id: event.target.value }))}
+                        onChange={(event) => {
+                          setSingleRequirement((prev) => ({ ...prev, position_id: event.target.value }));
+                          markUnsaved(SINGLE_REQUIREMENT_SCOPE);
+                        }}
                         style={styles.input}
                       >
                         <option value="">{positions.length ? t.choosePosition : t.noPositions}</option>
@@ -1295,7 +1314,10 @@ export default function ShiftsTab({ language, userRole, user }) {
                       <input
                         type="date"
                         value={singleRequirement.date}
-                        onChange={(event) => setSingleRequirement((prev) => ({ ...prev, date: event.target.value }))}
+                        onChange={(event) => {
+                          setSingleRequirement((prev) => ({ ...prev, date: event.target.value }));
+                          markUnsaved(SINGLE_REQUIREMENT_SCOPE);
+                        }}
                         style={styles.dateInput}
                       />
                     </Field>
@@ -1305,7 +1327,10 @@ export default function ShiftsTab({ language, userRole, user }) {
                         type="number"
                         min="1"
                         value={singleRequirement.min_staff}
-                        onChange={(event) => setSingleRequirement((prev) => ({ ...prev, min_staff: event.target.value }))}
+                        onChange={(event) => {
+                          setSingleRequirement((prev) => ({ ...prev, min_staff: event.target.value }));
+                          markUnsaved(SINGLE_REQUIREMENT_SCOPE);
+                        }}
                         style={styles.input}
                       />
                     </Field>
@@ -1314,10 +1339,13 @@ export default function ShiftsTab({ language, userRole, user }) {
                       <input
                         type="time"
                         value={formatTime(singleRequirement.start_time)}
-                        onChange={(event) => setSingleRequirement((prev) => ({
-                          ...prev,
-                          start_time: `${event.target.value}:00`,
-                        }))}
+                        onChange={(event) => {
+                          setSingleRequirement((prev) => ({
+                            ...prev,
+                            start_time: `${event.target.value}:00`,
+                          }));
+                          markUnsaved(SINGLE_REQUIREMENT_SCOPE);
+                        }}
                         style={styles.input}
                       />
                     </Field>
@@ -1326,10 +1354,13 @@ export default function ShiftsTab({ language, userRole, user }) {
                       <input
                         type="time"
                         value={formatTime(singleRequirement.end_time)}
-                        onChange={(event) => setSingleRequirement((prev) => ({
-                          ...prev,
-                          end_time: `${event.target.value}:00`,
-                        }))}
+                        onChange={(event) => {
+                          setSingleRequirement((prev) => ({
+                            ...prev,
+                            end_time: `${event.target.value}:00`,
+                          }));
+                          markUnsaved(SINGLE_REQUIREMENT_SCOPE);
+                        }}
                         style={styles.input}
                       />
                     </Field>
@@ -1354,7 +1385,10 @@ export default function ShiftsTab({ language, userRole, user }) {
                       <input
                         type="date"
                         value={bulkRequirement.start_date}
-                        onChange={(event) => setBulkRequirement((prev) => ({ ...prev, start_date: event.target.value }))}
+                        onChange={(event) => {
+                          setBulkRequirement((prev) => ({ ...prev, start_date: event.target.value }));
+                          markUnsaved(BULK_REQUIREMENT_SCOPE);
+                        }}
                         style={styles.dateInput}
                       />
                     </Field>
@@ -1363,7 +1397,10 @@ export default function ShiftsTab({ language, userRole, user }) {
                       <input
                         type="date"
                         value={bulkRequirement.end_date}
-                        onChange={(event) => setBulkRequirement((prev) => ({ ...prev, end_date: event.target.value }))}
+                        onChange={(event) => {
+                          setBulkRequirement((prev) => ({ ...prev, end_date: event.target.value }));
+                          markUnsaved(BULK_REQUIREMENT_SCOPE);
+                        }}
                         style={styles.dateInput}
                       />
                     </Field>
@@ -1371,10 +1408,13 @@ export default function ShiftsTab({ language, userRole, user }) {
                     <Field label={t.position}>
                       <select
                         value={bulkRequirement.requirements[0].position_id}
-                        onChange={(event) => setBulkRequirement((prev) => ({
-                          ...prev,
-                          requirements: [{ ...prev.requirements[0], position_id: event.target.value }],
-                        }))}
+                        onChange={(event) => {
+                          setBulkRequirement((prev) => ({
+                            ...prev,
+                            requirements: [{ ...prev.requirements[0], position_id: event.target.value }],
+                          }));
+                          markUnsaved(BULK_REQUIREMENT_SCOPE);
+                        }}
                         style={styles.input}
                       >
                         <option value="">{positions.length ? t.choosePosition : t.noPositions}</option>
@@ -1391,10 +1431,13 @@ export default function ShiftsTab({ language, userRole, user }) {
                         type="number"
                         min="1"
                         value={bulkRequirement.requirements[0].min_staff}
-                        onChange={(event) => setBulkRequirement((prev) => ({
-                          ...prev,
-                          requirements: [{ ...prev.requirements[0], min_staff: event.target.value }],
-                        }))}
+                        onChange={(event) => {
+                          setBulkRequirement((prev) => ({
+                            ...prev,
+                            requirements: [{ ...prev.requirements[0], min_staff: event.target.value }],
+                          }));
+                          markUnsaved(BULK_REQUIREMENT_SCOPE);
+                        }}
                         style={styles.input}
                       />
                     </Field>
@@ -1403,10 +1446,13 @@ export default function ShiftsTab({ language, userRole, user }) {
                       <input
                         type="time"
                         value={formatTime(bulkRequirement.requirements[0].start_time)}
-                        onChange={(event) => setBulkRequirement((prev) => ({
-                          ...prev,
-                          requirements: [{ ...prev.requirements[0], start_time: `${event.target.value}:00` }],
-                        }))}
+                        onChange={(event) => {
+                          setBulkRequirement((prev) => ({
+                            ...prev,
+                            requirements: [{ ...prev.requirements[0], start_time: `${event.target.value}:00` }],
+                          }));
+                          markUnsaved(BULK_REQUIREMENT_SCOPE);
+                        }}
                         style={styles.input}
                       />
                     </Field>
@@ -1415,10 +1461,13 @@ export default function ShiftsTab({ language, userRole, user }) {
                       <input
                         type="time"
                         value={formatTime(bulkRequirement.requirements[0].end_time)}
-                        onChange={(event) => setBulkRequirement((prev) => ({
-                          ...prev,
-                          requirements: [{ ...prev.requirements[0], end_time: `${event.target.value}:00` }],
-                        }))}
+                        onChange={(event) => {
+                          setBulkRequirement((prev) => ({
+                            ...prev,
+                            requirements: [{ ...prev.requirements[0], end_time: `${event.target.value}:00` }],
+                          }));
+                          markUnsaved(BULK_REQUIREMENT_SCOPE);
+                        }}
                         style={styles.input}
                       />
                     </Field>
@@ -1431,12 +1480,15 @@ export default function ShiftsTab({ language, userRole, user }) {
                         <button
                           key={day.value}
                           type="button"
-                          onClick={() => setBulkRequirement((prev) => ({
-                            ...prev,
-                            weekdays: checked
-                              ? prev.weekdays.filter((value) => value !== day.value)
-                              : [...prev.weekdays, day.value].sort((a, b) => a - b),
-                          }))}
+                          onClick={() => {
+                            setBulkRequirement((prev) => ({
+                              ...prev,
+                              weekdays: checked
+                                ? prev.weekdays.filter((value) => value !== day.value)
+                                : [...prev.weekdays, day.value].sort((a, b) => a - b),
+                            }));
+                            markUnsaved(BULK_REQUIREMENT_SCOPE);
+                          }}
                           style={checked ? styles.dayPillActive : styles.dayPill}
                         >
                           {day[language] || day.ru}
@@ -1825,7 +1877,10 @@ export default function ShiftsTab({ language, userRole, user }) {
                   <Field label={t.absenceType}>
                     <select
                       value={absenceForm.absence_type}
-                      onChange={(event) => setAbsenceForm((prev) => ({ ...prev, absence_type: event.target.value }))}
+                      onChange={(event) => {
+                        setAbsenceForm((prev) => ({ ...prev, absence_type: event.target.value }));
+                        markUnsaved(ABSENCE_SCOPE);
+                      }}
                       style={styles.input}
                     >
                       <option value="vacation">{t.vacation}</option>
@@ -1838,7 +1893,10 @@ export default function ShiftsTab({ language, userRole, user }) {
                     <input
                       type="date"
                       value={absenceForm.start_date}
-                      onChange={(event) => setAbsenceForm((prev) => ({ ...prev, start_date: event.target.value }))}
+                      onChange={(event) => {
+                        setAbsenceForm((prev) => ({ ...prev, start_date: event.target.value }));
+                        markUnsaved(ABSENCE_SCOPE);
+                      }}
                       style={styles.dateInput}
                     />
                   </Field>
@@ -1847,7 +1905,10 @@ export default function ShiftsTab({ language, userRole, user }) {
                     <input
                       type="date"
                       value={absenceForm.end_date}
-                      onChange={(event) => setAbsenceForm((prev) => ({ ...prev, end_date: event.target.value }))}
+                      onChange={(event) => {
+                        setAbsenceForm((prev) => ({ ...prev, end_date: event.target.value }));
+                        markUnsaved(ABSENCE_SCOPE);
+                      }}
                       style={styles.dateInput}
                     />
                   </Field>
@@ -1855,7 +1916,10 @@ export default function ShiftsTab({ language, userRole, user }) {
                   <Field label={t.comment}>
                     <input
                       value={absenceForm.comment}
-                      onChange={(event) => setAbsenceForm((prev) => ({ ...prev, comment: event.target.value }))}
+                      onChange={(event) => {
+                        setAbsenceForm((prev) => ({ ...prev, comment: event.target.value }));
+                        markUnsaved(ABSENCE_SCOPE);
+                      }}
                       placeholder={t.comment}
                       style={styles.input}
                     />
@@ -1881,7 +1945,10 @@ export default function ShiftsTab({ language, userRole, user }) {
               >
                 <select
                   value={absenceForm.absence_type}
-                  onChange={(event) => setAbsenceForm((prev) => ({ ...prev, absence_type: event.target.value }))}
+                  onChange={(event) => {
+                    setAbsenceForm((prev) => ({ ...prev, absence_type: event.target.value }));
+                    markUnsaved(ABSENCE_SCOPE);
+                  }}
                   style={styles.input}
                 >
                   <option value="vacation">{t.vacation}</option>
@@ -1892,20 +1959,29 @@ export default function ShiftsTab({ language, userRole, user }) {
                 <input
                   type="date"
                   value={absenceForm.start_date}
-                  onChange={(event) => setAbsenceForm((prev) => ({ ...prev, start_date: event.target.value }))}
+                  onChange={(event) => {
+                    setAbsenceForm((prev) => ({ ...prev, start_date: event.target.value }));
+                    markUnsaved(ABSENCE_SCOPE);
+                  }}
                   style={styles.dateInput}
                 />
 
                 <input
                   type="date"
                   value={absenceForm.end_date}
-                  onChange={(event) => setAbsenceForm((prev) => ({ ...prev, end_date: event.target.value }))}
+                  onChange={(event) => {
+                    setAbsenceForm((prev) => ({ ...prev, end_date: event.target.value }));
+                    markUnsaved(ABSENCE_SCOPE);
+                  }}
                   style={styles.dateInput}
                 />
 
                 <input
                   value={absenceForm.comment}
-                  onChange={(event) => setAbsenceForm((prev) => ({ ...prev, comment: event.target.value }))}
+                  onChange={(event) => {
+                    setAbsenceForm((prev) => ({ ...prev, comment: event.target.value }));
+                    markUnsaved(ABSENCE_SCOPE);
+                  }}
                   placeholder={t.other}
                   style={styles.input}
                 />

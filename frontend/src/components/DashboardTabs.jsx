@@ -10,6 +10,7 @@ import ScheduleReview from './tabs/ScheduleReview';
 import ShiftsTab from './tabs/ShiftsTab';
 import { getPositionLabel } from '../utils/employeeDisplay';
 import { usePositionTitleRevision } from '../hooks/usePositionTitleRevision';
+import { useUnsavedChanges } from '../context/useUnsavedChanges';
 
 const TAB_ICONS = {
   schedule: (
@@ -48,6 +49,12 @@ const TAB_ICONS = {
 export default function DashboardTabs({ userRole, language, title, rightSlot }) {
   usePositionTitleRevision();
   const isMobile = useIsMobile();
+  const {
+    isDirty,
+    message: unsavedMessage,
+    confirmDiscardChanges,
+    resetUnsavedChanges,
+  } = useUnsavedChanges();
   const activeTabStorageKey = `shiftplanner_active_tab_${userRole || 'default'}`;
   const [activeTab, setActiveTab] = useState(() => (
     localStorage.getItem(activeTabStorageKey) || 'schedule'
@@ -132,21 +139,21 @@ export default function DashboardTabs({ userRole, language, title, rightSlot }) 
   const safeActiveTab = isValidTab(activeTab) ? activeTab : 'schedule';
 
   useEffect(() => {
-    const savedTab = localStorage.getItem(activeTabStorageKey);
-
-    if (savedTab && isValidTab(savedTab)) {
-      setActiveTab(savedTab);
-      return;
-    }
-
     if (!isValidTab(activeTab)) {
-      setActiveTab('schedule');
       localStorage.setItem(activeTabStorageKey, 'schedule');
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeTab, activeTabStorageKey, tabs]);
 
   const handleTabClick = (tabId) => {
+    if (tabId !== safeActiveTab && !confirmDiscardChanges()) {
+      return;
+    }
+
+    if (tabId !== safeActiveTab) {
+      resetUnsavedChanges();
+    }
+
     setActiveTab(tabId);
     localStorage.setItem(activeTabStorageKey, tabId);
   };
@@ -289,6 +296,11 @@ export default function DashboardTabs({ userRole, language, title, rightSlot }) 
         ...(isMobile ? styles.contentMobile : {}),
       }}
       >
+        {isDirty && (
+          <div style={styles.unsavedBanner} role="alert">
+            {unsavedMessage}
+          </div>
+        )}
         {renderContent()}
       </main>
 
@@ -520,6 +532,7 @@ const styles = {
     minHeight: 0,
     overflow: 'hidden',
     background: '#f4faff',
+    position: 'relative',
   },
 
   contentMobile: {
@@ -540,6 +553,27 @@ const styles = {
     background: '#dee7e7',
     borderTop: '1px solid rgba(79, 100, 111, 0.16)',
     boxShadow: '0 -8px 24px rgba(0, 38, 66, 0.08)',
+  },
+
+  unsavedBanner: {
+    position: 'absolute',
+    top: '12px',
+    left: '50%',
+    zIndex: 40,
+    transform: 'translateX(-50%)',
+    maxWidth: 'calc(100% - 24px)',
+    minHeight: '40px',
+    boxSizing: 'border-box',
+    padding: '10px 16px',
+    borderRadius: '12px',
+    background: '#fff7ed',
+    border: '1px solid #fed7aa',
+    color: '#9a3412',
+    fontSize: '14px',
+    fontWeight: '850',
+    boxShadow: '0 12px 30px rgba(0, 38, 66, 0.12)',
+    pointerEvents: 'none',
+    whiteSpace: 'nowrap',
   },
 };
 

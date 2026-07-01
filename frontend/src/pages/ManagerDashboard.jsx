@@ -4,16 +4,21 @@ import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/useAuth';
 import DashboardTabs from '../components/DashboardTabs';
 import LanguageSwitcher from '../components/LanguageSwitcher';
+import { UnsavedChangesProvider } from '../context/UnsavedChangesContext';
 import { getStoredLanguage } from '../services/language';
 import { useIsMobile } from '../hooks/useMediaQuery';
+import { useUnsavedChanges } from '../context/useUnsavedChanges';
 
-export default function ManagerDashboard() {
+function ManagerDashboardContent() {
   const isMobile = useIsMobile();
   const { user, logout } = useAuth();
+  const { confirmDiscardChanges, resetUnsavedChanges } = useUnsavedChanges();
   const navigate = useNavigate();
   const [language, setLanguage] = useState(getStoredLanguage);
 
   const handleLogout = () => {
+    if (!confirmDiscardChanges()) return;
+    resetUnsavedChanges();
     logout();
     navigate('/');
   };
@@ -55,6 +60,14 @@ export default function ManagerDashboard() {
         )}
       />
     </div>
+  );
+}
+
+export default function ManagerDashboard() {
+  return (
+    <UnsavedChangesProvider>
+      <ManagerDashboardContent />
+    </UnsavedChangesProvider>
   );
 }
 

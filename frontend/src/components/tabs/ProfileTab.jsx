@@ -8,10 +8,14 @@ import { listPositions } from '../../services/positionService';
 import { useUserBranches } from '../../hooks/useUserBranches';
 import { useTabResponsive } from '../../utils/tabResponsive';
 import { getBranchLabel, getPositionLabel } from '../../utils/employeeDisplay';
+import { useUnsavedChanges } from '../../context/useUnsavedChanges';
+
+const POSITION_SCOPE = 'profile-position';
 
 export default function ProfileTab({ language, user }) {
   const r = useTabResponsive(1040);
   const navigate = useNavigate();
+  const { markUnsaved, markSaved } = useUnsavedChanges();
   const { refreshUser, clearAuth } = useAuth();
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -213,6 +217,7 @@ export default function ProfileTab({ language, user }) {
     try {
       await updateMyPosition({ position_id: Number(selectedPositionId) });
       await refreshUser();
+      markSaved(POSITION_SCOPE);
       setSuccessMessage(t.positionSaved);
     } catch (error) {
       setErrorMessage(extractApiErrorMessage(error, t.positionError, language));
@@ -331,7 +336,10 @@ export default function ProfileTab({ language, user }) {
               <label style={styles.fieldLabel}>{t.position}</label>
               <select
                 value={selectedPositionId}
-                onChange={(event) => setSelectedPositionId(event.target.value)}
+                onChange={(event) => {
+                  setSelectedPositionId(event.target.value);
+                  markUnsaved(POSITION_SCOPE);
+                }}
                 style={{ ...styles.select, ...r.fullWidth }}
                 disabled={isSubmitting}
               >

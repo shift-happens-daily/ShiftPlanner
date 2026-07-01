@@ -20,6 +20,9 @@ import {
 import { useTabResponsive } from '../../utils/tabResponsive';
 import { getPositionLabel } from '../../utils/employeeDisplay';
 import { usePositionTitleRevision } from '../../hooks/usePositionTitleRevision';
+import { useUnsavedChanges } from '../../context/useUnsavedChanges';
+
+const EXCHANGE_NOTE_SCOPE = 'schedule-exchange-note';
 
 function defaultPeriod() {
   return defaultSchedulePeriod();
@@ -242,6 +245,7 @@ function exportScheduleDraftToXlsx(schedule, translations) {
 
 export default function ScheduleTab({ language, userRole }) {
   const positionTitleRevision = usePositionTitleRevision();
+  const { markUnsaved, markSaved } = useUnsavedChanges();
   const isManager = userRole === 'manager';
   const r = useTabResponsive(1480);
 
@@ -668,6 +672,7 @@ export default function ScheduleTab({ language, userRole }) {
         note,
       });
       setExchangeNotes((prev) => ({ ...prev, [shiftId]: '' }));
+      markSaved(EXCHANGE_NOTE_SCOPE);
       setSuccessMessage(t.exchangeRequested);
     } catch (error) {
       setErrorMessage(extractApiErrorMessage(error, null, language));
@@ -1238,12 +1243,13 @@ export default function ScheduleTab({ language, userRole }) {
                           >
                             <textarea
                               value={exchangeNotes[shiftId] || ''}
-                              onChange={(event) =>
+                              onChange={(event) => {
                                 setExchangeNotes((prev) => ({
                                   ...prev,
                                   [shiftId]: event.target.value,
-                                }))
-                              }
+                                }));
+                                markUnsaved(EXCHANGE_NOTE_SCOPE);
+                              }}
                               placeholder={t.exchangeNotePlaceholder}
                               style={styles.calendarExchangeInput}
                               disabled={isSubmitting}
@@ -1371,12 +1377,13 @@ export default function ScheduleTab({ language, userRole }) {
                                       </div>
                                       <textarea
                                         value={exchangeNotes[shiftId] || ''}
-                                        onChange={(event) =>
+                                        onChange={(event) => {
                                           setExchangeNotes((prev) => ({
                                             ...prev,
                                             [shiftId]: event.target.value,
-                                          }))
-                                        }
+                                          }));
+                                          markUnsaved(EXCHANGE_NOTE_SCOPE);
+                                        }}
                                         placeholder={t.exchangeNotePlaceholder}
                                         style={{
                                           ...styles.textarea,
@@ -1413,12 +1420,13 @@ export default function ScheduleTab({ language, userRole }) {
                                       </div>
                                       <textarea
                                         value={exchangeNotes[shiftId] || ''}
-                                        onChange={(event) =>
+                                        onChange={(event) => {
                                           setExchangeNotes((prev) => ({
                                             ...prev,
                                             [shiftId]: event.target.value,
-                                          }))
-                                        }
+                                          }));
+                                          markUnsaved(EXCHANGE_NOTE_SCOPE);
+                                        }}
                                         placeholder={t.exchangeNotePlaceholder}
                                         style={{ ...styles.textarea, marginTop: 10 }}
                                         disabled={isSubmitting}

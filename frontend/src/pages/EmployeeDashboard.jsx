@@ -4,12 +4,15 @@ import { useNavigate } from 'react-router-dom';
 import DashboardTabs from '../components/DashboardTabs';
 import LanguageSwitcher from '../components/LanguageSwitcher';
 import { useAuth } from '../context/useAuth';
+import { UnsavedChangesProvider } from '../context/UnsavedChangesContext';
+import { useUnsavedChanges } from '../context/useUnsavedChanges';
 import { getStoredLanguage } from '../services/language';
 import { useIsMobile } from '../hooks/useMediaQuery';
 
-export default function EmployeeDashboard() {
+function EmployeeDashboardContent() {
   const isMobile = useIsMobile();
   const { user, logout } = useAuth();
+  const { confirmDiscardChanges, resetUnsavedChanges } = useUnsavedChanges();
   const navigate = useNavigate();
   const [language, setLanguage] = useState(getStoredLanguage);
 
@@ -27,6 +30,8 @@ export default function EmployeeDashboard() {
   const t = texts[language] || texts.ru;
 
   const handleLogout = () => {
+    if (!confirmDiscardChanges()) return;
+    resetUnsavedChanges();
     logout();
     navigate('/');
   };
@@ -57,6 +62,14 @@ export default function EmployeeDashboard() {
         rightSlot={rightSlot}
       />
     </div>
+  );
+}
+
+export default function EmployeeDashboard() {
+  return (
+    <UnsavedChangesProvider>
+      <EmployeeDashboardContent />
+    </UnsavedChangesProvider>
   );
 }
 
