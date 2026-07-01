@@ -18,6 +18,13 @@ import { extractApiErrorMessage } from '../../services/error';
 import { useUserBranches } from '../../hooks/useUserBranches';
 import { removeBranchFromAllStoredAssignments } from '../../utils/employeeBranches';
 import { useTabResponsive } from '../../utils/tabResponsive';
+import { getEmployeePositionLabel, getPositionLabel } from '../../utils/employeeDisplay';
+import { usePositionTitleRevision } from '../../hooks/usePositionTitleRevision';
+import { useUnsavedChanges } from '../../context/useUnsavedChanges';
+
+const COMPANY_SCOPE = 'company-create';
+const BRANCH_SCOPE = 'company-branch';
+const JOIN_SCOPE = 'company-join';
 
 function normalizeArray(value) {
   if (Array.isArray(value)) return value;
@@ -80,7 +87,9 @@ function getInviteCode(company) {
 }
 
 export default function CompanyTab({ language, userRole, user }) {
+  usePositionTitleRevision();
   const r = useTabResponsive(1480);
+  const { markUnsaved, markSaved } = useUnsavedChanges();
   const { refreshUser } = useAuth();
 
   const [inviteCode, setInviteCode] = useState('');
@@ -253,8 +262,8 @@ export default function CompanyTab({ language, userRole, user }) {
   const isPendingEmployee = isEmployee && user?.employeeStatus === 'pending';
 
   const currentCompany = user?.company || null;
-  const currentPosition = user?.position || null;
   const currentCompanyId = getCompanyId(currentCompany);
+  const employeePositionLabel = getEmployeePositionLabel(user, '—');
   const { userBranches } = useUserBranches(user);
 
   const effectiveInviteCode = getInviteCode(currentCompany);
@@ -359,6 +368,7 @@ export default function CompanyTab({ language, userRole, user }) {
       setInvitePreview(null);
       setSelectedJoinBranchId('');
       setSelectedJoinPositionId('');
+      markSaved(JOIN_SCOPE);
       setSuccessMessage(
         joinedProfile?.employee_status === 'pending' ? t.joinPending : t.joinSuccess
       );
@@ -383,6 +393,7 @@ export default function CompanyTab({ language, userRole, user }) {
       const updatedUser = await refreshUser();
 
       setCompanyName('');
+      markSaved(COMPANY_SCOPE);
       setSuccessMessage(t.companyCreated);
 
       const companyId = getCompanyId(updatedUser?.company);
@@ -448,6 +459,7 @@ export default function CompanyTab({ language, userRole, user }) {
 
       await loadBranches(currentCompanyId);
       setBranchName('');
+      markSaved(BRANCH_SCOPE);
       setSuccessMessage(t.branchCreated);
     } catch (error) {
       setErrorMessage(extractApiErrorMessage(error, t.createBranchError, language));
@@ -603,7 +615,10 @@ export default function CompanyTab({ language, userRole, user }) {
                 <div style={styles.branchCreateRow}>
                   <input
                     value={branchName}
-                    onChange={(event) => setBranchName(event.target.value)}
+                    onChange={(event) => {
+                      setBranchName(event.target.value);
+                      markUnsaved(BRANCH_SCOPE);
+                    }}
                     placeholder={t.branchPlaceholder}
                     style={styles.input}
                   />
@@ -667,7 +682,7 @@ export default function CompanyTab({ language, userRole, user }) {
                           {t.requestBranches}: {getRequestBranchesLabel(request)}
                         </span>
                         <span style={styles.requestMeta}>
-                          {t.requestPosition}: {getName(request.position)}
+                          {t.requestPosition}: {getPositionLabel(request.position, '—')}
                         </span>
                       </div>
                       <div style={styles.requestActions}>
@@ -747,7 +762,7 @@ export default function CompanyTab({ language, userRole, user }) {
                         </div>
                         <InfoItem
                           label={t.position}
-                          value={getName(currentPosition)}
+                          value={employeePositionLabel}
                           style={styles.employeeInfoItem}
                         />
                       </div>
@@ -773,7 +788,10 @@ export default function CompanyTab({ language, userRole, user }) {
                     <label style={styles.label}>{t.companyName}</label>
                     <input
                       value={companyName}
-                      onChange={(event) => setCompanyName(event.target.value)}
+                      onChange={(event) => {
+                        setCompanyName(event.target.value);
+                        markUnsaved(COMPANY_SCOPE);
+                      }}
                       placeholder={t.companyName}
                       style={styles.input}
                     />
@@ -801,7 +819,10 @@ export default function CompanyTab({ language, userRole, user }) {
                     <label style={styles.label}>{t.inviteCode}</label>
                     <input
                       value={inviteCode}
-                      onChange={(event) => setInviteCode(event.target.value.toUpperCase())}
+                      onChange={(event) => {
+                        setInviteCode(event.target.value.toUpperCase());
+                        markUnsaved(JOIN_SCOPE);
+                      }}
                       placeholder={t.invitePlaceholder}
                       style={styles.input}
                     />
@@ -825,7 +846,10 @@ export default function CompanyTab({ language, userRole, user }) {
                           <label style={styles.label}>{t.branch}</label>
                           <select
                             value={selectedJoinBranchId}
-                            onChange={(event) => setSelectedJoinBranchId(event.target.value)}
+                            onChange={(event) => {
+                              setSelectedJoinBranchId(event.target.value);
+                              markUnsaved(JOIN_SCOPE);
+                            }}
                             style={styles.select}
                           >
                             <option value="">{t.noBranchSelected}</option>
@@ -843,13 +867,16 @@ export default function CompanyTab({ language, userRole, user }) {
                           <label style={styles.label}>{t.position}</label>
                           <select
                             value={selectedJoinPositionId}
-                            onChange={(event) => setSelectedJoinPositionId(event.target.value)}
+                            onChange={(event) => {
+                              setSelectedJoinPositionId(event.target.value);
+                              markUnsaved(JOIN_SCOPE);
+                            }}
                             style={styles.select}
                           >
                             <option value="">{t.noPositionSelected}</option>
                             {previewPositions.map((position) => (
                               <option key={position.id} value={position.id}>
-                                {getName(position)}
+                                {getPositionLabel(position, getName(position))}
                               </option>
                             ))}
                           </select>

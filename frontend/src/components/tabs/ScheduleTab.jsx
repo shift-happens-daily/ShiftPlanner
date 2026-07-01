@@ -17,7 +17,13 @@ import {
   updateExchangeRequest,
   updateShift,
 } from '../../services/scheduleService';
+import { filterRealEmployees, listEmployees } from '../../services/employeeService';
 import { useTabResponsive } from '../../utils/tabResponsive';
+import { getPositionLabel } from '../../utils/employeeDisplay';
+import { usePositionTitleRevision } from '../../hooks/usePositionTitleRevision';
+import { useUnsavedChanges } from '../../context/useUnsavedChanges';
+
+const EXCHANGE_NOTE_SCOPE = 'schedule-exchange-note';
 
 function defaultPeriod() {
   return defaultSchedulePeriod();
@@ -140,7 +146,13 @@ function getShiftId(shift) {
 }
 
 function getShiftPosition(shift) {
-  return shift?.position || shift?.position_title || shift?.position_name || shift?.position?.title || shift?.position?.name || '—';
+  return getPositionLabel({
+    position_id: shift?.position_id || shift?.position?.id,
+    position_title: shift?.position_title || shift?.position_name,
+    title: typeof shift?.position === 'string' ? shift.position : undefined,
+    name: shift?.position?.name,
+    position: typeof shift?.position === 'object' ? shift.position : undefined,
+  }, '—');
 }
 
 function getShiftEmployeeName(shift) {
@@ -189,7 +201,10 @@ function exportScheduleDraftToXlsx(schedule, translations) {
   const unfilled = normalizeArray(schedule.unfilled_requirements).map((item) => ({
     requirement_id: item.requirement_id || '',
     date: item.date || '',
-    position: item.position_title || item.position || '',
+    position: getPositionLabel({
+      position_id: item.position_id,
+      position_title: item.position_title || item.position,
+    }, item.position_title || item.position || ''),
     start_time: formatTime(item.start_time),
     end_time: formatTime(item.end_time),
     missing_staff: item.missing_staff || 0,
@@ -230,6 +245,8 @@ function exportScheduleDraftToXlsx(schedule, translations) {
 }
 
 export default function ScheduleTab({ language, userRole }) {
+  const positionTitleRevision = usePositionTitleRevision();
+  const { markUnsaved, markSaved } = useUnsavedChanges();
   const isManager = userRole === 'manager';
   const r = useTabResponsive(1480);
 
@@ -245,7 +262,8 @@ export default function ScheduleTab({ language, userRole }) {
   const [reassignEmployeeIds, setReassignEmployeeIds] = useState({});
   const [availableByShift, setAvailableByShift] = useState({});
   const [assignEmployeeIds, setAssignEmployeeIds] = useState({});
-  const [availableByRequirement, setAvailableByRequirement] = useState({});
+  const [manualEmployees, setManualEmployees] = useState([]);
+  const [manualEmployeesLoaded, setManualEmployeesLoaded] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
@@ -289,6 +307,7 @@ export default function ScheduleTab({ language, userRole }) {
       schedulePreview: 'Предпросмотр расписания',
       chooseEmployee: 'Выберите сотрудника',
       noEmployeesForPosition: 'Нет сотрудников этой позиции',
+      noEmployeesAvailable: 'Нет доступных сотрудников',
       assign: 'Назначить',
       loadEmployees: 'Загрузить кандидатов',
       assigned: 'Сотрудник назначен на смену.',
@@ -350,6 +369,7 @@ export default function ScheduleTab({ language, userRole }) {
       schedulePreview: 'Schedule preview',
       chooseEmployee: 'Choose employee',
       noEmployeesForPosition: 'No employees for this position',
+      noEmployeesAvailable: 'No available employees',
       assign: 'Assign',
       loadEmployees: 'Load candidates',
       assigned: 'Employee assigned to shift.',
@@ -379,7 +399,7 @@ export default function ScheduleTab({ language, userRole }) {
   const t = texts[language] || texts.ru;
 
   const scheduleShifts = useMemo(() => normalizeArray(schedule?.shifts), [schedule]);
-  const unfilledRequirements = useMemo(() => normalizeArray(schedule?.unfilled_requirements), [schedule]);
+  const unfilledRequirements = useMemo(() => normalizeArray(schedule?.unfilled_requirements), [schedule, positionTitleRevision]);
   const conflicts = useMemo(() => normalizeArray(schedule?.conflicts), [schedule]);
 
   const employeeSchedule = mySchedule;
@@ -497,6 +517,39 @@ export default function ScheduleTab({ language, userRole }) {
     return () => clearTimeout(timer);
   }, [loadData]);
 
+  useEffect(() => {
+    if (!isManager || !schedule?.id || unfilledRequirements.length === 0) {
+      setManualEmployees([]);
+      setManualEmployeesLoaded(false);
+      return undefined;
+    }
+
+    let cancelled = false;
+
+    async function loadManualEmployees() {
+      setManualEmployeesLoaded(false);
+      try {
+        const employees = filterRealEmployees(normalizeArray(await listEmployees()));
+        if (!cancelled) {
+          setManualEmployees(employees);
+          setManualEmployeesLoaded(true);
+        }
+      } catch (error) {
+        if (!cancelled) {
+          setManualEmployees([]);
+          setManualEmployeesLoaded(true);
+          setErrorMessage(extractApiErrorMessage(error, t.assignError, language));
+        }
+      }
+    }
+
+    void loadManualEmployees();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [isManager, language, schedule?.id, t.assignError, unfilledRequirements.length]);
+
   const handleGenerate = async () => {
     clearMessages();
     setIsSubmitting(true);
@@ -600,25 +653,6 @@ export default function ScheduleTab({ language, userRole }) {
     }
   };
 
-  const handleLoadAvailableForRequirement = async (item) => {
-    if (!schedule?.id || !item?.requirement_id) return;
-
-    try {
-      const employees = await listAvailableEmployees(schedule.id, {
-        date: item.date,
-        start_time: formatTimeForApi(item.start_time),
-        end_time: formatTimeForApi(item.end_time),
-        position_id: item.position_id,
-      });
-      setAvailableByRequirement((prev) => ({
-        ...prev,
-        [item.requirement_id]: Array.isArray(employees) ? employees : [],
-      }));
-    } catch (error) {
-      setErrorMessage(extractApiErrorMessage(error, t.assignError, language));
-    }
-  };
-
   const handleAssignRequirement = async (requirementId) => {
     const employeeId = assignEmployeeIds[requirementId];
     if (!schedule?.id || !requirementId || !employeeId) return;
@@ -656,6 +690,7 @@ export default function ScheduleTab({ language, userRole }) {
         note,
       });
       setExchangeNotes((prev) => ({ ...prev, [shiftId]: '' }));
+      markSaved(EXCHANGE_NOTE_SCOPE);
       setSuccessMessage(t.exchangeRequested);
     } catch (error) {
       setErrorMessage(extractApiErrorMessage(error, null, language));
@@ -999,11 +1034,15 @@ export default function ScheduleTab({ language, userRole }) {
                         <div style={styles.compactList}>
                           {unfilledRequirements.map((item) => {
                             const requirementId = item.requirement_id;
-                            const available = availableByRequirement[requirementId] || [];
 
                             return (
                             <div key={requirementId} style={styles.compactItem}>
-                              <strong style={styles.itemTitle}>{item.position_title}</strong>
+                              <strong style={styles.itemTitle}>
+                                {getPositionLabel({
+                                  position_id: item.position_id,
+                                  position_title: item.position_title || item.position,
+                                }, item.position_title || '—')}
+                              </strong>
                               <span style={styles.itemMeta}>{item.date}</span>
                               <span style={styles.itemMeta}>
                                 {formatTime(item.start_time)} — {formatTime(item.end_time)}
@@ -1012,14 +1051,6 @@ export default function ScheduleTab({ language, userRole }) {
                                 {t.missingStaff}: {item.missing_staff}
                               </span>
                               <div style={styles.shiftActions}>
-                                <button
-                                  type="button"
-                                  onClick={() => handleLoadAvailableForRequirement(item)}
-                                  style={styles.smallSecondaryButton}
-                                  disabled={isSubmitting}
-                                >
-                                  {t.loadEmployees}
-                                </button>
                                 <select
                                   value={assignEmployeeIds[requirementId] || ''}
                                   onChange={(event) => setAssignEmployeeIds((prev) => ({
@@ -1029,10 +1060,17 @@ export default function ScheduleTab({ language, userRole }) {
                                   style={styles.select}
                                   disabled={isSubmitting}
                                 >
-                                  <option value="">{t.chooseEmployee}</option>
-                                  {available.map((employee) => (
+                                  <option value="">
+                                    {!manualEmployeesLoaded
+                                      ? t.loading
+                                      : manualEmployees.length
+                                        ? t.chooseEmployee
+                                        : t.noEmployeesAvailable}
+                                  </option>
+                                  {manualEmployees.map((employee) => (
                                     <option key={employee.id} value={employee.id}>
                                       {employee.full_name}
+                                      {employee.position?.name ? ` (${employee.position.name})` : ''}
                                     </option>
                                   ))}
                                 </select>
@@ -1204,7 +1242,7 @@ export default function ScheduleTab({ language, userRole }) {
                         >
                           <div style={{
                             ...styles.calendarShiftInfo,
-                            ...(r.isMobile ? { alignItems: 'flex-start' } : {}),
+                            ...(r.isMobile ? { alignItems: 'center', justifyContent: 'center' } : {}),
                           }}
                           >
                             <span style={styles.calendarShiftTimeInline}>
@@ -1221,12 +1259,13 @@ export default function ScheduleTab({ language, userRole }) {
                           >
                             <textarea
                               value={exchangeNotes[shiftId] || ''}
-                              onChange={(event) =>
+                              onChange={(event) => {
                                 setExchangeNotes((prev) => ({
                                   ...prev,
                                   [shiftId]: event.target.value,
-                                }))
-                              }
+                                }));
+                                markUnsaved(EXCHANGE_NOTE_SCOPE);
+                              }}
                               placeholder={t.exchangeNotePlaceholder}
                               style={styles.calendarExchangeInput}
                               disabled={isSubmitting}
@@ -1333,12 +1372,16 @@ export default function ScheduleTab({ language, userRole }) {
                                         color: '#fff',
                                         border: '1px solid rgba(255,255,255,0.12)',
                                         boxShadow: '0 2px 8px rgba(102,126,234,0.25)',
+                                        display: 'flex',
+                                        flexDirection: 'column',
+                                        alignItems: 'center',
+                                        textAlign: 'center',
                                       }}
                                     >
-                                      <div style={{ fontWeight: 800, fontSize: 15, marginBottom: 4 }}>
+                                      <div style={{ fontWeight: 800, fontSize: 15, marginBottom: 4, width: '100%' }}>
                                         {getShiftPosition(shift)}
                                       </div>
-                                      <div style={{ fontSize: 13, opacity: 0.92, marginBottom: 6 }}>
+                                      <div style={{ fontSize: 13, opacity: 0.92, marginBottom: 6, width: '100%' }}>
                                         {getShiftCompany(shift)}
                                       </div>
                                       <div style={{
@@ -1354,12 +1397,13 @@ export default function ScheduleTab({ language, userRole }) {
                                       </div>
                                       <textarea
                                         value={exchangeNotes[shiftId] || ''}
-                                        onChange={(event) =>
+                                        onChange={(event) => {
                                           setExchangeNotes((prev) => ({
                                             ...prev,
                                             [shiftId]: event.target.value,
-                                          }))
-                                        }
+                                          }));
+                                          markUnsaved(EXCHANGE_NOTE_SCOPE);
+                                        }}
                                         placeholder={t.exchangeNotePlaceholder}
                                         style={{
                                           ...styles.textarea,
@@ -1396,12 +1440,13 @@ export default function ScheduleTab({ language, userRole }) {
                                       </div>
                                       <textarea
                                         value={exchangeNotes[shiftId] || ''}
-                                        onChange={(event) =>
+                                        onChange={(event) => {
                                           setExchangeNotes((prev) => ({
                                             ...prev,
                                             [shiftId]: event.target.value,
-                                          }))
-                                        }
+                                          }));
+                                          markUnsaved(EXCHANGE_NOTE_SCOPE);
+                                        }}
                                         placeholder={t.exchangeNotePlaceholder}
                                         style={{ ...styles.textarea, marginTop: 10 }}
                                         disabled={isSubmitting}
@@ -1852,8 +1897,9 @@ const styles = {
     minWidth: 0,
     display: 'flex',
     alignItems: 'center',
+    justifyContent: 'center',
     gap: '10px',
-    flexWrap: 'nowrap',
+    flexWrap: 'wrap',
     overflow: 'hidden',
   },
 

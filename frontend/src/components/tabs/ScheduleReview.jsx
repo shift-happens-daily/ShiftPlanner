@@ -10,9 +10,40 @@ import {
   publishScheduleForPeriod,
   assignRequirement,
 } from '../../services/scheduleService';
+import { filterRealEmployees, listEmployees } from '../../services/employeeService';
 import { useAuth } from '../../context/useAuth';
 import { extractApiErrorMessage } from '../../services/error';
 import { useTabResponsive } from '../../utils/tabResponsive';
+import { getPositionLabel } from '../../utils/employeeDisplay';
+import { usePositionTitleRevision } from '../../hooks/usePositionTitleRevision';
+import { useUnsavedChanges } from '../../context/useUnsavedChanges';
+
+const SCHEDULE_DRAFT_SCOPE = 'schedule-review-draft';
+
+function getShiftPositionTitle(shift) {
+  return getPositionLabel({
+    position_id: shift?.position_id,
+    position_title: shift?.position_title,
+    title: typeof shift?.position === 'string' ? shift.position : undefined,
+    name: shift?.position?.name,
+    position: typeof shift?.position === 'object' ? shift.position : undefined,
+  }, '—');
+}
+
+const scheduleShiftBlockStyle = {
+  display: 'flex',
+  flexDirection: 'column',
+  alignItems: 'center',
+  justifyContent: 'center',
+  textAlign: 'center',
+};
+
+const scheduleShiftBlockLineStyle = {
+  width: '100%',
+  overflow: 'hidden',
+  textOverflow: 'ellipsis',
+  textAlign: 'center',
+};
 
 function formatTimeForApi(value) {
   const raw = String(value || '').trim();
@@ -93,9 +124,11 @@ function groupShiftsByDate(scheduleRead) {
     if (!byDate[dateKey]) byDate[dateKey] = [];
     byDate[dateKey].push({
       id: shift.id,
+      position_id: shift.position_id,
+      position: shift.position,
+      position_title: shift.position_title || shift.position,
       start_time: shift.start_time,
       end_time: shift.end_time,
-      position_title: shift.position || shift.position_title || '',
       assigned_employees: [{ id: shift.employee_id, full_name: shift.employee_name }],
       assigned_employee_ids: [shift.employee_id],
     });
@@ -378,19 +411,20 @@ function DayScheduleTable({
                             background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
                             color: '#fff',
                             borderRadius: 8,
-                            padding: '0px 0px',
+                            padding: '0px 4px',
                             fontSize: 11,
                             overflow: 'hidden',
                             whiteSpace: 'nowrap',
                             textOverflow: 'ellipsis',
                             boxShadow: '0 2px 8px rgba(102,126,234,0.25)',
                             border: '1px solid rgba(255,255,255,0.1)',
+                            ...scheduleShiftBlockStyle,
                           }}
                         >
-                          <div style={{ fontWeight: 700, fontSize: 11 }}>
-                            {shift.position_title || '—'}
+                          <div style={{ ...scheduleShiftBlockLineStyle, fontWeight: 700, fontSize: 11 }}>
+                            {getShiftPositionTitle(shift)}
                           </div>
-                          <div style={{ fontSize: 10, opacity: 0.9 }}>
+                          <div style={{ ...scheduleShiftBlockLineStyle, fontSize: 10, opacity: 0.9 }}>
                             {`${String(shift.start_time || '').slice(0, 5)} - ${String(shift.end_time || '').slice(0, 5)}`}
                           </div>
                         </div>
@@ -420,7 +454,10 @@ function DayScheduleTable({
                   color: '#8d1d1d',
                 }}
                 >
-                  {item.position_title || '—'}
+                  {getPositionLabel({
+                    position_id: item.position_id,
+                    position_title: item.position_title || item.position,
+                  }, item.position_title || '—')}
                 </td>
                 <td style={{
                   padding: 0,
@@ -462,7 +499,7 @@ function buildDayScheduleEntries(dateKey, displaySchedule, unfilledNotFoundRequi
       key: `shift-${shift.id}`,
       kind: 'shift',
       sortTime: parseTimeToHours(shift.start_time),
-      position: shift.position || shift.position_title || '—',
+      position: getShiftPositionTitle(shift),
       employee: shift.employee_name || '—',
       startTime: shift.start_time,
       endTime: shift.end_time,
@@ -474,7 +511,10 @@ function buildDayScheduleEntries(dateKey, displaySchedule, unfilledNotFoundRequi
       key: `unfilled-${item.requirement_id}`,
       kind: 'unfilled',
       sortTime: parseTimeToHours(item.start_time),
-      position: item.position_title || '—',
+      position: getPositionLabel({
+        position_id: item.position_id,
+        position_title: item.position_title || item.position,
+      }, item.position_title || '—'),
       startTime: item.start_time,
       endTime: item.end_time,
     }));
@@ -490,7 +530,7 @@ function buildDateScheduleItems(dateKey, displaySchedule, unfilledNotFoundRequir
       kind: 'shift',
       startTime: shift.start_time,
       endTime: shift.end_time,
-      title: shift.position || shift.position_title || '---',
+      title: getShiftPositionTitle(shift),
       subtitle: `${shift.employee_name || '---'} - ${String(shift.start_time || '').slice(0, 5)} - ${String(shift.end_time || '').slice(0, 5)}`,
       sortStart: timeToSlotOffset(shift.start_time),
       sortEnd: timeToSlotOffset(shift.end_time || shift.start_time),
@@ -503,7 +543,10 @@ function buildDateScheduleItems(dateKey, displaySchedule, unfilledNotFoundRequir
       kind: 'unfilled',
       startTime: item.start_time,
       endTime: item.end_time,
-      title: item.position_title || '---',
+      title: getPositionLabel({
+        position_id: item.position_id,
+        position_title: item.position_title || item.position,
+      }, item.position_title || '---'),
       subtitle: `${notFoundLabel} - ${String(item.start_time || '').slice(0, 5)} - ${String(item.end_time || '').slice(0, 5)}`,
       sortStart: timeToSlotOffset(item.start_time),
       sortEnd: timeToSlotOffset(item.end_time || item.start_time),
@@ -695,12 +738,13 @@ function DateScheduleGrid({
                               : '0 2px 8px rgba(102,126,234,0.25)',
                             border: isUnfilled ? '2px dashed #8d1d1d' : '1px solid rgba(255,255,255,0.12)',
                             boxSizing: 'border-box',
+                            ...scheduleShiftBlockStyle,
                           }}
                         >
-                          <div style={{ fontWeight: 700, fontSize: 11, overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                          <div style={{ ...scheduleShiftBlockLineStyle, fontWeight: 700, fontSize: 11 }}>
                             {item.title}
                           </div>
-                          <div style={{ fontSize: 10, opacity: 0.9, overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                          <div style={{ ...scheduleShiftBlockLineStyle, fontSize: 10, opacity: 0.9 }}>
                             {item.subtitle}
                           </div>
                         </div>
@@ -751,11 +795,12 @@ function renderTimeSlotBlock({
         boxShadow: '0 2px 8px rgba(141, 29, 29, 0.12)',
         border,
         boxSizing: 'border-box',
+        ...scheduleShiftBlockStyle,
       }}
     >
-      <div style={{ fontWeight: 700, fontSize: 11 }}>{title}</div>
+      <div style={{ ...scheduleShiftBlockLineStyle, fontWeight: 700, fontSize: 11 }}>{title}</div>
       {subtitle ? (
-        <div style={{ fontSize: 10, opacity: 0.9 }}>{subtitle}</div>
+        <div style={{ ...scheduleShiftBlockLineStyle, fontSize: 10, opacity: 0.9 }}>{subtitle}</div>
       ) : null}
     </div>
   );
@@ -795,6 +840,8 @@ function getStatusBadgeStyle(status) {
 
 export default function ScheduleReview({ language }) {
   const r = useTabResponsive(1480);
+  const positionTitleRevision = usePositionTitleRevision();
+  const { markUnsaved, markSaved } = useUnsavedChanges();
   const isMobile = r.isMobile;
   const { user, isLoading: isAuthLoading } = useAuth();
   const hasCompany = Boolean(user?.company);
@@ -804,6 +851,8 @@ export default function ScheduleReview({ language }) {
   const [scheduleVersions, setScheduleVersions] = useState(EMPTY_SCHEDULE_VERSIONS);
   const [activeVersion, setActiveVersion] = useState('draft');
   const [assignEmployeeIds, setAssignEmployeeIds] = useState({});
+  const [manualEmployees, setManualEmployees] = useState([]);
+  const [manualEmployeesLoaded, setManualEmployeesLoaded] = useState(false);
   const [employeesLoaded, setEmployeesLoaded] = useState(false);
   const [selectedDateIndex, setSelectedDateIndex] = useState(0);
   const [isLoading, setIsLoading] = useState(true);
@@ -847,6 +896,7 @@ export default function ScheduleReview({ language }) {
       unfilledTitle: 'Незаполненные смены',
       assign: 'Назначить',
       chooseEmployee: 'Выберите сотрудника',
+      noEmployeesAvailable: 'Нет доступных сотрудников',
       assigned: 'Сотрудник назначен на смену.',
       assignError: 'Не удалось назначить сотрудника.',
     },
@@ -885,6 +935,7 @@ export default function ScheduleReview({ language }) {
       unfilledTitle: 'Unfilled shifts',
       assign: 'Assign',
       chooseEmployee: 'Choose employee',
+      noEmployeesAvailable: 'No available employees',
       assigned: 'Employee assigned to shift.',
       assignError: 'Failed to assign employee.',
     },
@@ -971,6 +1022,7 @@ export default function ScheduleReview({ language }) {
       unfilledNotFoundRequirements,
       scheduleEndDate,
       scheduleStartDate,
+      positionTitleRevision,
     ],
   );
 
@@ -986,7 +1038,7 @@ export default function ScheduleReview({ language }) {
   const currentDateKey = dates[selectedDateIndex] || dates[0] || '';
   const mobileDayEntries = useMemo(
     () => buildDayScheduleEntries(currentDateKey, displaySchedule, unfilledNotFoundRequirements),
-    [currentDateKey, displaySchedule, unfilledNotFoundRequirements],
+    [currentDateKey, displaySchedule, unfilledNotFoundRequirements, positionTitleRevision],
   );
 
   const navStep = viewMode === '3day' ? 3 : 1;
@@ -1038,6 +1090,7 @@ export default function ScheduleReview({ language }) {
       setScheduleVersions((prev) => ({ ...prev, draft: generated }));
       setActiveVersion('draft');
       setSelectedDateIndex(0);
+      markUnsaved(SCHEDULE_DRAFT_SCOPE);
 
       if (visibleShiftCount > 0) {
         setSuccess(t.generated);
@@ -1051,7 +1104,7 @@ export default function ScheduleReview({ language }) {
     } finally {
       setIsSubmitting(false);
     }
-  }, [language, periodForm.start_date, t.generated, t.noEmployeesAndRequirements, t.noScheduleHint, viewMode]);
+  }, [language, markUnsaved, periodForm.start_date, t.generated, t.noEmployeesAndRequirements, t.noScheduleHint, viewMode]);
 
   useEffect(() => {
     if (isAuthLoading) {
@@ -1133,6 +1186,7 @@ export default function ScheduleReview({ language }) {
       });
       setActiveVersion('published');
       setSelectedDateIndex(0);
+      markSaved(SCHEDULE_DRAFT_SCOPE);
       setSuccess(t.publishedDone);
     } catch (e) {
       setError(extractApiErrorMessage(e, null, language));
@@ -1165,6 +1219,39 @@ export default function ScheduleReview({ language }) {
   const showDeletePublished = activeVersion === 'published' && Boolean(scheduleVersions.published?.id);
   const canEditDraft = activeVersion === 'draft' && Boolean(schedule);
 
+  useEffect(() => {
+    if (!schedule?.id || !canEditDraft || unfilledRequirements.length === 0) {
+      setManualEmployees([]);
+      setManualEmployeesLoaded(false);
+      return undefined;
+    }
+
+    let cancelled = false;
+
+    async function loadManualEmployees() {
+      setManualEmployeesLoaded(false);
+      try {
+        const employees = filterRealEmployees(normalizeArray(await listEmployees()));
+        if (!cancelled) {
+          setManualEmployees(employees);
+          setManualEmployeesLoaded(true);
+        }
+      } catch (e) {
+        if (!cancelled) {
+          setManualEmployees([]);
+          setManualEmployeesLoaded(true);
+          setError(extractApiErrorMessage(e, t.assignError, language));
+        }
+      }
+    }
+
+    void loadManualEmployees();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [canEditDraft, language, schedule?.id, t.assignError, unfilledRequirements.length]);
+
   const handleAssignRequirement = async (requirementId) => {
     const employeeId = assignEmployeeIds[requirementId];
     if (!schedule?.id || !requirementId || !employeeId) return;
@@ -1193,7 +1280,7 @@ export default function ScheduleReview({ language }) {
       (s.shifts || []).forEach((shift) => {
         rows.push([
           s.date,
-          shift.position_title || '',
+          getShiftPositionTitle(shift),
           shift.assigned_employees?.[0]?.full_name || '',
           String(shift.start_time || '').slice(0, 5),
           String(shift.end_time || '').slice(0, 5),
@@ -1538,7 +1625,12 @@ export default function ScheduleReview({ language }) {
                     }}
                   >
                     <div style={{ minWidth: 180 }}>
-                      <strong style={{ color: '#002642' }}>{item.position_title}</strong>
+                      <strong style={{ color: '#002642' }}>
+                        {getPositionLabel({
+                          position_id: item.position_id,
+                          position_title: item.position_title || item.position,
+                        }, item.position_title || '—')}
+                      </strong>
                       <div style={{ color: '#4f646f', fontSize: 13 }}>
                         {formatDate(item.date)} · {String(item.start_time || '').slice(0, 5)}–{String(item.end_time || '').slice(0, 5)}
                       </div>
@@ -1562,7 +1654,19 @@ export default function ScheduleReview({ language }) {
                       }}
                       disabled={isSubmitting}
                     >
-                      <option value="">{t.chooseEmployee}</option>
+                      <option value="">
+                        {!manualEmployeesLoaded
+                          ? t.loading
+                          : manualEmployees.length
+                            ? t.chooseEmployee
+                            : t.noEmployeesAvailable}
+                      </option>
+                      {manualEmployees.map((employee) => (
+                        <option key={employee.id} value={employee.id}>
+                          {employee.full_name}
+                          {employee.position?.name ? ` (${employee.position.name})` : ''}
+                        </option>
+                      ))}
                     </select>
 
                     <button
@@ -1731,13 +1835,14 @@ export default function ScheduleReview({ language }) {
                       boxShadow: isUnfilled
                         ? '0 2px 8px rgba(141, 29, 29, 0.12)'
                         : '0 2px 8px rgba(102,126,234,0.25)',
+                      ...scheduleShiftBlockStyle,
                     }}
                   >
-                    <div style={{ fontWeight: 800, fontSize: 15, marginBottom: 4 }}>{entry.position}</div>
-                    <div style={{ fontSize: 14, marginBottom: 4 }}>
+                    <div style={{ ...scheduleShiftBlockLineStyle, fontWeight: 800, fontSize: 15, marginBottom: 4 }}>{entry.position}</div>
+                    <div style={{ ...scheduleShiftBlockLineStyle, fontSize: 14, marginBottom: 4 }}>
                       {isUnfilled ? t.notFound : entry.employee}
                     </div>
-                    <div style={{ fontSize: 13, opacity: 0.92 }}>{timeLabel}</div>
+                    <div style={{ ...scheduleShiftBlockLineStyle, fontSize: 13, opacity: 0.92 }}>{timeLabel}</div>
                   </div>
                 );
               })

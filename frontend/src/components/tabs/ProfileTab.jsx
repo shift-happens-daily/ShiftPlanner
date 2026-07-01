@@ -8,10 +8,14 @@ import { listPositions } from '../../services/positionService';
 import { useUserBranches } from '../../hooks/useUserBranches';
 import { useTabResponsive } from '../../utils/tabResponsive';
 import { getBranchLabel, getPositionLabel } from '../../utils/employeeDisplay';
+import { useUnsavedChanges } from '../../context/useUnsavedChanges';
+
+const POSITION_SCOPE = 'profile-position';
 
 export default function ProfileTab({ language, user }) {
   const r = useTabResponsive(1040);
   const navigate = useNavigate();
+  const { markUnsaved, markSaved } = useUnsavedChanges();
   const { refreshUser, clearAuth } = useAuth();
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -27,7 +31,6 @@ export default function ProfileTab({ language, user }) {
       fullName: 'Полное имя',
       email: 'Email',
       role: 'Роль',
-      employeeId: 'ID сотрудника',
       company: 'Компания',
       branch: 'Филиалы',
       position: 'Позиция',
@@ -61,7 +64,6 @@ export default function ProfileTab({ language, user }) {
       fullName: 'Full name',
       email: 'Email',
       role: 'Role',
-      employeeId: 'Employee ID',
       company: 'Company',
       branch: 'Branches',
       position: 'Position',
@@ -103,10 +105,15 @@ export default function ProfileTab({ language, user }) {
 
   const fullName = user?.fullName || user?.full_name || user?.name || t.empty;
   const email = user?.email || t.empty;
-  const employeeId = user?.employeeId || user?.employee_id;
 
   const companyName = user?.company?.name;
-  const positionName = getPositionLabel(user?.position, t.noPosition);
+  const positionName = getPositionLabel(
+    {
+      id: user?.position?.id ?? user?.position_id,
+      ...user?.position,
+    },
+    t.noPosition,
+  );
   const branchName = getBranchLabel(branchesLabel, t.noBranch);
 
   useEffect(() => {
@@ -168,11 +175,6 @@ export default function ProfileTab({ language, user }) {
   if (isEmployee) {
     rows.push(
       {
-        label: t.employeeId,
-        value: employeeId || t.empty,
-        muted: !employeeId,
-      },
-      {
         label: t.branch,
         value: branchName,
         muted: branchesLabel ? false : true,
@@ -215,6 +217,7 @@ export default function ProfileTab({ language, user }) {
     try {
       await updateMyPosition({ position_id: Number(selectedPositionId) });
       await refreshUser();
+      markSaved(POSITION_SCOPE);
       setSuccessMessage(t.positionSaved);
     } catch (error) {
       setErrorMessage(extractApiErrorMessage(error, t.positionError, language));
@@ -333,7 +336,10 @@ export default function ProfileTab({ language, user }) {
               <label style={styles.fieldLabel}>{t.position}</label>
               <select
                 value={selectedPositionId}
-                onChange={(event) => setSelectedPositionId(event.target.value)}
+                onChange={(event) => {
+                  setSelectedPositionId(event.target.value);
+                  markUnsaved(POSITION_SCOPE);
+                }}
                 style={{ ...styles.select, ...r.fullWidth }}
                 disabled={isSubmitting}
               >
@@ -360,20 +366,12 @@ export default function ProfileTab({ language, user }) {
           </div>
         )}
 
-        <div style={{
-          ...styles.dangerZone,
-          padding: r.isMobile ? '16px 14px' : styles.dangerZone.padding,
-          alignItems: r.isMobile ? 'stretch' : styles.dangerZone.alignItems,
-        }}
-        >
+        <div style={styles.actionsFooter}>
           {isEmployee && hasCompany && (
             <button
               type="button"
               onClick={handleLeaveCompany}
-              style={{
-                ...(isSubmitting ? styles.warningButtonDisabled : styles.warningButton),
-                ...r.fullWidth,
-              }}
+              style={isSubmitting ? styles.warningButtonDisabled : styles.warningButton}
               disabled={isSubmitting}
             >
               {t.leaveCompany}
@@ -383,10 +381,7 @@ export default function ProfileTab({ language, user }) {
           <button
             type="button"
             onClick={handleDeleteAccount}
-            style={{
-              ...(isSubmitting ? styles.dangerButtonDisabled : styles.dangerButton),
-              ...r.fullWidth,
-            }}
+            style={isSubmitting ? styles.dangerButtonDisabled : styles.dangerButton}
             disabled={isSubmitting}
           >
             {t.deleteAccount}
@@ -400,11 +395,15 @@ export default function ProfileTab({ language, user }) {
 const styles = {
   page: {
     width: '100%',
+    height: '100%',
     boxSizing: 'border-box',
     padding: '24px',
+    paddingBottom: '32px',
     display: 'flex',
     justifyContent: 'center',
     alignItems: 'flex-start',
+    overflowY: 'auto',
+    overflowX: 'hidden',
   },
 
   card: {
@@ -593,15 +592,12 @@ const styles = {
     opacity: 0.7,
   },
 
-  dangerZone: {
-    padding: '22px 24px',
-    borderRadius: '20px',
-    background: 'rgba(215, 173, 207, 0.12)',
-    border: '1px solid rgba(141, 29, 29, 0.18)',
+  actionsFooter: {
     display: 'flex',
     flexDirection: 'column',
+    alignItems: 'center',
     gap: '12px',
-    alignItems: 'flex-start',
+    paddingTop: '8px',
   },
 
   warningButton: {

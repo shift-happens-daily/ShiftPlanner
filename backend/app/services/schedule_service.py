@@ -518,6 +518,7 @@ def assign_requirement(
         shift_date=requirement.shift_date,
         start_time=requirement.start_time,
         end_time=requirement.end_time,
+        require_position_match=False,
     )
     schedule_repository.create_shift(
         db,
@@ -542,6 +543,7 @@ def list_available_employees(
     end_time,
     position_id: int,
     branch_id: int | None = None,
+    include_other_positions: bool = False,
 ) -> list[AvailableEmployeeRead]:
     schedule = _get_manager_schedule(db, schedule_id, current_user)
     _ensure_time_range(start_time, end_time)
@@ -559,10 +561,15 @@ def list_available_employees(
         company_id=current_user.company_id,
         position_id=position_id,
         branch_id=branch_id,
+        include_other_positions=include_other_positions,
     )
     available: list[AvailableEmployeeRead] = []
+    seen_employee_ids: set[int] = set()
     for row in rows:
         employee_id = row["employee_id"]
+        if employee_id in seen_employee_ids:
+            continue
+        seen_employee_ids.add(employee_id)
         if schedule_repository.employee_has_absence_on_date(db, employee_id=employee_id, shift_date=shift_date):
             continue
         if schedule_repository.has_overlapping_assignment(
@@ -840,6 +847,7 @@ def _validate_employee_assignment(
     start_time,
     end_time,
     exclude_shift_id: int | None = None,
+    require_position_match: bool = True,
 ) -> None:
     schedule = schedule_repository.get_schedule(db, schedule_id)
     employee = employee_repository.get_employee_by_id(db, employee_id)
@@ -855,7 +863,7 @@ def _validate_employee_assignment(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Employee is inactive.",
         )
-    if not employee_repository.employee_has_position(db, employee.id, position_id):
+    if require_position_match and not employee_repository.employee_has_position(db, employee.id, position_id):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Employee does not match the required position for this shift.",
