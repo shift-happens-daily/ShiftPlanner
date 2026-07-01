@@ -366,20 +366,12 @@ export default function ProfileTab({ language, user }) {
           </div>
         )}
 
-        <div style={{
-          ...styles.dangerZone,
-          padding: r.isMobile ? '16px 14px' : styles.dangerZone.padding,
-          alignItems: r.isMobile ? 'stretch' : styles.dangerZone.alignItems,
-        }}
-        >
+        <div style={styles.actionsFooter}>
           {isEmployee && hasCompany && (
             <button
               type="button"
               onClick={handleLeaveCompany}
-              style={{
-                ...(isSubmitting ? styles.warningButtonDisabled : styles.warningButton),
-                ...r.fullWidth,
-              }}
+              style={isSubmitting ? styles.warningButtonDisabled : styles.warningButton}
               disabled={isSubmitting}
             >
               {t.leaveCompany}
@@ -389,10 +381,7 @@ export default function ProfileTab({ language, user }) {
           <button
             type="button"
             onClick={handleDeleteAccount}
-            style={{
-              ...(isSubmitting ? styles.dangerButtonDisabled : styles.dangerButton),
-              ...r.fullWidth,
-            }}
+            style={isSubmitting ? styles.dangerButtonDisabled : styles.dangerButton}
             disabled={isSubmitting}
           >
             {t.deleteAccount}
@@ -603,15 +592,12 @@ const styles = {
     opacity: 0.7,
   },
 
-  dangerZone: {
-    padding: '22px 24px',
-    borderRadius: '20px',
-    background: 'rgba(215, 173, 207, 0.12)',
-    border: '1px solid rgba(141, 29, 29, 0.18)',
+  actionsFooter: {
     display: 'flex',
     flexDirection: 'column',
+    alignItems: 'center',
     gap: '12px',
-    alignItems: 'flex-start',
+    paddingTop: '8px',
   },
 
   warningButton: {
