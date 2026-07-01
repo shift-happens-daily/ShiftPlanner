@@ -30,6 +30,21 @@ function getShiftPositionTitle(shift) {
   }, '—');
 }
 
+const scheduleShiftBlockStyle = {
+  display: 'flex',
+  flexDirection: 'column',
+  alignItems: 'center',
+  justifyContent: 'center',
+  textAlign: 'center',
+};
+
+const scheduleShiftBlockLineStyle = {
+  width: '100%',
+  overflow: 'hidden',
+  textOverflow: 'ellipsis',
+  textAlign: 'center',
+};
+
 function formatTimeForApi(value) {
   const raw = String(value || '').trim();
   if (!raw) return raw;
@@ -396,19 +411,20 @@ function DayScheduleTable({
                             background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
                             color: '#fff',
                             borderRadius: 8,
-                            padding: '0px 0px',
+                            padding: '0px 4px',
                             fontSize: 11,
                             overflow: 'hidden',
                             whiteSpace: 'nowrap',
                             textOverflow: 'ellipsis',
                             boxShadow: '0 2px 8px rgba(102,126,234,0.25)',
                             border: '1px solid rgba(255,255,255,0.1)',
+                            ...scheduleShiftBlockStyle,
                           }}
                         >
-                          <div style={{ fontWeight: 700, fontSize: 11 }}>
+                          <div style={{ ...scheduleShiftBlockLineStyle, fontWeight: 700, fontSize: 11 }}>
                             {getShiftPositionTitle(shift)}
                           </div>
-                          <div style={{ fontSize: 10, opacity: 0.9 }}>
+                          <div style={{ ...scheduleShiftBlockLineStyle, fontSize: 10, opacity: 0.9 }}>
                             {`${String(shift.start_time || '').slice(0, 5)} - ${String(shift.end_time || '').slice(0, 5)}`}
                           </div>
                         </div>
@@ -722,12 +738,13 @@ function DateScheduleGrid({
                               : '0 2px 8px rgba(102,126,234,0.25)',
                             border: isUnfilled ? '2px dashed #8d1d1d' : '1px solid rgba(255,255,255,0.12)',
                             boxSizing: 'border-box',
+                            ...scheduleShiftBlockStyle,
                           }}
                         >
-                          <div style={{ fontWeight: 700, fontSize: 11, overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                          <div style={{ ...scheduleShiftBlockLineStyle, fontWeight: 700, fontSize: 11 }}>
                             {item.title}
                           </div>
-                          <div style={{ fontSize: 10, opacity: 0.9, overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                          <div style={{ ...scheduleShiftBlockLineStyle, fontSize: 10, opacity: 0.9 }}>
                             {item.subtitle}
                           </div>
                         </div>
@@ -778,11 +795,12 @@ function renderTimeSlotBlock({
         boxShadow: '0 2px 8px rgba(141, 29, 29, 0.12)',
         border,
         boxSizing: 'border-box',
+        ...scheduleShiftBlockStyle,
       }}
     >
-      <div style={{ fontWeight: 700, fontSize: 11 }}>{title}</div>
+      <div style={{ ...scheduleShiftBlockLineStyle, fontWeight: 700, fontSize: 11 }}>{title}</div>
       {subtitle ? (
-        <div style={{ fontSize: 10, opacity: 0.9 }}>{subtitle}</div>
+        <div style={{ ...scheduleShiftBlockLineStyle, fontSize: 10, opacity: 0.9 }}>{subtitle}</div>
       ) : null}
     </div>
   );
@@ -1817,13 +1835,14 @@ export default function ScheduleReview({ language }) {
                       boxShadow: isUnfilled
                         ? '0 2px 8px rgba(141, 29, 29, 0.12)'
                         : '0 2px 8px rgba(102,126,234,0.25)',
+                      ...scheduleShiftBlockStyle,
                     }}
                   >
-                    <div style={{ fontWeight: 800, fontSize: 15, marginBottom: 4 }}>{entry.position}</div>
-                    <div style={{ fontSize: 14, marginBottom: 4 }}>
+                    <div style={{ ...scheduleShiftBlockLineStyle, fontWeight: 800, fontSize: 15, marginBottom: 4 }}>{entry.position}</div>
+                    <div style={{ ...scheduleShiftBlockLineStyle, fontSize: 14, marginBottom: 4 }}>
                       {isUnfilled ? t.notFound : entry.employee}
                     </div>
-                    <div style={{ fontSize: 13, opacity: 0.92 }}>{timeLabel}</div>
+                    <div style={{ ...scheduleShiftBlockLineStyle, fontSize: 13, opacity: 0.92 }}>{timeLabel}</div>
                   </div>
                 );
               })

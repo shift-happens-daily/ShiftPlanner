@@ -1242,7 +1242,7 @@ export default function ScheduleTab({ language, userRole }) {
                         >
                           <div style={{
                             ...styles.calendarShiftInfo,
-                            ...(r.isMobile ? { alignItems: 'flex-start' } : {}),
+                            ...(r.isMobile ? { alignItems: 'center', justifyContent: 'center' } : {}),
                           }}
                           >
                             <span style={styles.calendarShiftTimeInline}>
@@ -1372,12 +1372,16 @@ export default function ScheduleTab({ language, userRole }) {
                                         color: '#fff',
                                         border: '1px solid rgba(255,255,255,0.12)',
                                         boxShadow: '0 2px 8px rgba(102,126,234,0.25)',
+                                        display: 'flex',
+                                        flexDirection: 'column',
+                                        alignItems: 'center',
+                                        textAlign: 'center',
                                       }}
                                     >
-                                      <div style={{ fontWeight: 800, fontSize: 15, marginBottom: 4 }}>
+                                      <div style={{ fontWeight: 800, fontSize: 15, marginBottom: 4, width: '100%' }}>
                                         {getShiftPosition(shift)}
                                       </div>
-                                      <div style={{ fontSize: 13, opacity: 0.92, marginBottom: 6 }}>
+                                      <div style={{ fontSize: 13, opacity: 0.92, marginBottom: 6, width: '100%' }}>
                                         {getShiftCompany(shift)}
                                       </div>
                                       <div style={{
@@ -1893,8 +1897,9 @@ const styles = {
     minWidth: 0,
     display: 'flex',
     alignItems: 'center',
+    justifyContent: 'center',
     gap: '10px',
-    flexWrap: 'nowrap',
+    flexWrap: 'wrap',
     overflow: 'hidden',
   },
 
