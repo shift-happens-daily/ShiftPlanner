@@ -19,6 +19,8 @@ import {
 } from '../../utils/employeeBranches';
 import { useTabResponsive } from '../../utils/tabResponsive';
 import { formatLocalDate } from '../../services/scheduleService';
+import { getEmployeePositionLabel, getPositionLabel } from '../../utils/employeeDisplay';
+import { usePositionTitleRevision } from '../../hooks/usePositionTitleRevision';
 
 function normalizeArray(value) {
   return Array.isArray(value) ? value : [];
@@ -28,14 +30,6 @@ function normalizeError(error, fallback, language) {
   const message = extractApiErrorMessage(error, fallback, language);
   if (!message) return fallback;
   return message;
-}
-
-function getPositionLabel(position) {
-  return position?.title || position?.name || position?.position_title || '';
-}
-
-function getEmployeePosition(employee) {
-  return employee?.position_title || employee?.position?.title || employee?.position?.name || '';
 }
 
 function getCompanyId(company) {
@@ -127,6 +121,7 @@ function formatDateRange(startDate, endDate) {
 }
 
 export default function EmployeesTab({ language, userRole, user }) {
+  usePositionTitleRevision();
   const r = useTabResponsive(1380);
   // Добавляем глобальные стили для полей ввода
   useEffect(() => {
@@ -399,7 +394,7 @@ export default function EmployeesTab({ language, userRole, user }) {
     [employees, selectedEmployeeId]
   );
 
-  const selectedEmployeePosition = getEmployeePosition(selectedEmployee);
+  const selectedEmployeePosition = getEmployeePositionLabel(selectedEmployee);
   const selectedEmployeeBranches = useMemo(() => {
     if (!selectedEmployee) return [];
 
@@ -1127,7 +1122,7 @@ export default function EmployeesTab({ language, userRole, user }) {
                           </td>
                           <td style={styles.tableCell}>{employee.email || '-'}</td>
                           <td style={styles.tableCell}>{getBranchLabel(employee, branches, t.empty)}</td>
-                          <td style={styles.tableCell}>{getEmployeePosition(employee) || t.empty}</td>
+                          <td style={styles.tableCell}>{getEmployeePositionLabel(employee) || t.empty}</td>
                           <td style={{ ...styles.tableCell, ...styles.actionsCell }}>
                             <button
                               type="button"

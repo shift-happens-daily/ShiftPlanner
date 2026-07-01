@@ -13,6 +13,18 @@ import {
 import { useAuth } from '../../context/useAuth';
 import { extractApiErrorMessage } from '../../services/error';
 import { useTabResponsive } from '../../utils/tabResponsive';
+import { getPositionLabel } from '../../utils/employeeDisplay';
+import { usePositionTitleRevision } from '../../hooks/usePositionTitleRevision';
+
+function getShiftPositionTitle(shift) {
+  return getPositionLabel({
+    position_id: shift?.position_id,
+    position_title: shift?.position_title,
+    title: typeof shift?.position === 'string' ? shift.position : undefined,
+    name: shift?.position?.name,
+    position: typeof shift?.position === 'object' ? shift.position : undefined,
+  }, '—');
+}
 
 function formatTimeForApi(value) {
   const raw = String(value || '').trim();
@@ -93,9 +105,11 @@ function groupShiftsByDate(scheduleRead) {
     if (!byDate[dateKey]) byDate[dateKey] = [];
     byDate[dateKey].push({
       id: shift.id,
+      position_id: shift.position_id,
+      position: shift.position,
+      position_title: shift.position_title || shift.position,
       start_time: shift.start_time,
       end_time: shift.end_time,
-      position_title: shift.position || shift.position_title || '',
       assigned_employees: [{ id: shift.employee_id, full_name: shift.employee_name }],
       assigned_employee_ids: [shift.employee_id],
     });
@@ -388,7 +402,7 @@ function DayScheduleTable({
                           }}
                         >
                           <div style={{ fontWeight: 700, fontSize: 11 }}>
-                            {shift.position_title || '—'}
+                            {getShiftPositionTitle(shift)}
                           </div>
                           <div style={{ fontSize: 10, opacity: 0.9 }}>
                             {`${String(shift.start_time || '').slice(0, 5)} - ${String(shift.end_time || '').slice(0, 5)}`}
@@ -420,7 +434,10 @@ function DayScheduleTable({
                   color: '#8d1d1d',
                 }}
                 >
-                  {item.position_title || '—'}
+                  {getPositionLabel({
+                    position_id: item.position_id,
+                    position_title: item.position_title || item.position,
+                  }, item.position_title || '—')}
                 </td>
                 <td style={{
                   padding: 0,
@@ -462,7 +479,7 @@ function buildDayScheduleEntries(dateKey, displaySchedule, unfilledNotFoundRequi
       key: `shift-${shift.id}`,
       kind: 'shift',
       sortTime: parseTimeToHours(shift.start_time),
-      position: shift.position || shift.position_title || '—',
+      position: getShiftPositionTitle(shift),
       employee: shift.employee_name || '—',
       startTime: shift.start_time,
       endTime: shift.end_time,
@@ -474,7 +491,10 @@ function buildDayScheduleEntries(dateKey, displaySchedule, unfilledNotFoundRequi
       key: `unfilled-${item.requirement_id}`,
       kind: 'unfilled',
       sortTime: parseTimeToHours(item.start_time),
-      position: item.position_title || '—',
+      position: getPositionLabel({
+        position_id: item.position_id,
+        position_title: item.position_title || item.position,
+      }, item.position_title || '—'),
       startTime: item.start_time,
       endTime: item.end_time,
     }));
@@ -490,7 +510,7 @@ function buildDateScheduleItems(dateKey, displaySchedule, unfilledNotFoundRequir
       kind: 'shift',
       startTime: shift.start_time,
       endTime: shift.end_time,
-      title: shift.position || shift.position_title || '---',
+      title: getShiftPositionTitle(shift),
       subtitle: `${shift.employee_name || '---'} - ${String(shift.start_time || '').slice(0, 5)} - ${String(shift.end_time || '').slice(0, 5)}`,
       sortStart: timeToSlotOffset(shift.start_time),
       sortEnd: timeToSlotOffset(shift.end_time || shift.start_time),
@@ -503,7 +523,10 @@ function buildDateScheduleItems(dateKey, displaySchedule, unfilledNotFoundRequir
       kind: 'unfilled',
       startTime: item.start_time,
       endTime: item.end_time,
-      title: item.position_title || '---',
+      title: getPositionLabel({
+        position_id: item.position_id,
+        position_title: item.position_title || item.position,
+      }, item.position_title || '---'),
       subtitle: `${notFoundLabel} - ${String(item.start_time || '').slice(0, 5)} - ${String(item.end_time || '').slice(0, 5)}`,
       sortStart: timeToSlotOffset(item.start_time),
       sortEnd: timeToSlotOffset(item.end_time || item.start_time),
@@ -795,6 +818,7 @@ function getStatusBadgeStyle(status) {
 
 export default function ScheduleReview({ language }) {
   const r = useTabResponsive(1480);
+  const positionTitleRevision = usePositionTitleRevision();
   const isMobile = r.isMobile;
   const { user, isLoading: isAuthLoading } = useAuth();
   const hasCompany = Boolean(user?.company);
@@ -971,6 +995,7 @@ export default function ScheduleReview({ language }) {
       unfilledNotFoundRequirements,
       scheduleEndDate,
       scheduleStartDate,
+      positionTitleRevision,
     ],
   );
 
@@ -986,7 +1011,7 @@ export default function ScheduleReview({ language }) {
   const currentDateKey = dates[selectedDateIndex] || dates[0] || '';
   const mobileDayEntries = useMemo(
     () => buildDayScheduleEntries(currentDateKey, displaySchedule, unfilledNotFoundRequirements),
-    [currentDateKey, displaySchedule, unfilledNotFoundRequirements],
+    [currentDateKey, displaySchedule, unfilledNotFoundRequirements, positionTitleRevision],
   );
 
   const navStep = viewMode === '3day' ? 3 : 1;
@@ -1193,7 +1218,7 @@ export default function ScheduleReview({ language }) {
       (s.shifts || []).forEach((shift) => {
         rows.push([
           s.date,
-          shift.position_title || '',
+          getShiftPositionTitle(shift),
           shift.assigned_employees?.[0]?.full_name || '',
           String(shift.start_time || '').slice(0, 5),
           String(shift.end_time || '').slice(0, 5),
@@ -1538,7 +1563,12 @@ export default function ScheduleReview({ language }) {
                     }}
                   >
                     <div style={{ minWidth: 180 }}>
-                      <strong style={{ color: '#002642' }}>{item.position_title}</strong>
+                      <strong style={{ color: '#002642' }}>
+                        {getPositionLabel({
+                          position_id: item.position_id,
+                          position_title: item.position_title || item.position,
+                        }, item.position_title || '—')}
+                      </strong>
                       <div style={{ color: '#4f646f', fontSize: 13 }}>
                         {formatDate(item.date)} · {String(item.start_time || '').slice(0, 5)}–{String(item.end_time || '').slice(0, 5)}
                       </div>

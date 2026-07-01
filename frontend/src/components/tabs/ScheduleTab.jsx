@@ -18,6 +18,8 @@ import {
   updateShift,
 } from '../../services/scheduleService';
 import { useTabResponsive } from '../../utils/tabResponsive';
+import { getPositionLabel } from '../../utils/employeeDisplay';
+import { usePositionTitleRevision } from '../../hooks/usePositionTitleRevision';
 
 function defaultPeriod() {
   return defaultSchedulePeriod();
@@ -140,7 +142,13 @@ function getShiftId(shift) {
 }
 
 function getShiftPosition(shift) {
-  return shift?.position || shift?.position_title || shift?.position_name || shift?.position?.title || shift?.position?.name || '—';
+  return getPositionLabel({
+    position_id: shift?.position_id || shift?.position?.id,
+    position_title: shift?.position_title || shift?.position_name,
+    title: typeof shift?.position === 'string' ? shift.position : undefined,
+    name: shift?.position?.name,
+    position: typeof shift?.position === 'object' ? shift.position : undefined,
+  }, '—');
 }
 
 function getShiftEmployeeName(shift) {
@@ -189,7 +197,10 @@ function exportScheduleDraftToXlsx(schedule, translations) {
   const unfilled = normalizeArray(schedule.unfilled_requirements).map((item) => ({
     requirement_id: item.requirement_id || '',
     date: item.date || '',
-    position: item.position_title || item.position || '',
+    position: getPositionLabel({
+      position_id: item.position_id,
+      position_title: item.position_title || item.position,
+    }, item.position_title || item.position || ''),
     start_time: formatTime(item.start_time),
     end_time: formatTime(item.end_time),
     missing_staff: item.missing_staff || 0,
@@ -230,6 +241,7 @@ function exportScheduleDraftToXlsx(schedule, translations) {
 }
 
 export default function ScheduleTab({ language, userRole }) {
+  const positionTitleRevision = usePositionTitleRevision();
   const isManager = userRole === 'manager';
   const r = useTabResponsive(1480);
 
@@ -379,7 +391,7 @@ export default function ScheduleTab({ language, userRole }) {
   const t = texts[language] || texts.ru;
 
   const scheduleShifts = useMemo(() => normalizeArray(schedule?.shifts), [schedule]);
-  const unfilledRequirements = useMemo(() => normalizeArray(schedule?.unfilled_requirements), [schedule]);
+  const unfilledRequirements = useMemo(() => normalizeArray(schedule?.unfilled_requirements), [schedule, positionTitleRevision]);
   const conflicts = useMemo(() => normalizeArray(schedule?.conflicts), [schedule]);
 
   const employeeSchedule = mySchedule;
@@ -1003,7 +1015,12 @@ export default function ScheduleTab({ language, userRole }) {
 
                             return (
                             <div key={requirementId} style={styles.compactItem}>
-                              <strong style={styles.itemTitle}>{item.position_title}</strong>
+                              <strong style={styles.itemTitle}>
+                                {getPositionLabel({
+                                  position_id: item.position_id,
+                                  position_title: item.position_title || item.position,
+                                }, item.position_title || '—')}
+                              </strong>
                               <span style={styles.itemMeta}>{item.date}</span>
                               <span style={styles.itemMeta}>
                                 {formatTime(item.start_time)} — {formatTime(item.end_time)}

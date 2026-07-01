@@ -41,11 +41,20 @@ export function getAvailabilityStyle(status, styleMap = {}, defaultStyle = DEFAU
   return styleMap?.[normalized] || defaultStyle;
 }
 
+import {
+  getEmployeePositionLabel as resolveEmployeePositionLabel,
+  resolvePositionTitle,
+} from '../services/positionService';
+
 /**
  * Human-readable position label with a guaranteed fallback.
  */
 export function getPositionLabel(position, fallback = 'Без позиции') {
-  return position?.title || position?.name || position?.position_title || fallback;
+  return resolvePositionTitle(position, fallback);
+}
+
+export function getEmployeePositionLabel(employee, fallback = 'Без позиции') {
+  return resolveEmployeePositionLabel(employee, fallback);
 }
 
 /**

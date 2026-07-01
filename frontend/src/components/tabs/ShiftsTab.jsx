@@ -18,6 +18,7 @@ import {
   listRequirements,
 } from '../../services/scheduleService';
 import { useTabResponsive } from '../../utils/tabResponsive';
+import { usePositionTitleRevision } from '../../hooks/usePositionTitleRevision';
 import {
   DEFAULT_AVAILABILITY_STYLE,
   getAvailabilityStyle,
@@ -296,7 +297,11 @@ function normalizeRequirement(requirement, positions = []) {
     ...requirement,
     id: getRequirementId(requirement),
     position_id: positionId,
-    position_title: requirement.position_title || requirement.positionTitle || requirement.position?.title || requirement.position?.name || getPositionLabel(position) || 'Position',
+    position_title: getPositionLabel({
+      position_id: positionId,
+      position_title: requirement.position_title || requirement.positionTitle,
+      position: requirement.position,
+    }, getPositionLabel(position) || 'Position'),
     date: requirement.date,
     start_time: requirement.start_time || requirement.startTime,
     end_time: requirement.end_time || requirement.endTime,
@@ -314,6 +319,7 @@ function normalizeError(error, fallback, language) {
 }
 
 export default function ShiftsTab({ language, userRole, user }) {
+  const positionTitleRevision = usePositionTitleRevision();
   const r = useTabResponsive(1480);
   const isManager = userRole === 'manager';
   const employeeId = user?.employeeId || user?.employee_id;
@@ -600,7 +606,7 @@ export default function ShiftsTab({ language, userRole, user }) {
       .map((requirement) => normalizeRequirement(requirement, positions))
       .filter(Boolean)
       .filter((requirement) => matchesRequirementFilters(requirement, appliedFilters))
-  ), [appliedFilters, positions, requirements]);
+  ), [appliedFilters, positions, requirements, positionTitleRevision]);
 
   useEffect(() => {
     if (isManager) return;

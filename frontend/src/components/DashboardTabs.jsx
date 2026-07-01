@@ -9,6 +9,7 @@ import ScheduleTab from './tabs/ScheduleTab';
 import ScheduleReview from './tabs/ScheduleReview';
 import ShiftsTab from './tabs/ShiftsTab';
 import { getPositionLabel } from '../utils/employeeDisplay';
+import { usePositionTitleRevision } from '../hooks/usePositionTitleRevision';
 
 const TAB_ICONS = {
   schedule: (
@@ -45,6 +46,7 @@ const TAB_ICONS = {
 };
 
 export default function DashboardTabs({ userRole, language, title, rightSlot }) {
+  usePositionTitleRevision();
   const isMobile = useIsMobile();
   const activeTabStorageKey = `shiftplanner_active_tab_${userRole || 'default'}`;
   const [activeTab, setActiveTab] = useState(() => (
@@ -151,7 +153,10 @@ export default function DashboardTabs({ userRole, language, title, rightSlot }) 
 
   const fullName = user?.fullName || user?.full_name || user?.name || '';
   const positionName = getPositionLabel(
-    user?.position,
+    {
+      id: user?.position?.id ?? user?.position_id,
+      ...user?.position,
+    },
     userRole === 'manager' ? t.manager : t.noPosition,
   );
 

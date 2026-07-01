@@ -106,7 +106,13 @@ export default function ProfileTab({ language, user }) {
   const employeeId = user?.employeeId || user?.employee_id;
 
   const companyName = user?.company?.name;
-  const positionName = getPositionLabel(user?.position, t.noPosition);
+  const positionName = getPositionLabel(
+    {
+      id: user?.position?.id ?? user?.position_id,
+      ...user?.position,
+    },
+    t.noPosition,
+  );
   const branchName = getBranchLabel(branchesLabel, t.noBranch);
 
   useEffect(() => {
