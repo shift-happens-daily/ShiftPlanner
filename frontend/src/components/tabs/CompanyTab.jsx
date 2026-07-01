@@ -18,6 +18,8 @@ import { extractApiErrorMessage } from '../../services/error';
 import { useUserBranches } from '../../hooks/useUserBranches';
 import { removeBranchFromAllStoredAssignments } from '../../utils/employeeBranches';
 import { useTabResponsive } from '../../utils/tabResponsive';
+import { getEmployeePositionLabel, getPositionLabel } from '../../utils/employeeDisplay';
+import { usePositionTitleRevision } from '../../hooks/usePositionTitleRevision';
 
 function normalizeArray(value) {
   if (Array.isArray(value)) return value;
@@ -80,6 +82,7 @@ function getInviteCode(company) {
 }
 
 export default function CompanyTab({ language, userRole, user }) {
+  usePositionTitleRevision();
   const r = useTabResponsive(1480);
   const { refreshUser } = useAuth();
 
@@ -253,8 +256,8 @@ export default function CompanyTab({ language, userRole, user }) {
   const isPendingEmployee = isEmployee && user?.employeeStatus === 'pending';
 
   const currentCompany = user?.company || null;
-  const currentPosition = user?.position || null;
   const currentCompanyId = getCompanyId(currentCompany);
+  const employeePositionLabel = getEmployeePositionLabel(user, '—');
   const { userBranches } = useUserBranches(user);
 
   const effectiveInviteCode = getInviteCode(currentCompany);
@@ -667,7 +670,7 @@ export default function CompanyTab({ language, userRole, user }) {
                           {t.requestBranches}: {getRequestBranchesLabel(request)}
                         </span>
                         <span style={styles.requestMeta}>
-                          {t.requestPosition}: {getName(request.position)}
+                          {t.requestPosition}: {getPositionLabel(request.position, '—')}
                         </span>
                       </div>
                       <div style={styles.requestActions}>
@@ -747,7 +750,7 @@ export default function CompanyTab({ language, userRole, user }) {
                         </div>
                         <InfoItem
                           label={t.position}
-                          value={getName(currentPosition)}
+                          value={employeePositionLabel}
                           style={styles.employeeInfoItem}
                         />
                       </div>
@@ -849,7 +852,7 @@ export default function CompanyTab({ language, userRole, user }) {
                             <option value="">{t.noPositionSelected}</option>
                             {previewPositions.map((position) => (
                               <option key={position.id} value={position.id}>
-                                {getName(position)}
+                                {getPositionLabel(position, getName(position))}
                               </option>
                             ))}
                           </select>

@@ -27,7 +27,6 @@ export default function ProfileTab({ language, user }) {
       fullName: 'Полное имя',
       email: 'Email',
       role: 'Роль',
-      employeeId: 'ID сотрудника',
       company: 'Компания',
       branch: 'Филиалы',
       position: 'Позиция',
@@ -61,7 +60,6 @@ export default function ProfileTab({ language, user }) {
       fullName: 'Full name',
       email: 'Email',
       role: 'Role',
-      employeeId: 'Employee ID',
       company: 'Company',
       branch: 'Branches',
       position: 'Position',
@@ -103,10 +101,15 @@ export default function ProfileTab({ language, user }) {
 
   const fullName = user?.fullName || user?.full_name || user?.name || t.empty;
   const email = user?.email || t.empty;
-  const employeeId = user?.employeeId || user?.employee_id;
 
   const companyName = user?.company?.name;
-  const positionName = getPositionLabel(user?.position, t.noPosition);
+  const positionName = getPositionLabel(
+    {
+      id: user?.position?.id ?? user?.position_id,
+      ...user?.position,
+    },
+    t.noPosition,
+  );
   const branchName = getBranchLabel(branchesLabel, t.noBranch);
 
   useEffect(() => {
@@ -167,11 +170,6 @@ export default function ProfileTab({ language, user }) {
 
   if (isEmployee) {
     rows.push(
-      {
-        label: t.employeeId,
-        value: employeeId || t.empty,
-        muted: !employeeId,
-      },
       {
         label: t.branch,
         value: branchName,
@@ -400,11 +398,15 @@ export default function ProfileTab({ language, user }) {
 const styles = {
   page: {
     width: '100%',
+    height: '100%',
     boxSizing: 'border-box',
     padding: '24px',
+    paddingBottom: '32px',
     display: 'flex',
     justifyContent: 'center',
     alignItems: 'flex-start',
+    overflowY: 'auto',
+    overflowX: 'hidden',
   },
 
   card: {

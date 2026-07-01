@@ -5,7 +5,9 @@ import { listBranches } from '../../services/companyService';
 import { filterRealEmployees, listEmployees } from '../../services/employeeService';
 import { listPositions } from '../../services/positionService';
 import { enrichReportRowBranch } from '../../utils/employeeBranches';
+import { getEmployeePositionLabel, getPositionLabel } from '../../utils/employeeDisplay';
 import { extractApiErrorMessage } from '../../services/error';
+import { POSITION_TITLES_CHANGED_EVENT } from '../../services/positionService';
 import { useTabResponsive } from '../../utils/tabResponsive';
 import { formatLocalDate } from '../../services/scheduleService';
 
@@ -51,16 +53,23 @@ function uniqueSorted(values) {
 
 const DEFAULT_HOURLY_RATE = 25;
 
-function normalizeManagerRow(item, allBranches = []) {
+function normalizeManagerRow(item, allBranches = [], employeesById = {}) {
   const totalHours = normalizeNumber(item?.total_hours);
   const hourlyRate = normalizeNumber(item?.hourly_rate) || DEFAULT_HOURLY_RATE;
   const totalSalary = normalizeNumber(item?.total_salary) || normalizeNumber(item?.salary) || totalHours * hourlyRate;
   const branchInfo = enrichReportRowBranch(item, allBranches);
+  const employeeId = item?.employee_id || item?.id || item?.user_id;
+  const employee = employeesById[String(employeeId)] || null;
+  const position = employee
+    ? getEmployeePositionLabel(employee, item?.position || item?.position_title || item?.position_name || '—')
+    : getPositionLabel({
+      position_title: item?.position || item?.position_title || item?.position_name,
+    }, '—');
 
   return {
-    employee_id: item?.employee_id || item?.id || item?.user_id || `${item?.full_name}-${item?.position}`,
+    employee_id: employeeId || `${item?.full_name}-${item?.position}`,
     full_name: item?.full_name || item?.employee_name || item?.name || '—',
-    position: item?.position || item?.position_title || item?.position_name || '—',
+    position,
     branch: branchInfo.branch,
     branchNames: branchInfo.branchNames,
     total_hours: totalHours,
@@ -70,17 +79,22 @@ function normalizeManagerRow(item, allBranches = []) {
   };
 }
 
-function normalizeEmployeeReport(report) {
+function normalizeEmployeeReport(report, user) {
   if (!report) {
     return null;
   }
 
   const totalHours = normalizeNumber(report.total_hours);
   const totalSalary = normalizeNumber(report.total_salary) || normalizeNumber(report.salary) || totalHours * DEFAULT_HOURLY_RATE;
+  const position = user
+    ? getEmployeePositionLabel(user, report.position || report.position_title || report.position_name || '—')
+    : getPositionLabel({
+      position_title: report.position || report.position_title || report.position_name,
+    }, '—');
 
   return {
     full_name: report.full_name || report.employee_name || report.name || '—',
-    position: report.position || report.position_title || report.position_name || '—',
+    position,
     total_hours: totalHours,
     total_shifts: normalizeNumber(report.total_shifts),
     total_salary: totalSalary,
@@ -101,6 +115,7 @@ export default function ReportsTab({ language, userRole, user }) {
   const [companyBranches, setCompanyBranches] = useState([]);
   const [companyEmployees, setCompanyEmployees] = useState([]);
   const [companyPositions, setCompanyPositions] = useState([]);
+  const [positionTitlesRevision, setPositionTitlesRevision] = useState(0);
 
   const [managerReport, setManagerReport] = useState([]);
   const [employeeReport, setEmployeeReport] = useState(null);
@@ -223,9 +238,24 @@ export default function ReportsTab({ language, userRole, user }) {
     };
   }, [companyId, isManager]);
 
+  useEffect(() => {
+    function handlePositionTitlesChanged() {
+      setPositionTitlesRevision((value) => value + 1);
+    }
+
+    window.addEventListener(POSITION_TITLES_CHANGED_EVENT, handlePositionTitlesChanged);
+    return () => window.removeEventListener(POSITION_TITLES_CHANGED_EVENT, handlePositionTitlesChanged);
+  }, []);
+
+  const employeesById = useMemo(() => {
+    return Object.fromEntries(
+      companyEmployees.map((employee) => [String(employee.id), employee])
+    );
+  }, [companyEmployees]);
+
   const normalizedManagerReport = useMemo(
-    () => normalizeArray(managerReport).map((item) => normalizeManagerRow(item, companyBranches)),
-    [managerReport, companyBranches]
+    () => normalizeArray(managerReport).map((item) => normalizeManagerRow(item, companyBranches, employeesById)),
+    [managerReport, companyBranches, employeesById, positionTitlesRevision]
   );
 
   const filteredManagerReport = useMemo(() => {
@@ -256,8 +286,8 @@ export default function ReportsTab({ language, userRole, user }) {
   }, [companyBranches, normalizedManagerReport]);
 
   const normalizedEmployeeReport = useMemo(
-    () => normalizeEmployeeReport(employeeReport),
-    [employeeReport]
+    () => normalizeEmployeeReport(employeeReport, user),
+    [employeeReport, user, positionTitlesRevision]
   );
 
   const totals = useMemo(() => {
