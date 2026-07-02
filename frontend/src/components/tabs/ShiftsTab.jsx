@@ -597,17 +597,6 @@ export default function ShiftsTab({ language, userRole, user }) {
     return `${start} — ${end}`;
   }, [language, weekDates]);
 
-  const selectedMobileDate = weekDates[mobileAvailabilityDay] || weekDates[0];
-  const selectedMobileDateKey = selectedMobileDate ? toDateKey(selectedMobileDate) : '';
-  const selectedMobileDatePast = selectedMobileDateKey ? isPastDateKey(selectedMobileDateKey) : false;
-  const selectedMobileDateLabel = selectedMobileDate instanceof Date && !Number.isNaN(selectedMobileDate.getTime())
-    ? selectedMobileDate.toLocaleDateString(language === 'ru' ? 'ru-RU' : 'en-US', {
-      weekday: 'long',
-      day: 'numeric',
-      month: 'long',
-    })
-    : '—';
-
   const visibleRequirements = useMemo(() => (
     requirements
       .map((requirement) => normalizeRequirement(requirement, positions))
@@ -1738,54 +1727,38 @@ export default function ShiftsTab({ language, userRole, user }) {
                     ))}
                   </div>
 
-                  <div style={styles.mobileDayGrid}>
-                    {WEEKDAYS.map((day, index) => {
-                      const cellDate = weekDates[index];
-                      const itIsToday = isToday(cellDate);
-                      const isActive = mobileAvailabilityDay === index;
-                      const cellDateKey = toDateKey(cellDate);
+                  <div style={styles.mobileAvailabilityTableWrap}>
+                    <div style={styles.mobileAvailabilityTable}>
+                      <div style={styles.mobileAvailabilityHeaderRow}>
+                        <div style={styles.mobileAvailabilityTimeHeader}>Time</div>
+                        {WEEKDAYS.map((day, index) => {
+                          const cellDate = weekDates[index];
+                          const cellDateKey = toDateKey(cellDate);
+                          const itIsToday = isToday(cellDate);
 
-                      return (
-                        <button
-                          key={day.value}
-                          type="button"
-                          onClick={() => setMobileAvailabilityDay(index)}
-                          disabled={!cellDateKey}
-                          style={{
-                            ...styles.mobileDayButton,
-                            background: isActive ? '#002642' : (itIsToday ? '#dee7e7' : '#f4faff'),
-                            color: isActive ? '#ffffff' : '#002642',
-                            border: isActive ? '2px solid #002642' : '1px solid #dee7e7',
-                          }}
-                        >
-                          <span style={styles.mobileDayButtonWeekday}>{day[language] || day.ru}</span>
-                          <span style={styles.mobileDayButtonDate}>{cellDate?.getDate?.() || ''}</span>
-                        </button>
-                      );
-                    })}
-                  </div>
+                          return (
+                            <div
+                              key={day.value}
+                              style={{
+                                ...styles.mobileAvailabilityDayHeader,
+                                background: itIsToday ? '#dee7e7' : '#f4faff',
+                              }}
+                            >
+                              <span style={styles.mobileAvailabilityDayHeaderShort}>{day[language] || day.ru}</span>
+                              <span style={styles.mobileAvailabilityDayHeaderDate}>{cellDate?.getDate?.() || ''}</span>
+                            </div>
+                          );
+                        })}
+                      </div>
 
-                  <div style={{
-                    ...styles.mobileSelectedDayBar,
-                    ...(selectedMobileDatePast ? styles.mobileSelectedDayBarLocked : {}),
-                  }}
-                  >
-                    <strong style={styles.mobileSelectedDayTitle}>{selectedMobileDateLabel}</strong>
-                    {selectedMobileDatePast && (
-                      <span style={styles.mobileSelectedDayHint}>{t.locked}</span>
-                    )}
-                  </div>
-
-                  {selectedMobileDatePast ? (
-                    <div style={styles.mobileLockedBox}>{t.locked}</div>
-                  ) : (
-                    <div style={styles.mobileSlotsCard}>
-                      {MOBILE_HOUR_GROUPS.map((group) => (
-                        <div key={group.hour} style={styles.mobileHourRow}>
-                          <div style={styles.mobileHourLabel}>{group.hour}:00</div>
-                          {group.slots.map((slot) => {
-                            const status = normalizeAvailabilityStatus(availabilityByDate[selectedMobileDateKey]?.[slot]);
-                            const slotIndex = TIME_SLOTS.indexOf(slot);
+                      {TIME_SLOTS.map((slot, slotIndex) => (
+                        <div key={slot} style={styles.mobileAvailabilityRow}>
+                          <div style={styles.mobileAvailabilityTimeLabel}>{slot}</div>
+                          {WEEKDAYS.map((day, dayIndex) => {
+                            const cellDate = weekDates[dayIndex];
+                            const cellDateKey = toDateKey(cellDate);
+                            const past = !cellDateKey || isPastDateKey(cellDateKey);
+                            const status = normalizeAvailabilityStatus(availabilityByDate[cellDateKey]?.[slot]);
                             const slotTextColor = status === 'available'
                               ? '#ffffff'
                               : status === 'if_needed'
@@ -1794,31 +1767,30 @@ export default function ShiftsTab({ language, userRole, user }) {
 
                             return (
                               <button
-                                key={slot}
+                                key={`${day.value}-${slot}`}
                                 type="button"
-                                onMouseDown={(event) => handleAvailabilityMouseDown(event, mobileAvailabilityDay, slotIndex)}
-                                onMouseEnter={() => handleAvailabilityMouseEnter(mobileAvailabilityDay, slotIndex)}
-                                onTouchStart={(event) => handleAvailabilityTouchStart(event, mobileAvailabilityDay, slotIndex)}
-                                onTouchMove={handleAvailabilityTouchMove}
+                                onMouseDown={past ? undefined : (event) => handleAvailabilityMouseDown(event, dayIndex, slotIndex)}
+                                onMouseEnter={past ? undefined : () => handleAvailabilityMouseEnter(dayIndex, slotIndex)}
+                                onTouchStart={past ? undefined : (event) => handleAvailabilityTouchStart(event, dayIndex, slotIndex)}
+                                onTouchMove={past ? undefined : handleAvailabilityTouchMove}
                                 data-availability-cell="true"
-                                data-day-index={mobileAvailabilityDay}
+                                data-day-index={dayIndex}
                                 data-slot-index={slotIndex}
+                                disabled={past}
                                 style={{
-                                  ...getAvailabilityCellStyle(selectedMobileDateKey, slot),
-                                  ...styles.mobileSlotButton,
+                                  ...getAvailabilityCellStyle(cellDateKey, slot),
+                                  ...styles.mobileAvailabilitySlotButton,
                                   color: slotTextColor,
                                 }}
                                 aria-pressed={status === 'available'}
-                                title={getAvailabilityCellTitle(selectedMobileDateKey, slot)}
-                              >
-                                {slot.slice(3)}
-                              </button>
+                                title={getAvailabilityCellTitle(cellDateKey, slot)}
+                              />
                             );
                           })}
                         </div>
                       ))}
                     </div>
-                  )}
+                  </div>
 
                 </>
               ) : (
@@ -2756,112 +2728,97 @@ const styles = {
     padding: '8px 6px',
   },
 
-  mobileDayGrid: {
-    display: 'grid',
-    gridTemplateColumns: 'repeat(7, minmax(0, 1fr))',
-    gap: 6,
-    marginBottom: 14,
-  },
-
-  mobileDayButton: {
-    minHeight: 58,
+  mobileAvailabilityTableWrap: {
+    marginBottom: 0,
+    padding: 6,
     borderRadius: 12,
-    cursor: 'pointer',
-    display: 'flex',
-    flexDirection: 'column',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 2,
-    padding: '6px 2px',
-  },
-
-  mobileDayButtonWeekday: {
-    fontSize: 10,
-    fontWeight: 800,
-    opacity: 0.85,
-  },
-
-  mobileDayButtonDate: {
-    fontSize: 16,
-    fontWeight: 900,
-    lineHeight: 1,
-  },
-
-  mobileSelectedDayBar: {
-    display: 'flex',
-    flexDirection: 'column',
-    gap: 4,
-    marginBottom: 12,
-    padding: '12px 14px',
-    borderRadius: 14,
-    background: '#dee7e7',
-  },
-
-  mobileSelectedDayBarLocked: {
-    background: '#eef3f6',
-  },
-
-  mobileSelectedDayTitle: {
-    color: '#002642',
-    fontSize: 15,
-    fontWeight: 850,
-  },
-
-  mobileSelectedDayHint: {
-    color: '#4f646f',
-    fontSize: 12,
-    fontWeight: 650,
-  },
-
-  mobileLockedBox: {
-    marginBottom: 16,
-    padding: '18px 14px',
-    borderRadius: 14,
     background: '#f4faff',
-    border: '1px dashed #dee7e7',
+    border: '1px solid #dee7e7',
+    overflowX: 'auto',
+    WebkitOverflowScrolling: 'touch',
+  },
+
+  mobileAvailabilityTable: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: 0,
+    minWidth: '100%',
+  },
+
+  mobileAvailabilityHeaderRow: {
+    display: 'grid',
+    gridTemplateColumns: '38px repeat(7, minmax(20px, 1fr))',
+    gap: 0,
+    alignItems: 'stretch',
+    background: '#ffffff',
+  },
+
+  mobileAvailabilityTimeHeader: {
+    padding: '4px 2px',
+    borderRight: '1px solid #dee7e7',
+    borderBottom: '1px solid #dee7e7',
     color: '#4f646f',
-    fontSize: 13,
-    fontWeight: 650,
+    fontSize: 8,
+    fontWeight: 800,
     textAlign: 'center',
   },
 
-  mobileSlotsCard: {
-    marginBottom: 0,
-    padding: 12,
-    borderRadius: 14,
-    background: '#f4faff',
-    border: '1px solid #dee7e7',
-    maxHeight: 'min(54vh, 460px)',
-    overflowY: 'auto',
+  mobileAvailabilityDayHeader: {
+    padding: '3px 1px',
+    borderRight: '1px solid #dee7e7',
+    borderBottom: '1px solid #dee7e7',
     display: 'flex',
     flexDirection: 'column',
-    gap: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 1,
   },
 
-  mobileHourRow: {
+  mobileAvailabilityDayHeaderShort: {
+    color: '#002642',
+    fontSize: 9,
+    fontWeight: 800,
+  },
+
+  mobileAvailabilityDayHeaderDate: {
+    color: '#4f646f',
+    fontSize: 9,
+    fontWeight: 800,
+  },
+
+  mobileAvailabilityRow: {
     display: 'grid',
-    gridTemplateColumns: '42px 1fr 1fr',
-    gap: 8,
+    gridTemplateColumns: '38px repeat(7, minmax(20px, 1fr))',
+    gap: 0,
     alignItems: 'stretch',
   },
 
-  mobileHourLabel: {
+  mobileAvailabilityTimeLabel: {
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'center',
     color: '#4f646f',
-    fontSize: 12,
+    fontSize: 7,
     fontWeight: 800,
+    padding: 0,
+    minHeight: 14,
+    height: 14,
+    borderRight: '1px solid #dee7e7',
+    borderBottom: '1px solid #f0f4f7',
+    background: '#ffffff',
+    boxSizing: 'border-box',
   },
 
-  mobileSlotButton: {
-    minHeight: 42,
-    borderRadius: 12,
-    border: '2px solid transparent',
+  mobileAvailabilitySlotButton: {
+    minHeight: 14,
+    height: 14,
+    padding: 0,
+    borderRadius: 0,
+    border: '1px solid rgba(219, 230, 240, 0.95)',
     cursor: 'pointer',
-    fontSize: 12,
-    fontWeight: 900,
-    color: '#002642',
+    boxSizing: 'border-box',
+    fontSize: 0,
+    lineHeight: 1,
   },
 
   mobileDayOffGrid: {
@@ -2905,13 +2862,13 @@ const styles = {
   },
 
   mobileAbsenceCard: {
-    padding: '14px 16px',
-    borderRadius: 14,
+    padding: '10px 12px',
+    borderRadius: 12,
     background: '#f4faff',
     border: '1px solid #dee7e7',
     display: 'flex',
     flexDirection: 'column',
-    gap: 10,
+    gap: 8,
   },
 
   availabilityGridWrapper: {
