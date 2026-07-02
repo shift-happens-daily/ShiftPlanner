@@ -1123,6 +1123,42 @@ export default function EmployeesTab({ language, userRole, user }) {
 
             {filteredEmployees.length === 0 ? (
               <div style={styles.emptyBox}>{t.noEmployees}</div>
+            ) : r.isMobile ? (
+              <div style={styles.mobileEmployeeList}>
+                {filteredEmployees.map((employee) => {
+                  const employeeName = getEmployeeName(employee) || t.empty;
+                  return (
+                    <button
+                      key={employee.id}
+                      type="button"
+                      onClick={() => {
+                        setSelectedEmployeeId(String(employee.id));
+                        setIsViewingEmployee(false);
+                      }}
+                      style={styles.mobileEmployeeCard}
+                      aria-label={`${t.edit} ${employeeName}`}
+                    >
+                      <div style={styles.mobileEmployeeCardTop}>
+                        <div style={styles.employeeIdentity}>
+                          <span style={styles.avatar}>{getInitials(employeeName)}</span>
+                          <div style={{ minWidth: 0 }}>
+                            <strong style={styles.employeeName}>{employeeName}</strong>
+                            <div style={styles.mobileEmployeeCardMeta}>
+                              <span>{employee.email || '-'}</span>
+                            </div>
+                          </div>
+                        </div>
+                        <span style={styles.mobileEmployeeChevron}>›</span>
+                      </div>
+
+                      <div style={styles.mobileEmployeeCardMeta}>
+                        <span>{getBranchLabel(employee, branches, t.empty)}</span>
+                        <span>{getEmployeePositionLabel(employee) || t.empty}</span>
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
             ) : (
               <div style={styles.tableWrap}>
                 <table style={styles.employeeTable}>
@@ -1260,38 +1296,55 @@ export default function EmployeesTab({ language, userRole, user }) {
         </div>
 
         {selectedEmployee && !isViewingEmployee && (
-          <div style={styles.modalOverlay}>
-            <div style={styles.modalContent}>
-              <div style={styles.actionBar}>
+          <div style={{ ...styles.modalOverlay, padding: r.isMobile ? 0 : '20px' }}>
+            <div style={{
+              ...styles.modalContent,
+              width: r.isMobile ? '100%' : 'min(760px, 100%)',
+              maxHeight: r.isMobile ? '100%' : '90vh',
+              borderRadius: r.isMobile ? 0 : '24px',
+              padding: r.isMobile ? '16px' : '24px',
+            }}>
+              <div style={{ ...styles.actionBar, marginBottom: r.isMobile ? 10 : 14 }}>
                 <button
                   type="button"
                   onClick={() => setIsViewingEmployee(true)}
-                  style={styles.secondaryButton}
+                  style={{
+                    ...styles.secondaryButton,
+                    ...(r.isMobile ? { width: '100%' } : {}),
+                  }}
                 >
                   {t.backToList}
                 </button>
               </div>
 
-              <div style={{ ...styles.employeeCard, gridTemplateColumns: r.gridCols('repeat(3, minmax(0, 1fr))') }}>
+              <div style={{
+                ...styles.employeeCard,
+                gridTemplateColumns: r.gridCols(r.isMobile ? '1fr' : 'repeat(3, minmax(0, 1fr))'),
+                gap: r.isMobile ? 8 : 12,
+              }}>
                 <Info label={t.fullName} value={selectedEmployee?.full_name || selectedEmployee?.name || '-'} />
                 <Info label={t.email} value={selectedEmployee?.email || '-'} />
                 <Info label={t.position} value={selectedEmployeePosition || t.empty} />
               </div>
 
-              <div style={styles.innerSection}>
-                <div style={styles.innerHeader}>
-                  <h4 style={styles.subTitle}>{t.assignPosition}</h4>
+              <div style={{
+                ...styles.innerSection,
+                padding: r.isMobile ? '12px' : '16px',
+                gap: r.isMobile ? 8 : 12,
+              }}>
+                <div style={{ ...styles.innerHeader, ...(r.isMobile ? { gap: 8 } : {}) }}>
+                  <h4 style={{ ...styles.subTitle, fontSize: r.isMobile ? 15 : 17 }}>{t.assignPosition}</h4>
                 </div>
 
-                <div style={styles.stack}>
-                  <label style={styles.label}>{t.position}</label>
+                <div style={{ ...(r.isMobile ? { display: 'flex', flexDirection: 'column', gap: 6 } : styles.stack) }}>
+                  <label style={{ ...styles.label, marginBottom: r.isMobile ? 4 : 8 }}>{t.position}</label>
                   <select
                     value={selectedEmployeeDetails.position_id}
                     onChange={(event) => {
                       setSelectedEmployeeDetails((prev) => ({ ...prev, position_id: event.target.value }));
                       markUnsaved(EMPLOYEE_POSITION_SCOPE);
                     }}
-                    style={styles.select}
+                    style={{ ...styles.select, ...(r.isMobile ? { height: 36, borderRadius: 10, fontSize: 13 } : {}) }}
                   >
                     <option value="">{t.selectPosition}</option>
                     {visiblePositions.map((position) => (
@@ -1302,21 +1355,31 @@ export default function EmployeesTab({ language, userRole, user }) {
                   </select>
                 </div>
 
-                <div style={styles.stack}>
-                  <label style={styles.label}>{t.branches}</label>
-                  <p style={styles.panelHint}>{t.branchesPreviewHint}</p>
+                <div style={{ ...(r.isMobile ? { display: 'flex', flexDirection: 'column', gap: 6 } : styles.stack) }}>
+                  <label style={{ ...styles.label, marginBottom: r.isMobile ? 4 : 8 }}>{t.branches}</label>
+                  <p style={{ ...styles.panelHint, margin: r.isMobile ? '0 0 4px' : undefined }}>{t.branchesPreviewHint}</p>
 
                   {selectedEmployeeBranches.length === 0 ? (
-                    <div style={styles.emptyBox}>{t.noBranchesAssigned}</div>
+                    <div style={{ ...styles.emptyBox, margin: r.isMobile ? '0' : '18px', padding: r.isMobile ? '12px' : '28px' }}>{t.noBranchesAssigned}</div>
                   ) : (
-                    <div style={styles.branchPills}>
+                    <div style={{ ...styles.branchPills, gap: r.isMobile ? 6 : 8 }}>
                       {selectedEmployeeBranches.map((branch) => (
-                        <span key={branch.id} style={styles.branchPill}>
+                        <span key={branch.id} style={{
+                          ...styles.branchPill,
+                          minHeight: r.isMobile ? 28 : 34,
+                          padding: r.isMobile ? '0 8px 0 10px' : '0 8px 0 13px',
+                          fontSize: r.isMobile ? 12 : 13,
+                        }}>
                           <span>{branch.name || branch.title || `#${branch.id}`}</span>
                           <button
                             type="button"
                             onClick={() => handleRemoveEmployeeBranch(branch.id)}
-                            style={styles.branchPillRemove}
+                            style={{
+                              ...styles.branchPillRemove,
+                              width: r.isMobile ? 20 : 24,
+                              height: r.isMobile ? 20 : 24,
+                              fontSize: r.isMobile ? 13 : 16,
+                            }}
                             aria-label={`${t.removeBranch} ${branch.name || branch.id}`}
                             disabled={isSubmitting}
                           >
@@ -1327,14 +1390,19 @@ export default function EmployeesTab({ language, userRole, user }) {
                     </div>
                   )}
 
-                  <div style={{ ...styles.row, gridTemplateColumns: r.gridCols('1fr auto') }}>
+                  <div style={{
+                    display: 'grid',
+                    gridTemplateColumns: r.gridCols(r.isMobile ? '1fr' : '1fr auto'),
+                    gap: r.isMobile ? 8 : 10,
+                    alignItems: 'center',
+                  }}>
                     <select
                       value={branchToAddId}
                       onChange={(event) => {
                         setBranchToAddId(event.target.value);
                         markUnsaved(EMPLOYEE_BRANCH_SCOPE);
                       }}
-                      style={styles.select}
+                      style={{ ...styles.select, ...(r.isMobile ? { height: 36, borderRadius: 10, fontSize: 13 } : {}) }}
                       disabled={availableBranchesToAdd.length === 0 || isSubmitting}
                     >
                       <option value="">{t.selectBranch}</option>
@@ -1349,6 +1417,7 @@ export default function EmployeesTab({ language, userRole, user }) {
                       onClick={handleAddEmployeeBranch}
                       style={{
                         ...styles.secondaryButton,
+                        ...(r.isMobile ? { width: '100%', height: 36, borderRadius: 10, padding: '0 12px' } : {}),
                         ...((!branchToAddId || isSubmitting) ? { opacity: 0.65, cursor: 'default' } : {}),
                       }}
                       disabled={!branchToAddId || isSubmitting}
@@ -1358,14 +1427,24 @@ export default function EmployeesTab({ language, userRole, user }) {
                   </div>
                 </div>
 
-                <button type="button" onClick={handleAssignDetails} style={styles.primaryButton}>
+                <button
+                  type="button"
+                  onClick={handleAssignDetails}
+                  style={{
+                    ...styles.primaryButton,
+                    ...(r.isMobile ? { height: 36, borderRadius: 10, padding: '0 12px' } : {}),
+                  }}
+                >
                   {t.save}
                 </button>
 
                 <button
                   type="button"
                   onClick={handleDeleteEmployeeFromCompany}
-                  style={styles.deleteButton}
+                  style={{
+                    ...styles.deleteButton,
+                    ...(r.isMobile ? { height: 36, borderRadius: 10, padding: '0 12px' } : {}),
+                  }}
                   disabled={isSubmitting}
                 >
                   {t.removeFromCompany}
@@ -1436,11 +1515,17 @@ function PositionGlyph({ index }) {
   );
 }
 
-function Info({ label, value }) {
+function Info({ label, value, isMobile }) {
   return (
     <div>
-      <span style={styles.cardLabel}>{label}</span>
-      <strong style={styles.cardValue}>{value}</strong>
+      <span style={{
+        ...styles.cardLabel,
+        ...(isMobile ? { fontSize: 11, marginBottom: 4 } : {}),
+      }}>{label}</span>
+      <strong style={{
+        ...styles.cardValue,
+        ...(isMobile ? { fontSize: 14 } : {}),
+      }}>{value}</strong>
     </div>
   );
 }
@@ -2305,6 +2390,50 @@ const styles = {
     justifyContent: 'space-between',
     gap: '12px',
     alignItems: 'center',
+  },
+
+  mobileEmployeeList: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '8px',
+  },
+
+  mobileEmployeeCard: {
+    width: '100%',
+    border: '1px solid #dee7e7',
+    borderRadius: '14px',
+    background: '#ffffff',
+    padding: '12px',
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '8px',
+    alignItems: 'flex-start',
+    textAlign: 'left',
+    cursor: 'pointer',
+  },
+
+  mobileEmployeeCardTop: {
+    width: '100%',
+    display: 'flex',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
+    gap: '8px',
+  },
+
+  mobileEmployeeCardMeta: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '3px',
+    color: '#4f646f',
+    fontSize: '12px',
+    fontWeight: '700',
+  },
+
+  mobileEmployeeChevron: {
+    color: '#4b4df7',
+    fontSize: '18px',
+    lineHeight: 1,
+    marginTop: '2px',
   },
 
   positionList: {
