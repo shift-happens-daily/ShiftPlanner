@@ -3,6 +3,8 @@ import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/useAuth';
 import { getStoredLanguage } from '../services/language';
 
+const APP_ICON_SRC = '/v2-Photoroom.png';
+
 function EyeIcon() {
   return (
     <div style={iconWrapStyle}>
@@ -77,7 +79,6 @@ export default function Auth() {
   const texts = {
     ru: {
       langBtn: 'RU',
-      createAccount: 'Регистрация аккаунта',
       fullName: 'Имя и фамилия',
       email: 'Email',
       password: 'Пароль',
@@ -103,7 +104,6 @@ export default function Auth() {
     },
     en: {
       langBtn: 'EN',
-      createAccount: 'Create an account',
       fullName: 'Full name',
       email: 'Email',
       password: 'Password',
@@ -200,14 +200,14 @@ export default function Auth() {
         justify-content: center;
         gap: 4px;
         padding: 4px;
-        border-radius: 999px;
-        background: rgba(244, 250, 255, 0.72);
-        border: 1px solid rgba(79, 100, 111, 0.12);
+        border-radius: 14px;
+        background: #f4faff;
+        border: 1px solid #dee7e7;
       }
 
       .auth-role-option {
         border: 0;
-        border-radius: 999px;
+        border-radius: 10px;
         padding: 9px 22px;
         background: transparent;
         color: #4f646f;
@@ -218,9 +218,8 @@ export default function Auth() {
       }
 
       .auth-role-option.active {
-        background: #f4faff;
+        background: #ffffff;
         color: #002642;
-        box-shadow: 0 8px 22px rgba(0, 38, 66, 0.12);
       }
 
       .auth-eye-button {
@@ -243,7 +242,7 @@ export default function Auth() {
 
       .auth-submit-button:hover:not(:disabled) {
         transform: translateY(-1px);
-        box-shadow: 0 16px 34px rgba(0, 38, 66, 0.28);
+        box-shadow: none;
       }
 
       .auth-submit-button:active:not(:disabled) {
@@ -371,10 +370,13 @@ export default function Auth() {
 
       <main style={view.content}>
         <section style={view.brandSection}>
-          <h1 style={view.title}>
-            {titleText.slice(0, 5)}
-            <span style={styles.titleAccent}>{titleText.slice(5)}</span>
-          </h1>
+          <div style={view.brandTitle}>
+            <img src={APP_ICON_SRC} alt="" aria-hidden="true" style={view.brandLogo} />
+            <h1 style={view.title}>
+              {titleText.slice(0, 5)}
+              <span style={styles.titleAccent}>{titleText.slice(5)}</span>
+            </h1>
+          </div>
 
           <p style={view.subtitle}>{pageTitle}</p>
         </section>
@@ -527,9 +529,9 @@ function createViewStyles(isCompact, isSubmitting) {
       zIndex: 10,
       padding: isCompact ? '7px 13px' : '9px 18px',
       borderRadius: '999px',
-      border: '1px solid rgba(244, 250, 255, 0.32)',
-      background: 'rgba(244, 250, 255, 0.16)',
-      color: '#f4faff',
+      border: '1px solid rgba(79, 100, 111, 0.18)',
+      background: 'rgba(222, 231, 231, 0.72)',
+      color: '#002642',
       fontSize: '14px',
       fontWeight: 700,
       cursor: 'pointer',
@@ -555,19 +557,33 @@ function createViewStyles(isCompact, isSubmitting) {
       animation: 'fadeInUp 0.45s ease',
     },
 
+    brandTitle: {
+      display: 'flex',
+      alignItems: 'center',
+      justifyContent: 'center',
+      gap: isCompact ? '10px' : '16px',
+    },
+
+    brandLogo: {
+      width: isCompact ? '78px' : '128px',
+      height: isCompact ? '78px' : '128px',
+      flexShrink: 0,
+      objectFit: 'contain',
+    },
+
     title: {
       margin: 0,
       fontSize: isCompact ? '44px' : '76px',
       lineHeight: 0.95,
       fontWeight: 500,
       letterSpacing: isCompact ? '-2px' : '-4px',
-      color: '#f4faff',
+      color: '#002642',
       fontFamily: "'Inter', 'Segoe UI', sans-serif",
     },
 
     subtitle: {
       margin: isCompact ? '10px 0 0' : '14px 0 0',
-      color: 'rgba(244, 250, 255, 0.9)',
+      color: '#4f646f',
       fontSize: isCompact ? '14px' : '16px',
       fontWeight: 500,
     },
@@ -576,10 +592,9 @@ function createViewStyles(isCompact, isSubmitting) {
       width: 'min(100%, 430px)',
       boxSizing: 'border-box',
       padding: isCompact ? '20px 22px' : '26px 30px',
-      borderRadius: isCompact ? '24px' : '30px',
-      background: 'rgba(222, 231, 231, 0.96)',
-      border: '1px solid rgba(244, 250, 255, 0.55)',
-      boxShadow: '0 28px 70px rgba(0, 38, 66, 0.28)',
+      borderRadius: '14px',
+      background: '#ffffff',
+      border: '1px solid #dee7e7',
       animation: 'cardIn 0.45s ease',
     },
 
@@ -600,9 +615,9 @@ function createViewStyles(isCompact, isSubmitting) {
       height: isCompact ? '44px' : '48px',
       padding: '0 15px',
       boxSizing: 'border-box',
-      borderRadius: '16px',
-      border: '2px solid rgba(79, 100, 111, 0.2)',
-      background: '#f4faff',
+      borderRadius: '12px',
+      border: '1px solid #dee7e7',
+      background: '#f8fbfd',
       color: '#002642',
       caretColor: '#d7adcf',
       fontSize: '16px',
@@ -616,9 +631,9 @@ function createViewStyles(isCompact, isSubmitting) {
       height: isCompact ? '44px' : '48px',
       padding: '0 48px 0 15px',
       boxSizing: 'border-box',
-      borderRadius: '16px',
-      border: '2px solid rgba(79, 100, 111, 0.2)',
-      background: '#f4faff',
+      borderRadius: '12px',
+      border: '1px solid #dee7e7',
+      background: '#f8fbfd',
       color: '#002642',
       caretColor: '#d7adcf',
       fontSize: '16px',
@@ -663,8 +678,7 @@ const styles = {
     minHeight: '100dvh',
     position: 'relative',
     overflowX: 'hidden',
-    background:
-      'radial-gradient(circle at 18% 12%, rgba(215, 173, 207, 0.22), transparent 30%), linear-gradient(135deg, #002642 0%, #4f646f 100%)',
+    background: '#f4faff',
   },
 
   loadingScreen: {
