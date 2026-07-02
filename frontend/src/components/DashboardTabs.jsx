@@ -12,6 +12,8 @@ import { getPositionLabel } from '../utils/employeeDisplay';
 import { usePositionTitleRevision } from '../hooks/usePositionTitleRevision';
 import { useUnsavedChanges } from '../context/useUnsavedChanges';
 
+const APP_ICON_SRC = '/v2-Photoroom.png';
+
 const TAB_ICONS = {
   schedule: (
     <svg width="22" height="22" viewBox="0 0 24 24" fill="none" aria-hidden="true">
@@ -240,13 +242,28 @@ export default function DashboardTabs({ userRole, language, title, rightSlot }) 
         ...(isMobile ? styles.topBarMobile : {}),
       }}
       >
-        <h1 style={{
-          ...styles.brand,
-          ...(isMobile ? styles.brandMobile : {}),
+        <div style={{
+          ...styles.brandWrap,
+          ...(isMobile ? styles.brandWrapMobile : {}),
         }}
         >
-          {title || 'ShiftPlanner'}
-        </h1>
+          <img
+            src={APP_ICON_SRC}
+            alt=""
+            aria-hidden="true"
+            style={{
+              ...styles.brandLogo,
+              ...(isMobile ? styles.brandLogoMobile : {}),
+            }}
+          />
+          <h1 style={{
+            ...styles.brand,
+            ...(isMobile ? styles.brandMobile : {}),
+          }}
+          >
+            {title || 'ShiftPlanner'}
+          </h1>
+        </div>
 
         {!isMobile && (
           <nav style={styles.tabsContainer} aria-label="Dashboard navigation">
@@ -345,6 +362,29 @@ const styles = {
     justifyContent: 'space-between',
     gap: '10px',
     padding: '10px 12px',
+  },
+
+  brandWrap: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '8px',
+    minWidth: 0,
+  },
+
+  brandWrapMobile: {
+    flex: '1 1 auto',
+  },
+
+  brandLogo: {
+    width: '32px',
+    height: '32px',
+    flexShrink: 0,
+    objectFit: 'contain',
+  },
+
+  brandLogoMobile: {
+    width: '28px',
+    height: '28px',
   },
 
   brand: {
