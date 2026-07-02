@@ -932,9 +932,9 @@ export default function EmployeesTab({ language, userRole, user }) {
           </div>
 
           <div style={{ ...styles.headerStats, ...r.headerStats }}>
-            <Metric type="employees" label={t.employees} value={filteredEmployees.length} />
-            <Metric type="positions" label={t.positions} value={visiblePositions.length} />
-            <Metric type="branches" label={t.branches} value={branches.length} />
+            <Metric isMobile={r.isMobile} label={t.employees} value={filteredEmployees.length} />
+            <Metric isMobile={r.isMobile} label={t.positions} value={visiblePositions.length} />
+            <Metric isMobile={r.isMobile} label={t.branches} value={branches.length} />
           </div>
         </header>
 
@@ -1183,7 +1183,13 @@ export default function EmployeesTab({ language, userRole, user }) {
             ) : (
               <div style={styles.positionList}>
                 {visiblePositions.map((position) => (
-                  <div key={position.id} style={{ ...styles.positionItem, ...r.listItem }}>
+                  <div
+                    key={position.id}
+                    style={{
+                      ...styles.positionItem,
+                      ...(r.isMobile ? styles.positionItemMobile : {}),
+                    }}
+                  >
                     {String(editingPositionId) === String(position.id) ? (
                       <>
                         <input
@@ -1192,13 +1198,13 @@ export default function EmployeesTab({ language, userRole, user }) {
                             setEditingPositionTitle(event.target.value);
                             markUnsaved(POSITION_EDIT_SCOPE);
                           }}
-                          style={{ ...styles.input, ...r.fullWidth }}
+                          style={{ ...styles.input, ...(r.isMobile ? {} : r.fullWidth) }}
                         />
-                        <div style={{ ...styles.actionGroup, ...r.actionGroup }}>
+                        <div style={{ ...styles.actionGroup, ...(r.isMobile ? styles.positionActionGroupMobile : {}) }}>
                           <button
                             type="button"
                             onClick={handleSaveEditedPosition}
-                            style={{ ...styles.primaryButton, ...r.fullWidth }}
+                            style={{ ...styles.primaryButton, ...(r.isMobile ? {} : r.fullWidth) }}
                             disabled={isSubmitting}
                           >
                             {t.save}
@@ -1206,7 +1212,7 @@ export default function EmployeesTab({ language, userRole, user }) {
                           <button
                             type="button"
                             onClick={handleCancelEditPosition}
-                            style={{ ...styles.secondaryButton, ...r.fullWidth }}
+                            style={{ ...styles.secondaryButton, ...(r.isMobile ? {} : r.fullWidth) }}
                             disabled={isSubmitting}
                           >
                             {t.cancel}
@@ -1215,15 +1221,17 @@ export default function EmployeesTab({ language, userRole, user }) {
                       </>
                     ) : (
                       <>
-                        <div style={styles.positionTitleWrap}>
+                        <div style={{ ...styles.positionTitleWrap, ...(r.isMobile ? styles.positionTitleWrapMobile : {}) }}>
                           <PositionGlyph index={visiblePositions.indexOf(position)} />
-                          <strong style={styles.itemTitle}>{getPositionLabel(position)}</strong>
+                          <strong style={{ ...styles.itemTitle, ...(r.isMobile ? styles.itemTitleMobile : {}) }}>
+                            {getPositionLabel(position)}
+                          </strong>
                         </div>
-                        <div style={{ ...styles.actionGroup, ...r.actionGroup }}>
+                        <div style={{ ...styles.actionGroup, ...(r.isMobile ? styles.positionActionGroupMobile : {}) }}>
                           <button
                             type="button"
                             onClick={() => handleStartEditingPosition(position)}
-                            style={{ ...styles.iconButton, ...r.fullWidth }}
+                            style={{ ...styles.iconButton, ...(r.isMobile ? {} : r.fullWidth) }}
                             aria-label={t.edit}
                           >
                             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true">
@@ -1234,7 +1242,7 @@ export default function EmployeesTab({ language, userRole, user }) {
                           <button
                             type="button"
                             onClick={() => handleDeletePosition(position.id)}
-                            style={{ ...styles.iconDeleteButton, ...r.fullWidth }}
+                            style={{ ...styles.iconDeleteButton, ...(r.isMobile ? {} : r.fullWidth) }}
                             aria-label={t.delete}
                           >
                             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true">
@@ -1401,11 +1409,11 @@ export default function EmployeesTab({ language, userRole, user }) {
   );
 }
 
-function Metric({ label, value }) {
+function Metric({ label, value, isMobile }) {
   return (
     <div style={styles.metric}>
-      <span style={styles.metricLabel}>{label}</span>
-      <strong style={styles.metricValue}>{value}</strong>
+      <span style={{ ...styles.metricLabel, ...(isMobile ? styles.metricLabelMobile : {}) }}>{label}</span>
+      <strong style={{ ...styles.metricValue, ...(isMobile ? styles.metricValueMobile : {}) }}>{value}</strong>
     </div>
   );
 }
@@ -1681,9 +1689,9 @@ const styles = {
   },
 
   panelTitle: {
-    margin: '0 0 12px',
+    margin: '0 0 10px',
     color: '#002642',
-    fontSize: '18px',
+    fontSize: '15px',
     fontWeight: '850',
   },
 
@@ -1757,8 +1765,8 @@ const styles = {
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'space-between',
-    gap: '12px',
-    paddingBottom: '12px',
+    gap: '10px',
+    paddingBottom: '8px',
     borderBottom: '1px solid #dee7e7',
   },
 
@@ -2110,6 +2118,13 @@ const styles = {
     flexShrink: 0,
   },
 
+  positionActionGroupMobile: {
+    gap: '8px',
+    flexDirection: 'row',
+    width: 'auto',
+    flexShrink: 0,
+  },
+
   daysOff: {
     display: 'flex',
     flexDirection: 'column',
@@ -2206,10 +2221,10 @@ const styles = {
   metric: {
     width: '100%',
     minWidth: 0,
-    height: '46px',
+    height: '40px',
     boxSizing: 'border-box',
-    padding: '0 18px',
-    borderRadius: '12px',
+    padding: '0 10px',
+    borderRadius: '10px',
     background: '#ffffff',
     border: '1px solid #dee7e7',
     color: '#002642',
@@ -2217,8 +2232,8 @@ const styles = {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    gap: '12px',
-    boxShadow: '0 8px 20px rgba(0, 38, 66, 0.035)',
+    gap: '8px',
+    boxShadow: '0 6px 14px rgba(0, 38, 66, 0.025)',
   },
 
   metricIcon: {
@@ -2247,12 +2262,23 @@ const styles = {
     whiteSpace: 'nowrap',
   },
 
+  metricLabelMobile: {
+    fontSize: '9px',
+    lineHeight: 1.1,
+    whiteSpace: 'normal',
+    textAlign: 'center',
+  },
+
   metricValue: {
     fontSize: '24px',
     lineHeight: 1,
     fontWeight: '900',
     color: '#002642',
     whiteSpace: 'nowrap',
+  },
+
+  metricValueMobile: {
+    fontSize: '15px',
   },
 
   list: {
@@ -2290,11 +2316,16 @@ const styles = {
   },
 
   positionItem: {
-    padding: '11px 0',
+    padding: '8px 0',
     borderBottom: '1px solid #edf2f2',
     display: 'flex',
     justifyContent: 'space-between',
-    gap: '12px',
+    gap: '10px',
+    alignItems: 'center',
+  },
+
+  positionItemMobile: {
+    gap: '10px',
     alignItems: 'center',
   },
 
@@ -2303,6 +2334,11 @@ const styles = {
     display: 'flex',
     alignItems: 'center',
     gap: '12px',
+    flex: '1 1 auto',
+  },
+
+  positionTitleWrapMobile: {
+    gap: '8px',
   },
 
   positionIcon: {
@@ -2316,8 +2352,8 @@ const styles = {
   },
 
   iconButton: {
-    width: '36px',
-    height: '36px',
+    width: '32px',
+    height: '32px',
     padding: 0,
     background: '#ffffff',
     border: '1px solid #dee7e7',
@@ -2332,8 +2368,8 @@ const styles = {
   },
 
   iconDeleteButton: {
-    width: '36px',
-    height: '36px',
+    width: '32px',
+    height: '32px',
     padding: 0,
     background: '#ffffff',
     border: '1px solid rgba(215, 173, 207, 0.65)',
@@ -2350,6 +2386,13 @@ const styles = {
   itemTitle: {
     color: '#002642',
     fontWeight: '850',
+    minWidth: 0,
+    overflowWrap: 'anywhere',
+  },
+
+  itemTitleMobile: {
+    fontSize: '14px',
+    lineHeight: 1.3,
   },
 
   itemMeta: {
