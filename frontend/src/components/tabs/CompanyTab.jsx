@@ -579,31 +579,86 @@ export default function CompanyTab({ language, userRole, user }) {
                 <div style={styles.companyPanel}>
                   <strong style={styles.companyTitle}>{currentCompany.name || t.empty}</strong>
 
-                  {effectiveInviteCode && (
-                    <div style={styles.inviteCodeBox}>
-                      <div style={styles.inviteMain}>
-                        <span style={styles.inviteLabel}>{t.inviteCode}</span>
-                        <strong style={styles.inviteValue}>{effectiveInviteCode}</strong>
-                      </div>
-                      <div style={styles.inviteActions}>
-                        <button type="button" onClick={copyInviteCode} style={styles.copyButton}>
-                          {t.copy}
-                        </button>
-                        <button
-                          type="button"
-                          onClick={handleRegenerateInviteCode}
-                          style={
-                            isSubmitting
-                              ? { ...styles.secondaryButton, opacity: 0.5, cursor: 'not-allowed' }
-                              : styles.secondaryButton
-                          }
-                          disabled={isSubmitting}
+                  {effectiveInviteCode &&
+                    (r.isMobile ? (
+                      <div style={styles.inviteCodeBox}>
+                        <div style={styles.inviteMain}>
+                          <span style={styles.inviteLabel}>{t.inviteCode}</span>
+                          <strong
+                            style={{
+                              ...styles.inviteValue,
+                              fontSize: '13px',
+                              letterSpacing: '0.03em',
+                            }}
+                          >
+                            {effectiveInviteCode}
+                          </strong>
+                        </div>
+                        <div
+                          style={{
+                            ...styles.inviteActions,
+                            flexDirection: 'column',
+                            alignItems: 'stretch',
+                            width: '100%',
+                          }}
                         >
-                          {t.regenerateInvite}
-                        </button>
+                          <button
+                            type="button"
+                            onClick={copyInviteCode}
+                            style={{
+                              ...styles.copyButton,
+                              width: '100%',
+                              minWidth: 0,
+                              height: '32px',
+                              fontSize: '11px',
+                            }}
+                          >
+                            {t.copy}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={handleRegenerateInviteCode}
+                            style={
+                              isSubmitting
+                                ? { ...styles.secondaryButton, width: '100%', minWidth: 0, height: '32px', fontSize: '11px', opacity: 0.5, cursor: 'not-allowed' }
+                                : { ...styles.secondaryButton, width: '100%', minWidth: 0, height: '32px', fontSize: '11px' }
+                            }
+                            disabled={isSubmitting}
+                          >
+                            {t.regenerateInvite}
+                          </button>
+                        </div>
                       </div>
-                    </div>
-                  )}
+                    ) : (
+                      <div style={styles.inviteCodeBox}>
+                        <div style={styles.inviteMain}>
+                          <span style={styles.inviteLabel}>{t.inviteCode}</span>
+                          <strong style={styles.inviteValue}>{effectiveInviteCode}</strong>
+                        </div>
+                          <div
+                            style={{
+                              ...styles.inviteActions,
+                              flexDirection: 'column',
+                              alignItems: 'flex-start',
+                              width: '100%',
+                              marginTop: '8px',
+                              gap: '8px',
+                            }}
+                          >
+                            <button type="button" onClick={copyInviteCode} style={styles.copyButton}>
+                              {t.copy}
+                            </button>
+                            <button
+                              type="button"
+                              onClick={handleRegenerateInviteCode}
+                              style={isSubmitting ? { ...styles.secondaryButton, opacity: 0.5, cursor: 'not-allowed' } : styles.secondaryButton}
+                              disabled={isSubmitting}
+                            >
+                              {t.regenerateInvite}
+                            </button>
+                          </div>
+                      </div>
+                    ))}
                 </div>
               </div>
             </section>
@@ -986,14 +1041,14 @@ const styles = {
     boxSizing: 'border-box',
     width: '100%',
     minWidth: 0,
-    padding: '18px',
-    borderRadius: '14px',
+    padding: '14px',
+    borderRadius: '12px',
     background: '#ffffff',
     border: '1px solid #dee7e7',
-    boxShadow: '0 12px 30px rgba(0, 38, 66, 0.04)',
+    boxShadow: '0 8px 20px rgba(0, 38, 66, 0.03)',
     display: 'flex',
     flexDirection: 'column',
-    gap: '12px',
+    gap: '10px',
     overflow: 'hidden',
   },
 
@@ -1029,7 +1084,7 @@ const styles = {
   },
 
   title: {
-    fontSize: '28px',
+    fontSize: '22px',
     fontWeight: '900',
     color: '#002642',
     margin: 0,
@@ -1046,7 +1101,7 @@ const styles = {
   sectionTitle: {
     margin: 0,
     color: '#002642',
-    fontSize: '18px',
+    fontSize: '15px',
     fontWeight: '900',
     letterSpacing: 0,
     textAlign: 'left',
@@ -1141,46 +1196,57 @@ const styles = {
     width: '100%',
     minWidth: 0,
     boxSizing: 'border-box',
-    padding: '12px 14px',
-    borderRadius: '12px',
+    padding: '10px 12px',
+    borderRadius: '10px',
     border: '1px solid #dee7e7',
     background: '#f8fbff',
-    display: 'grid',
-    gridTemplateColumns: 'minmax(0, 1fr) auto',
-    alignItems: 'end',
-    gap: '12px',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: '8px',
+    flexWrap: 'wrap',
   },
 
   inviteMain: {
     minWidth: 0,
+    display: 'flex',
+    alignItems: 'center',
+    gap: '8px',
+    flex: '1 1 0',
+    overflow: 'hidden',
+    minWidth: '0',
   },
 
   inviteActions: {
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'flex-end',
-    gap: '10px',
+    gap: '8px',
     flexWrap: 'wrap',
+    flexShrink: 0,
   },
 
   inviteLabel: {
-    display: 'block',
-    fontSize: '11px',
+    display: 'inline-block',
+    fontSize: '10px',
     fontWeight: '850',
     color: '#64748b',
     textTransform: 'uppercase',
-    letterSpacing: '0.1em',
-    marginBottom: '6px',
+    letterSpacing: '0.08em',
+    whiteSpace: 'nowrap',
+    flexShrink: 0,
   },
 
   inviteValue: {
-    display: 'block',
-    fontSize: '20px',
+    display: 'inline-block',
+    fontSize: '16px',
     fontWeight: '900',
-    letterSpacing: '0.08em',
+    letterSpacing: '0.06em',
     color: '#102a43',
-    wordBreak: 'normal',
-    overflowWrap: 'anywhere',
+    whiteSpace: 'normal',
+    overflow: 'visible',
+    minWidth: 0,
+    lineHeight: 1.3,
   },
 
   branchCreateRow: {
@@ -1341,12 +1407,12 @@ const styles = {
 
   input: {
     width: '100%',
-    height: '40px',
+    height: '36px',
     boxSizing: 'border-box',
     borderRadius: '10px',
     border: '1px solid #dbe6f0',
     background: '#ffffff',
-    padding: '0 14px',
+    padding: '0 12px',
     color: '#002642',
     fontSize: '13px',
     outline: 'none',
@@ -1368,13 +1434,13 @@ const styles = {
   },
 
   primaryButton: {
-    height: '40px',
-    padding: '0 16px',
+    height: '36px',
+    padding: '0 12px',
     background: '#002642',
     border: 'none',
     borderRadius: '10px',
     color: '#f4faff',
-    fontSize: '13px',
+    fontSize: '12px',
     fontWeight: '800',
     cursor: 'pointer',
     whiteSpace: 'nowrap',
@@ -1395,13 +1461,13 @@ const styles = {
   },
 
   secondaryButton: {
-    height: '40px',
-    padding: '0 16px',
+    height: '36px',
+    padding: '0 12px',
     background: '#eef2ff',
     border: '1px solid rgba(99, 102, 241, 0.18)',
     borderRadius: '10px',
     color: '#3730a3',
-    fontSize: '13px',
+    fontSize: '12px',
     fontWeight: '800',
     cursor: 'pointer',
     whiteSpace: 'nowrap',
@@ -1422,14 +1488,14 @@ const styles = {
   },
 
   copyButton: {
-    height: '40px',
-    minWidth: '104px',
-    padding: '0 14px',
+    height: '36px',
+    minWidth: '92px',
+    padding: '0 12px',
     borderRadius: '10px',
     border: '1px solid rgba(17, 24, 39, 0.12)',
     background: '#eef2ff',
     color: '#0f172a',
-    fontSize: '13px',
+    fontSize: '12px',
     fontWeight: '800',
     cursor: 'pointer',
     whiteSpace: 'nowrap',

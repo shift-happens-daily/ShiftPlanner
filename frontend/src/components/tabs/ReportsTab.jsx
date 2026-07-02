@@ -101,8 +101,179 @@ function normalizeEmployeeReport(report, user) {
   };
 }
 
+const MOBILE_REPORTS_STYLES = {
+  page: {
+    padding: '6px 8px 10px',
+    overflowY: 'auto',
+    height: 'auto',
+  },
+  shell: {
+    gap: 8,
+    overflow: 'visible',
+    height: 'auto',
+    padding: 0,
+    borderRadius: 0,
+  },
+  header: {
+    gap: 6,
+  },
+  title: {
+    fontSize: 18,
+  },
+  subtitle: {
+    fontSize: 12,
+    margin: '2px 0 0',
+  },
+  layout: {
+    gap: 8,
+    overflow: 'visible',
+  },
+  sidebar: {
+    gap: 8,
+  },
+  panel: {
+    padding: 10,
+    borderRadius: 12,
+  },
+  panelTitle: {
+    fontSize: 15,
+    margin: '0 0 8px',
+  },
+  summaryCard: {
+    padding: 10,
+    borderRadius: 12,
+    gap: 6,
+  },
+  summaryTitle: {
+    fontSize: 15,
+    margin: '0 0 4px',
+  },
+  stack: {
+    gap: 7,
+  },
+  label: {
+    fontSize: 11,
+  },
+  dateInput: {
+    height: 34,
+    padding: '0 10px',
+    fontSize: 13,
+    borderRadius: 8,
+  },
+  select: {
+    height: 34,
+    padding: '0 10px',
+    fontSize: 13,
+    borderRadius: 8,
+  },
+  modeSegment: {
+    padding: 3,
+    gap: 3,
+    borderRadius: 8,
+  },
+  modeButton: {
+    height: 32,
+    padding: '0 8px',
+    fontSize: 11,
+  },
+  primaryButton: {
+    height: 34,
+    padding: '0 12px',
+    fontSize: 12,
+    borderRadius: 8,
+  },
+  secondaryButton: {
+    height: 34,
+    padding: '0 12px',
+    fontSize: 12,
+    borderRadius: 8,
+  },
+  metric: {
+    padding: '8px 10px',
+    borderRadius: 8,
+    gap: 2,
+  },
+  metricLabel: {
+    fontSize: 10,
+  },
+  metricValue: {
+    fontSize: 16,
+  },
+  content: {
+    overflow: 'visible',
+  },
+  reportCardList: {
+    gap: 6,
+  },
+  reportCard: {
+    padding: '8px 10px',
+    borderRadius: 10,
+    gap: 5,
+  },
+  reportCardName: {
+    fontSize: 13,
+  },
+  reportCardRow: {
+    gap: 8,
+    fontSize: 12,
+  },
+  reportCardValue: {
+    fontSize: 12,
+  },
+  totalReportCard: {
+    padding: '8px 10px',
+    borderRadius: 10,
+    gap: 5,
+  },
+  employeeReportCard: {
+    minHeight: 0,
+    padding: 12,
+    gap: 12,
+    borderRadius: 12,
+  },
+  employeeReportHeader: {
+    gap: 8,
+  },
+  employeeReportPill: {
+    height: 28,
+    padding: '0 10px',
+    fontSize: 11,
+  },
+  miniLabel: {
+    fontSize: 11,
+    marginBottom: 4,
+  },
+  employeeStats: {
+    gridTemplateColumns: '1fr',
+    gap: 6,
+  },
+  emptyHero: {
+    minHeight: 0,
+    padding: 16,
+    borderRadius: 12,
+    gap: 6,
+  },
+  emptyTitle: {
+    fontSize: 16,
+  },
+  emptyText: {
+    fontSize: 12,
+  },
+  emptyBox: {
+    padding: 16,
+    borderRadius: 12,
+    fontSize: 13,
+  },
+  toastLayer: {
+    top: 8,
+    right: 8,
+    width: 'calc(100% - 16px)',
+  },
+};
+
 export default function ReportsTab({ language, userRole, user }) {
   const r = useTabResponsive(1480);
+  const mobileStyles = r.isMobile ? MOBILE_REPORTS_STYLES : null;
   const isManager = userRole === 'manager';
   const companyId = user?.company?.id || user?.company_id || null;
 
@@ -444,7 +615,7 @@ export default function ReportsTab({ language, userRole, user }) {
 
   const renderToast = () => (
     (errorMessage || successMessage) && (
-      <div style={styles.toastLayer}>
+      <div style={{ ...styles.toastLayer, ...mobileStyles?.toastLayer }}>
         <div style={errorMessage ? styles.toastError : styles.toastSuccess}>
           <span style={errorMessage ? styles.toastIconError : styles.toastIconSuccess}>
             {errorMessage ? '!' : '✓'}
@@ -470,9 +641,9 @@ export default function ReportsTab({ language, userRole, user }) {
 
   if (isLoading) {
     return (
-      <section style={{ ...styles.page, ...r.page, ...(r.isMobile ? {} : styles.desktopPage) }}>
-        <div style={{ ...styles.shell, ...r.shell, ...(r.isMobile ? {} : styles.desktopShell) }}>
-          <div style={styles.emptyBox}>{t.loading}</div>
+      <section style={{ ...styles.page, ...r.page, ...(r.isMobile ? {} : styles.desktopPage), ...mobileStyles?.page }}>
+        <div style={{ ...styles.shell, ...r.shell, ...(r.isMobile ? {} : styles.desktopShell), ...mobileStyles?.shell }}>
+          <div style={{ ...styles.emptyBox, ...mobileStyles?.emptyBox }}>{t.loading}</div>
         </div>
       </section>
     );
@@ -485,56 +656,56 @@ export default function ReportsTab({ language, userRole, user }) {
     : '1.2fr 1fr 0.8fr 0.7fr';
 
   return (
-    <section style={{ ...styles.page, ...r.page, ...(r.isMobile ? {} : styles.desktopPage) }}>
-      <div style={{ ...styles.shell, ...r.shell, ...(r.isMobile ? {} : styles.desktopShell) }}>
+    <section style={{ ...styles.page, ...r.page, ...(r.isMobile ? {} : styles.desktopPage), ...mobileStyles?.page }}>
+      <div style={{ ...styles.shell, ...r.shell, ...(r.isMobile ? {} : styles.desktopShell), ...mobileStyles?.shell }}>
         {renderToast()}
 
-        <header style={{ ...styles.header, ...r.header }}>
+        <header style={{ ...styles.header, ...r.header, ...mobileStyles?.header }}>
           <div>
-            <h2 style={{ ...styles.title, ...r.title }}>{isManager ? t.title : t.selfTitle}</h2>
-            <p style={styles.subtitle}>{isManager ? t.subtitleManager : t.subtitleEmployee}</p>
+            <h2 style={{ ...styles.title, ...r.title, ...mobileStyles?.title }}>{isManager ? t.title : t.selfTitle}</h2>
+            <p style={{ ...styles.subtitle, ...mobileStyles?.subtitle }}>{isManager ? t.subtitleManager : t.subtitleEmployee}</p>
           </div>
 
           <button
             type="button"
             onClick={exportToExcel}
-            style={{ ...styles.primaryButton, ...r.fullWidth }}
+            style={{ ...styles.primaryButton, ...r.fullWidth, ...mobileStyles?.primaryButton }}
             disabled={isRefreshing || (!hasManagerRows && !hasEmployeeReport)}
           >
             {t.export}
           </button>
         </header>
 
-        <div style={{ ...styles.layout, ...r.splitLayout('280px minmax(0, 1fr)') }}>
-          <aside style={styles.sidebar}>
-            <section style={styles.panel}>
-              <h3 style={styles.panelTitle}>{t.period}</h3>
+        <div style={{ ...styles.layout, ...r.splitLayout('280px minmax(0, 1fr)'), ...mobileStyles?.layout }}>
+          <aside style={{ ...styles.sidebar, ...mobileStyles?.sidebar }}>
+            <section style={{ ...styles.panel, ...mobileStyles?.panel }}>
+              <h3 style={{ ...styles.panelTitle, ...mobileStyles?.panelTitle }}>{t.period}</h3>
 
-              <div style={styles.stack}>
-                <Field label={t.startDate}>
+              <div style={{ ...styles.stack, ...mobileStyles?.stack }}>
+                <Field label={t.startDate} labelStyle={mobileStyles?.label}>
                   <input
                     type="date"
                     value={filterForm.start_date}
                     onChange={(event) =>
                       setFilterForm((prev) => ({ ...prev, start_date: event.target.value }))
                     }
-                    style={styles.dateInput}
+                    style={{ ...styles.dateInput, ...mobileStyles?.dateInput }}
                   />
                 </Field>
 
-                <Field label={t.endDate}>
+                <Field label={t.endDate} labelStyle={mobileStyles?.label}>
                   <input
                     type="date"
                     value={filterForm.end_date}
                     onChange={(event) =>
                       setFilterForm((prev) => ({ ...prev, end_date: event.target.value }))
                     }
-                    style={styles.dateInput}
+                    style={{ ...styles.dateInput, ...mobileStyles?.dateInput }}
                   />
                 </Field>
 
-                <Field label={t.reportType}>
-                  <div style={{ ...styles.modeSegment, ...r.modeSegment }}>
+                <Field label={t.reportType} labelStyle={mobileStyles?.label}>
+                  <div style={{ ...styles.modeSegment, ...r.modeSegment, ...mobileStyles?.modeSegment }}>
                     {[
                       { id: 'hours', label: t.hoursReport },
                       { id: 'salary', label: t.salaryReport },
@@ -545,8 +716,8 @@ export default function ReportsTab({ language, userRole, user }) {
                         onClick={() => setReportMode(mode.id)}
                         style={
                           reportMode === mode.id
-                            ? { ...styles.modeButton, ...styles.modeButtonActive, ...r.modeButton }
-                            : { ...styles.modeButton, ...r.modeButton }
+                            ? { ...styles.modeButton, ...styles.modeButtonActive, ...r.modeButton, ...mobileStyles?.modeButton }
+                            : { ...styles.modeButton, ...r.modeButton, ...mobileStyles?.modeButton }
                         }
                       >
                         {mode.label}
@@ -556,11 +727,11 @@ export default function ReportsTab({ language, userRole, user }) {
                 </Field>
                 {isManager && (
                   <>
-                    <Field label={t.employee}>
+                    <Field label={t.employee} labelStyle={mobileStyles?.label}>
                       <select
                         value={employeeSearch}
                         onChange={(event) => setEmployeeSearch(event.target.value)}
-                        style={styles.select}
+                        style={{ ...styles.select, ...mobileStyles?.select }}
                       >
                         <option value="">{t.allEmployees}</option>
                         {employeeFilterOptions.map((name) => (
@@ -569,11 +740,11 @@ export default function ReportsTab({ language, userRole, user }) {
                       </select>
                     </Field>
 
-                    <Field label={t.position}>
+                    <Field label={t.position} labelStyle={mobileStyles?.label}>
                       <select
                         value={positionFilter}
                         onChange={(event) => setPositionFilter(event.target.value)}
-                        style={styles.select}
+                        style={{ ...styles.select, ...mobileStyles?.select }}
                       >
                         <option value="">{t.allPositions}</option>
                         {positionFilterOptions.map((position) => (
@@ -582,11 +753,11 @@ export default function ReportsTab({ language, userRole, user }) {
                       </select>
                     </Field>
 
-                    <Field label={t.branch}>
+                    <Field label={t.branch} labelStyle={mobileStyles?.label}>
                       <select
                         value={branchFilter}
                         onChange={(event) => setBranchFilter(event.target.value)}
-                        style={styles.select}
+                        style={{ ...styles.select, ...mobileStyles?.select }}
                       >
                         <option value="">{t.allBranches}</option>
                         {branchFilterOptions.map((branch) => (
@@ -600,7 +771,7 @@ export default function ReportsTab({ language, userRole, user }) {
                 <button
                   type="button"
                   onClick={applyFilters}
-                  style={{ ...styles.secondaryButton, ...r.fullWidth }}
+                  style={{ ...styles.secondaryButton, ...r.fullWidth, ...mobileStyles?.secondaryButton }}
                   disabled={isRefreshing}
                 >
                   {isRefreshing ? '...' : t.apply}
@@ -608,60 +779,82 @@ export default function ReportsTab({ language, userRole, user }) {
               </div>
             </section>
 
-            <section style={styles.summaryCard}>
-              <h3 style={styles.summaryTitle}>{t.summary}</h3>
+            <section style={{ ...styles.summaryCard, ...mobileStyles?.summaryCard }}>
+              <h3 style={{ ...styles.summaryTitle, ...mobileStyles?.summaryTitle }}>{t.summary}</h3>
 
-              <Metric label={t.totalHours} value={totals.total_hours} />
+              <Metric
+                label={t.totalHours}
+                value={totals.total_hours}
+                metricStyle={mobileStyles?.metric}
+                metricLabelStyle={mobileStyles?.metricLabel}
+                metricValueStyle={mobileStyles?.metricValue}
+              />
               {reportMode === 'salary' && (
-                <Metric label={t.salary} value={totals.total_salary} />
+                <Metric
+                  label={t.salary}
+                  value={totals.total_salary}
+                  metricStyle={mobileStyles?.metric}
+                  metricLabelStyle={mobileStyles?.metricLabel}
+                  metricValueStyle={mobileStyles?.metricValue}
+                />
               )}
-              {isManager && <Metric label={t.employees} value={totals.employees} />}
+              {isManager && (
+                <Metric
+                  label={t.employees}
+                  value={totals.employees}
+                  metricStyle={mobileStyles?.metric}
+                  metricLabelStyle={mobileStyles?.metricLabel}
+                  metricValueStyle={mobileStyles?.metricValue}
+                />
+              )}
             </section>
           </aside>
 
-          <main style={{ ...styles.content, ...(r.isMobile ? { overflow: 'visible' } : {}) }}>
+          <main style={{ ...styles.content, ...(r.isMobile ? { overflow: 'visible' } : {}), ...mobileStyles?.content }}>
             {isManager ? (
               hasManagerRows ? (
                 r.isMobile ? (
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 10, ...mobileStyles?.reportCardList }}>
                     {filteredManagerReport.map((item) => (
-                      <div key={item.employee_id} style={r.reportCard}>
-                        <strong style={{ color: '#002642', fontSize: 16 }}>{item.full_name}</strong>
-                        <div style={r.reportCardRow}>
+                      <div key={item.employee_id} style={{ ...r.reportCard, ...mobileStyles?.reportCard }}>
+                        <strong style={{ color: '#002642', fontSize: 16, ...mobileStyles?.reportCardName }}>{item.full_name}</strong>
+                        <div style={{ ...r.reportCardRow, ...mobileStyles?.reportCardRow }}>
                           <span>{t.position}</span>
-                          <span style={r.reportCardValue}>{item.position || t.unknownPosition}</span>
+                          <span style={{ ...r.reportCardValue, ...mobileStyles?.reportCardValue }}>{item.position || t.unknownPosition}</span>
                         </div>
-                        <div style={r.reportCardRow}>
+                        <div style={{ ...r.reportCardRow, ...mobileStyles?.reportCardRow }}>
                           <span>{t.branch}</span>
-                          <span style={r.reportCardValue}>{item.branch}</span>
+                          <span style={{ ...r.reportCardValue, ...mobileStyles?.reportCardValue }}>{item.branch}</span>
                         </div>
-                        <div style={r.reportCardRow}>
+                        <div style={{ ...r.reportCardRow, ...mobileStyles?.reportCardRow }}>
                           <span>{t.hours}</span>
-                          <span style={r.reportCardValue}>{item.total_hours}</span>
+                          <span style={{ ...r.reportCardValue, ...mobileStyles?.reportCardValue }}>{item.total_hours}</span>
                         </div>
                         {reportMode === 'salary' && (
-                          <div style={r.reportCardRow}>
+                          <div style={{ ...r.reportCardRow, ...mobileStyles?.reportCardRow }}>
                             <span>{t.salary}</span>
-                            <span style={r.reportCardValue}>{item.total_salary}</span>
+                            <span style={{ ...r.reportCardValue, ...mobileStyles?.reportCardValue }}>{item.total_salary}</span>
                           </div>
                         )}
                       </div>
                     ))}
                     <div style={{
                       ...r.reportCard,
+                      ...mobileStyles?.reportCard,
+                      ...mobileStyles?.totalReportCard,
                       background: '#dee7e7',
                       border: '1px solid rgba(79, 100, 111, 0.12)',
                     }}
                     >
-                      <strong style={{ color: '#002642' }}>{t.total}</strong>
-                      <div style={r.reportCardRow}>
+                      <strong style={{ color: '#002642', ...mobileStyles?.reportCardName }}>{t.total}</strong>
+                      <div style={{ ...r.reportCardRow, ...mobileStyles?.reportCardRow }}>
                         <span>{t.hours}</span>
-                        <span style={r.reportCardValue}>{totals.total_hours}</span>
+                        <span style={{ ...r.reportCardValue, ...mobileStyles?.reportCardValue }}>{totals.total_hours}</span>
                       </div>
                       {reportMode === 'salary' && (
-                        <div style={r.reportCardRow}>
+                        <div style={{ ...r.reportCardRow, ...mobileStyles?.reportCardRow }}>
                           <span>{t.salary}</span>
-                          <span style={r.reportCardValue}>{totals.total_salary}</span>
+                          <span style={{ ...r.reportCardValue, ...mobileStyles?.reportCardValue }}>{totals.total_salary}</span>
                         </div>
                       )}
                     </div>
@@ -700,9 +893,9 @@ export default function ReportsTab({ language, userRole, user }) {
                 </div>
                 )
               ) : (
-                <div style={styles.emptyHero}>
-                  <h3 style={styles.emptyTitle}>{t.empty}</h3>
-                  <p style={styles.emptyText}>
+                <div style={{ ...styles.emptyHero, ...mobileStyles?.emptyHero }}>
+                  <h3 style={{ ...styles.emptyTitle, ...mobileStyles?.emptyTitle }}>{t.empty}</h3>
+                  <p style={{ ...styles.emptyText, ...mobileStyles?.emptyText }}>
                     {appliedRange.start_date} — {appliedRange.end_date}
                   </p>
                 </div>
@@ -710,34 +903,52 @@ export default function ReportsTab({ language, userRole, user }) {
             ) : hasEmployeeReport ? (
               <div style={{
                 ...styles.employeeReportCard,
-                ...(r.isMobile ? { minHeight: 0, padding: 20 } : {}),
+                ...mobileStyles?.employeeReportCard,
               }}
               >
-                <div style={styles.employeeReportHeader}>
+                <div style={{ ...styles.employeeReportHeader, ...mobileStyles?.employeeReportHeader }}>
                   <div>
-                    <span style={styles.miniLabel}>
+                    <span style={{ ...styles.miniLabel, ...mobileStyles?.miniLabel }}>
                       {appliedRange.start_date} — {appliedRange.end_date}
                     </span>
                   </div>
-                  <span style={styles.employeeReportPill}>{reportMode === 'salary' ? t.salaryReport : t.hoursReport}</span>
+                  <span style={{ ...styles.employeeReportPill, ...mobileStyles?.employeeReportPill }}>{reportMode === 'salary' ? t.salaryReport : t.hoursReport}</span>
                 </div>
 
                 <div style={{
                   ...styles.employeeStats,
-                  ...(r.isMobile ? { gridTemplateColumns: '1fr' } : {}),
+                  ...mobileStyles?.employeeStats,
                 }}
                 >
-                  <Metric label={t.totalHours} value={normalizedEmployeeReport.total_hours} />
-                  <Metric label={t.totalShifts} value={normalizedEmployeeReport.total_shifts} />
+                  <Metric
+                    label={t.totalHours}
+                    value={normalizedEmployeeReport.total_hours}
+                    metricStyle={mobileStyles?.metric}
+                    metricLabelStyle={mobileStyles?.metricLabel}
+                    metricValueStyle={mobileStyles?.metricValue}
+                  />
+                  <Metric
+                    label={t.totalShifts}
+                    value={normalizedEmployeeReport.total_shifts}
+                    metricStyle={mobileStyles?.metric}
+                    metricLabelStyle={mobileStyles?.metricLabel}
+                    metricValueStyle={mobileStyles?.metricValue}
+                  />
                   {reportMode === 'salary' && (
-                    <Metric label={t.salary} value={normalizedEmployeeReport.total_salary} />
+                    <Metric
+                      label={t.salary}
+                      value={normalizedEmployeeReport.total_salary}
+                      metricStyle={mobileStyles?.metric}
+                      metricLabelStyle={mobileStyles?.metricLabel}
+                      metricValueStyle={mobileStyles?.metricValue}
+                    />
                   )}
                 </div>
               </div>
             ) : (
-              <div style={styles.emptyHero}>
-                <h3 style={styles.emptyTitle}>{t.empty}</h3>
-                <p style={styles.emptyText}>
+              <div style={{ ...styles.emptyHero, ...mobileStyles?.emptyHero }}>
+                <h3 style={{ ...styles.emptyTitle, ...mobileStyles?.emptyTitle }}>{t.empty}</h3>
+                <p style={{ ...styles.emptyText, ...mobileStyles?.emptyText }}>
                   {appliedRange.start_date} — {appliedRange.end_date}
                 </p>
               </div>
@@ -749,20 +960,20 @@ export default function ReportsTab({ language, userRole, user }) {
   );
 }
 
-function Field({ label, children }) {
+function Field({ label, children, labelStyle }) {
   return (
     <label style={styles.field}>
-      <span style={styles.label}>{label}</span>
+      <span style={{ ...styles.label, ...labelStyle }}>{label}</span>
       {children}
     </label>
   );
 }
 
-function Metric({ label, value }) {
+function Metric({ label, value, metricStyle, metricLabelStyle, metricValueStyle }) {
   return (
-    <div style={styles.metric}>
-      <span style={styles.metricLabel}>{label}</span>
-      <strong style={styles.metricValue}>{value}</strong>
+    <div style={{ ...styles.metric, ...metricStyle }}>
+      <span style={{ ...styles.metricLabel, ...metricLabelStyle }}>{label}</span>
+      <strong style={{ ...styles.metricValue, ...metricValueStyle }}>{value}</strong>
     </div>
   );
 }

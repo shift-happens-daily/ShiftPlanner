@@ -244,11 +244,162 @@ function exportScheduleDraftToXlsx(schedule, translations) {
   XLSX.writeFile(workbook, fileName);
 }
 
+const MOBILE_EMPLOYEE_SCHEDULE_STYLES = {
+  page: {
+    padding: '6px 8px 10px',
+  },
+  shell: {
+    gap: 8,
+  },
+  header: {
+    gap: 6,
+  },
+  title: {
+    fontSize: 18,
+  },
+  subtitle: {
+    fontSize: 12,
+    margin: '2px 0 0',
+  },
+  employeeArea: {
+    gap: 8,
+  },
+  employeeCalendarPanel: {
+    padding: 10,
+    gap: 8,
+    gridTemplateRows: 'auto minmax(160px, 1fr) minmax(112px, auto)',
+    borderRadius: 14,
+  },
+  employeeCalendarHeader: {
+    gap: 8,
+  },
+  employeeCalendarTitle: {
+    fontSize: 17,
+  },
+  panelHint: {
+    fontSize: 11,
+    margin: '2px 0 0',
+  },
+  calendarNav: {
+    gap: 6,
+  },
+  calendarNavButton: {
+    width: 34,
+    height: 30,
+    fontSize: 15,
+    borderRadius: 8,
+  },
+  calendarTodayButton: {
+    height: 30,
+    padding: '0 10px',
+    fontSize: 12,
+    borderRadius: 8,
+  },
+  monthCalendar: {
+    gridTemplateRows: '20px minmax(0, 1fr)',
+    borderRadius: 10,
+  },
+  monthWeekday: {
+    fontSize: 10,
+  },
+  monthGrid: {
+    gridAutoRows: 'minmax(32px, 1fr)',
+  },
+  monthDayCell: {
+    padding: 2,
+    gap: 2,
+  },
+  monthDayNumber: {
+    width: 22,
+    height: 22,
+    fontSize: 12,
+  },
+  monthDots: {
+    minHeight: 5,
+    gap: 2,
+  },
+  monthDot: {
+    width: 4,
+    height: 4,
+  },
+  selectedDatePanel: {
+    padding: 8,
+    gap: 6,
+    borderRadius: 10,
+  },
+  panelTitle: {
+    fontSize: 14,
+  },
+  selectedDateCount: {
+    minWidth: 26,
+    height: 24,
+    padding: '0 8px',
+    fontSize: 12,
+  },
+  selectedDateEmpty: {
+    minHeight: 52,
+    padding: '8px 10px',
+    gap: 3,
+    borderRadius: 8,
+  },
+  emptyTitle: {
+    fontSize: 13,
+  },
+  emptySubtitle: {
+    fontSize: 11,
+    lineHeight: 1.35,
+  },
+  selectedShiftList: {
+    gap: 6,
+  },
+  calendarShiftCard: {
+    padding: 8,
+    gap: 6,
+    borderRadius: 8,
+  },
+  calendarShiftInfo: {
+    gap: 6,
+  },
+  calendarShiftTimeInline: {
+    height: 26,
+    padding: '0 8px',
+    fontSize: 12,
+    borderRadius: 7,
+  },
+  calendarDurationBadge: {
+    height: 26,
+    padding: '0 8px',
+    fontSize: 11,
+    borderRadius: 7,
+  },
+  calendarShiftTitle: {
+    fontSize: 14,
+  },
+  calendarExchangeRow: {
+    gap: 6,
+  },
+  calendarExchangeInput: {
+    height: 34,
+    minHeight: 34,
+    padding: '6px 8px',
+    fontSize: 12,
+    borderRadius: 8,
+  },
+  calendarExchangeButton: {
+    height: 34,
+    padding: '0 10px',
+    fontSize: 12,
+    borderRadius: 8,
+  },
+};
+
 export default function ScheduleTab({ language, userRole }) {
   const positionTitleRevision = usePositionTitleRevision();
   const { markUnsaved, markSaved } = useUnsavedChanges();
   const isManager = userRole === 'manager';
   const r = useTabResponsive(1480);
+  const isEmployeeMobile = !isManager && r.isMobile;
+  const mobileSchedule = isEmployeeMobile ? MOBILE_EMPLOYEE_SCHEDULE_STYLES : null;
 
   const [periodForm, setPeriodForm] = useState(defaultPeriod);
   const [schedule, setSchedule] = useState(null);
@@ -762,6 +913,7 @@ export default function ScheduleTab({ language, userRole }) {
     ...styles.page,
     ...r.page,
     ...(r.isMobile ? {} : styles.desktopViewportPage),
+    ...mobileSchedule?.page,
   };
 
   const shellStyle = {
@@ -774,6 +926,7 @@ export default function ScheduleTab({ language, userRole }) {
     border: 'none',
     boxShadow: 'none',
     ...(r.isMobile ? {} : styles.desktopScaleShell),
+    ...mobileSchedule?.shell,
   };
 
   if (isLoading) {
@@ -791,10 +944,10 @@ export default function ScheduleTab({ language, userRole }) {
       <div style={shellStyle}>
         {renderToast()}
 
-        <header style={{ ...styles.header, ...r.header }}>
+        <header style={{ ...styles.header, ...r.header, ...mobileSchedule?.header }}>
           <div>
-            <h2 style={{ ...styles.title, ...r.title }}>{isManager ? t.titleManager : t.titleEmployee}</h2>
-            <p style={styles.subtitle}>{isManager ? t.subtitleManager : t.subtitleEmployee}</p>
+            <h2 style={{ ...styles.title, ...r.title, ...mobileSchedule?.title }}>{isManager ? t.titleManager : t.titleEmployee}</h2>
+            <p style={{ ...styles.subtitle, ...mobileSchedule?.subtitle }}>{isManager ? t.subtitleManager : t.subtitleEmployee}</p>
           </div>
 
           {isManager && schedule && (
@@ -1115,23 +1268,24 @@ export default function ScheduleTab({ language, userRole }) {
             </main>
           </div>
         ) : (
-          <main style={{ ...styles.employeeArea, ...r.employeeArea }}>
-            <section style={{ ...styles.employeeCalendarPanel, ...r.employeePanel }}>
+          <main style={{ ...styles.employeeArea, ...r.employeeArea, ...mobileSchedule?.employeeArea }}>
+            <section style={{ ...styles.employeeCalendarPanel, ...r.employeePanel, ...mobileSchedule?.employeeCalendarPanel }}>
               <div style={{
                 ...styles.employeeCalendarHeader,
                 ...(r.isMobile ? { alignItems: 'stretch' } : {}),
+                ...mobileSchedule?.employeeCalendarHeader,
               }}
               >
                 <div>
-                  <h3 style={styles.employeeCalendarTitle}>{employeeCalendarMonthLabel}</h3>
-                  <p style={styles.panelHint}>{formatDisplayDate(selectedEmployeeDate)}</p>
+                  <h3 style={{ ...styles.employeeCalendarTitle, ...mobileSchedule?.employeeCalendarTitle }}>{employeeCalendarMonthLabel}</h3>
+                  <p style={{ ...styles.panelHint, ...mobileSchedule?.panelHint }}>{formatDisplayDate(selectedEmployeeDate)}</p>
                 </div>
 
-                <div style={styles.calendarNav}>
+                <div style={{ ...styles.calendarNav, ...mobileSchedule?.calendarNav }}>
                   <button
                     type="button"
                     onClick={() => shiftEmployeeCalendarMonth(-1)}
-                    style={styles.calendarNavButton}
+                    style={{ ...styles.calendarNavButton, ...mobileSchedule?.calendarNavButton }}
                     aria-label="Previous month"
                   >
                     ←
@@ -1143,14 +1297,14 @@ export default function ScheduleTab({ language, userRole }) {
                       setEmployeeCalendarMonth(today);
                       setSelectedEmployeeDate(today);
                     }}
-                    style={styles.calendarTodayButton}
+                    style={{ ...styles.calendarTodayButton, ...mobileSchedule?.calendarTodayButton }}
                   >
                     {employeeCalendarMonthKey}
                   </button>
                   <button
                     type="button"
                     onClick={() => shiftEmployeeCalendarMonth(1)}
-                    style={styles.calendarNavButton}
+                    style={{ ...styles.calendarNavButton, ...mobileSchedule?.calendarNavButton }}
                     aria-label="Next month"
                   >
                     →
@@ -1158,14 +1312,14 @@ export default function ScheduleTab({ language, userRole }) {
                 </div>
               </div>
 
-              <div style={styles.monthCalendar}>
+              <div style={{ ...styles.monthCalendar, ...mobileSchedule?.monthCalendar }}>
                 <div style={styles.monthWeekdays}>
                   {employeeWeekdayLabels.map((weekday) => (
-                    <div key={weekday} style={styles.monthWeekday}>{weekday}</div>
+                    <div key={weekday} style={{ ...styles.monthWeekday, ...mobileSchedule?.monthWeekday }}>{weekday}</div>
                   ))}
                 </div>
 
-                <div style={styles.monthGrid}>
+                <div style={{ ...styles.monthGrid, ...mobileSchedule?.monthGrid }}>
                   {employeeCalendarGrid.days.map((calendarDay) => {
                     const shiftsForDate = normalizeArray(groupedMySchedule[calendarDay.date]);
                     const isSelected = calendarDay.date === selectedEmployeeDate;
@@ -1180,23 +1334,26 @@ export default function ScheduleTab({ language, userRole }) {
                           ...styles.monthDayCell,
                           ...(calendarDay.isCurrentMonth ? {} : styles.monthDayMuted),
                           ...(isSelected ? styles.monthDaySelected : {}),
+                          ...mobileSchedule?.monthDayCell,
                         }}
                       >
                         <span style={{
                           ...styles.monthDayNumber,
                           ...(isTodayDate ? styles.monthDayToday : {}),
                           ...(isSelected ? styles.monthDayNumberSelected : {}),
+                          ...mobileSchedule?.monthDayNumber,
                         }}
                         >
                           {calendarDay.day}
                         </span>
 
-                        <span style={styles.monthDots}>
+                        <span style={{ ...styles.monthDots, ...mobileSchedule?.monthDots }}>
                           {shiftsForDate.slice(0, 4).map((shift, index) => (
                             <span
                               key={`${getShiftId(shift)}-${index}`}
                               style={{
                                 ...styles.monthDot,
+                                ...mobileSchedule?.monthDot,
                                 background: shiftDotColors[index % shiftDotColors.length],
                               }}
                             />
@@ -1208,26 +1365,26 @@ export default function ScheduleTab({ language, userRole }) {
                 </div>
               </div>
 
-              <section style={styles.selectedDatePanel}>
+              <section style={{ ...styles.selectedDatePanel, ...mobileSchedule?.selectedDatePanel }}>
                 <div style={styles.selectedDateHeader}>
                   <div>
-                    <h3 style={styles.panelTitle}>{formatDisplayDate(selectedEmployeeDate)}</h3>
-                    <p style={styles.panelHint}>{selectedEmployeeDate}</p>
+                    <h3 style={{ ...styles.panelTitle, ...mobileSchedule?.panelTitle }}>{formatDisplayDate(selectedEmployeeDate)}</h3>
+                    <p style={{ ...styles.panelHint, ...mobileSchedule?.panelHint }}>{selectedEmployeeDate}</p>
                   </div>
-                  <span style={styles.selectedDateCount}>{selectedEmployeeDateShifts.length}</span>
+                  <span style={{ ...styles.selectedDateCount, ...mobileSchedule?.selectedDateCount }}>{selectedEmployeeDateShifts.length}</span>
                 </div>
 
                 {selectedEmployeeDateShifts.length === 0 ? (
-                  <div style={styles.selectedDateEmpty}>
-                    <strong style={styles.emptyTitle}>
+                  <div style={{ ...styles.selectedDateEmpty, ...mobileSchedule?.selectedDateEmpty }}>
+                    <strong style={{ ...styles.emptyTitle, ...mobileSchedule?.emptyTitle }}>
                       {employeeSchedule.length === 0 ? t.noPublishedScheduleTitle : t.empty}
                     </strong>
-                    <span style={styles.emptySubtitle}>
+                    <span style={{ ...styles.emptySubtitle, ...mobileSchedule?.emptySubtitle }}>
                       {employeeSchedule.length === 0 ? t.noPublishedScheduleHint : t.empty}
                     </span>
                   </div>
                 ) : (
-                  <div style={styles.selectedShiftList}>
+                  <div style={{ ...styles.selectedShiftList, ...mobileSchedule?.selectedShiftList }}>
                     {selectedEmployeeDateShifts.map((shift) => {
                       const shiftId = getShiftId(shift);
                       const durationLabel = getShiftDurationLabel(shift, language);
@@ -1237,24 +1394,28 @@ export default function ScheduleTab({ language, userRole }) {
                           key={shiftId}
                           style={{
                             ...styles.calendarShiftCard,
-                            ...(r.isMobile ? { padding: 14 } : {}),
+                            ...mobileSchedule?.calendarShiftCard,
                           }}
                         >
                           <div style={{
                             ...styles.calendarShiftInfo,
                             ...(r.isMobile ? { alignItems: 'center', justifyContent: 'center' } : {}),
+                            ...mobileSchedule?.calendarShiftInfo,
                           }}
                           >
-                            <span style={styles.calendarShiftTimeInline}>
+                            <span style={{ ...styles.calendarShiftTimeInline, ...mobileSchedule?.calendarShiftTimeInline }}>
                               {formatTime(shift.start_time)} - {formatTime(shift.end_time)}
                             </span>
-                            <strong style={styles.calendarShiftTitle}>{getShiftPosition(shift)}</strong>
-                            {durationLabel && <span style={styles.calendarDurationBadge}>{durationLabel}</span>}
+                            <strong style={{ ...styles.calendarShiftTitle, ...mobileSchedule?.calendarShiftTitle }}>{getShiftPosition(shift)}</strong>
+                            {durationLabel && (
+                              <span style={{ ...styles.calendarDurationBadge, ...mobileSchedule?.calendarDurationBadge }}>{durationLabel}</span>
+                            )}
                           </div>
 
                           <div style={{
                             ...styles.calendarExchangeRow,
                             ...(r.isMobile ? { gridTemplateColumns: '1fr' } : {}),
+                            ...mobileSchedule?.calendarExchangeRow,
                           }}
                           >
                             <textarea
@@ -1267,7 +1428,7 @@ export default function ScheduleTab({ language, userRole }) {
                                 markUnsaved(EXCHANGE_NOTE_SCOPE);
                               }}
                               placeholder={t.exchangeNotePlaceholder}
-                              style={styles.calendarExchangeInput}
+                              style={{ ...styles.calendarExchangeInput, ...mobileSchedule?.calendarExchangeInput }}
                               disabled={isSubmitting}
                             />
 
@@ -1277,6 +1438,7 @@ export default function ScheduleTab({ language, userRole }) {
                               style={{
                                 ...(isSubmitting ? styles.smallSecondaryButtonDisabled : styles.calendarExchangeButton),
                                 width: '100%',
+                                ...mobileSchedule?.calendarExchangeButton,
                               }}
                               disabled={isSubmitting}
                             >
