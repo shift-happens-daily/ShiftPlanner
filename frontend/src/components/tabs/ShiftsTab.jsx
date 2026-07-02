@@ -1417,7 +1417,10 @@ export default function ShiftsTab({ language, userRole, user }) {
                           setBulkRequirement((prev) => ({ ...prev, start_date: event.target.value }));
                           markUnsaved(BULK_REQUIREMENT_SCOPE);
                         }}
-                        style={styles.dateInput}
+                        style={{
+                          ...styles.dateInput,
+                          ...(r.isMobile ? { height: 32, fontSize: 12, padding: '0 10px', borderRadius: 8 } : {}),
+                        }}
                       />
                     </Field>
 
@@ -1429,7 +1432,10 @@ export default function ShiftsTab({ language, userRole, user }) {
                           setBulkRequirement((prev) => ({ ...prev, end_date: event.target.value }));
                           markUnsaved(BULK_REQUIREMENT_SCOPE);
                         }}
-                        style={styles.dateInput}
+                        style={{
+                          ...styles.dateInput,
+                          ...(r.isMobile ? { height: 32, fontSize: 12, padding: '0 10px', borderRadius: 8 } : {}),
+                        }}
                       />
                     </Field>
 
@@ -1542,76 +1548,87 @@ export default function ShiftsTab({ language, userRole, user }) {
                   <span style={styles.countPill}>{visibleRequirements.length}</span>
                 </div>
 
-                <div style={{
-                  ...styles.requirementFilters,
-                  gridTemplateColumns: r.gridCols('repeat(4, minmax(0, 1fr)) auto auto'),
-                }}
-                >
-                  <Field label={t.position}>
-                    <select
-                      value={filterForm.position_id}
-                      onChange={(event) => setFilterForm((prev) => ({ ...prev, position_id: event.target.value }))}
-                      style={styles.input}
-                    >
-                      <option value="">{t.allPositions}</option>
-                      {positions.map((position) => (
-                        <option key={position.id} value={position.id}>
-                          {getPositionLabel(position)}
-                        </option>
-                      ))}
-                    </select>
-                  </Field>
+                {!r.isMobile && (
+                  <div style={{
+                    ...styles.requirementFilters,
+                    gridTemplateColumns: r.gridCols('repeat(4, minmax(0, 1fr)) auto auto'),
+                  }}
+                  >
+                    <Field label={t.position}>
+                      <select
+                        value={filterForm.position_id}
+                        onChange={(event) => setFilterForm((prev) => ({ ...prev, position_id: event.target.value }))}
+                        style={styles.input}
+                      >
+                        <option value="">{t.allPositions}</option>
+                        {positions.map((position) => (
+                          <option key={position.id} value={position.id}>
+                            {getPositionLabel(position)}
+                          </option>
+                        ))}
+                      </select>
+                    </Field>
 
-                  <Field label={t.filterDate}>
-                    <input
-                      type="date"
-                      value={filterForm.date}
-                      onChange={(event) => setFilterForm((prev) => ({ ...prev, date: event.target.value }))}
-                      style={styles.dateInput}
-                    />
-                  </Field>
+                    <Field label={t.filterDate}>
+                      <input
+                        type="date"
+                        value={filterForm.date}
+                        onChange={(event) => setFilterForm((prev) => ({ ...prev, date: event.target.value }))}
+                        style={{
+                          ...styles.dateInput,
+                          ...(r.isMobile ? { height: 32, fontSize: 12, padding: '0 10px', borderRadius: 8 } : {}),
+                        }}
+                      />
+                    </Field>
 
-                  <Field label={t.startDate}>
-                    <input
-                      type="date"
-                      value={filterForm.start_date}
-                      onChange={(event) => setFilterForm((prev) => ({ ...prev, start_date: event.target.value }))}
-                      style={styles.dateInput}
-                      disabled={Boolean(filterForm.date)}
-                    />
-                  </Field>
+                    <Field label={t.startDate}>
+                      <input
+                        type="date"
+                        value={filterForm.start_date}
+                        onChange={(event) => setFilterForm((prev) => ({ ...prev, start_date: event.target.value }))}
+                        style={{
+                          ...styles.dateInput,
+                          ...(r.isMobile ? { height: 32, fontSize: 12, padding: '0 10px', borderRadius: 8 } : {}),
+                        }}
+                        disabled={Boolean(filterForm.date)}
+                      />
+                    </Field>
 
-                  <Field label={t.endDate}>
-                    <input
-                      type="date"
-                      value={filterForm.end_date}
-                      onChange={(event) => setFilterForm((prev) => ({ ...prev, end_date: event.target.value }))}
-                      style={styles.dateInput}
-                      disabled={Boolean(filterForm.date)}
-                    />
-                  </Field>
+                    <Field label={t.endDate}>
+                      <input
+                        type="date"
+                        value={filterForm.end_date}
+                        onChange={(event) => setFilterForm((prev) => ({ ...prev, end_date: event.target.value }))}
+                        style={{
+                          ...styles.dateInput,
+                          ...(r.isMobile ? { height: 32, fontSize: 12, padding: '0 10px', borderRadius: 8 } : {}),
+                        }}
+                        disabled={Boolean(filterForm.date)}
+                      />
+                    </Field>
 
-                  <div style={styles.filterActions}>
-                    <button
-                      type="button"
-                      onClick={applyFilters}
-                      style={{
-                        ...styles.secondaryButton,
-                        ...(isRefreshingList ? { opacity: 0.65, cursor: 'not-allowed' } : {}),
-                      }}
-                      disabled={isRefreshingList}
-                    >
-                      {isRefreshingList ? '...' : t.refresh}
-                    </button>
-                    <button
-                      type="button"
-                      onClick={resetRequirementFilters}
-                      style={styles.smallSecondaryButton}
-                    >
-                      {t.clearFilters}
-                    </button>
+                    <div style={styles.filterActions}>
+                      <button
+                        type="button"
+                        onClick={applyFilters}
+                        style={{
+                          ...styles.secondaryButton,
+                          ...(isRefreshingList ? { opacity: 0.65, cursor: 'not-allowed' } : {}),
+                        }}
+                        disabled={isRefreshingList}
+                      >
+                        {isRefreshingList ? '...' : t.refresh}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={resetRequirementFilters}
+                        style={styles.smallSecondaryButton}
+                      >
+                        {t.clearFilters}
+                      </button>
+                    </div>
                   </div>
-                </div>
+                )}
 
                 {visibleRequirements.length === 0 ? (
                   <div style={styles.emptyBox}>{t.noRequirements}</div>
@@ -1621,27 +1638,46 @@ export default function ShiftsTab({ language, userRole, user }) {
                       <div key={getRequirementId(requirement)} style={{
                         ...styles.requirementItem,
                         gridTemplateColumns: r.gridCols('1.2fr 1fr auto auto'),
-                        ...(r.isMobile ? { gap: 12 } : {}),
+                        ...(r.isMobile ? {
+                          gap: 6,
+                          padding: '8px 10px',
+                          borderRadius: 10,
+                        } : {}),
                       }}>
                         <div>
-                          <strong style={styles.itemTitle}>{requirement.position_title}</strong>
-                          <div style={styles.itemMeta}>
+                          <strong style={{
+                            ...styles.itemTitle,
+                            ...(r.isMobile ? { fontSize: 13 } : {}),
+                          }}>{requirement.position_title}</strong>
+                          <div style={{
+                            ...styles.itemMeta,
+                            ...(r.isMobile ? { fontSize: 11, marginTop: 2 } : {}),
+                          }}>
                             {requirement.date}
                           </div>
                         </div>
 
-                        <div style={styles.itemMeta}>
+                        <div style={{
+                          ...styles.itemMeta,
+                          ...(r.isMobile ? { fontSize: 11 } : {}),
+                        }}>
                           {formatTime(requirement.start_time)} — {formatTime(requirement.end_time)}
                         </div>
 
-                        <span style={styles.staffBadge}>
+                        <span style={{
+                          ...styles.staffBadge,
+                          ...(r.isMobile ? { padding: '5px 8px', fontSize: 11, borderRadius: 8 } : {}),
+                        }}>
                           {t.minStaff}: {requirement.min_staff}
                         </span>
 
                         <button
                           type="button"
                           onClick={() => removeRequirement(getRequirementId(requirement))}
-                          style={styles.deleteRequirementButton}
+                          style={{
+                            ...styles.deleteRequirementButton,
+                            ...(r.isMobile ? { height: 30, padding: '0 8px', fontSize: 11, borderRadius: 8 } : {}),
+                          }}
                           disabled={isSubmitting}
                         >
                           {t.delete}
@@ -1908,7 +1944,10 @@ export default function ShiftsTab({ language, userRole, user }) {
                         setAbsenceForm((prev) => ({ ...prev, start_date: event.target.value }));
                         markUnsaved(ABSENCE_SCOPE);
                       }}
-                      style={styles.dateInput}
+                      style={{
+                        ...styles.dateInput,
+                        ...(r.isMobile ? { height: 32, fontSize: 12, padding: '0 10px', borderRadius: 8 } : {}),
+                      }}
                     />
                   </Field>
 
@@ -1920,7 +1959,10 @@ export default function ShiftsTab({ language, userRole, user }) {
                         setAbsenceForm((prev) => ({ ...prev, end_date: event.target.value }));
                         markUnsaved(ABSENCE_SCOPE);
                       }}
-                      style={styles.dateInput}
+                      style={{
+                        ...styles.dateInput,
+                        ...(r.isMobile ? { height: 32, fontSize: 12, padding: '0 10px', borderRadius: 8 } : {}),
+                      }}
                     />
                   </Field>
 
@@ -2018,17 +2060,35 @@ export default function ShiftsTab({ language, userRole, user }) {
                   {absences.map((absence) => (
                     <div
                       key={absence.id}
-                      style={r.isMobile ? styles.mobileAbsenceCard : { ...styles.listItem, ...r.listItem }}
+                      style={{
+                        ...(r.isMobile ? {
+                          ...styles.mobileAbsenceCard,
+                          padding: '8px 10px',
+                          gap: 6,
+                          borderRadius: 10,
+                        } : { ...styles.listItem, ...r.listItem }),
+                      }}
                     >
                       <div>
-                        <strong style={styles.itemTitle}>{t[absence.absence_type] || absence.absence_type}</strong>
-                        <div style={styles.itemMeta}>{absence.start_date} — {absence.end_date}</div>
-                        {absence.comment && <div style={styles.itemMeta}>{absence.comment}</div>}
+                        <strong style={{
+                          ...styles.itemTitle,
+                          ...(r.isMobile ? { fontSize: 13 } : {}),
+                        }}>{t[absence.absence_type] || absence.absence_type}</strong>
+                        <div style={{
+                          ...styles.itemMeta,
+                          ...(r.isMobile ? { fontSize: 11, marginTop: 2 } : {}),
+                        }}>{absence.start_date} — {absence.end_date}</div>
+                        {absence.comment && <div style={{
+                          ...styles.itemMeta,
+                          ...(r.isMobile ? { fontSize: 11 } : {}),
+                        }}>{absence.comment}</div>}
                       </div>
                       <button
                         type="button"
                         onClick={() => removeAbsence(absence.id)}
-                        style={r.isMobile ? { ...styles.deleteButton, ...r.fullWidth } : styles.deleteButton}
+                        style={{
+                          ...(r.isMobile ? { ...styles.deleteButton, ...r.fullWidth, height: 30, fontSize: 11, padding: '0 8px', borderRadius: 8 } : styles.deleteButton),
+                        }}
                       >
                         {t.delete}
                       </button>

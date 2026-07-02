@@ -262,22 +262,37 @@ export default function ProfileTab({ language, user }) {
   return (
     <section style={{
       ...styles.page,
-      padding: r.isMobile ? 10 : styles.page.padding,
+      padding: r.isMobile ? 6 : styles.page.padding,
     }}
     >
       <div style={{
         ...styles.card,
         width: '100%',
-        padding: r.isMobile ? 16 : styles.card.padding,
-        borderRadius: r.isMobile ? 18 : styles.card.borderRadius,
+        padding: r.isMobile ? 8 : styles.card.padding,
+        borderRadius: r.isMobile ? 12 : styles.card.borderRadius,
         boxShadow: r.isMobile ? 'none' : styles.card.boxShadow,
-        gap: r.isMobile ? 16 : styles.card.gap,
+        gap: r.isMobile ? 8 : styles.card.gap,
       }}
       >
-        <div style={{ ...styles.header, ...r.header }}>
+        <div style={{
+          ...styles.header,
+          ...r.header,
+          flexDirection: r.isMobile ? 'column' : 'row',
+          alignItems: r.isMobile ? 'flex-start' : 'center',
+          gap: r.isMobile ? 8 : 16,
+        }}>
           <div>
-            <h2 style={{ ...styles.title, ...r.title }}>{t.title}</h2>
-            <p style={styles.subtitle}>{t.subtitle}</p>
+            <h2 style={{
+              ...styles.title,
+              ...r.title,
+              fontSize: r.isMobile ? 15 : 26,
+              marginBottom: r.isMobile ? 1 : 0,
+            }}>{t.title}</h2>
+            <p style={{
+              ...styles.subtitle,
+              fontSize: r.isMobile ? 10 : 14,
+              marginTop: r.isMobile ? 1 : 4,
+            }}>{t.subtitle}</p>
           </div>
 
           <button
@@ -286,6 +301,11 @@ export default function ProfileTab({ language, user }) {
             style={{
               ...(isRefreshing ? styles.refreshButtonDisabled : styles.refreshButton),
               ...r.fullWidth,
+              ...(r.isMobile ? {
+                fontSize: 11,
+                padding: '4px 10px',
+                borderRadius: 8,
+              } : {}),
             }}
             disabled={isRefreshing || isSubmitting}
           >
@@ -293,13 +313,23 @@ export default function ProfileTab({ language, user }) {
           </button>
         </div>
 
-        {errorMessage && <div style={styles.error}>{errorMessage}</div>}
-        {successMessage && <div style={styles.success}>{successMessage}</div>}
+        {errorMessage && <div style={{
+          ...styles.error,
+          fontSize: r.isMobile ? 11 : 14,
+          padding: r.isMobile ? '6px 8px' : '10px 12px',
+          borderRadius: r.isMobile ? 8 : 12,
+        }}>{errorMessage}</div>}
+        {successMessage && <div style={{
+          ...styles.success,
+          fontSize: r.isMobile ? 11 : 14,
+          padding: r.isMobile ? '6px 8px' : '10px 12px',
+          borderRadius: r.isMobile ? 8 : 12,
+        }}>{successMessage}</div>}
 
         <div style={{
           ...styles.rows,
-          gridTemplateColumns: r.gridCols('repeat(2, minmax(320px, 1fr))'),
-          gap: r.isMobile ? 12 : styles.rows.gap,
+          gridTemplateColumns: r.gridCols(r.isMobile ? '1fr' : 'repeat(2, minmax(320px, 1fr))'),
+          gap: r.isMobile ? 6 : styles.rows.gap,
         }}
         >
           {rows.map((row) => (
@@ -307,14 +337,19 @@ export default function ProfileTab({ language, user }) {
               key={row.label}
               style={{
                 ...styles.row,
-                minHeight: r.isMobile ? 88 : styles.row.minHeight,
-                padding: r.isMobile ? '16px 14px' : styles.row.padding,
+                minHeight: r.isMobile ? 56 : styles.row.minHeight,
+                padding: r.isMobile ? '10px 8px' : styles.row.padding,
+                borderRadius: r.isMobile ? 12 : 20,
+                gap: r.isMobile ? 3 : 8,
               }}
             >
-              <span style={styles.label}>{row.label}</span>
+              <span style={{
+                ...styles.label,
+                fontSize: r.isMobile ? 11 : 14,
+              }}>{row.label}</span>
               <span style={{
                 ...(row.muted ? styles.valueMuted : styles.value),
-                fontSize: r.isMobile ? 17 : undefined,
+                fontSize: r.isMobile ? 13 : 20,
               }}
               >
                 {row.value || t.empty}
@@ -326,21 +361,45 @@ export default function ProfileTab({ language, user }) {
         {isEmployee && hasCompany && (
           <div style={{
             ...styles.section,
-            padding: r.isMobile ? '16px 14px' : styles.section.padding,
+            padding: r.isMobile ? '10px 8px' : styles.section.padding,
+            borderRadius: r.isMobile ? 12 : 20,
           }}
           >
-            <h3 style={styles.sectionTitle}>{t.positionSection}</h3>
-            <p style={styles.sectionHint}>{t.positionSectionHint}</p>
+            <h3 style={{
+              ...styles.sectionTitle,
+              fontSize: r.isMobile ? 12 : 18,
+              marginBottom: r.isMobile ? 2 : 0,
+            }}>{t.positionSection}</h3>
+            <p style={{
+              ...styles.sectionHint,
+              fontSize: r.isMobile ? 10 : 13,
+              margin: r.isMobile ? '1px 0 8px' : '6px 0 16px',
+            }}>{t.positionSectionHint}</p>
 
-            <div style={styles.formStack}>
-              <label style={styles.fieldLabel}>{t.position}</label>
+            <div style={{
+              ...styles.formStack,
+              gap: r.isMobile ? 6 : 12,
+            }}>
+              <label style={{
+                ...styles.fieldLabel,
+                fontSize: r.isMobile ? 10 : 13,
+              }}>{t.position}</label>
               <select
                 value={selectedPositionId}
                 onChange={(event) => {
                   setSelectedPositionId(event.target.value);
                   markUnsaved(POSITION_SCOPE);
                 }}
-                style={{ ...styles.select, ...r.fullWidth }}
+                style={{
+                  ...styles.select,
+                  ...r.fullWidth,
+                  ...(r.isMobile ? {
+                    height: 32,
+                    borderRadius: 8,
+                    fontSize: 11,
+                    padding: '0 8px',
+                  } : {}),
+                }}
                 disabled={isSubmitting}
               >
                 <option value="">{t.selectPosition}</option>
@@ -356,7 +415,13 @@ export default function ProfileTab({ language, user }) {
                 onClick={handleSavePosition}
                 style={{
                   ...(isSubmitting ? styles.primaryButtonDisabled : styles.primaryButton),
-                  ...(r.isMobile ? { alignSelf: 'stretch', width: '100%' } : {}),
+                  ...(r.isMobile ? {
+                    alignSelf: 'stretch',
+                    width: '100%',
+                    padding: '6px 10px',
+                    fontSize: 11,
+                    borderRadius: 8,
+                  } : {}),
                 }}
                 disabled={isSubmitting}
               >
@@ -366,12 +431,23 @@ export default function ProfileTab({ language, user }) {
           </div>
         )}
 
-        <div style={styles.actionsFooter}>
+        <div style={{
+          ...styles.actionsFooter,
+          gap: r.isMobile ? 6 : 12,
+        }}>
           {isEmployee && hasCompany && (
             <button
               type="button"
               onClick={handleLeaveCompany}
-              style={isSubmitting ? styles.warningButtonDisabled : styles.warningButton}
+              style={{
+                ...(isSubmitting ? styles.warningButtonDisabled : styles.warningButton),
+                ...(r.isMobile ? {
+                  padding: '5px 10px',
+                  fontSize: 11,
+                  borderRadius: 8,
+                  alignSelf: 'stretch',
+                } : {}),
+              }}
               disabled={isSubmitting}
             >
               {t.leaveCompany}
@@ -381,7 +457,15 @@ export default function ProfileTab({ language, user }) {
           <button
             type="button"
             onClick={handleDeleteAccount}
-            style={isSubmitting ? styles.dangerButtonDisabled : styles.dangerButton}
+            style={{
+              ...(isSubmitting ? styles.dangerButtonDisabled : styles.dangerButton),
+              ...(r.isMobile ? {
+                padding: '5px 10px',
+                fontSize: 11,
+                borderRadius: 8,
+                alignSelf: 'stretch',
+              } : {}),
+            }}
             disabled={isSubmitting}
           >
             {t.deleteAccount}
