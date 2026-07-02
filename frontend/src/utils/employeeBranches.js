@@ -154,7 +154,7 @@ export function employeeHasBranch(employee, branchId) {
   return getEmployeeBranchIds(employee).some((id) => id === targetId);
 }
 
-export function addEmployeeBranch(employee, branchId, allBranches = []) {
+export function addEmployeeBranch(employee, branchId) {
   const employeeId = employee?.id;
   const nextId = normalizeBranchId(branchId);
   if (!employeeId || !nextId) return getEmployeeBranchIds(employee);
