@@ -324,9 +324,292 @@ function normalizeError(error, fallback, language) {
   return extractApiErrorMessage(error, fallback, language) || fallback;
 }
 
+const MOBILE_SHIFTS_STYLES = {
+  page: {
+    padding: '6px 8px 10px',
+    overflowY: 'auto',
+    height: 'auto',
+  },
+  shell: {
+    gap: 8,
+    overflow: 'visible',
+    height: 'auto',
+  },
+  header: {
+    gap: 6,
+  },
+  title: {
+    fontSize: 18,
+  },
+  subtitle: {
+    fontSize: 12,
+    margin: '2px 0 0',
+  },
+  managerLayout: {
+    gap: 8,
+    overflow: 'visible',
+  },
+  sidebar: {
+    gap: 8,
+  },
+  workArea: {
+    gap: 8,
+    overflow: 'visible',
+    gridTemplateRows: 'auto auto auto',
+  },
+  helpBox: {
+    padding: '10px 12px',
+    fontSize: 12,
+    gap: 4,
+    borderRadius: 12,
+  },
+  panel: {
+    padding: 10,
+    borderRadius: 12,
+  },
+  listPanel: {
+    padding: 10,
+    borderRadius: 12,
+  },
+  panelTitle: {
+    fontSize: 15,
+  },
+  panelHint: {
+    fontSize: 11,
+    margin: '2px 0 0',
+  },
+  panelHeader: {
+    marginBottom: 8,
+    gap: 8,
+  },
+  countPill: {
+    minWidth: 28,
+    height: 24,
+    fontSize: 12,
+    padding: '0 8px',
+  },
+  label: {
+    fontSize: 11,
+  },
+  input: {
+    height: 34,
+    padding: '0 10px',
+    fontSize: 13,
+    borderRadius: 8,
+  },
+  dateInput: {
+    height: 34,
+    padding: '0 10px',
+    fontSize: 13,
+    borderRadius: 8,
+  },
+  primaryButton: {
+    height: 34,
+    padding: '0 12px',
+    fontSize: 12,
+    borderRadius: 8,
+    marginTop: 10,
+  },
+  primaryButtonDisabled: {
+    height: 34,
+    padding: '0 12px',
+    fontSize: 12,
+    borderRadius: 8,
+    marginTop: 10,
+  },
+  secondaryButton: {
+    height: 34,
+    padding: '0 12px',
+    fontSize: 12,
+    borderRadius: 8,
+  },
+  smallSecondaryButton: {
+    height: 32,
+    padding: '0 10px',
+    fontSize: 11,
+    borderRadius: 8,
+  },
+  modeSwitch: {
+    width: '100%',
+    borderRadius: 8,
+  },
+  modeButton: {
+    height: 32,
+    padding: '0 10px',
+    fontSize: 12,
+    flex: 1,
+  },
+  modeButtonActive: {
+    height: 32,
+    padding: '0 10px',
+    fontSize: 12,
+    flex: 1,
+  },
+  formGrid: {
+    gap: 8,
+    marginTop: 8,
+  },
+  stack: {
+    gap: 7,
+  },
+  dayPills: {
+    gap: 6,
+    marginTop: 8,
+  },
+  dayPill: {
+    height: 28,
+    padding: '0 10px',
+    fontSize: 11,
+    borderRadius: 8,
+  },
+  dayPillActive: {
+    height: 28,
+    padding: '0 10px',
+    fontSize: 11,
+    borderRadius: 8,
+  },
+  requirementsList: {
+    gap: 6,
+    height: 'auto',
+  },
+  requirementItem: {
+    display: 'flex',
+    flexDirection: 'column',
+    alignItems: 'stretch',
+    gap: 6,
+    padding: '8px 10px',
+    borderRadius: 10,
+  },
+  requirementTopRow: {
+    display: 'flex',
+    alignItems: 'flex-start',
+    justifyContent: 'space-between',
+    gap: 8,
+  },
+  requirementMetaRow: {
+    display: 'flex',
+    flexWrap: 'wrap',
+    gap: '4px 10px',
+    alignItems: 'center',
+  },
+  itemTitle: {
+    fontSize: 13,
+    lineHeight: 1.25,
+  },
+  itemMeta: {
+    fontSize: 11,
+  },
+  staffBadge: {
+    padding: '4px 8px',
+    fontSize: 11,
+    borderRadius: 8,
+    flexShrink: 0,
+  },
+  deleteRequirementButton: {
+    height: 30,
+    padding: '0 10px',
+    fontSize: 11,
+    borderRadius: 8,
+    width: '100%',
+  },
+  emptyBox: {
+    padding: '12px 14px',
+    fontSize: 12,
+    borderRadius: 10,
+  },
+  filterActions: {
+    gap: 6,
+    marginTop: 2,
+  },
+  filePicker: {
+    minHeight: 36,
+    padding: '0 10px',
+    fontSize: 12,
+    margin: '8px 0',
+  },
+  employeeGridMobile: {
+    gap: 8,
+  },
+  mobileAvailabilityHeader: {
+    marginBottom: 8,
+    paddingBottom: 8,
+    gap: 8,
+  },
+  mobileTopSaveButton: {
+    height: 32,
+    minWidth: 96,
+    padding: '0 12px',
+    fontSize: 12,
+    borderRadius: 8,
+  },
+  mobileWeekBar: {
+    marginBottom: 10,
+    padding: '8px 10px',
+    borderRadius: 10,
+  },
+  mobileWeekArrow: {
+    width: 34,
+    height: 30,
+    fontSize: 16,
+    borderRadius: 8,
+  },
+  mobileWeekLabel: {
+    fontSize: 12,
+  },
+  mobileWeekDateInput: {
+    height: 30,
+    fontSize: 12,
+  },
+  mobileSectionLabel: {
+    fontSize: 11,
+    marginBottom: 6,
+  },
+  mobileBrushRow: {
+    gap: 6,
+    marginBottom: 10,
+  },
+  mobileBrushButton: {
+    height: 30,
+    padding: '0 8px',
+    fontSize: 11,
+    borderRadius: 8,
+  },
+  mobileAvailabilityTableWrap: {
+    borderRadius: 10,
+  },
+  mobileAvailabilityTimeLabel: {
+    width: 46,
+    fontSize: 10,
+  },
+  mobileAvailabilityDayHeaderShort: {
+    fontSize: 10,
+  },
+  mobileAvailabilityDayHeaderDate: {
+    fontSize: 11,
+  },
+  mobileAvailabilitySlotButton: {
+    minHeight: 24,
+  },
+  mobileFormStack: {
+    gap: 8,
+  },
+  mobileAbsenceCard: {
+    padding: '8px 10px',
+    borderRadius: 10,
+    gap: 4,
+  },
+  deleteButton: {
+    height: 30,
+    fontSize: 11,
+    padding: '0 10px',
+    borderRadius: 8,
+  },
+};
+
 export default function ShiftsTab({ language, userRole, user }) {
   const positionTitleRevision = usePositionTitleRevision();
   const r = useTabResponsive(1480);
+  const mobileStyles = r.isMobile ? MOBILE_SHIFTS_STYLES : null;
   const { markUnsaved, markSaved } = useUnsavedChanges();
   const isManager = userRole === 'manager';
   const employeeId = user?.employeeId || user?.employee_id;
@@ -1167,44 +1450,55 @@ export default function ShiftsTab({ language, userRole, user }) {
 
   if (isLoading) {
     return (
-      <section style={{ ...styles.page, ...r.page, ...(r.isMobile ? {} : styles.desktopPage) }}>
-        <div style={{ ...styles.shell, ...r.shell, ...(r.isMobile ? {} : styles.desktopShell) }}>
-          <div style={styles.emptyBox}>{t.loading}</div>
+      <section style={{ ...styles.page, ...r.page, ...(r.isMobile ? {} : styles.desktopPage), ...mobileStyles?.page }}>
+        <div style={{ ...styles.shell, ...r.shell, ...(r.isMobile ? {} : styles.desktopShell), ...mobileStyles?.shell }}>
+          <div style={{ ...styles.emptyBox, ...mobileStyles?.emptyBox }}>{t.loading}</div>
         </div>
       </section>
     );
   }
 
   return (
-    <section style={{ ...styles.page, ...r.page, ...(r.isMobile ? {} : styles.desktopPage) }}>
-      <div style={{ ...styles.shell, ...r.shell, ...(r.isMobile ? {} : styles.desktopShell) }}>
+    <section style={{
+      ...styles.page,
+      ...r.page,
+      ...(r.isMobile ? {} : styles.desktopPage),
+      ...mobileStyles?.page,
+    }}
+    >
+      <div style={{
+        ...styles.shell,
+        ...r.shell,
+        ...(r.isMobile ? {} : styles.desktopShell),
+        ...mobileStyles?.shell,
+      }}>
         {renderToast()}
 
-        <header style={{ ...styles.header, ...r.header }}>
+        <header style={{ ...styles.header, ...r.header, ...mobileStyles?.header }}>
           <div>
-            <h2 style={{ ...styles.title, ...r.title }}>{isManager ? t.titleManager : t.titleEmployee}</h2>
-            <p style={styles.subtitle}>{isManager ? t.subtitleManager : t.subtitleEmployee}</p>
+            <h2 style={{ ...styles.title, ...r.title, ...mobileStyles?.title }}>{isManager ? t.titleManager : t.titleEmployee}</h2>
+            <p style={{ ...styles.subtitle, ...mobileStyles?.subtitle }}>{isManager ? t.subtitleManager : t.subtitleEmployee}</p>
           </div>
         </header>
 
         {isManager ? (
-          <div style={{ ...styles.managerLayout, ...r.splitLayout('290px minmax(0, 1fr)') }}>
-            <aside style={styles.sidebar}>
-              <div style={styles.helpBox}>
+          <div style={{ ...styles.managerLayout, ...r.splitLayout('290px minmax(0, 1fr)'), ...mobileStyles?.managerLayout }}>
+            <aside style={{ ...styles.sidebar, ...mobileStyles?.sidebar }}>
+              <div style={{ ...styles.helpBox, ...mobileStyles?.helpBox }}>
                 <strong>{t.stepOne}</strong>
                 <span>{t.stepTwo}</span>
                 <span>{t.stepThree}</span>
               </div>
 
-              <section style={styles.panel}>
-                <h3 style={styles.panelTitle}>{t.filters}</h3>
+              <section style={{ ...styles.panel, ...mobileStyles?.panel }}>
+                <h3 style={{ ...styles.panelTitle, ...mobileStyles?.panelTitle }}>{t.filters}</h3>
 
-                <div style={styles.stack}>
-                  <label style={styles.label}>{t.position}</label>
+                <div style={{ ...styles.stack, ...mobileStyles?.stack }}>
+                  <label style={{ ...styles.label, ...mobileStyles?.label }}>{t.position}</label>
                   <select
                     value={filterForm.position_id}
                     onChange={(event) => setFilterForm((prev) => ({ ...prev, position_id: event.target.value }))}
-                    style={styles.input}
+                    style={{ ...styles.input, ...mobileStyles?.input }}
                   >
                     <option value="">{t.allPositions}</option>
                     {positions.map((position) => (
@@ -1214,48 +1508,48 @@ export default function ShiftsTab({ language, userRole, user }) {
                     ))}
                   </select>
 
-                  <label style={styles.label}>{t.filterDate}</label>
+                  <label style={{ ...styles.label, ...mobileStyles?.label }}>{t.filterDate}</label>
                   <input
                     type="date"
                     value={filterForm.date}
                     onChange={(event) => setFilterForm((prev) => ({ ...prev, date: event.target.value }))}
-                    style={styles.dateInput}
+                    style={{ ...styles.dateInput, ...mobileStyles?.dateInput }}
                   />
 
-                  <label style={styles.label}>{t.startDate}</label>
+                  <label style={{ ...styles.label, ...mobileStyles?.label }}>{t.startDate}</label>
                   <input
                     type="date"
                     value={filterForm.start_date}
                     onChange={(event) => setFilterForm((prev) => ({ ...prev, start_date: event.target.value }))}
-                    style={styles.dateInput}
+                    style={{ ...styles.dateInput, ...mobileStyles?.dateInput }}
                     disabled={Boolean(filterForm.date)}
                   />
 
-                  <label style={styles.label}>{t.endDate}</label>
+                  <label style={{ ...styles.label, ...mobileStyles?.label }}>{t.endDate}</label>
                   <input
                     type="date"
                     value={filterForm.end_date}
                     onChange={(event) => setFilterForm((prev) => ({ ...prev, end_date: event.target.value }))}
-                    style={styles.dateInput}
+                    style={{ ...styles.dateInput, ...mobileStyles?.dateInput }}
                     disabled={Boolean(filterForm.date)}
                   />
 
-                  <div style={styles.filterActions}>
-                    <button type="button" onClick={applyFilters} style={styles.secondaryButton}>
+                  <div style={{ ...styles.filterActions, ...mobileStyles?.filterActions }}>
+                    <button type="button" onClick={applyFilters} style={{ ...styles.secondaryButton, ...mobileStyles?.secondaryButton }}>
                       {isRefreshingList ? '...' : t.refresh}
                     </button>
-                    <button type="button" onClick={resetRequirementFilters} style={styles.smallSecondaryButton}>
+                    <button type="button" onClick={resetRequirementFilters} style={{ ...styles.smallSecondaryButton, ...mobileStyles?.smallSecondaryButton }}>
                       {t.clearFilters}
                     </button>
                   </div>
                 </div>
               </section>
 
-              <section style={styles.panel}>
-                <h3 style={styles.panelTitle}>{t.import}</h3>
-                <p style={styles.panelHint}>{t.fileHint}</p>
+              <section style={{ ...styles.panel, ...mobileStyles?.panel }}>
+                <h3 style={{ ...styles.panelTitle, ...mobileStyles?.panelTitle }}>{t.import}</h3>
+                <p style={{ ...styles.panelHint, ...mobileStyles?.panelHint }}>{t.fileHint}</p>
 
-                <label style={styles.filePicker}>
+                <label style={{ ...styles.filePicker, ...mobileStyles?.filePicker }}>
                   <input
                     type="file"
                     accept=".xlsx"
@@ -1271,7 +1565,9 @@ export default function ShiftsTab({ language, userRole, user }) {
                 <button
                   type="button"
                   onClick={submitImport}
-                  style={isSubmitting ? styles.primaryButtonDisabled : styles.primaryButton}
+                  style={isSubmitting
+                    ? { ...styles.primaryButtonDisabled, ...mobileStyles?.primaryButtonDisabled }
+                    : { ...styles.primaryButton, ...mobileStyles?.primaryButton }}
                   disabled={isSubmitting}
                 >
                   {t.upload}
@@ -1295,11 +1591,13 @@ export default function ShiftsTab({ language, userRole, user }) {
               </section>
             </aside>
 
-            <main style={styles.workArea}>
-              <div style={styles.modeSwitch}>
+            <main style={{ ...styles.workArea, ...mobileStyles?.workArea }}>
+              <div style={{ ...styles.modeSwitch, ...mobileStyles?.modeSwitch }}>
                 <button
                   type="button"
-                  style={mode === 'single' ? styles.modeButtonActive : styles.modeButton}
+                  style={mode === 'single'
+                    ? { ...styles.modeButtonActive, ...mobileStyles?.modeButtonActive }
+                    : { ...styles.modeButton, ...mobileStyles?.modeButton }}
                   onClick={() => setMode('single')}
                 >
                   {t.single}
@@ -1307,7 +1605,9 @@ export default function ShiftsTab({ language, userRole, user }) {
 
                 <button
                   type="button"
-                  style={mode === 'bulk' ? styles.modeButtonActive : styles.modeButton}
+                  style={mode === 'bulk'
+                    ? { ...styles.modeButtonActive, ...mobileStyles?.modeButtonActive }
+                    : { ...styles.modeButton, ...mobileStyles?.modeButton }}
                   onClick={() => setMode('bulk')}
                 >
                   {t.bulk}
@@ -1315,19 +1615,19 @@ export default function ShiftsTab({ language, userRole, user }) {
               </div>
 
               {mode === 'single' ? (
-                <section style={styles.panel}>
-                  <h3 style={styles.panelTitle}>{t.single}</h3>
-                  <p style={styles.panelHint}>{t.singleHint}</p>
+                <section style={{ ...styles.panel, ...mobileStyles?.panel }}>
+                  <h3 style={{ ...styles.panelTitle, ...mobileStyles?.panelTitle }}>{t.single}</h3>
+                  <p style={{ ...styles.panelHint, ...mobileStyles?.panelHint }}>{t.singleHint}</p>
 
-                  <div style={{ ...styles.formGrid, gridTemplateColumns: r.gridCols('repeat(3, minmax(0, 1fr))') }}>
-                    <Field label={t.position}>
+                  <div style={{ ...styles.formGrid, gridTemplateColumns: r.gridCols('repeat(3, minmax(0, 1fr))'), ...mobileStyles?.formGrid }}>
+                    <Field label={t.position} labelStyle={mobileStyles?.label}>
                       <select
                         value={singleRequirement.position_id}
                         onChange={(event) => {
                           setSingleRequirement((prev) => ({ ...prev, position_id: event.target.value }));
                           markUnsaved(SINGLE_REQUIREMENT_SCOPE);
                         }}
-                        style={styles.input}
+                        style={{ ...styles.input, ...mobileStyles?.input }}
                       >
                         <option value="">{positions.length ? t.choosePosition : t.noPositions}</option>
                         {positions.map((position) => (
@@ -1338,7 +1638,7 @@ export default function ShiftsTab({ language, userRole, user }) {
                       </select>
                     </Field>
 
-                    <Field label={t.date}>
+                    <Field label={t.date} labelStyle={mobileStyles?.label}>
                       <input
                         type="date"
                         value={singleRequirement.date}
@@ -1346,11 +1646,11 @@ export default function ShiftsTab({ language, userRole, user }) {
                           setSingleRequirement((prev) => ({ ...prev, date: event.target.value }));
                           markUnsaved(SINGLE_REQUIREMENT_SCOPE);
                         }}
-                        style={styles.dateInput}
+                        style={{ ...styles.dateInput, ...mobileStyles?.dateInput }}
                       />
                     </Field>
 
-                    <Field label={t.minStaff}>
+                    <Field label={t.minStaff} labelStyle={mobileStyles?.label}>
                       <input
                         type="number"
                         min="1"
@@ -1359,11 +1659,11 @@ export default function ShiftsTab({ language, userRole, user }) {
                           setSingleRequirement((prev) => ({ ...prev, min_staff: event.target.value }));
                           markUnsaved(SINGLE_REQUIREMENT_SCOPE);
                         }}
-                        style={styles.input}
+                        style={{ ...styles.input, ...mobileStyles?.input }}
                       />
                     </Field>
 
-                    <Field label={t.startTime}>
+                    <Field label={t.startTime} labelStyle={mobileStyles?.label}>
                       <input
                         type="time"
                         value={formatTime(singleRequirement.start_time)}
@@ -1374,11 +1674,11 @@ export default function ShiftsTab({ language, userRole, user }) {
                           }));
                           markUnsaved(SINGLE_REQUIREMENT_SCOPE);
                         }}
-                        style={styles.input}
+                        style={{ ...styles.input, ...mobileStyles?.input }}
                       />
                     </Field>
 
-                    <Field label={t.endTime}>
+                    <Field label={t.endTime} labelStyle={mobileStyles?.label}>
                       <input
                         type="time"
                         value={formatTime(singleRequirement.end_time)}
@@ -1389,7 +1689,7 @@ export default function ShiftsTab({ language, userRole, user }) {
                           }));
                           markUnsaved(SINGLE_REQUIREMENT_SCOPE);
                         }}
-                        style={styles.input}
+                        style={{ ...styles.input, ...mobileStyles?.input }}
                       />
                     </Field>
                   </div>
@@ -1397,19 +1697,21 @@ export default function ShiftsTab({ language, userRole, user }) {
                   <button
                     type="button"
                     onClick={submitManagerRequirement}
-                    style={isSubmitting ? styles.primaryButtonDisabled : styles.primaryButton}
+                    style={isSubmitting
+                      ? { ...styles.primaryButtonDisabled, ...mobileStyles?.primaryButtonDisabled }
+                      : { ...styles.primaryButton, ...mobileStyles?.primaryButton }}
                     disabled={isSubmitting || positions.length === 0}
                   >
                     {t.create}
                   </button>
                 </section>
               ) : (
-                <section style={styles.panel}>
-                  <h3 style={styles.panelTitle}>{t.bulk}</h3>
-                  <p style={styles.panelHint}>{t.bulkHint}</p>
+                <section style={{ ...styles.panel, ...mobileStyles?.panel }}>
+                  <h3 style={{ ...styles.panelTitle, ...mobileStyles?.panelTitle }}>{t.bulk}</h3>
+                  <p style={{ ...styles.panelHint, ...mobileStyles?.panelHint }}>{t.bulkHint}</p>
 
-                  <div style={{ ...styles.formGrid, gridTemplateColumns: r.gridCols('repeat(3, minmax(0, 1fr))') }}>
-                    <Field label={t.startDate}>
+                  <div style={{ ...styles.formGrid, gridTemplateColumns: r.gridCols('repeat(3, minmax(0, 1fr))'), ...mobileStyles?.formGrid }}>
+                    <Field label={t.startDate} labelStyle={mobileStyles?.label}>
                       <input
                         type="date"
                         value={bulkRequirement.start_date}
@@ -1417,14 +1719,11 @@ export default function ShiftsTab({ language, userRole, user }) {
                           setBulkRequirement((prev) => ({ ...prev, start_date: event.target.value }));
                           markUnsaved(BULK_REQUIREMENT_SCOPE);
                         }}
-                        style={{
-                          ...styles.dateInput,
-                          ...(r.isMobile ? { height: 32, fontSize: 12, padding: '0 10px', borderRadius: 8 } : {}),
-                        }}
+                        style={{ ...styles.dateInput, ...mobileStyles?.dateInput }}
                       />
                     </Field>
 
-                    <Field label={t.endDate}>
+                    <Field label={t.endDate} labelStyle={mobileStyles?.label}>
                       <input
                         type="date"
                         value={bulkRequirement.end_date}
@@ -1432,14 +1731,11 @@ export default function ShiftsTab({ language, userRole, user }) {
                           setBulkRequirement((prev) => ({ ...prev, end_date: event.target.value }));
                           markUnsaved(BULK_REQUIREMENT_SCOPE);
                         }}
-                        style={{
-                          ...styles.dateInput,
-                          ...(r.isMobile ? { height: 32, fontSize: 12, padding: '0 10px', borderRadius: 8 } : {}),
-                        }}
+                        style={{ ...styles.dateInput, ...mobileStyles?.dateInput }}
                       />
                     </Field>
 
-                    <Field label={t.position}>
+                    <Field label={t.position} labelStyle={mobileStyles?.label}>
                       <select
                         value={bulkRequirement.requirements[0].position_id}
                         onChange={(event) => {
@@ -1449,7 +1745,7 @@ export default function ShiftsTab({ language, userRole, user }) {
                           }));
                           markUnsaved(BULK_REQUIREMENT_SCOPE);
                         }}
-                        style={styles.input}
+                        style={{ ...styles.input, ...mobileStyles?.input }}
                       >
                         <option value="">{positions.length ? t.choosePosition : t.noPositions}</option>
                         {positions.map((position) => (
@@ -1460,7 +1756,7 @@ export default function ShiftsTab({ language, userRole, user }) {
                       </select>
                     </Field>
 
-                    <Field label={t.minStaff}>
+                    <Field label={t.minStaff} labelStyle={mobileStyles?.label}>
                       <input
                         type="number"
                         min="1"
@@ -1472,11 +1768,11 @@ export default function ShiftsTab({ language, userRole, user }) {
                           }));
                           markUnsaved(BULK_REQUIREMENT_SCOPE);
                         }}
-                        style={styles.input}
+                        style={{ ...styles.input, ...mobileStyles?.input }}
                       />
                     </Field>
 
-                    <Field label={t.startTime}>
+                    <Field label={t.startTime} labelStyle={mobileStyles?.label}>
                       <input
                         type="time"
                         value={formatTime(bulkRequirement.requirements[0].start_time)}
@@ -1487,11 +1783,11 @@ export default function ShiftsTab({ language, userRole, user }) {
                           }));
                           markUnsaved(BULK_REQUIREMENT_SCOPE);
                         }}
-                        style={styles.input}
+                        style={{ ...styles.input, ...mobileStyles?.input }}
                       />
                     </Field>
 
-                    <Field label={t.endTime}>
+                    <Field label={t.endTime} labelStyle={mobileStyles?.label}>
                       <input
                         type="time"
                         value={formatTime(bulkRequirement.requirements[0].end_time)}
@@ -1502,12 +1798,12 @@ export default function ShiftsTab({ language, userRole, user }) {
                           }));
                           markUnsaved(BULK_REQUIREMENT_SCOPE);
                         }}
-                        style={styles.input}
+                        style={{ ...styles.input, ...mobileStyles?.input }}
                       />
                     </Field>
                   </div>
 
-                  <div style={styles.dayPills}>
+                  <div style={{ ...styles.dayPills, ...mobileStyles?.dayPills }}>
                     {WEEKDAYS.map((day) => {
                       const checked = bulkRequirement.weekdays.includes(day.value);
                       return (
@@ -1523,7 +1819,9 @@ export default function ShiftsTab({ language, userRole, user }) {
                             }));
                             markUnsaved(BULK_REQUIREMENT_SCOPE);
                           }}
-                          style={checked ? styles.dayPillActive : styles.dayPill}
+                          style={checked
+                            ? { ...styles.dayPillActive, ...mobileStyles?.dayPillActive }
+                            : { ...styles.dayPill, ...mobileStyles?.dayPill }}
                         >
                           {day[language] || day.ru}
                         </button>
@@ -1534,7 +1832,9 @@ export default function ShiftsTab({ language, userRole, user }) {
                   <button
                     type="button"
                     onClick={submitBulkRequirements}
-                    style={isSubmitting ? styles.primaryButtonDisabled : styles.primaryButton}
+                    style={isSubmitting
+                      ? { ...styles.primaryButtonDisabled, ...mobileStyles?.primaryButtonDisabled }
+                      : { ...styles.primaryButton, ...mobileStyles?.primaryButton }}
                     disabled={isSubmitting || positions.length === 0}
                   >
                     {t.create}
@@ -1542,10 +1842,10 @@ export default function ShiftsTab({ language, userRole, user }) {
                 </section>
               )}
 
-              <section style={styles.listPanel}>
-                <div style={styles.panelHeader}>
-                  <h3 style={styles.panelTitle}>{t.requirements}</h3>
-                  <span style={styles.countPill}>{visibleRequirements.length}</span>
+              <section style={{ ...styles.listPanel, ...mobileStyles?.listPanel }}>
+                <div style={{ ...styles.panelHeader, ...mobileStyles?.panelHeader }}>
+                  <h3 style={{ ...styles.panelTitle, ...mobileStyles?.panelTitle }}>{t.requirements}</h3>
+                  <span style={{ ...styles.countPill, ...mobileStyles?.countPill }}>{visibleRequirements.length}</span>
                 </div>
 
                 {!r.isMobile && (
@@ -1554,7 +1854,7 @@ export default function ShiftsTab({ language, userRole, user }) {
                     gridTemplateColumns: r.gridCols('repeat(4, minmax(0, 1fr)) auto auto'),
                   }}
                   >
-                    <Field label={t.position}>
+                    <Field label={t.position} labelStyle={mobileStyles?.label}>
                       <select
                         value={filterForm.position_id}
                         onChange={(event) => setFilterForm((prev) => ({ ...prev, position_id: event.target.value }))}
@@ -1569,7 +1869,7 @@ export default function ShiftsTab({ language, userRole, user }) {
                       </select>
                     </Field>
 
-                    <Field label={t.filterDate}>
+                    <Field label={t.filterDate} labelStyle={mobileStyles?.label}>
                       <input
                         type="date"
                         value={filterForm.date}
@@ -1581,7 +1881,7 @@ export default function ShiftsTab({ language, userRole, user }) {
                       />
                     </Field>
 
-                    <Field label={t.startDate}>
+                    <Field label={t.startDate} labelStyle={mobileStyles?.label}>
                       <input
                         type="date"
                         value={filterForm.start_date}
@@ -1594,7 +1894,7 @@ export default function ShiftsTab({ language, userRole, user }) {
                       />
                     </Field>
 
-                    <Field label={t.endDate}>
+                    <Field label={t.endDate} labelStyle={mobileStyles?.label}>
                       <input
                         type="date"
                         value={filterForm.end_date}
@@ -1631,58 +1931,65 @@ export default function ShiftsTab({ language, userRole, user }) {
                 )}
 
                 {visibleRequirements.length === 0 ? (
-                  <div style={styles.emptyBox}>{t.noRequirements}</div>
+                  <div style={{ ...styles.emptyBox, ...mobileStyles?.emptyBox }}>{t.noRequirements}</div>
                 ) : (
-                  <div style={styles.requirementsList}>
+                  <div style={{ ...styles.requirementsList, ...mobileStyles?.requirementsList }}>
                     {visibleRequirements.map((requirement) => (
+                      r.isMobile ? (
+                        <div key={getRequirementId(requirement)} style={{ ...styles.requirementItem, ...mobileStyles?.requirementItem }}>
+                          <div style={mobileStyles?.requirementTopRow}>
+                            <strong style={{ ...styles.itemTitle, ...mobileStyles?.itemTitle }}>
+                              {requirement.position_title}
+                            </strong>
+                            <span style={{ ...styles.staffBadge, ...mobileStyles?.staffBadge }}>
+                              {t.minStaff}: {requirement.min_staff}
+                            </span>
+                          </div>
+                          <div style={mobileStyles?.requirementMetaRow}>
+                            <span style={{ ...styles.itemMeta, ...mobileStyles?.itemMeta }}>{requirement.date}</span>
+                            <span style={{ ...styles.itemMeta, ...mobileStyles?.itemMeta }}>
+                              {formatTime(requirement.start_time)} — {formatTime(requirement.end_time)}
+                            </span>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => removeRequirement(getRequirementId(requirement))}
+                            style={{ ...styles.deleteRequirementButton, ...mobileStyles?.deleteRequirementButton }}
+                            disabled={isSubmitting}
+                          >
+                            {t.delete}
+                          </button>
+                        </div>
+                      ) : (
                       <div key={getRequirementId(requirement)} style={{
                         ...styles.requirementItem,
                         gridTemplateColumns: r.gridCols('1.2fr 1fr auto auto'),
-                        ...(r.isMobile ? {
-                          gap: 6,
-                          padding: '8px 10px',
-                          borderRadius: 10,
-                        } : {}),
                       }}>
                         <div>
-                          <strong style={{
-                            ...styles.itemTitle,
-                            ...(r.isMobile ? { fontSize: 13 } : {}),
-                          }}>{requirement.position_title}</strong>
-                          <div style={{
-                            ...styles.itemMeta,
-                            ...(r.isMobile ? { fontSize: 11, marginTop: 2 } : {}),
-                          }}>
+                          <strong style={styles.itemTitle}>{requirement.position_title}</strong>
+                          <div style={styles.itemMeta}>
                             {requirement.date}
                           </div>
                         </div>
 
-                        <div style={{
-                          ...styles.itemMeta,
-                          ...(r.isMobile ? { fontSize: 11 } : {}),
-                        }}>
+                        <div style={styles.itemMeta}>
                           {formatTime(requirement.start_time)} — {formatTime(requirement.end_time)}
                         </div>
 
-                        <span style={{
-                          ...styles.staffBadge,
-                          ...(r.isMobile ? { padding: '5px 8px', fontSize: 11, borderRadius: 8 } : {}),
-                        }}>
+                        <span style={styles.staffBadge}>
                           {t.minStaff}: {requirement.min_staff}
                         </span>
 
                         <button
                           type="button"
                           onClick={() => removeRequirement(getRequirementId(requirement))}
-                          style={{
-                            ...styles.deleteRequirementButton,
-                            ...(r.isMobile ? { height: 30, padding: '0 8px', fontSize: 11, borderRadius: 8 } : {}),
-                          }}
+                          style={styles.deleteRequirementButton}
                           disabled={isSubmitting}
                         >
                           {t.delete}
                         </button>
                       </div>
+                      )
                     ))}
                   </div>
                 )}
@@ -1690,22 +1997,28 @@ export default function ShiftsTab({ language, userRole, user }) {
             </main>
           </div>
         ) : (
-          <div style={{ ...styles.employeeGrid, ...(r.isMobile ? styles.employeeGridMobile : {}) }}>
+          <div style={{
+            ...styles.employeeGrid,
+            ...(r.isMobile ? styles.employeeGridMobile : {}),
+            ...mobileStyles?.employeeGridMobile,
+          }}>
             <section style={{
               ...styles.panel,
               ...styles.availabilityPanel,
               ...(r.isMobile ? r.employeePanel : {}),
+              ...mobileStyles?.panel,
             }}>
               {r.isMobile ? (
                 <>
-                  <div style={styles.mobileAvailabilityHeader}>
-                    <h3 style={{ ...styles.panelTitle, marginBottom: 0 }}>{t.availability}</h3>
+                  <div style={{ ...styles.mobileAvailabilityHeader, ...mobileStyles?.mobileAvailabilityHeader }}>
+                    <h3 style={{ ...styles.panelTitle, ...mobileStyles?.panelTitle, marginBottom: 0 }}>{t.availability}</h3>
                     <button
                       type="button"
                       onClick={submitAvailability}
                       style={{
                         ...(isSubmitting ? styles.primaryButtonDisabled : styles.primaryButton),
                         ...styles.mobileTopSaveButton,
+                        ...mobileStyles?.mobileTopSaveButton,
                       }}
                       disabled={isSubmitting}
                     >
@@ -1713,29 +2026,29 @@ export default function ShiftsTab({ language, userRole, user }) {
                     </button>
                   </div>
 
-                  <div style={styles.mobileWeekBar}>
+                  <div style={{ ...styles.mobileWeekBar, ...mobileStyles?.mobileWeekBar }}>
                     <button
                       type="button"
                       onClick={() => shiftWeek(-7)}
-                      style={styles.mobileWeekArrow}
+                      style={{ ...styles.mobileWeekArrow, ...mobileStyles?.mobileWeekArrow }}
                       aria-label={t.prevWeek}
                       title={t.prevWeek}
                     >
                       {'\u2190'}
                     </button>
                     <div style={styles.mobileWeekCenter}>
-                      <div style={styles.mobileWeekLabel}>{weekRangeLabel}</div>
+                      <div style={{ ...styles.mobileWeekLabel, ...mobileStyles?.mobileWeekLabel }}>{weekRangeLabel}</div>
                       <input
                         type="date"
                         value={selectedDate}
                         onChange={(e) => handleSelectedDateChange(e.target.value)}
-                        style={styles.mobileWeekDateInput}
+                        style={{ ...styles.mobileWeekDateInput, ...mobileStyles?.mobileWeekDateInput }}
                       />
                     </div>
                     <button
                       type="button"
                       onClick={() => shiftWeek(7)}
-                      style={styles.mobileWeekArrow}
+                      style={{ ...styles.mobileWeekArrow, ...mobileStyles?.mobileWeekArrow }}
                       aria-label={t.nextWeek}
                       title={t.nextWeek}
                     >
@@ -1743,8 +2056,8 @@ export default function ShiftsTab({ language, userRole, user }) {
                     </button>
                   </div>
 
-                  <div style={styles.mobileSectionLabel}>{t.markMode}</div>
-                  <div style={styles.mobileBrushRow}>
+                  <div style={{ ...styles.mobileSectionLabel, ...mobileStyles?.mobileSectionLabel }}>{t.markMode}</div>
+                  <div style={{ ...styles.mobileBrushRow, ...mobileStyles?.mobileBrushRow }}>
                     {MOBILE_BRUSH_OPTIONS.map((option) => (
                       <button
                         key={option.id}
@@ -1752,6 +2065,7 @@ export default function ShiftsTab({ language, userRole, user }) {
                         onClick={() => setBrushMode(option.id)}
                         style={{
                           ...styles.mobileBrushButton,
+                          ...mobileStyles?.mobileBrushButton,
                           background: option.color,
                           color: option.textColor,
                           border: brushMode === option.id ? '2px solid #002642' : '2px solid rgba(79, 100, 111, 0.12)',
@@ -1763,7 +2077,7 @@ export default function ShiftsTab({ language, userRole, user }) {
                     ))}
                   </div>
 
-                  <div style={styles.mobileAvailabilityTableWrap}>
+                  <div style={{ ...styles.mobileAvailabilityTableWrap, ...mobileStyles?.mobileAvailabilityTableWrap }}>
                     <div style={styles.mobileAvailabilityTable}>
                       <div style={styles.mobileAvailabilityHeaderRow}>
                         <div style={styles.mobileAvailabilityTimeHeader}>Time</div>
@@ -1780,8 +2094,8 @@ export default function ShiftsTab({ language, userRole, user }) {
                                 background: itIsToday ? '#dee7e7' : '#f4faff',
                               }}
                             >
-                              <span style={styles.mobileAvailabilityDayHeaderShort}>{day[language] || day.ru}</span>
-                              <span style={styles.mobileAvailabilityDayHeaderDate}>{cellDate?.getDate?.() || ''}</span>
+                              <span style={{ ...styles.mobileAvailabilityDayHeaderShort, ...mobileStyles?.mobileAvailabilityDayHeaderShort }}>{day[language] || day.ru}</span>
+                              <span style={{ ...styles.mobileAvailabilityDayHeaderDate, ...mobileStyles?.mobileAvailabilityDayHeaderDate }}>{cellDate?.getDate?.() || ''}</span>
                             </div>
                           );
                         })}
@@ -1789,7 +2103,7 @@ export default function ShiftsTab({ language, userRole, user }) {
 
                       {TIME_SLOTS.map((slot, slotIndex) => (
                         <div key={slot} style={styles.mobileAvailabilityRow}>
-                          <div style={styles.mobileAvailabilityTimeLabel}>{slot}</div>
+                          <div style={{ ...styles.mobileAvailabilityTimeLabel, ...mobileStyles?.mobileAvailabilityTimeLabel }}>{slot}</div>
                           {WEEKDAYS.map((day, dayIndex) => {
                             const cellDate = weekDates[dayIndex];
                             const cellDateKey = toDateKey(cellDate);
@@ -1816,6 +2130,7 @@ export default function ShiftsTab({ language, userRole, user }) {
                                 style={{
                                   ...getAvailabilityCellStyle(cellDateKey, slot),
                                   ...styles.mobileAvailabilitySlotButton,
+                                  ...mobileStyles?.mobileAvailabilitySlotButton,
                                   color: slotTextColor,
                                 }}
                                 aria-pressed={status === 'available'}
@@ -1916,19 +2231,19 @@ export default function ShiftsTab({ language, userRole, user }) {
               )}
             </section>
 
-            <section style={{ ...styles.panel, ...(r.isMobile ? r.employeePanel : {}) }}>
-              <h3 style={styles.panelTitle}>{t.absences}</h3>
+            <section style={{ ...styles.panel, ...(r.isMobile ? r.employeePanel : {}), ...mobileStyles?.panel }}>
+              <h3 style={{ ...styles.panelTitle, ...mobileStyles?.panelTitle }}>{t.absences}</h3>
 
               {r.isMobile ? (
-                <div style={styles.mobileFormStack}>
-                  <Field label={t.absenceType}>
+                <div style={{ ...styles.mobileFormStack, ...mobileStyles?.mobileFormStack }}>
+                  <Field label={t.absenceType} labelStyle={mobileStyles?.label}>
                     <select
                       value={absenceForm.absence_type}
                       onChange={(event) => {
                         setAbsenceForm((prev) => ({ ...prev, absence_type: event.target.value }));
                         markUnsaved(ABSENCE_SCOPE);
                       }}
-                      style={styles.input}
+                      style={{ ...styles.input, ...mobileStyles?.input }}
                     >
                       <option value="vacation">{t.vacation}</option>
                       <option value="sick_leave">{t.sick_leave}</option>
@@ -1936,7 +2251,7 @@ export default function ShiftsTab({ language, userRole, user }) {
                     </select>
                   </Field>
 
-                  <Field label={t.startDate}>
+                  <Field label={t.startDate} labelStyle={mobileStyles?.label}>
                     <input
                       type="date"
                       value={absenceForm.start_date}
@@ -1944,14 +2259,11 @@ export default function ShiftsTab({ language, userRole, user }) {
                         setAbsenceForm((prev) => ({ ...prev, start_date: event.target.value }));
                         markUnsaved(ABSENCE_SCOPE);
                       }}
-                      style={{
-                        ...styles.dateInput,
-                        ...(r.isMobile ? { height: 32, fontSize: 12, padding: '0 10px', borderRadius: 8 } : {}),
-                      }}
+                      style={{ ...styles.dateInput, ...mobileStyles?.dateInput }}
                     />
                   </Field>
 
-                  <Field label={t.endDate}>
+                  <Field label={t.endDate} labelStyle={mobileStyles?.label}>
                     <input
                       type="date"
                       value={absenceForm.end_date}
@@ -1959,14 +2271,11 @@ export default function ShiftsTab({ language, userRole, user }) {
                         setAbsenceForm((prev) => ({ ...prev, end_date: event.target.value }));
                         markUnsaved(ABSENCE_SCOPE);
                       }}
-                      style={{
-                        ...styles.dateInput,
-                        ...(r.isMobile ? { height: 32, fontSize: 12, padding: '0 10px', borderRadius: 8 } : {}),
-                      }}
+                      style={{ ...styles.dateInput, ...mobileStyles?.dateInput }}
                     />
                   </Field>
 
-                  <Field label={t.comment}>
+                  <Field label={t.comment} labelStyle={mobileStyles?.label}>
                     <input
                       value={absenceForm.comment}
                       onChange={(event) => {
@@ -1974,7 +2283,7 @@ export default function ShiftsTab({ language, userRole, user }) {
                         markUnsaved(ABSENCE_SCOPE);
                       }}
                       placeholder={t.comment}
-                      style={styles.input}
+                      style={{ ...styles.input, ...mobileStyles?.input }}
                     />
                   </Field>
 
@@ -1984,6 +2293,7 @@ export default function ShiftsTab({ language, userRole, user }) {
                     style={{
                       ...(isSubmitting ? styles.primaryButtonDisabled : styles.primaryButton),
                       ...r.primaryButton,
+                      ...mobileStyles?.primaryButton,
                     }}
                     disabled={isSubmitting}
                   >
@@ -2060,35 +2370,28 @@ export default function ShiftsTab({ language, userRole, user }) {
                   {absences.map((absence) => (
                     <div
                       key={absence.id}
-                      style={{
-                        ...(r.isMobile ? {
-                          ...styles.mobileAbsenceCard,
-                          padding: '8px 10px',
-                          gap: 6,
-                          borderRadius: 10,
-                        } : { ...styles.listItem, ...r.listItem }),
-                      }}
+                      style={r.isMobile ? {
+                        ...styles.mobileAbsenceCard,
+                        ...mobileStyles?.mobileAbsenceCard,
+                      } : { ...styles.listItem, ...r.listItem }}
                     >
                       <div>
-                        <strong style={{
-                          ...styles.itemTitle,
-                          ...(r.isMobile ? { fontSize: 13 } : {}),
-                        }}>{t[absence.absence_type] || absence.absence_type}</strong>
-                        <div style={{
-                          ...styles.itemMeta,
-                          ...(r.isMobile ? { fontSize: 11, marginTop: 2 } : {}),
-                        }}>{absence.start_date} — {absence.end_date}</div>
-                        {absence.comment && <div style={{
-                          ...styles.itemMeta,
-                          ...(r.isMobile ? { fontSize: 11 } : {}),
-                        }}>{absence.comment}</div>}
+                        <strong style={{ ...styles.itemTitle, ...mobileStyles?.itemTitle }}>
+                          {t[absence.absence_type] || absence.absence_type}
+                        </strong>
+                        <div style={{ ...styles.itemMeta, ...mobileStyles?.itemMeta }}>
+                          {absence.start_date} — {absence.end_date}
+                        </div>
+                        {absence.comment && (
+                          <div style={{ ...styles.itemMeta, ...mobileStyles?.itemMeta }}>{absence.comment}</div>
+                        )}
                       </div>
                       <button
                         type="button"
                         onClick={() => removeAbsence(absence.id)}
-                        style={{
-                          ...(r.isMobile ? { ...styles.deleteButton, ...r.fullWidth, height: 30, fontSize: 11, padding: '0 8px', borderRadius: 8 } : styles.deleteButton),
-                        }}
+                        style={r.isMobile
+                          ? { ...styles.deleteButton, ...r.fullWidth, ...mobileStyles?.deleteButton }
+                          : styles.deleteButton}
                       >
                         {t.delete}
                       </button>
@@ -2150,10 +2453,10 @@ export default function ShiftsTab({ language, userRole, user }) {
   );
 }
 
-function Field({ label, children }) {
+function Field({ label, children, labelStyle }) {
   return (
     <label style={styles.field}>
-      <span style={styles.label}>{label}</span>
+      <span style={{ ...styles.label, ...labelStyle }}>{label}</span>
       {children}
     </label>
   );

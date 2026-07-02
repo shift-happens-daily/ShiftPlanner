@@ -127,9 +127,338 @@ function formatDateRange(startDate, endDate) {
   return `${start} - ${end}`;
 }
 
+const MOBILE_EMPLOYEES_STYLES = {
+  page: {
+    padding: '6px 8px 10px',
+    overflowY: 'auto',
+    height: 'auto',
+  },
+  shell: {
+    gap: 8,
+    overflow: 'visible',
+    height: 'auto',
+  },
+  header: {
+    gap: 6,
+    marginBottom: 8,
+  },
+  title: {
+    fontSize: 18,
+  },
+  subtitle: {
+    fontSize: 12,
+    margin: '2px 0 0',
+  },
+  headerStats: {
+    gap: 6,
+  },
+  metric: {
+    height: 34,
+    padding: '0 8px',
+    borderRadius: 8,
+    gap: 6,
+  },
+  metricLabel: {
+    fontSize: 9,
+  },
+  metricValue: {
+    fontSize: 14,
+  },
+  mainGrid: {
+    gap: 8,
+    overflow: 'visible',
+    minHeight: 0,
+  },
+  sidePanel: {
+    gap: 8,
+    overflow: 'visible',
+  },
+  leftCard: {
+    padding: 10,
+    borderRadius: 12,
+  },
+  leftCardHeader: {
+    gap: 8,
+    marginBottom: 8,
+  },
+  leftCardIcon: {
+    width: 26,
+    height: 26,
+    borderRadius: 8,
+  },
+  leftCardTitle: {
+    fontSize: 14,
+  },
+  leftCardStack: {
+    gap: 6,
+  },
+  leftLabel: {
+    fontSize: 11,
+    margin: 0,
+  },
+  leftInput: {
+    height: 34,
+    padding: '0 10px',
+    fontSize: 13,
+    borderRadius: 8,
+  },
+  leftSelect: {
+    height: 34,
+    padding: '0 10px',
+    fontSize: 13,
+    borderRadius: 8,
+  },
+  leftPrimaryButton: {
+    height: 34,
+    padding: '0 12px',
+    fontSize: 12,
+    borderRadius: 8,
+  },
+  leftPrimaryButtonDisabled: {
+    height: 34,
+    padding: '0 12px',
+    fontSize: 12,
+    borderRadius: 8,
+  },
+  leftLinkButton: {
+    height: 34,
+    padding: '0 12px',
+    fontSize: 12,
+    borderRadius: 8,
+    marginTop: 2,
+  },
+  leftLinkButtonDisabled: {
+    height: 34,
+    padding: '0 12px',
+    fontSize: 12,
+    borderRadius: 8,
+    marginTop: 2,
+  },
+  tablePanel: {
+    minHeight: 0,
+    padding: 10,
+    borderRadius: 12,
+    gap: 8,
+    overflow: 'visible',
+  },
+  listHeader: {
+    gap: 6,
+  },
+  panelTitle: {
+    fontSize: 14,
+    margin: '0 0 6px',
+  },
+  filterRow: {
+    gap: 6,
+  },
+  searchInput: {
+    height: 34,
+    padding: '0 10px',
+    fontSize: 13,
+    borderRadius: 8,
+  },
+  filterSelect: {
+    height: 34,
+    padding: '0 10px',
+    fontSize: 13,
+    borderRadius: 8,
+    minWidth: 0,
+  },
+  emptyBox: {
+    margin: 0,
+    padding: 16,
+    borderRadius: 12,
+    fontSize: 13,
+  },
+  mobileEmployeeList: {
+    gap: 6,
+  },
+  mobileEmployeeCard: {
+    padding: '8px 10px',
+    borderRadius: 10,
+    gap: 5,
+  },
+  mobileEmployeeCardMeta: {
+    fontSize: 11,
+    gap: 2,
+  },
+  mobileEmployeeChevron: {
+    fontSize: 16,
+  },
+  avatar: {
+    width: 28,
+    height: 28,
+    fontSize: 11,
+  },
+  employeeName: {
+    fontSize: 13,
+  },
+  employeeIdentity: {
+    gap: 8,
+  },
+  positionsPanel: {
+    minHeight: 0,
+    padding: 10,
+    borderRadius: 12,
+    gap: 8,
+    overflow: 'visible',
+  },
+  positionsHeader: {
+    paddingBottom: 6,
+    gap: 6,
+  },
+  positionItem: {
+    padding: '6px 0',
+    gap: 8,
+    alignItems: 'center',
+  },
+  positionTitleWrap: {
+    gap: 6,
+  },
+  positionIcon: {
+    width: 20,
+    height: 20,
+  },
+  itemTitle: {
+    fontSize: 13,
+    lineHeight: 1.25,
+  },
+  iconButton: {
+    width: 28,
+    height: 28,
+    borderRadius: 8,
+  },
+  iconDeleteButton: {
+    width: 28,
+    height: 28,
+    borderRadius: 8,
+  },
+  positionActionGroup: {
+    gap: 6,
+    flexDirection: 'row',
+    width: 'auto',
+    flexShrink: 0,
+  },
+  input: {
+    height: 34,
+    fontSize: 13,
+    borderRadius: 8,
+  },
+  primaryButton: {
+    height: 34,
+    padding: '0 12px',
+    fontSize: 12,
+    borderRadius: 8,
+  },
+  secondaryButton: {
+    height: 34,
+    padding: '0 12px',
+    fontSize: 12,
+    borderRadius: 8,
+  },
+  modalOverlay: {
+    padding: 0,
+  },
+  modalContent: {
+    width: '100%',
+    maxHeight: '100%',
+    borderRadius: 0,
+    padding: 12,
+  },
+  actionBar: {
+    marginBottom: 8,
+  },
+  employeeCard: {
+    gap: 8,
+  },
+  cardLabel: {
+    fontSize: 11,
+    marginBottom: 4,
+  },
+  cardValue: {
+    fontSize: 14,
+  },
+  innerSection: {
+    padding: 10,
+    gap: 8,
+    borderRadius: 12,
+  },
+  innerHeader: {
+    gap: 6,
+  },
+  subTitle: {
+    fontSize: 15,
+  },
+  label: {
+    fontSize: 11,
+  },
+  select: {
+    height: 36,
+    borderRadius: 10,
+    fontSize: 13,
+  },
+  panelHint: {
+    fontSize: 11,
+    margin: '0 0 4px',
+  },
+  branchPills: {
+    gap: 6,
+  },
+  branchPill: {
+    minHeight: 28,
+    padding: '0 8px 0 10px',
+    fontSize: 12,
+  },
+  branchPillRemove: {
+    width: 20,
+    height: 20,
+    fontSize: 13,
+  },
+  deleteButton: {
+    height: 36,
+    borderRadius: 10,
+    padding: '0 12px',
+    fontSize: 12,
+  },
+  availabilityPanel: {
+    marginTop: 8,
+    padding: 10,
+    borderRadius: 12,
+    gap: 8,
+    gridTemplateColumns: '1fr',
+    alignItems: 'stretch',
+  },
+  availabilityContent: {
+    gap: 8,
+    gridTemplateColumns: '1fr',
+  },
+  absenceStrip: {
+    gridTemplateColumns: '1fr',
+    gap: 6,
+  },
+  absenceItem: {
+    padding: '8px 10px',
+    borderRadius: 10,
+    gap: 8,
+  },
+  absenceText: {
+    fontSize: 11,
+    gap: 1,
+  },
+  emptyInline: {
+    fontSize: 12,
+  },
+  toastLayer: {
+    top: 8,
+    right: 8,
+    width: 'calc(100% - 16px)',
+  },
+};
+
 export default function EmployeesTab({ language, userRole, user }) {
   usePositionTitleRevision();
   const r = useTabResponsive(1380);
+  const mobileStyles = r.isMobile ? MOBILE_EMPLOYEES_STYLES : null;
   const { markUnsaved, markSaved } = useUnsavedChanges();
   // Добавляем глобальные стили для полей ввода
   useEffect(() => {
@@ -899,8 +1228,8 @@ export default function EmployeesTab({ language, userRole, user }) {
 
   if (isLoading) {
     return (
-      <section style={{ ...styles.page, ...r.page }}>
-        <div style={styles.card}>{t.loading}</div>
+      <section style={{ ...styles.page, ...r.page, ...mobileStyles?.page }}>
+        <div style={{ ...styles.card, ...mobileStyles?.emptyBox }}>{t.loading}</div>
       </section>
     );
   }
@@ -911,6 +1240,7 @@ export default function EmployeesTab({ language, userRole, user }) {
         ...styles.page,
         ...r.page,
         ...(r.isMobile ? {} : styles.desktopViewportPage),
+        ...mobileStyles?.page,
       }}
       className="employees-tab"
     >
@@ -924,22 +1254,44 @@ export default function EmployeesTab({ language, userRole, user }) {
         border: 'none',
         boxShadow: 'none',
         ...(r.isMobile ? {} : styles.desktopScaleShell),
+        ...mobileStyles?.shell,
       }}>
-        <header style={{ ...styles.header, ...r.header }}>
+        <header style={{ ...styles.header, ...r.header, ...mobileStyles?.header }}>
           <div>
-            <h2 style={{ ...styles.title, ...r.title }}>{t.title}</h2>
-            <p style={styles.subtitle}>{t.subtitle}</p>
+            <h2 style={{ ...styles.title, ...r.title, ...mobileStyles?.title }}>{t.title}</h2>
+            <p style={{ ...styles.subtitle, ...mobileStyles?.subtitle }}>{t.subtitle}</p>
           </div>
 
-          <div style={{ ...styles.headerStats, ...r.headerStats }}>
-            <Metric isMobile={r.isMobile} label={t.employees} value={filteredEmployees.length} />
-            <Metric isMobile={r.isMobile} label={t.positions} value={visiblePositions.length} />
-            <Metric isMobile={r.isMobile} label={t.branches} value={branches.length} />
+          <div style={{ ...styles.headerStats, ...r.headerStats, ...mobileStyles?.headerStats }}>
+            <Metric
+              isMobile={r.isMobile}
+              label={t.employees}
+              value={filteredEmployees.length}
+              metricStyle={mobileStyles?.metric}
+              metricLabelStyle={mobileStyles?.metricLabel}
+              metricValueStyle={mobileStyles?.metricValue}
+            />
+            <Metric
+              isMobile={r.isMobile}
+              label={t.positions}
+              value={visiblePositions.length}
+              metricStyle={mobileStyles?.metric}
+              metricLabelStyle={mobileStyles?.metricLabel}
+              metricValueStyle={mobileStyles?.metricValue}
+            />
+            <Metric
+              isMobile={r.isMobile}
+              label={t.branches}
+              value={branches.length}
+              metricStyle={mobileStyles?.metric}
+              metricLabelStyle={mobileStyles?.metricLabel}
+              metricValueStyle={mobileStyles?.metricValue}
+            />
           </div>
         </header>
 
         {(errorMessage || successMessage) && (
-          <div style={styles.toastLayer}>
+          <div style={{ ...styles.toastLayer, ...mobileStyles?.toastLayer }}>
             <div style={errorMessage ? styles.toastError : styles.toastSuccess}>
               <span style={errorMessage ? styles.toastIconError : styles.toastIconSuccess}>
                 {errorMessage ? '!' : '✓'}
@@ -962,20 +1314,20 @@ export default function EmployeesTab({ language, userRole, user }) {
           </div>
         )}
 
-        <div style={{ ...styles.mainGrid, ...r.splitLayout('300px minmax(520px, 1fr) 320px') }}>
-          <aside style={styles.sidePanel}>
-            <div style={styles.leftCard}>
-              <div style={styles.leftCardHeader}>
-                <span style={styles.leftCardIcon} aria-hidden="true">
+        <div style={{ ...styles.mainGrid, ...r.splitLayout('300px minmax(520px, 1fr) 320px'), ...mobileStyles?.mainGrid }}>
+          <aside style={{ ...styles.sidePanel, ...mobileStyles?.sidePanel }}>
+            <div style={{ ...styles.leftCard, ...mobileStyles?.leftCard }}>
+              <div style={{ ...styles.leftCardHeader, ...mobileStyles?.leftCardHeader }}>
+                <span style={{ ...styles.leftCardIcon, ...mobileStyles?.leftCardIcon }} aria-hidden="true">
                   <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
                     <rect x="6" y="5" width="12" height="14" rx="2.5" stroke="currentColor" strokeWidth="2" />
                     <path d="M9 9h6M9 13h4" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
                   </svg>
                 </span>
-                <h3 style={styles.leftCardTitle}>{t.createPosition}</h3>
+                <h3 style={{ ...styles.leftCardTitle, ...mobileStyles?.leftCardTitle }}>{t.createPosition}</h3>
               </div>
 
-              <div style={styles.leftCardStack}>
+              <div style={{ ...styles.leftCardStack, ...mobileStyles?.leftCardStack }}>
                 <input
                   value={positionTitle}
                   onChange={(event) => {
@@ -983,7 +1335,7 @@ export default function EmployeesTab({ language, userRole, user }) {
                     markUnsaved(POSITION_CREATE_SCOPE);
                   }}
                   placeholder={t.position}
-                  style={styles.leftInput}
+                  style={{ ...styles.leftInput, ...mobileStyles?.leftInput }}
                 />
 
                 <button
@@ -991,6 +1343,7 @@ export default function EmployeesTab({ language, userRole, user }) {
                   onClick={handleCreatePosition}
                   style={{
                     ...(isSubmitting || !currentCompanyId ? styles.leftPrimaryButtonDisabled : styles.leftPrimaryButton),
+                    ...(isSubmitting || !currentCompanyId ? mobileStyles?.leftPrimaryButtonDisabled : mobileStyles?.leftPrimaryButton),
                     ...r.fullWidth,
                   }}
                   disabled={isSubmitting || !currentCompanyId}
@@ -1001,19 +1354,19 @@ export default function EmployeesTab({ language, userRole, user }) {
             </div>
 
             {/* Блок привязки по User ID */}
-            <div style={{ ...styles.leftCard, ...styles.leftCardGrow }}>
-              <div style={styles.leftCardHeader}>
-                <span style={styles.leftCardIcon} aria-hidden="true">
+            <div style={{ ...styles.leftCard, ...styles.leftCardGrow, ...mobileStyles?.leftCard }}>
+              <div style={{ ...styles.leftCardHeader, ...mobileStyles?.leftCardHeader }}>
+                <span style={{ ...styles.leftCardIcon, ...mobileStyles?.leftCardIcon }} aria-hidden="true">
                   <svg width="19" height="19" viewBox="0 0 24 24" fill="none">
                     <path d="M10.6 13.4a4.2 4.2 0 0 0 5.94 0l2.08-2.08a4.2 4.2 0 0 0-5.94-5.94l-1.02 1.02" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" />
                     <path d="M13.4 10.6a4.2 4.2 0 0 0-5.94 0l-2.08 2.08a4.2 4.2 0 0 0 5.94 5.94l1.02-1.02" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" />
                   </svg>
                 </span>
-                <h3 style={styles.leftCardTitle}>{t.linkUserTitle}</h3>
+                <h3 style={{ ...styles.leftCardTitle, ...mobileStyles?.leftCardTitle }}>{t.linkUserTitle}</h3>
               </div>
 
-              <div style={styles.leftCardStack}>
-                <label style={styles.leftLabel}>{t.userIdLabel}</label>
+              <div style={{ ...styles.leftCardStack, ...mobileStyles?.leftCardStack }}>
+                <label style={{ ...styles.leftLabel, ...mobileStyles?.leftLabel }}>{t.userIdLabel}</label>
                 <input
                   type="text"
                   value={linkUserId}
@@ -1023,17 +1376,17 @@ export default function EmployeesTab({ language, userRole, user }) {
                   }}
                   placeholder={t.userIdPlaceholder}
                   maxLength={16}
-                  style={styles.leftInput}
+                  style={{ ...styles.leftInput, ...mobileStyles?.leftInput }}
                 />
 
-                <label style={styles.leftLabel}>{t.branch}</label>
+                <label style={{ ...styles.leftLabel, ...mobileStyles?.leftLabel }}>{t.branch}</label>
                 <select
                   value={linkBranchId}
                   onChange={(e) => {
                     setLinkBranchId(e.target.value);
                     markUnsaved(LINK_USER_SCOPE);
                   }}
-                  style={styles.leftSelect}
+                  style={{ ...styles.leftSelect, ...mobileStyles?.leftSelect }}
                 >
                   <option value="">{t.selectBranch}</option>
                   {branches.map((branch) => (
@@ -1043,14 +1396,14 @@ export default function EmployeesTab({ language, userRole, user }) {
                   ))}
                 </select>
 
-                <label style={styles.leftLabel}>{t.position}</label>
+                <label style={{ ...styles.leftLabel, ...mobileStyles?.leftLabel }}>{t.position}</label>
                 <select
                   value={linkPositionId}
                   onChange={(e) => {
                     setLinkPositionId(e.target.value);
                     markUnsaved(LINK_USER_SCOPE);
                   }}
-                  style={styles.leftSelect}
+                  style={{ ...styles.leftSelect, ...mobileStyles?.leftSelect }}
                 >
                   <option value="">{t.selectPosition}</option>
                   {visiblePositions.map((position) => (
@@ -1065,6 +1418,7 @@ export default function EmployeesTab({ language, userRole, user }) {
                   onClick={handleLinkUser}
                   style={{
                     ...(isSubmitting || !linkUserId ? styles.leftLinkButtonDisabled : styles.leftLinkButton),
+                    ...(isSubmitting || !linkUserId ? mobileStyles?.leftLinkButtonDisabled : mobileStyles?.leftLinkButton),
                     ...r.fullWidth,
                   }}
                   disabled={isSubmitting || !linkUserId}
@@ -1075,26 +1429,26 @@ export default function EmployeesTab({ language, userRole, user }) {
             </div>
           </aside>
 
-          <main style={styles.tablePanel}>
-            <div style={{ ...styles.listHeader, ...r.listHeader }}>
+          <main style={{ ...styles.tablePanel, ...mobileStyles?.tablePanel }}>
+            <div style={{ ...styles.listHeader, ...r.listHeader, ...mobileStyles?.listHeader }}>
               <div>
-                <h3 style={styles.panelTitle}>{t.employees}</h3>
+                <h3 style={{ ...styles.panelTitle, ...mobileStyles?.panelTitle }}>{t.employees}</h3>
               </div>
 
-              <div style={{ ...styles.filterRow, ...r.filterRow }}>
+              <div style={{ ...styles.filterRow, ...r.filterRow, ...mobileStyles?.filterRow }}>
                 <input
                   type="text"
                   value={searchQuery}
                   onChange={(event) => setSearchQuery(event.target.value)}
                   placeholder={t.searchEmployee}
-                  style={{ ...styles.searchInput, ...r.searchInput }}
+                  style={{ ...styles.searchInput, ...r.searchInput, ...mobileStyles?.searchInput }}
                   aria-label={t.searchEmployee}
                 />
                 <select
                   id="branch-filter-select"
                   value={selectedBranchId}
                   onChange={(event) => setSelectedBranchId(event.target.value)}
-                  style={{ ...styles.filterSelect, ...r.filterSelect }}
+                  style={{ ...styles.filterSelect, ...r.filterSelect, ...mobileStyles?.filterSelect }}
                   aria-label={t.branch}
                 >
                   <option value="">{t.allBranches}</option>
@@ -1108,7 +1462,7 @@ export default function EmployeesTab({ language, userRole, user }) {
                   id="position-filter-select"
                   value={selectedPositionId}
                   onChange={(event) => setSelectedPositionId(event.target.value)}
-                  style={{ ...styles.filterSelect, ...r.filterSelect }}
+                  style={{ ...styles.filterSelect, ...r.filterSelect, ...mobileStyles?.filterSelect }}
                   aria-label={t.position}
                 >
                   <option value="">{t.allPositions}</option>
@@ -1122,9 +1476,9 @@ export default function EmployeesTab({ language, userRole, user }) {
             </div>
 
             {filteredEmployees.length === 0 ? (
-              <div style={styles.emptyBox}>{t.noEmployees}</div>
+              <div style={{ ...styles.emptyBox, ...mobileStyles?.emptyBox }}>{t.noEmployees}</div>
             ) : r.isMobile ? (
-              <div style={styles.mobileEmployeeList}>
+              <div style={{ ...styles.mobileEmployeeList, ...mobileStyles?.mobileEmployeeList }}>
                 {filteredEmployees.map((employee) => {
                   const employeeName = getEmployeeName(employee) || t.empty;
                   return (
@@ -1135,23 +1489,23 @@ export default function EmployeesTab({ language, userRole, user }) {
                         setSelectedEmployeeId(String(employee.id));
                         setIsViewingEmployee(false);
                       }}
-                      style={styles.mobileEmployeeCard}
+                      style={{ ...styles.mobileEmployeeCard, ...mobileStyles?.mobileEmployeeCard }}
                       aria-label={`${t.edit} ${employeeName}`}
                     >
                       <div style={styles.mobileEmployeeCardTop}>
-                        <div style={styles.employeeIdentity}>
-                          <span style={styles.avatar}>{getInitials(employeeName)}</span>
+                        <div style={{ ...styles.employeeIdentity, ...mobileStyles?.employeeIdentity }}>
+                          <span style={{ ...styles.avatar, ...mobileStyles?.avatar }}>{getInitials(employeeName)}</span>
                           <div style={{ minWidth: 0 }}>
-                            <strong style={styles.employeeName}>{employeeName}</strong>
-                            <div style={styles.mobileEmployeeCardMeta}>
+                            <strong style={{ ...styles.employeeName, ...mobileStyles?.employeeName }}>{employeeName}</strong>
+                            <div style={{ ...styles.mobileEmployeeCardMeta, ...mobileStyles?.mobileEmployeeCardMeta }}>
                               <span>{employee.email || '-'}</span>
                             </div>
                           </div>
                         </div>
-                        <span style={styles.mobileEmployeeChevron}>›</span>
+                        <span style={{ ...styles.mobileEmployeeChevron, ...mobileStyles?.mobileEmployeeChevron }}>›</span>
                       </div>
 
-                      <div style={styles.mobileEmployeeCardMeta}>
+                      <div style={{ ...styles.mobileEmployeeCardMeta, ...mobileStyles?.mobileEmployeeCardMeta }}>
                         <span>{getBranchLabel(employee, branches, t.empty)}</span>
                         <span>{getEmployeePositionLabel(employee) || t.empty}</span>
                       </div>
@@ -1209,13 +1563,13 @@ export default function EmployeesTab({ language, userRole, user }) {
             )}
           </main>
 
-          <aside style={styles.positionsPanel}>
-            <div style={styles.positionsHeader}>
-              <h3 style={styles.panelTitle}>{t.positions}</h3>
+          <aside style={{ ...styles.positionsPanel, ...mobileStyles?.positionsPanel }}>
+            <div style={{ ...styles.positionsHeader, ...mobileStyles?.positionsHeader }}>
+              <h3 style={{ ...styles.panelTitle, ...mobileStyles?.panelTitle }}>{t.positions}</h3>
             </div>
 
             {visiblePositions.length === 0 ? (
-              <div style={styles.emptyBox}>{t.noPositionsMessage}</div>
+              <div style={{ ...styles.emptyBox, ...mobileStyles?.emptyBox }}>{t.noPositionsMessage}</div>
             ) : (
               <div style={styles.positionList}>
                 {visiblePositions.map((position) => (
@@ -1224,6 +1578,7 @@ export default function EmployeesTab({ language, userRole, user }) {
                     style={{
                       ...styles.positionItem,
                       ...(r.isMobile ? styles.positionItemMobile : {}),
+                      ...mobileStyles?.positionItem,
                     }}
                   >
                     {String(editingPositionId) === String(position.id) ? (
@@ -1234,13 +1589,18 @@ export default function EmployeesTab({ language, userRole, user }) {
                             setEditingPositionTitle(event.target.value);
                             markUnsaved(POSITION_EDIT_SCOPE);
                           }}
-                          style={{ ...styles.input, ...(r.isMobile ? {} : r.fullWidth) }}
+                          style={{ ...styles.input, ...mobileStyles?.input, ...(r.isMobile ? {} : r.fullWidth) }}
                         />
-                        <div style={{ ...styles.actionGroup, ...(r.isMobile ? styles.positionActionGroupMobile : {}) }}>
+                        <div style={{
+                          ...styles.actionGroup,
+                          ...(r.isMobile ? styles.positionActionGroupMobile : {}),
+                          ...mobileStyles?.positionActionGroup,
+                        }}
+                        >
                           <button
                             type="button"
                             onClick={handleSaveEditedPosition}
-                            style={{ ...styles.primaryButton, ...(r.isMobile ? {} : r.fullWidth) }}
+                            style={{ ...styles.primaryButton, ...mobileStyles?.primaryButton, ...(r.isMobile ? {} : r.fullWidth) }}
                             disabled={isSubmitting}
                           >
                             {t.save}
@@ -1248,7 +1608,7 @@ export default function EmployeesTab({ language, userRole, user }) {
                           <button
                             type="button"
                             onClick={handleCancelEditPosition}
-                            style={{ ...styles.secondaryButton, ...(r.isMobile ? {} : r.fullWidth) }}
+                            style={{ ...styles.secondaryButton, ...mobileStyles?.secondaryButton, ...(r.isMobile ? {} : r.fullWidth) }}
                             disabled={isSubmitting}
                           >
                             {t.cancel}
@@ -1257,17 +1617,32 @@ export default function EmployeesTab({ language, userRole, user }) {
                       </>
                     ) : (
                       <>
-                        <div style={{ ...styles.positionTitleWrap, ...(r.isMobile ? styles.positionTitleWrapMobile : {}) }}>
-                          <PositionGlyph index={visiblePositions.indexOf(position)} />
-                          <strong style={{ ...styles.itemTitle, ...(r.isMobile ? styles.itemTitleMobile : {}) }}>
+                        <div style={{
+                          ...styles.positionTitleWrap,
+                          ...(r.isMobile ? styles.positionTitleWrapMobile : {}),
+                          ...mobileStyles?.positionTitleWrap,
+                        }}
+                        >
+                          <PositionGlyph index={visiblePositions.indexOf(position)} iconStyle={mobileStyles?.positionIcon} />
+                          <strong style={{
+                            ...styles.itemTitle,
+                            ...(r.isMobile ? styles.itemTitleMobile : {}),
+                            ...mobileStyles?.itemTitle,
+                          }}
+                          >
                             {getPositionLabel(position)}
                           </strong>
                         </div>
-                        <div style={{ ...styles.actionGroup, ...(r.isMobile ? styles.positionActionGroupMobile : {}) }}>
+                        <div style={{
+                          ...styles.actionGroup,
+                          ...(r.isMobile ? styles.positionActionGroupMobile : {}),
+                          ...mobileStyles?.positionActionGroup,
+                        }}
+                        >
                           <button
                             type="button"
                             onClick={() => handleStartEditingPosition(position)}
-                            style={{ ...styles.iconButton, ...(r.isMobile ? {} : r.fullWidth) }}
+                            style={{ ...styles.iconButton, ...mobileStyles?.iconButton, ...(r.isMobile ? {} : r.fullWidth) }}
                             aria-label={t.edit}
                           >
                             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true">
@@ -1278,7 +1653,7 @@ export default function EmployeesTab({ language, userRole, user }) {
                           <button
                             type="button"
                             onClick={() => handleDeletePosition(position.id)}
-                            style={{ ...styles.iconDeleteButton, ...(r.isMobile ? {} : r.fullWidth) }}
+                            style={{ ...styles.iconDeleteButton, ...mobileStyles?.iconDeleteButton, ...(r.isMobile ? {} : r.fullWidth) }}
                             aria-label={t.delete}
                           >
                             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true">
@@ -1296,21 +1671,19 @@ export default function EmployeesTab({ language, userRole, user }) {
         </div>
 
         {selectedEmployee && !isViewingEmployee && (
-          <div style={{ ...styles.modalOverlay, padding: r.isMobile ? 0 : '20px' }}>
+          <div style={{ ...styles.modalOverlay, ...mobileStyles?.modalOverlay }}>
             <div style={{
               ...styles.modalContent,
-              width: r.isMobile ? '100%' : 'min(760px, 100%)',
-              maxHeight: r.isMobile ? '100%' : '90vh',
-              borderRadius: r.isMobile ? 0 : '24px',
-              padding: r.isMobile ? '16px' : '24px',
+              ...mobileStyles?.modalContent,
             }}>
-              <div style={{ ...styles.actionBar, marginBottom: r.isMobile ? 10 : 14 }}>
+              <div style={{ ...styles.actionBar, ...mobileStyles?.actionBar }}>
                 <button
                   type="button"
                   onClick={() => setIsViewingEmployee(true)}
                   style={{
                     ...styles.secondaryButton,
-                    ...(r.isMobile ? { width: '100%' } : {}),
+                    ...mobileStyles?.secondaryButton,
+                    ...(r.isMobile ? r.fullWidth : {}),
                   }}
                 >
                   {t.backToList}
@@ -1321,30 +1694,48 @@ export default function EmployeesTab({ language, userRole, user }) {
                 ...styles.employeeCard,
                 gridTemplateColumns: r.gridCols(r.isMobile ? '1fr' : 'repeat(3, minmax(0, 1fr))'),
                 gap: r.isMobile ? 8 : 12,
+                ...mobileStyles?.employeeCard,
               }}>
-                <Info label={t.fullName} value={selectedEmployee?.full_name || selectedEmployee?.name || '-'} />
-                <Info label={t.email} value={selectedEmployee?.email || '-'} />
-                <Info label={t.position} value={selectedEmployeePosition || t.empty} />
+                <Info
+                  isMobile={r.isMobile}
+                  label={t.fullName}
+                  value={selectedEmployee?.full_name || selectedEmployee?.name || '-'}
+                  labelStyle={mobileStyles?.cardLabel}
+                  valueStyle={mobileStyles?.cardValue}
+                />
+                <Info
+                  isMobile={r.isMobile}
+                  label={t.email}
+                  value={selectedEmployee?.email || '-'}
+                  labelStyle={mobileStyles?.cardLabel}
+                  valueStyle={mobileStyles?.cardValue}
+                />
+                <Info
+                  isMobile={r.isMobile}
+                  label={t.position}
+                  value={selectedEmployeePosition || t.empty}
+                  labelStyle={mobileStyles?.cardLabel}
+                  valueStyle={mobileStyles?.cardValue}
+                />
               </div>
 
               <div style={{
                 ...styles.innerSection,
-                padding: r.isMobile ? '12px' : '16px',
-                gap: r.isMobile ? 8 : 12,
+                ...mobileStyles?.innerSection,
               }}>
-                <div style={{ ...styles.innerHeader, ...(r.isMobile ? { gap: 8 } : {}) }}>
-                  <h4 style={{ ...styles.subTitle, fontSize: r.isMobile ? 15 : 17 }}>{t.assignPosition}</h4>
+                <div style={{ ...styles.innerHeader, ...mobileStyles?.innerHeader }}>
+                  <h4 style={{ ...styles.subTitle, ...mobileStyles?.subTitle }}>{t.assignPosition}</h4>
                 </div>
 
                 <div style={{ ...(r.isMobile ? { display: 'flex', flexDirection: 'column', gap: 6 } : styles.stack) }}>
-                  <label style={{ ...styles.label, marginBottom: r.isMobile ? 4 : 8 }}>{t.position}</label>
+                  <label style={{ ...styles.label, ...mobileStyles?.label, marginBottom: r.isMobile ? 4 : 8 }}>{t.position}</label>
                   <select
                     value={selectedEmployeeDetails.position_id}
                     onChange={(event) => {
                       setSelectedEmployeeDetails((prev) => ({ ...prev, position_id: event.target.value }));
                       markUnsaved(EMPLOYEE_POSITION_SCOPE);
                     }}
-                    style={{ ...styles.select, ...(r.isMobile ? { height: 36, borderRadius: 10, fontSize: 13 } : {}) }}
+                    style={{ ...styles.select, ...mobileStyles?.select }}
                   >
                     <option value="">{t.selectPosition}</option>
                     {visiblePositions.map((position) => (
@@ -1356,30 +1747,20 @@ export default function EmployeesTab({ language, userRole, user }) {
                 </div>
 
                 <div style={{ ...(r.isMobile ? { display: 'flex', flexDirection: 'column', gap: 6 } : styles.stack) }}>
-                  <label style={{ ...styles.label, marginBottom: r.isMobile ? 4 : 8 }}>{t.branches}</label>
-                  <p style={{ ...styles.panelHint, margin: r.isMobile ? '0 0 4px' : undefined }}>{t.branchesPreviewHint}</p>
+                  <label style={{ ...styles.label, ...mobileStyles?.label, marginBottom: r.isMobile ? 4 : 8 }}>{t.branches}</label>
+                  <p style={{ ...styles.panelHint, ...mobileStyles?.panelHint }}>{t.branchesPreviewHint}</p>
 
                   {selectedEmployeeBranches.length === 0 ? (
-                    <div style={{ ...styles.emptyBox, margin: r.isMobile ? '0' : '18px', padding: r.isMobile ? '12px' : '28px' }}>{t.noBranchesAssigned}</div>
+                    <div style={{ ...styles.emptyBox, ...mobileStyles?.emptyBox }}>{t.noBranchesAssigned}</div>
                   ) : (
-                    <div style={{ ...styles.branchPills, gap: r.isMobile ? 6 : 8 }}>
+                    <div style={{ ...styles.branchPills, ...mobileStyles?.branchPills }}>
                       {selectedEmployeeBranches.map((branch) => (
-                        <span key={branch.id} style={{
-                          ...styles.branchPill,
-                          minHeight: r.isMobile ? 28 : 34,
-                          padding: r.isMobile ? '0 8px 0 10px' : '0 8px 0 13px',
-                          fontSize: r.isMobile ? 12 : 13,
-                        }}>
+                        <span key={branch.id} style={{ ...styles.branchPill, ...mobileStyles?.branchPill }}>
                           <span>{branch.name || branch.title || `#${branch.id}`}</span>
                           <button
                             type="button"
                             onClick={() => handleRemoveEmployeeBranch(branch.id)}
-                            style={{
-                              ...styles.branchPillRemove,
-                              width: r.isMobile ? 20 : 24,
-                              height: r.isMobile ? 20 : 24,
-                              fontSize: r.isMobile ? 13 : 16,
-                            }}
+                            style={{ ...styles.branchPillRemove, ...mobileStyles?.branchPillRemove }}
                             aria-label={`${t.removeBranch} ${branch.name || branch.id}`}
                             disabled={isSubmitting}
                           >
@@ -1402,7 +1783,7 @@ export default function EmployeesTab({ language, userRole, user }) {
                         setBranchToAddId(event.target.value);
                         markUnsaved(EMPLOYEE_BRANCH_SCOPE);
                       }}
-                      style={{ ...styles.select, ...(r.isMobile ? { height: 36, borderRadius: 10, fontSize: 13 } : {}) }}
+                      style={{ ...styles.select, ...mobileStyles?.select }}
                       disabled={availableBranchesToAdd.length === 0 || isSubmitting}
                     >
                       <option value="">{t.selectBranch}</option>
@@ -1417,7 +1798,8 @@ export default function EmployeesTab({ language, userRole, user }) {
                       onClick={handleAddEmployeeBranch}
                       style={{
                         ...styles.secondaryButton,
-                        ...(r.isMobile ? { width: '100%', height: 36, borderRadius: 10, padding: '0 12px' } : {}),
+                        ...mobileStyles?.secondaryButton,
+                        ...(r.isMobile ? r.fullWidth : {}),
                         ...((!branchToAddId || isSubmitting) ? { opacity: 0.65, cursor: 'default' } : {}),
                       }}
                       disabled={!branchToAddId || isSubmitting}
@@ -1432,7 +1814,8 @@ export default function EmployeesTab({ language, userRole, user }) {
                   onClick={handleAssignDetails}
                   style={{
                     ...styles.primaryButton,
-                    ...(r.isMobile ? { height: 36, borderRadius: 10, padding: '0 12px' } : {}),
+                    ...mobileStyles?.primaryButton,
+                    ...(r.isMobile ? r.fullWidth : {}),
                   }}
                 >
                   {t.save}
@@ -1443,7 +1826,8 @@ export default function EmployeesTab({ language, userRole, user }) {
                   onClick={handleDeleteEmployeeFromCompany}
                   style={{
                     ...styles.deleteButton,
-                    ...(r.isMobile ? { height: 36, borderRadius: 10, padding: '0 12px' } : {}),
+                    ...mobileStyles?.deleteButton,
+                    ...(r.isMobile ? r.fullWidth : {}),
                   }}
                   disabled={isSubmitting}
                 >
@@ -1454,24 +1838,39 @@ export default function EmployeesTab({ language, userRole, user }) {
           </div>
         )}
 
-        <section style={{ ...styles.availabilityPanel, ...(r.isMobile ? styles.availabilityPanelMobile : {}) }}>
+        <section style={{
+          ...styles.availabilityPanel,
+          ...(r.isMobile ? styles.availabilityPanelMobile : {}),
+          ...mobileStyles?.availabilityPanel,
+        }}
+        >
           <div style={styles.availabilityTitleBlock}>
-            <h3 style={styles.panelTitle}>{t.absences}</h3>
+            <h3 style={{ ...styles.panelTitle, ...mobileStyles?.panelTitle }}>{t.absences}</h3>
           </div>
 
-          <div style={{ ...styles.availabilityContent, ...(r.isMobile ? styles.availabilityContentMobile : {}) }}>
-            <div style={{ ...styles.absenceStrip, ...(r.isMobile ? styles.absenceStripMobile : {}) }}>
+          <div style={{
+            ...styles.availabilityContent,
+            ...(r.isMobile ? styles.availabilityContentMobile : {}),
+            ...mobileStyles?.availabilityContent,
+          }}
+          >
+            <div style={{
+              ...styles.absenceStrip,
+              ...(r.isMobile ? styles.absenceStripMobile : {}),
+              ...mobileStyles?.absenceStrip,
+            }}
+            >
               {isDetailsLoading ? (
-                <span style={styles.emptyInline}>{t.loading}</span>
+                <span style={{ ...styles.emptyInline, ...mobileStyles?.emptyInline }}>{t.loading}</span>
               ) : upcomingAbsences.length === 0 ? (
-                <span style={styles.emptyInline}>{t.noAbsences}</span>
+                <span style={{ ...styles.emptyInline, ...mobileStyles?.emptyInline }}>{t.noAbsences}</span>
               ) : (
                 upcomingAbsences.map((absence) => {
                   const absenceEmployeeName = getEmployeeName(selectedEmployee) || selectedEmployee?.email || t.empty;
 
                   return (
-                    <div key={absence.id || `${absence.start_date}-${absence.end_date}`} style={styles.absenceItem}>
-                      <div style={styles.absenceText}>
+                    <div key={absence.id || `${absence.start_date}-${absence.end_date}`} style={{ ...styles.absenceItem, ...mobileStyles?.absenceItem }}>
+                      <div style={{ ...styles.absenceText, ...mobileStyles?.absenceText }}>
                         <strong>{absenceEmployeeName}</strong>
                         <span>{t[absence.absence_type] || absence.absence_type || t.absences}</span>
                         <span>{formatDateRange(absence.start_date, absence.end_date)}</span>
@@ -1488,16 +1887,16 @@ export default function EmployeesTab({ language, userRole, user }) {
   );
 }
 
-function Metric({ label, value, isMobile }) {
+function Metric({ label, value, isMobile, metricStyle, metricLabelStyle, metricValueStyle }) {
   return (
-    <div style={styles.metric}>
-      <span style={{ ...styles.metricLabel, ...(isMobile ? styles.metricLabelMobile : {}) }}>{label}</span>
-      <strong style={{ ...styles.metricValue, ...(isMobile ? styles.metricValueMobile : {}) }}>{value}</strong>
+    <div style={{ ...styles.metric, ...metricStyle }}>
+      <span style={{ ...styles.metricLabel, ...(isMobile ? styles.metricLabelMobile : {}), ...metricLabelStyle }}>{label}</span>
+      <strong style={{ ...styles.metricValue, ...(isMobile ? styles.metricValueMobile : {}), ...metricValueStyle }}>{value}</strong>
     </div>
   );
 }
 
-function PositionGlyph({ index }) {
+function PositionGlyph({ index, iconStyle }) {
   const paths = [
     <path key="briefcase" d="M9 7V5.8C9 4.8 9.8 4 10.8 4h2.4c1 0 1.8.8 1.8 1.8V7M5 8h14v11H5V8ZM5 12h14" />,
     <path key="cup" d="M6 8h10v4a5 5 0 0 1-10 0V8ZM16 9h1.5a2 2 0 0 1 0 4H16M6 20h10M8 4h.01M12 4h.01" />,
@@ -1507,7 +1906,7 @@ function PositionGlyph({ index }) {
   ];
 
   return (
-    <span style={styles.positionIcon} aria-hidden="true">
+    <span style={{ ...styles.positionIcon, ...iconStyle }} aria-hidden="true">
       <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
         {paths[index % paths.length]}
       </svg>
@@ -1515,16 +1914,18 @@ function PositionGlyph({ index }) {
   );
 }
 
-function Info({ label, value, isMobile }) {
+function Info({ label, value, isMobile, labelStyle, valueStyle }) {
   return (
     <div>
       <span style={{
         ...styles.cardLabel,
         ...(isMobile ? { fontSize: 11, marginBottom: 4 } : {}),
+        ...labelStyle,
       }}>{label}</span>
       <strong style={{
         ...styles.cardValue,
         ...(isMobile ? { fontSize: 14 } : {}),
+        ...valueStyle,
       }}>{value}</strong>
     </div>
   );
