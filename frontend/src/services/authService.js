@@ -20,6 +20,11 @@ export async function logoutRequest() {
   return response.data;
 }
 
+export async function deleteAccountRequest() {
+  const response = await api.delete('/auth/me');
+  return response.data;
+}
+
 export function persistToken(token) {
   localStorage.setItem(TOKEN_STORAGE_KEY, token);
 }

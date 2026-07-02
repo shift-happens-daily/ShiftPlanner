@@ -99,8 +99,8 @@ class ScheduleGenerateRequest(BaseModel):
 
 class ShiftRead(BaseModel):
     id: int
-    employee_id: int
-    employee_name: str
+    employee_id: int | None = None
+    employee_name: str | None = None
     position_id: int
     position: str
     date: date
@@ -128,21 +128,72 @@ class UnfilledRequirementRead(BaseModel):
 
 class ScheduleRead(BaseModel):
     id: int
+    start_date: date
+    end_date: date
     status: Literal["draft", "published", "archived"]
+    start_date: date
+    end_date: date
     shifts: list[ShiftRead]
     conflicts: list[ScheduleConflictRead]
     unfilled_requirements: list[UnfilledRequirementRead]
 
 
-class ScheduleShiftUpdate(BaseModel):
-    action: Literal["reassign", "remove"]
+class ManualShiftCreate(BaseModel):
+    date: date
+    start_time: time
+    end_time: time
+    position_id: int = Field(ge=1)
     employee_id: int | None = Field(default=None, ge=1)
 
     @model_validator(mode="after")
-    def validate_action(self) -> "ScheduleShiftUpdate":
+    def validate_time_range(self) -> "ManualShiftCreate":
+        if self.end_time <= self.start_time:
+            raise ValueError("end_time must be later than start_time.")
+        if self.start_time.minute % 5 != 0 or self.end_time.minute % 5 != 0:
+            raise ValueError("start_time and end_time must be aligned to 5-minute steps.")
+        return self
+
+
+class ScheduleShiftUpdate(BaseModel):
+    action: Literal["reassign", "remove"] | None = None
+    date: Date | None = None
+    start_time: time | None = None
+    end_time: time | None = None
+    position_id: int | None = Field(default=None, ge=1)
+    employee_id: int | None = Field(default=None, ge=1)
+
+    @model_validator(mode="after")
+    def validate_update(self) -> "ScheduleShiftUpdate":
         if self.action == "reassign" and self.employee_id is None:
             raise ValueError("employee_id is required when action is 'reassign'.")
+        if self.start_time is not None and self.start_time.minute % 5 != 0:
+            raise ValueError("start_time must be aligned to 5-minute steps.")
+        if self.end_time is not None and self.end_time.minute % 5 != 0:
+            raise ValueError("end_time must be aligned to 5-minute steps.")
         return self
+
+
+class RequirementAssignRequest(BaseModel):
+    employee_id: int = Field(ge=1)
+
+
+class AvailableEmployeePositionRead(BaseModel):
+    id: int
+    name: str
+
+
+class AvailableEmployeeBranchRead(BaseModel):
+    id: int
+    name: str
+
+
+class AvailableEmployeeRead(BaseModel):
+    id: int
+    full_name: str
+    position: AvailableEmployeePositionRead
+    branch: AvailableEmployeeBranchRead | None = None
+    availability_status: Literal["available", "if_needed"]
+    assigned_hours: float = 0.0
 
 
 class ShiftExchangeRequestCreate(BaseModel):

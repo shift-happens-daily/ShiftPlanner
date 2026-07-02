@@ -35,10 +35,26 @@ CREATE TABLE companies (
     invite_code VARCHAR(16) UNIQUE NOT NULL DEFAULT generate_alphanumeric_code(16),
     invite_code_generated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     invite_code_expires_at TIMESTAMP,
-    manager_user_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+    manager_invite_code VARCHAR(16) UNIQUE DEFAULT generate_alphanumeric_code(16),
+    manager_invite_code_generated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    manager_invite_code_expires_at TIMESTAMP,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    CHECK (invite_code ~ '^[A-Za-z0-9]{16}$')
+    CHECK (invite_code ~ '^[A-Za-z0-9]{16}$'),
+    CHECK (manager_invite_code IS NULL OR manager_invite_code ~ '^[A-Za-z0-9]{16}$')
+);
+
+CREATE TABLE company_managers (
+    id SERIAL PRIMARY KEY,
+    company_id INTEGER NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
+    user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    manager_role VARCHAR(50) NOT NULL DEFAULT 'manager'
+        CHECK (manager_role IN ('owner', 'manager')),
+    membership_status VARCHAR(50) NOT NULL DEFAULT 'active'
+        CHECK (membership_status IN ('pending', 'active', 'declined')),
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE (company_id, user_id)
 );
 
 CREATE TABLE branches (
@@ -68,6 +84,32 @@ CREATE TABLE employees (
     UNIQUE (user_id, company_id),
     CHECK (employee_code ~ '^[A-Za-z0-9]{16}$')
 );
+
+CREATE TABLE employee_branches (
+    id SERIAL PRIMARY KEY,
+    employee_id INTEGER NOT NULL REFERENCES employees(id) ON DELETE CASCADE,
+    branch_id INTEGER NOT NULL REFERENCES branches(id) ON DELETE CASCADE,
+    is_primary BOOLEAN NOT NULL DEFAULT FALSE,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE (employee_id, branch_id)
+);
+
+CREATE UNIQUE INDEX employee_branches_one_primary_per_employee
+    ON employee_branches (employee_id)
+    WHERE is_primary;
+
+CREATE TABLE employee_positions (
+    id SERIAL PRIMARY KEY,
+    employee_id INTEGER NOT NULL REFERENCES employees(id) ON DELETE CASCADE,
+    position_id INTEGER NOT NULL REFERENCES positions(id) ON DELETE CASCADE,
+    is_primary BOOLEAN NOT NULL DEFAULT FALSE,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE (employee_id, position_id)
+);
+
+CREATE UNIQUE INDEX employee_positions_one_primary_per_employee
+    ON employee_positions (employee_id)
+    WHERE is_primary;
 
 CREATE TABLE employee_availability (
     id SERIAL PRIMARY KEY,

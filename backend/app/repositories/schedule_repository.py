@@ -1,9 +1,9 @@
 from datetime import UTC, date, datetime
 
-from sqlalchemy import delete, select, update
+from sqlalchemy import delete, func, select, text, update
 from sqlalchemy.orm import Session
 
-from app.models import Employee, Position, Schedule, Shift, ShiftAssignment, ShiftExchangeRequest, ShiftRequirement, User
+from app.models import Absence, Branch, Employee, EmployeeBranch, EmployeePosition, Position, Schedule, Shift, ShiftAssignment, ShiftExchangeRequest, ShiftRequirement, User
 
 
 def create_requirement(
@@ -108,9 +108,9 @@ def create_schedule(
         db.scalars(
             select(Schedule).where(
                 Schedule.company_id == company_id,
-                Schedule.start_date == start_date,
-                Schedule.end_date == end_date,
                 Schedule.status == "draft",
+                Schedule.start_date <= end_date,
+                Schedule.end_date >= start_date,
             )
         )
     )
@@ -144,6 +144,11 @@ def get_schedule(db: Session, schedule_id: int) -> Schedule | None:
     return db.get(Schedule, schedule_id)
 
 
+def delete_schedule(db: Session, schedule: Schedule) -> None:
+    db.delete(schedule)
+    db.commit()
+
+
 def get_latest_schedule(
     db: Session,
     *,
@@ -154,6 +159,24 @@ def get_latest_schedule(
     if schedule_status is not None:
         query = query.where(Schedule.status == schedule_status)
     return db.scalars(query.order_by(Schedule.id.desc())).first()
+
+
+def list_schedules(
+    db: Session,
+    *,
+    company_id: int,
+    start_date: date | None = None,
+    end_date: date | None = None,
+    schedule_status: str | None = None,
+) -> list[Schedule]:
+    query = select(Schedule).where(Schedule.company_id == company_id)
+    if start_date is not None:
+        query = query.where(Schedule.end_date >= start_date)
+    if end_date is not None:
+        query = query.where(Schedule.start_date <= end_date)
+    if schedule_status is not None:
+        query = query.where(Schedule.status == schedule_status)
+    return list(db.scalars(query.order_by(Schedule.start_date, Schedule.id)))
 
 
 def list_schedule_shift_rows(db: Session, schedule_id: int) -> list[dict]:
@@ -167,15 +190,17 @@ def list_schedule_shift_rows(db: Session, schedule_id: int) -> list[dict]:
                 Position.id.label("position_id"),
                 Position.name.label("position_name"),
                 Employee.id.label("employee_id"),
-                Employee.branch_id.label("employee_branch_id"),
                 User.full_name.label("employee_name"),
                 ShiftAssignment.id.label("assignment_id"),
             )
-            .join(ShiftAssignment, ShiftAssignment.shift_id == Shift.id)
-            .join(Employee, Employee.id == ShiftAssignment.employee_id)
-            .join(User, User.id == Employee.user_id)
+            .outerjoin(
+                ShiftAssignment,
+                (ShiftAssignment.shift_id == Shift.id) & (ShiftAssignment.status == "assigned"),
+            )
+            .outerjoin(Employee, Employee.id == ShiftAssignment.employee_id)
+            .outerjoin(User, User.id == Employee.user_id)
             .join(Position, Position.id == Shift.position_id)
-            .where(Shift.schedule_id == schedule_id, ShiftAssignment.status == "assigned")
+            .where(Shift.schedule_id == schedule_id)
             .order_by(Shift.id)
         ).mappings()
     )
@@ -205,13 +230,75 @@ def get_shift_row(db: Session, schedule_id: int, shift_id: int) -> dict | None:
         select(
             Shift.id.label("shift_id"),
             Shift.position_id,
+            Shift.shift_date,
+            Shift.start_time,
+            Shift.end_time,
             ShiftAssignment.id.label("assignment_id"),
             ShiftAssignment.employee_id,
         )
-        .join(ShiftAssignment, ShiftAssignment.shift_id == Shift.id)
+        .outerjoin(
+            ShiftAssignment,
+            (ShiftAssignment.shift_id == Shift.id) & (ShiftAssignment.status == "assigned"),
+        )
         .where(Shift.schedule_id == schedule_id, Shift.id == shift_id)
     ).mappings().first()
     return None if row is None else dict(row)
+
+
+def create_shift(
+    db: Session,
+    *,
+    schedule_id: int,
+    company_id: int,
+    position_id: int,
+    shift_date: date,
+    start_time,
+    end_time,
+    employee_id: int | None = None,
+) -> Shift:
+    shift = Shift(
+        schedule_id=schedule_id,
+        company_id=company_id,
+        position_id=position_id,
+        shift_date=shift_date,
+        start_time=start_time,
+        end_time=end_time,
+    )
+    db.add(shift)
+    db.flush()
+    if employee_id is not None:
+        db.add(ShiftAssignment(shift_id=shift.id, employee_id=employee_id, status="assigned"))
+    db.commit()
+    db.refresh(shift)
+    return shift
+
+
+def update_shift(
+    db: Session,
+    *,
+    shift_id: int,
+    position_id: int,
+    shift_date: date,
+    start_time,
+    end_time,
+    employee_id: int | None,
+    replace_assignment: bool,
+) -> Shift:
+    shift = db.get(Shift, shift_id)
+    shift.position_id = position_id
+    shift.shift_date = shift_date
+    shift.start_time = start_time
+    shift.end_time = end_time
+
+    if replace_assignment:
+        db.execute(delete(ShiftAssignment).where(ShiftAssignment.shift_id == shift_id))
+        if employee_id is not None:
+            db.add(ShiftAssignment(shift_id=shift_id, employee_id=employee_id, status="assigned"))
+
+    db.add(shift)
+    db.commit()
+    db.refresh(shift)
+    return shift
 
 
 def remove_shift(db: Session, schedule_id: int, shift_id: int) -> None:
@@ -225,6 +312,157 @@ def reassign_shift(db: Session, assignment_id: int, employee_id: int) -> None:
     assignment.employee_id = employee_id
     db.add(assignment)
     db.commit()
+
+
+def has_overlapping_assignment(
+    db: Session,
+    *,
+    schedule_id: int,
+    employee_id: int,
+    shift_date: date,
+    start_time,
+    end_time,
+    exclude_shift_id: int | None = None,
+) -> bool:
+    query = (
+        select(Shift.id)
+        .join(ShiftAssignment, ShiftAssignment.shift_id == Shift.id)
+        .where(
+            Shift.schedule_id == schedule_id,
+            ShiftAssignment.employee_id == employee_id,
+            ShiftAssignment.status == "assigned",
+            Shift.shift_date == shift_date,
+            Shift.start_time < end_time,
+            Shift.end_time > start_time,
+        )
+        .limit(1)
+    )
+    if exclude_shift_id is not None:
+        query = query.where(Shift.id != exclude_shift_id)
+    return db.scalar(query) is not None
+
+
+def count_assigned_shifts_for_requirement_slot(
+    db: Session,
+    *,
+    schedule_id: int,
+    position_id: int,
+    shift_date: date,
+    start_time,
+    end_time,
+) -> int:
+    return db.scalar(
+        select(func.count(ShiftAssignment.id))
+        .join(Shift, Shift.id == ShiftAssignment.shift_id)
+        .where(
+            Shift.schedule_id == schedule_id,
+            Shift.position_id == position_id,
+            Shift.shift_date == shift_date,
+            Shift.start_time == start_time,
+            Shift.end_time == end_time,
+            ShiftAssignment.status == "assigned",
+        )
+    ) or 0
+
+
+def employee_has_absence_on_date(db: Session, *, employee_id: int, shift_date: date) -> bool:
+    return db.scalar(
+        select(Absence.id)
+        .where(
+            Absence.employee_id == employee_id,
+            Absence.start_date <= shift_date,
+            Absence.end_date >= shift_date,
+        )
+        .limit(1)
+    ) is not None
+
+
+def get_employee_availability_status(
+    db: Session,
+    *,
+    employee_id: int,
+    weekday: int,
+    start_time,
+    end_time,
+) -> str | None:
+    rows = list(
+        db.execute(
+            text(
+                """
+                SELECT availability_status
+                FROM employee_availability
+                WHERE employee_id = :employee_id
+                  AND weekday = :weekday
+                  AND start_time <= :start_time
+                  AND end_time >= :end_time
+                """
+            ),
+            {
+                "employee_id": employee_id,
+                "weekday": weekday,
+                "start_time": start_time,
+                "end_time": end_time,
+            },
+        ).mappings()
+    )
+    statuses = {row["availability_status"] for row in rows}
+    if "available" in statuses:
+        return "available"
+    if "if_needed" in statuses:
+        return "if_needed"
+    return None
+
+
+def sum_assigned_hours_for_employee(db: Session, *, schedule_id: int, employee_id: int) -> float:
+    rows = db.execute(
+        select(Shift.shift_date, Shift.start_time, Shift.end_time)
+        .join(ShiftAssignment, ShiftAssignment.shift_id == Shift.id)
+        .where(
+            Shift.schedule_id == schedule_id,
+            ShiftAssignment.employee_id == employee_id,
+            ShiftAssignment.status == "assigned",
+        )
+    ).mappings()
+    total = 0.0
+    for row in rows:
+        duration = datetime.combine(date.min, row["end_time"]) - datetime.combine(date.min, row["start_time"])
+        total += duration.total_seconds() / 3600
+    return total
+
+
+def list_candidate_employee_rows(
+    db: Session,
+    *,
+    company_id: int,
+    position_id: int,
+    branch_id: int | None = None,
+    include_other_positions: bool = False,
+) -> list[dict]:
+    query = (
+        select(
+            Employee.id.label("employee_id"),
+            User.full_name,
+            Position.id.label("position_id"),
+            Position.name.label("position_name"),
+            Branch.id.label("branch_id"),
+            Branch.name.label("branch_name"),
+        )
+        .join(User, User.id == Employee.user_id)
+        .join(EmployeePosition, EmployeePosition.employee_id == Employee.id)
+        .join(Position, Position.id == EmployeePosition.position_id)
+        .outerjoin(EmployeeBranch, EmployeeBranch.employee_id == Employee.id)
+        .outerjoin(Branch, Branch.id == EmployeeBranch.branch_id)
+        .where(
+            Employee.company_id == company_id,
+            Employee.is_active.is_(True),
+        )
+        .order_by(User.full_name, Employee.id)
+    )
+    if not include_other_positions:
+        query = query.where(EmployeePosition.position_id == position_id)
+    if branch_id is not None:
+        query = query.where(EmployeeBranch.branch_id == branch_id)
+    return list(db.execute(query).mappings())
 
 
 def get_latest_published_schedule_for_employee(db: Session, employee_id: int) -> Schedule | None:
@@ -285,8 +523,12 @@ def list_published_shift_rows_for_employee_period(
             ShiftAssignment.status,
             Position.id.label("position_id"),
             Position.name.label("position_name"),
+            Employee.id.label("employee_id"),
+            User.full_name.label("employee_name"),
         )
         .join(ShiftAssignment, ShiftAssignment.shift_id == Shift.id)
+        .join(Employee, Employee.id == ShiftAssignment.employee_id)
+        .join(User, User.id == Employee.user_id)
         .join(Schedule, Schedule.id == Shift.schedule_id)
         .join(Position, Position.id == Shift.position_id)
         .where(

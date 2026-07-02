@@ -18,6 +18,9 @@ class UserRead(BaseModel):
     role: Role
     employee_id: int | None = None
     company_id: int | None = None
+    manager_status: str | None = None
+    manager_role: str | None = None
+    employee_status: str | None = None
 
 
 class LoginResponse(BaseModel):
@@ -48,6 +51,10 @@ class CurrentUserBranchRead(BaseModel):
     name: str
 
 
+class CurrentUserBranchAssignmentRead(CurrentUserBranchRead):
+    is_primary: bool
+
+
 class CurrentUserPositionRead(BaseModel):
     id: int
     name: str
@@ -58,6 +65,7 @@ class CurrentUserResponse(UserRead):
     position_id: int | None = None
     company: CurrentUserCompanyRead | None = None
     branch: CurrentUserBranchRead | None = None
+    branches: list[CurrentUserBranchAssignmentRead] = Field(default_factory=list)
     position: CurrentUserPositionRead | None = None
 
 

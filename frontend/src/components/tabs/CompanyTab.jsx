@@ -1,15 +1,30 @@
+/* eslint-disable react-hooks/set-state-in-effect */
 // frontend/src/components/tabs/CompanyTab.jsx
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useAuth } from '../../context/useAuth';
 import {
+  acceptEmployeeRequest,
   createBranch,
   createCompany,
+  declineEmployeeRequest,
+  deleteBranch,
   joinCompany,
   listBranches,
+  listEmployeeRequests,
   previewInviteCode,
   regenerateInviteCode,
 } from '../../services/companyService';
 import { extractApiErrorMessage } from '../../services/error';
+import { useUserBranches } from '../../hooks/useUserBranches';
+import { removeBranchFromAllStoredAssignments } from '../../utils/employeeBranches';
+import { useTabResponsive } from '../../utils/tabResponsive';
+import { getEmployeePositionLabel, getPositionLabel } from '../../utils/employeeDisplay';
+import { usePositionTitleRevision } from '../../hooks/usePositionTitleRevision';
+import { useUnsavedChanges } from '../../context/useUnsavedChanges';
+
+const COMPANY_SCOPE = 'company-create';
+const BRANCH_SCOPE = 'company-branch';
+const JOIN_SCOPE = 'company-join';
 
 function normalizeArray(value) {
   if (Array.isArray(value)) return value;
@@ -72,6 +87,9 @@ function getInviteCode(company) {
 }
 
 export default function CompanyTab({ language, userRole, user }) {
+  usePositionTitleRevision();
+  const r = useTabResponsive(1480);
+  const { markUnsaved, markSaved } = useUnsavedChanges();
   const { refreshUser } = useAuth();
 
   const [inviteCode, setInviteCode] = useState('');
@@ -83,6 +101,7 @@ export default function CompanyTab({ language, userRole, user }) {
   const [branchName, setBranchName] = useState('');
 
   const [companyName, setCompanyName] = useState('');
+  const [employeeRequests, setEmployeeRequests] = useState([]);
 
   const [errorMessage, setErrorMessage] = useState('');
   const [successMessage, setSuccessMessage] = useState('');
@@ -90,9 +109,8 @@ export default function CompanyTab({ language, userRole, user }) {
 
   const texts = {
     ru: {
-      title: 'Компания',
       currentCompany: 'Текущая компания',
-      company: 'Компания',
+      company: '',
       branch: 'Филиал',
       branches: 'Филиалы',
       position: 'Позиция',
@@ -128,27 +146,44 @@ export default function CompanyTab({ language, userRole, user }) {
       previewHint: 'Проверьте инвайт-код, затем нажмите "Присоединиться".',
       copy: 'Копировать',
       copied: 'Код скопирован.',
-      noBranches: 'В компании пока нет филиалов.',
       noPositions: 'В компании пока нет позиций. Менеджеру нужно создать позицию во вкладке «Сотрудники».',
       createBranch: 'Создать филиал',
-      branchName: 'Название филиала',
+      branchName: '',
       branchPlaceholder: 'Например: Main Branch',
       branchCreated: 'Филиал создан.',
+      branchDeleted: 'Филиал удалён.',
       createBranchError: 'Не удалось создать филиал.',
+      deleteBranch: 'Удалить',
+      confirmDeleteBranch: 'Удалить филиал «{name}»?',
+      branchDeleteError: 'Не удалось удалить филиал.',
+      branchInUse: 'Нельзя удалить: филиал назначен сотрудникам или используется в требованиях.',
       createCompanyFirst: 'Сначала создайте компанию.',
       branchRequired: 'Введите название филиала.',
       noBranchSelected: 'Без филиала',
       noPositionSelected: 'Без позиции',
-      positionsHint: 'Позиции создаются во вкладке «Сотрудники».',
-      employeeHint: 'После присоединения вкладки расписания и отчетов станут доступны.',
+      noBranchesAssigned: 'Филиалы не назначены',
+      positionsHint: '',
+      employeeHint: 'После подтверждения менеджером станут доступны расписание и отчёты.',
       managerHint: 'Скопируйте инвайт-код и отправьте его сотрудникам.',
       inviteFound: 'Инвайт-код найден.',
       joinSuccess: 'Вы успешно присоединились к компании!',
+      joinPending: 'Заявка отправлена. Дождитесь подтверждения менеджера во вкладке «Компания».',
+      pendingTitle: 'Заявка на рассмотрении',
+      pendingText: 'Менеджер компании должен принять вашу заявку. После этого здесь появятся филиал и позиция.',
+      employeeRequests: 'Заявки сотрудников',
+      employeeRequestsHint: 'Примите или отклоните заявки на вступление в компанию.',
+      noEmployeeRequests: 'Нет ожидающих заявок.',
+      acceptRequest: 'Принять',
+      declineRequest: 'Отклонить',
+      requestAccepted: 'Сотрудник принят.',
+      requestDeclined: 'Заявка отклонена.',
+      requestActionError: 'Не удалось обработать заявку.',
+      requestBranches: 'Филиалы в заявке',
+      requestPosition: 'Позиция в заявке',
     },
     en: {
-      title: 'Company',
       currentCompany: 'Current company',
-      company: 'Company',
+      company: '',
       branch: 'Branch',
       branches: 'Branches',
       position: 'Position',
@@ -184,33 +219,52 @@ export default function CompanyTab({ language, userRole, user }) {
       previewHint: 'Preview the invite code first, then click "Join company".',
       copy: 'Copy',
       copied: 'Code copied.',
-      noBranches: 'This company has no branches yet.',
       noPositions: 'This company has no positions yet. A manager needs to create a position in the Employees tab.',
       createBranch: 'Create branch',
-      branchName: 'Branch name',
+      branchName: '',
       branchPlaceholder: 'Example: Main Branch',
       branchCreated: 'Branch created.',
+      branchDeleted: 'Branch deleted.',
       createBranchError: 'Failed to create branch.',
+      deleteBranch: 'Delete',
+      confirmDeleteBranch: 'Delete branch "{name}"?',
+      branchDeleteError: 'Failed to delete branch.',
+      branchInUse: 'Cannot delete: branch is assigned to employees or used in requirements.',
       createCompanyFirst: 'Create a company first.',
       branchRequired: 'Enter branch name.',
       noBranchSelected: 'No branch selected',
       noPositionSelected: 'No position selected',
-      positionsHint: 'Positions are created in the Employees tab.',
-      employeeHint: 'After joining, schedule and reports tabs become available.',
+      noBranchesAssigned: 'No branches assigned',
+      positionsHint: '',
+      employeeHint: 'Schedule and reports become available after a manager approves your request.',
       managerHint: 'Copy the invite code and send it to employees.',
       inviteFound: 'Invite found.',
       joinSuccess: 'You have successfully joined the company!',
+      joinPending: 'Request submitted. Wait for manager approval in the Company tab.',
+      pendingTitle: 'Request pending',
+      pendingText: 'A company manager must approve your request. Branch and position will appear here after approval.',
+      employeeRequests: 'Employee requests',
+      employeeRequestsHint: 'Approve or decline join requests.',
+      noEmployeeRequests: 'No pending requests.',
+      acceptRequest: 'Accept',
+      declineRequest: 'Decline',
+      requestAccepted: 'Employee accepted.',
+      requestDeclined: 'Request declined.',
+      requestActionError: 'Failed to process the request.',
+      requestBranches: 'Requested branches',
+      requestPosition: 'Requested position',
     },
   };
 
   const t = texts[language] || texts.ru;
   const isManager = userRole === 'manager';
   const isEmployee = userRole === 'employee';
+  const isPendingEmployee = isEmployee && user?.employeeStatus === 'pending';
 
   const currentCompany = user?.company || null;
-  const currentBranch = user?.branch || null;
-  const currentPosition = user?.position || null;
   const currentCompanyId = getCompanyId(currentCompany);
+  const employeePositionLabel = getEmployeePositionLabel(user, '—');
+  const { userBranches } = useUserBranches(user);
 
   const effectiveInviteCode = getInviteCode(currentCompany);
 
@@ -239,6 +293,33 @@ export default function CompanyTab({ language, userRole, user }) {
       setBranches([]);
     }
   };
+
+  const loadEmployeeRequests = async () => {
+    if (!isManager || !currentCompanyId) {
+      setEmployeeRequests([]);
+      return;
+    }
+
+    try {
+      const data = await listEmployeeRequests();
+      setEmployeeRequests(normalizeArray(data));
+    } catch {
+      setEmployeeRequests([]);
+    }
+  };
+
+  useEffect(() => {
+    if (!isManager || !currentCompanyId) {
+      setBranches([]);
+      return;
+    }
+
+    void loadBranches(currentCompanyId);
+  }, [isManager, currentCompanyId]);
+
+  useEffect(() => {
+    void loadEmployeeRequests();
+  }, [isManager, currentCompanyId]);
 
   const handlePreview = async () => {
     if (!inviteCode.trim()) {
@@ -275,10 +356,10 @@ export default function CompanyTab({ language, userRole, user }) {
     setIsSubmitting(true);
 
     try {
-      await joinCompany({
+      const joinedProfile = await joinCompany({
         invite_code: inviteCode.trim(),
-        branch_id: selectedJoinBranchId || null,
-        position_id: selectedJoinPositionId || null,
+        branch_id: selectedJoinBranchId ? Number(selectedJoinBranchId) : null,
+        position_id: selectedJoinPositionId ? Number(selectedJoinPositionId) : null,
       });
 
       await refreshUser();
@@ -287,7 +368,10 @@ export default function CompanyTab({ language, userRole, user }) {
       setInvitePreview(null);
       setSelectedJoinBranchId('');
       setSelectedJoinPositionId('');
-      setSuccessMessage(t.joinSuccess);
+      markSaved(JOIN_SCOPE);
+      setSuccessMessage(
+        joinedProfile?.employee_status === 'pending' ? t.joinPending : t.joinSuccess
+      );
     } catch (error) {
       setErrorMessage(extractApiErrorMessage(error, null, language));
     } finally {
@@ -306,12 +390,49 @@ export default function CompanyTab({ language, userRole, user }) {
 
     try {
       await createCompany({ name: companyName.trim() });
-      await refreshUser();
+      const updatedUser = await refreshUser();
 
       setCompanyName('');
+      markSaved(COMPANY_SCOPE);
       setSuccessMessage(t.companyCreated);
+
+      const companyId = getCompanyId(updatedUser?.company);
+      if (companyId) {
+        await loadBranches(companyId);
+      }
     } catch (error) {
       setErrorMessage(extractApiErrorMessage(error, null, language));
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const handleDeleteBranch = async (branch) => {
+    if (!branch?.id || !currentCompanyId) return;
+
+    const branchTitle = getName(branch);
+    const confirmMessage = t.confirmDeleteBranch.replace('{name}', branchTitle);
+    if (!window.confirm(confirmMessage)) return;
+
+    clearMessages();
+    setIsSubmitting(true);
+
+    try {
+      await deleteBranch(branch.id);
+      removeBranchFromAllStoredAssignments(branch.id);
+      await loadBranches(currentCompanyId);
+      setSuccessMessage(t.branchDeleted);
+    } catch (error) {
+      const status = error?.response?.status;
+      const detail = error?.response?.data?.detail;
+      if (
+        status === 409
+        || (typeof detail === 'string' && detail.toLowerCase().includes('cannot be deleted'))
+      ) {
+        setErrorMessage(t.branchInUse);
+      } else {
+        setErrorMessage(extractApiErrorMessage(error, t.branchDeleteError, language));
+      }
     } finally {
       setIsSubmitting(false);
     }
@@ -332,12 +453,13 @@ export default function CompanyTab({ language, userRole, user }) {
     setIsSubmitting(true);
 
     try {
-      const created = await createBranch(currentCompanyId, {
+      await createBranch(currentCompanyId, {
         name: branchName.trim(),
       });
 
-      setBranches((prev) => [...prev, created]);
+      await loadBranches(currentCompanyId);
       setBranchName('');
+      markSaved(BRANCH_SCOPE);
       setSuccessMessage(t.branchCreated);
     } catch (error) {
       setErrorMessage(extractApiErrorMessage(error, t.createBranchError, language));
@@ -354,6 +476,45 @@ export default function CompanyTab({ language, userRole, user }) {
       setSuccessMessage(t.copied);
     } catch {
       setSuccessMessage('');
+    }
+  };
+
+  const getRequestBranchesLabel = (request) => {
+    const labels = normalizeArray(request?.branches)
+      .map((branch) => branch?.name || branch?.title)
+      .filter(Boolean);
+    return labels.length > 0 ? labels.join(', ') : '—';
+  };
+
+  const handleAcceptEmployeeRequest = async (requestId) => {
+    clearMessages();
+    setIsSubmitting(true);
+
+    try {
+      await acceptEmployeeRequest(requestId);
+      await loadEmployeeRequests();
+      setSuccessMessage(t.requestAccepted);
+    } catch (error) {
+      setErrorMessage(extractApiErrorMessage(error, t.requestActionError, language));
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const handleDeclineEmployeeRequest = async (requestId) => {
+    if (!window.confirm(language === 'en' ? 'Decline this request?' : 'Отклонить заявку?')) return;
+
+    clearMessages();
+    setIsSubmitting(true);
+
+    try {
+      await declineEmployeeRequest(requestId);
+      await loadEmployeeRequests();
+      setSuccessMessage(t.requestDeclined);
+    } catch (error) {
+      setErrorMessage(extractApiErrorMessage(error, t.requestActionError, language));
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
@@ -376,30 +537,51 @@ export default function CompanyTab({ language, userRole, user }) {
   };
 
   return (
-    <section style={styles.page}>
-      <div style={styles.shell}>
-        <div style={styles.grid}>
-          <div style={styles.card}>
-          <div style={styles.cardHeader}>
-            <h2 style={styles.title}>{t.title}</h2>
-            <span style={styles.rolePill}>{isManager ? 'Manager' : 'Employee'}</span>
+    <section
+      style={{
+        ...styles.page,
+        ...r.page,
+        ...(r.isMobile ? {} : styles.desktopViewportPage),
+      }}
+    >
+      <div
+        style={{
+          ...styles.shell,
+          ...r.shell,
+          width: 'min(100%, 1480px)',
+          padding: 0,
+          borderRadius: 0,
+          background: 'transparent',
+          border: 'none',
+          boxShadow: 'none',
+          ...(r.isMobile ? {} : styles.desktopScaleShell),
+        }}
+      >
+        {(errorMessage || successMessage) && (
+          <div style={errorMessage ? styles.error : styles.success}>
+            {errorMessage || successMessage}
           </div>
+        )}
 
-          {errorMessage && <div style={styles.error}>{errorMessage}</div>}
-          {successMessage && <div style={styles.success}>{successMessage}</div>}
+        {isManager && currentCompany ? (
+          <div style={{
+            ...styles.managerGrid,
+            gridTemplateColumns: r.gridCols('minmax(0, 1fr) minmax(0, 1fr)'),
+          }}>
+            <section style={styles.card}>
+              <div style={styles.cardHeaderCompact}>
+                <h2 style={{ ...styles.title, ...r.title }}>{t.title}</h2>
+              </div>
 
-          <div style={styles.section}>
-            <h3 style={styles.sectionTitle}>{t.currentCompany}</h3>
+              <div style={styles.section}>
+                <h3 style={styles.sectionTitle}>{t.currentCompany}</h3>
 
-            {currentCompany ? (
-              <div style={styles.companyPanel}>
-                <span style={styles.panelLabel}>{t.company}</span>
-                <strong style={styles.companyTitle}>{currentCompany.name || t.empty}</strong>
+                <div style={styles.companyPanel}>
+                  <strong style={styles.companyTitle}>{currentCompany.name || t.empty}</strong>
 
-                {isManager && effectiveInviteCode && (
-                  <div style={styles.inviteBlock}>
+                  {effectiveInviteCode && (
                     <div style={styles.inviteCodeBox}>
-                      <div>
+                      <div style={styles.inviteMain}>
                         <span style={styles.inviteLabel}>{t.inviteCode}</span>
                         <strong style={styles.inviteValue}>{effectiveInviteCode}</strong>
                       </div>
@@ -421,183 +603,311 @@ export default function CompanyTab({ language, userRole, user }) {
                         </button>
                       </div>
                     </div>
-                  </div>
-                )}
-
-                {isEmployee && (
-                  <div style={styles.infoGrid}>
-                    <InfoItem label={t.branch} value={getName(currentBranch)} />
-                    <InfoItem label={t.position} value={getName(currentPosition)} />
-                  </div>
-                )}
+                  )}
+                </div>
               </div>
-            ) : (
-              <div style={styles.emptyState}>
-                <strong style={styles.emptyTitle}>{t.noCompany}</strong>
-                <span style={styles.emptyText}>
-                  {isManager ? t.noCompanyManager : t.noCompanyEmployee}
-                </span>
+            </section>
+
+            <section style={styles.card}>
+              <div style={styles.section}>
+                <h3 style={styles.sectionTitle}>{t.branches}</h3>
+
+                <div style={styles.branchCreateRow}>
+                  <input
+                    value={branchName}
+                    onChange={(event) => {
+                      setBranchName(event.target.value);
+                      markUnsaved(BRANCH_SCOPE);
+                    }}
+                    placeholder={t.branchPlaceholder}
+                    style={styles.input}
+                  />
+
+                  <button
+                    type="button"
+                    onClick={handleCreateBranch}
+                    style={isSubmitting ? styles.primaryButtonDisabled : styles.primaryButton}
+                    disabled={isSubmitting}
+                  >
+                    {isSubmitting ? '...' : t.createBranch}
+                  </button>
+                </div>
+
+                <div style={styles.branchList}>
+                  {branches.length === 0 ? (
+                    <p style={styles.emptyText}>{t.noBranches}</p>
+                  ) : (
+                    branches.map((branch) => (
+                      <div key={branch.id} style={styles.branchItem}>
+                        <span style={styles.branchItemName}>{getName(branch)}</span>
+                        <button
+                          type="button"
+                          onClick={() => handleDeleteBranch(branch)}
+                          style={
+                            isSubmitting
+                              ? { ...styles.branchDeleteButton, opacity: 0.5, cursor: 'not-allowed' }
+                              : styles.branchDeleteButton
+                          }
+                          disabled={isSubmitting}
+                          aria-label={`${t.deleteBranch} ${getName(branch)}`}
+                        >
+                          {t.deleteBranch}
+                        </button>
+                      </div>
+                    ))
+                  )}
+                </div>
               </div>
-            )}
-          </div>
-        </div>
+            </section>
 
-        {isManager && !currentCompany && (
-          <div style={styles.card}>
-            <div style={styles.section}>
-              <h3 style={styles.sectionTitle}>{t.createCompany}</h3>
-
-              <div style={styles.formStack}>
-                <label style={styles.label}>{t.companyName}</label>
-                <input
-                  value={companyName}
-                  onChange={(event) => setCompanyName(event.target.value)}
-                  placeholder={t.companyName}
-                  style={styles.input}
-                />
-
-                <button
-                  type="button"
-                  onClick={handleCreateCompany}
-                  style={isSubmitting ? styles.primaryButtonDisabled : styles.primaryButton}
-                  disabled={isSubmitting}
-                >
-                  {isSubmitting ? '...' : t.saveCompany}
-                </button>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {isManager && currentCompany && (
-          <div style={styles.card}>
-            <div style={styles.section}>
-              <h3 style={styles.sectionTitle}>{t.branches}</h3>
-              <p style={styles.hint}>{t.positionsHint}</p>
-
-              <div style={styles.formStack}>
-                <label style={styles.label}>{t.branchName}</label>
-                <input
-                  value={branchName}
-                  onChange={(event) => setBranchName(event.target.value)}
-                  placeholder={t.branchPlaceholder}
-                  style={styles.input}
-                />
-
-                <button
-                  type="button"
-                  onClick={handleCreateBranch}
-                  style={isSubmitting ? styles.primaryButtonDisabled : styles.primaryButton}
-                  disabled={isSubmitting}
-                >
-                  {isSubmitting ? '...' : t.createBranch}
-                </button>
+            <section style={{
+              ...styles.requestsCard,
+              gridColumn: r.isMobile ? 'auto' : '1 / -1',
+            }}>
+              <div style={styles.requestsHeader}>
+                <h3 style={styles.sectionTitle}>{t.employeeRequests}</h3>
+                <p style={styles.hint}>{t.employeeRequestsHint}</p>
               </div>
 
-              <div style={styles.branchList}>
-                {branches.length === 0 ? (
-                  <p style={styles.emptyText}>{t.noBranches}</p>
+              <div style={styles.requestList}>
+                {employeeRequests.length === 0 ? (
+                  <div style={styles.emptyRequests}>{t.noEmployeeRequests}</div>
                 ) : (
-                  branches.map((branch) => (
-                    <div key={branch.id} style={styles.branchItem}>
-                      {getName(branch)}
+                  employeeRequests.map((request) => (
+                    <div key={request.id} style={styles.requestItem}>
+                      <div style={styles.requestMain}>
+                        <strong style={styles.requestName}>{request.full_name || request.email}</strong>
+                        <span style={styles.requestMeta}>{request.email}</span>
+                        <span style={styles.requestMeta}>
+                          {t.requestBranches}: {getRequestBranchesLabel(request)}
+                        </span>
+                        <span style={styles.requestMeta}>
+                          {t.requestPosition}: {getPositionLabel(request.position, '—')}
+                        </span>
+                      </div>
+                      <div style={styles.requestActions}>
+                        <button
+                          type="button"
+                          onClick={() => handleAcceptEmployeeRequest(request.id)}
+                          style={isSubmitting ? styles.primaryButtonDisabled : styles.primaryButton}
+                          disabled={isSubmitting}
+                        >
+                          {t.acceptRequest}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleDeclineEmployeeRequest(request.id)}
+                          style={isSubmitting ? styles.secondaryButtonDisabled : styles.secondaryButton}
+                          disabled={isSubmitting}
+                        >
+                          {t.declineRequest}
+                        </button>
+                      </div>
                     </div>
                   ))
                 )}
               </div>
-            </div>
+            </section>
           </div>
-        )}
-
-        {isEmployee && !currentCompany && (
-          <div style={styles.card}>
-            <div style={styles.section}>
-              <h3 style={styles.sectionTitle}>{t.joinCompany}</h3>
-              <p style={styles.hint}>{t.previewHint}</p>
-
-              <div style={styles.formStack}>
-                <label style={styles.label}>{t.inviteCode}</label>
-                <input
-                  value={inviteCode}
-                  onChange={(event) => setInviteCode(event.target.value.toUpperCase())}
-                  placeholder={t.invitePlaceholder}
-                  style={styles.input}
-                />
-
-                <button
-                  type="button"
-                  onClick={handlePreview}
-                  style={isSubmitting ? styles.secondaryButtonDisabled : styles.secondaryButton}
-                  disabled={isSubmitting}
-                >
-                  {isSubmitting ? '...' : t.previewInvite}
-                </button>
+        ) : (
+          <div style={{
+            ...(isEmployee ? styles.employeeGrid : styles.grid),
+            gridTemplateColumns: r.gridCols(isEmployee ? 'minmax(0, 860px)' : '1fr 1fr'),
+          }}>
+            <section style={{
+              ...styles.card,
+              ...r.card,
+              ...(isEmployee && currentCompany ? styles.employeeCompanyCard : {}),
+            }}>
+              <div style={styles.cardHeaderCompact}>
+                <h2 style={{ ...styles.title, ...r.title }}>{t.title}</h2>
               </div>
 
-              {invitePreview && (
-                <div style={styles.previewBox}>
-                  <strong style={styles.previewTitle}>{previewCompanyName}</strong>
+              <div style={isEmployee && currentCompany ? styles.employeeSection : styles.section}>
+                <h3 style={styles.sectionTitle}>{t.currentCompany}</h3>
 
-                  {previewBranches.length > 0 && (
-                    <div style={styles.formStack}>
-                      <label style={styles.label}>{t.branch}</label>
-                      <select
-                        value={selectedJoinBranchId}
-                        onChange={(event) => setSelectedJoinBranchId(event.target.value)}
-                        style={styles.select}
-                      >
-                        <option value="">{t.noBranchSelected}</option>
-                        {previewBranches.map((branch) => (
-                          <option key={branch.id} value={branch.id}>
-                            {getName(branch)}
-                          </option>
-                        ))}
-                      </select>
+                {isPendingEmployee ? (
+                  <div style={styles.pendingPanel}>
+                    <strong style={styles.pendingTitle}>{t.pendingTitle}</strong>
+                    <span style={styles.pendingText}>{t.pendingText}</span>
+                  </div>
+                ) : currentCompany ? (
+                  <div style={isEmployee ? styles.employeeCompanyPanel : styles.companyPanel}>
+                    <div style={isEmployee ? styles.employeeCompanyHero : undefined}>
+                      {!isEmployee && <span style={styles.panelLabel}>{t.currentCompany}</span>}
+                      <strong style={isEmployee ? styles.employeeCompanyTitle : styles.companyTitle}>
+                        {currentCompany.name || t.empty}
+                      </strong>
                     </div>
-                  )}
 
-                  {previewPositions.length > 0 && (
-                    <div style={styles.formStack}>
-                      <label style={styles.label}>{t.position}</label>
-                      <select
-                        value={selectedJoinPositionId}
-                        onChange={(event) => setSelectedJoinPositionId(event.target.value)}
-                        style={styles.select}
-                      >
-                        <option value="">{t.noPositionSelected}</option>
-                        {previewPositions.map((position) => (
-                          <option key={position.id} value={position.id}>
-                            {getName(position)}
-                          </option>
-                        ))}
-                      </select>
-                    </div>
-                  )}
+                    {isEmployee && (
+                      <div style={{
+                        ...styles.infoGrid,
+                        ...(isEmployee ? styles.employeeInfoGrid : {}),
+                        gridTemplateColumns: r.gridCols('minmax(0, 1.3fr) minmax(0, 1fr)'),
+                      }}>
+                        <div style={{ ...styles.infoItem, ...styles.employeeInfoItem }}>
+                          <span style={styles.infoLabel}>{t.branches}</span>
+                          {userBranches.length === 0 ? (
+                            <strong style={styles.infoValue}>{t.noBranchesAssigned}</strong>
+                          ) : (
+                            <div style={styles.assignedBranchList}>
+                              {userBranches.map((branch) => (
+                                <span key={branch.id} style={styles.assignedBranchPill}>
+                                  {getName(branch)}
+                                </span>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                        <InfoItem
+                          label={t.position}
+                          value={employeePositionLabel}
+                          style={styles.employeeInfoItem}
+                        />
+                      </div>
+                    )}
+                  </div>
+                ) : (
+                  <div style={styles.emptyState}>
+                    <strong style={styles.emptyTitle}>{t.noCompany}</strong>
+                    <span style={styles.emptyText}>
+                      {isManager ? t.noCompanyManager : t.noCompanyEmployee}
+                    </span>
+                  </div>
+                )}
+              </div>
+            </section>
 
-                  <button
-                    type="button"
-                    onClick={handleJoin}
-                    style={canJoin ? styles.primaryButton : styles.primaryButtonDisabled}
-                    disabled={!canJoin}
-                  >
-                    {t.joinCompany}
-                  </button>
+            {isManager && !currentCompany && (
+              <section style={{ ...styles.card, ...r.card }}>
+                <div style={styles.section}>
+                  <h3 style={styles.sectionTitle}>{t.createCompany}</h3>
+
+                  <div style={styles.formStack}>
+                    <label style={styles.label}>{t.companyName}</label>
+                    <input
+                      value={companyName}
+                      onChange={(event) => {
+                        setCompanyName(event.target.value);
+                        markUnsaved(COMPANY_SCOPE);
+                      }}
+                      placeholder={t.companyName}
+                      style={styles.input}
+                    />
+
+                    <button
+                      type="button"
+                      onClick={handleCreateCompany}
+                      style={isSubmitting ? styles.primaryButtonDisabled : styles.primaryButton}
+                      disabled={isSubmitting}
+                    >
+                      {isSubmitting ? '...' : t.saveCompany}
+                    </button>
+                  </div>
                 </div>
-              )}
+              </section>
+            )}
 
-              <p style={styles.hint}>{t.employeeHint}</p>
-            </div>
+            {isEmployee && !currentCompany && !isPendingEmployee && (
+              <section style={{ ...styles.card, ...r.card }}>
+                <div style={styles.section}>
+                  <h3 style={styles.sectionTitle}>{t.joinCompany}</h3>
+                  <p style={styles.hint}>{t.previewHint}</p>
+
+                  <div style={styles.formStack}>
+                    <label style={styles.label}>{t.inviteCode}</label>
+                    <input
+                      value={inviteCode}
+                      onChange={(event) => {
+                        setInviteCode(event.target.value.toUpperCase());
+                        markUnsaved(JOIN_SCOPE);
+                      }}
+                      placeholder={t.invitePlaceholder}
+                      style={styles.input}
+                    />
+
+                    <button
+                      type="button"
+                      onClick={handlePreview}
+                      style={isSubmitting ? styles.secondaryButtonDisabled : styles.secondaryButton}
+                      disabled={isSubmitting}
+                    >
+                      {isSubmitting ? '...' : t.previewInvite}
+                    </button>
+                  </div>
+
+                  {invitePreview && (
+                    <div style={styles.previewBox}>
+                      <strong style={styles.previewTitle}>{previewCompanyName}</strong>
+
+                      {previewBranches.length > 0 && (
+                        <div style={styles.joinFieldCard}>
+                          <label style={styles.label}>{t.branch}</label>
+                          <select
+                            value={selectedJoinBranchId}
+                            onChange={(event) => {
+                              setSelectedJoinBranchId(event.target.value);
+                              markUnsaved(JOIN_SCOPE);
+                            }}
+                            style={styles.select}
+                          >
+                            <option value="">{t.noBranchSelected}</option>
+                            {previewBranches.map((branch) => (
+                              <option key={branch.id} value={branch.id}>
+                                {getName(branch)}
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+                      )}
+
+                      {previewPositions.length > 0 && (
+                        <div style={styles.joinFieldCard}>
+                          <label style={styles.label}>{t.position}</label>
+                          <select
+                            value={selectedJoinPositionId}
+                            onChange={(event) => {
+                              setSelectedJoinPositionId(event.target.value);
+                              markUnsaved(JOIN_SCOPE);
+                            }}
+                            style={styles.select}
+                          >
+                            <option value="">{t.noPositionSelected}</option>
+                            {previewPositions.map((position) => (
+                              <option key={position.id} value={position.id}>
+                                {getPositionLabel(position, getName(position))}
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+                      )}
+
+                      <button
+                        type="button"
+                        onClick={handleJoin}
+                        style={canJoin ? styles.primaryButton : styles.primaryButtonDisabled}
+                        disabled={!canJoin}
+                      >
+                        {t.joinCompany}
+                      </button>
+                    </div>
+                  )}
+
+                  <p style={styles.hint}>{t.employeeHint}</p>
+                </div>
+              </section>
+            )}
           </div>
         )}
       </div>
-    </div>
-  </section>
+    </section>
   );
 }
 
-function InfoItem({ label, value }) {
+function InfoItem({ label, value, style }) {
   return (
-    <div style={styles.infoItem}>
+    <div style={{ ...styles.infoItem, ...style }}>
       <span style={styles.infoLabel}>{label}</span>
       <strong style={styles.infoValue}>{value || '—'}</strong>
     </div>
@@ -607,110 +917,167 @@ function InfoItem({ label, value }) {
 const styles = {
   page: {
     width: '100%',
+    height: '100%',
     boxSizing: 'border-box',
-    padding: '22px',
-    overflowX: 'hidden',
+    padding: '16px 24px 18px',
+    overflow: 'hidden',
+    background: '#f4faff',
+  },
+
+  desktopViewportPage: {
+    height: 'calc(100dvh - 96px)',
+    overflow: 'hidden',
   },
 
   shell: {
-    width: 'min(100%, 1200px)',
+    width: 'min(100%, 1480px)',
+    height: '100%',
     margin: '0 auto',
     boxSizing: 'border-box',
-    padding: '26px',
-    borderRadius: '30px',
-    background: '#f4faff',
-    border: '1px solid rgba(222, 231, 231, 0.95)',
-    boxShadow: '0 22px 58px rgba(0, 38, 66, 0.18)',
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '14px',
+    minHeight: 0,
+    overflow: 'hidden',
+    position: 'relative',
+  },
+
+  desktopScaleShell: {
+    width: '125%',
+    height: '125%',
+    transform: 'scale(0.8)',
+    transformOrigin: 'top left',
+  },
+
+  managerGrid: {
+    flex: '1 1 auto',
+    minHeight: 0,
+    width: '100%',
+    display: 'grid',
+    gridTemplateColumns: 'minmax(0, 1fr) minmax(0, 1fr)',
+    gridTemplateRows: 'auto minmax(0, 1fr)',
+    gap: '14px',
+    alignItems: 'stretch',
   },
 
   grid: {
+    flex: '1 1 auto',
+    minHeight: 0,
     width: '100%',
     display: 'grid',
     gridTemplateColumns: '1fr 1fr',
-    gap: '18px',
-    alignItems: 'start',
+    gap: '14px',
+    alignItems: 'stretch',
+  },
+
+  employeeGrid: {
+    flex: '1 1 auto',
+    minHeight: 0,
+    width: '100%',
+    display: 'grid',
+    gridTemplateColumns: 'minmax(0, 860px)',
+    gap: '14px',
+    alignItems: 'center',
+    justifyContent: 'center',
+    alignContent: 'center',
   },
 
   card: {
     boxSizing: 'border-box',
     width: '100%',
     minWidth: 0,
-    padding: '28px',
-    borderRadius: '30px',
+    padding: '18px',
+    borderRadius: '14px',
     background: '#ffffff',
-    border: '1px solid rgba(226, 232, 240, 0.9)',
-    boxShadow: '0 22px 50px rgba(15, 23, 42, 0.08)',
+    border: '1px solid #dee7e7',
+    boxShadow: '0 12px 30px rgba(0, 38, 66, 0.04)',
     display: 'flex',
     flexDirection: 'column',
-    gap: '20px',
+    gap: '12px',
+    overflow: 'hidden',
   },
 
-  cardHeader: {
+  employeeCompanyCard: {
+    alignSelf: 'center',
+    minHeight: 0,
+    maxHeight: 'none',
+    padding: '16px',
+  },
+
+  requestsCard: {
+    boxSizing: 'border-box',
+    width: '100%',
+    minWidth: 0,
+    minHeight: 0,
+    padding: '18px',
+    borderRadius: '14px',
+    background: '#ffffff',
+    border: '1px solid #dee7e7',
+    boxShadow: '0 12px 30px rgba(0, 38, 66, 0.04)',
     display: 'flex',
-    justifyContent: 'space-between',
-    alignItems: 'center',
+    flexDirection: 'column',
     gap: '12px',
-    marginBottom: '18px',
+    overflow: 'hidden',
+  },
+
+  cardHeaderCompact: {
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: '12px',
+    marginBottom: 0,
   },
 
   title: {
     fontSize: '28px',
-    fontWeight: '850',
+    fontWeight: '900',
     color: '#002642',
     margin: 0,
-    letterSpacing: '-0.03em',
-  },
-
-  rolePill: {
-    padding: '7px 12px',
-    borderRadius: '999px',
-    background: 'rgba(215, 173, 207, 0.45)',
-    color: '#002642',
-    fontSize: '13px',
-    fontWeight: '800',
+    letterSpacing: 0,
   },
 
   section: {
+    minHeight: 0,
     display: 'flex',
     flexDirection: 'column',
-    gap: '18px',
+    gap: '12px',
   },
 
   sectionTitle: {
     margin: 0,
-    color: '#0f172a',
-    fontSize: '22px',
-    fontWeight: '850',
-    letterSpacing: '-0.03em',
+    color: '#002642',
+    fontSize: '18px',
+    fontWeight: '900',
+    letterSpacing: 0,
     textAlign: 'left',
   },
 
   hint: {
     margin: 0,
     color: '#4f646f',
-    fontSize: '14px',
-    lineHeight: 1.4,
-    textAlign: 'center',
+    fontSize: '13px',
+    lineHeight: 1.35,
+    textAlign: 'left',
   },
 
   error: {
-    marginBottom: '14px',
-    padding: '11px 13px',
+    flexShrink: 0,
+    padding: '10px 14px',
     borderRadius: '14px',
     background: 'rgba(215, 173, 207, 0.36)',
     color: '#8d1d1d',
     fontSize: '14px',
-    fontWeight: '700',
+    fontWeight: '750',
   },
 
   success: {
-    marginBottom: '14px',
-    padding: '11px 13px',
+    flexShrink: 0,
+    padding: '10px 14px',
     borderRadius: '14px',
     background: 'rgba(222, 231, 231, 0.82)',
     color: '#002642',
     fontSize: '14px',
-    fontWeight: '700',
+    fontWeight: '750',
   },
 
   companyPanel: {
@@ -718,8 +1085,39 @@ const styles = {
     minWidth: 0,
     display: 'flex',
     flexDirection: 'column',
-    gap: '18px',
+    gap: '12px',
     textAlign: 'left',
+  },
+
+  employeeSection: {
+    minHeight: 0,
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '12px',
+  },
+
+  employeeCompanyPanel: {
+    display: 'grid',
+    gridTemplateColumns: 'minmax(0, 1fr)',
+    gap: '12px',
+  },
+
+  employeeCompanyHero: {
+    padding: '16px 18px',
+    borderRadius: '12px',
+    background: '#002642',
+    color: '#ffffff',
+    display: 'flex',
+    flexDirection: 'column',
+    gap: 0,
+  },
+
+  employeeCompanyTitle: {
+    color: '#ffffff',
+    fontSize: '24px',
+    fontWeight: '900',
+    lineHeight: 1.1,
+    overflowWrap: 'anywhere',
   },
 
   panelLabel: {
@@ -730,8 +1128,9 @@ const styles = {
 
   companyTitle: {
     color: '#002642',
-    fontSize: '24px',
+    fontSize: '20px',
     fontWeight: '900',
+    lineHeight: 1.15,
   },
 
   inviteBlock: {
@@ -742,139 +1141,170 @@ const styles = {
     width: '100%',
     minWidth: 0,
     boxSizing: 'border-box',
-    padding: '18px 20px',
-    borderRadius: '24px',
-    border: '1px solid rgba(203, 213, 225, 0.85)',
-    background: '#f8fafc',
-    display: 'flex',
-    flexDirection: 'column',
-    alignItems: 'stretch',
-    gap: '16px',
+    padding: '12px 14px',
+    borderRadius: '12px',
+    border: '1px solid #dee7e7',
+    background: '#f8fbff',
+    display: 'grid',
+    gridTemplateColumns: 'minmax(0, 1fr) auto',
+    alignItems: 'end',
+    gap: '12px',
+  },
+
+  inviteMain: {
+    minWidth: 0,
   },
 
   inviteActions: {
     display: 'flex',
     alignItems: 'center',
+    justifyContent: 'flex-end',
     gap: '10px',
     flexWrap: 'wrap',
   },
 
-  rotationCard: {
-    width: '100%',
-    padding: '20px',
-    borderRadius: '22px',
-    background: '#f8fafc',
-    border: '1px solid rgba(226, 232, 240, 0.95)',
-    display: 'flex',
-    flexDirection: 'column',
-    gap: '16px',
-  },
-
-  rotationRow: {
-    display: 'flex',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    gap: '14px',
-  },
-
-  rotationForm: {
-    display: 'grid',
-    gap: '16px',
-  },
-
-  rotationHint: {
-    display: 'block',
-    marginTop: '8px',
-    color: '#64748b',
-    fontSize: '13px',
-    fontWeight: '600',
-  },
-
-  toggleLabel: {
-    display: 'inline-flex',
-    alignItems: 'center',
-    gap: '10px',
-    cursor: 'pointer',
-    color: '#334155',
-    fontWeight: '700',
-  },
-
-  checkbox: {
-    width: '18px',
-    height: '18px',
-    accentColor: '#002642',
-    cursor: 'pointer',
-  },
-
-  row: {
-    display: 'flex',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    gap: '14px',
-  },
-
-  metaGrid: {
-    display: 'grid',
-    gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))',
-    gap: '12px',
-  },
-
-  metaItem: {
-    padding: '14px',
-    borderRadius: '18px',
-    background: '#f8fafc',
-    border: '1px solid rgba(226, 232, 240, 0.96)',
-  },
-
-  metaLabel: {
-    display: 'block',
-    color: '#64748b',
-    fontSize: '12px',
-    marginBottom: '6px',
-  },
-
-  metaValue: {
-    color: '#0f172a',
-    fontSize: '15px',
-    fontWeight: '800',
-  },
-
   inviteLabel: {
     display: 'block',
-    fontSize: '12px',
-    fontWeight: '800',
+    fontSize: '11px',
+    fontWeight: '850',
     color: '#64748b',
     textTransform: 'uppercase',
     letterSpacing: '0.1em',
-    marginBottom: '8px',
+    marginBottom: '6px',
   },
 
   inviteValue: {
     display: 'block',
-    fontSize: '24px',
+    fontSize: '20px',
     fontWeight: '900',
     letterSpacing: '0.08em',
     color: '#102a43',
-    wordBreak: 'break-all',
+    wordBreak: 'normal',
+    overflowWrap: 'anywhere',
   },
 
-  copyButton: {
-    minWidth: '110px',
-    padding: '12px 16px',
-    borderRadius: '14px',
-    border: '1px solid rgba(17, 24, 39, 0.12)',
-    background: '#eef2ff',
-    color: '#0f172a',
+  branchCreateRow: {
+    display: 'grid',
+    gridTemplateColumns: 'minmax(0, 1fr)',
+    gap: '8px',
+  },
+
+  branchList: {
+    minHeight: 0,
+    display: 'grid',
+    gap: '8px',
+    gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))',
+    overflowY: 'auto',
+  },
+
+  branchItem: {
+    minHeight: '38px',
+    padding: '8px 10px',
+    borderRadius: '12px',
+    background: '#f8fbff',
+    border: '1px solid #dee7e7',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: '10px',
+  },
+
+  branchItemName: {
+    color: '#002642',
+    fontSize: '14px',
+    fontWeight: '850',
+    overflowWrap: 'anywhere',
+  },
+
+  branchDeleteButton: {
+    flexShrink: 0,
+    height: '30px',
+    padding: '0 10px',
+    border: 'none',
+    borderRadius: '9px',
+    background: 'rgba(215, 173, 207, 0.42)',
+    color: '#8d1d1d',
+    fontSize: '11px',
     fontWeight: '800',
     cursor: 'pointer',
   },
 
+  requestsHeader: {
+    flexShrink: 0,
+    display: 'flex',
+    alignItems: 'baseline',
+    justifyContent: 'space-between',
+    gap: '12px',
+    paddingBottom: '10px',
+    borderBottom: '1px solid #dee7e7',
+  },
+
+  requestList: {
+    flex: '1 1 auto',
+    minHeight: 0,
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '12px',
+    overflowY: 'auto',
+  },
+
+  emptyRequests: {
+    flex: '1 1 auto',
+    minHeight: '120px',
+    borderRadius: '14px',
+    background: '#f8fbff',
+    border: '1px dashed #cfdde8',
+    color: '#4f646f',
+    fontSize: '14px',
+    fontWeight: '750',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    textAlign: 'center',
+  },
+
+  requestItem: {
+    display: 'flex',
+    flexWrap: 'wrap',
+    alignItems: 'flex-start',
+    justifyContent: 'space-between',
+    gap: '10px',
+    padding: '12px 14px',
+    borderRadius: '14px',
+    background: '#f8fbff',
+    border: '1px solid #dee7e7',
+  },
+
+  requestMain: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '4px',
+    minWidth: '220px',
+  },
+
+  requestName: {
+    color: '#002642',
+    fontSize: '14px',
+    fontWeight: '850',
+  },
+
+  requestMeta: {
+    color: '#64748b',
+    fontSize: '12px',
+  },
+
+  requestActions: {
+    display: 'flex',
+    flexWrap: 'wrap',
+    gap: '8px',
+  },
+
   emptyState: {
-    minHeight: '180px',
-    padding: '24px',
-    borderRadius: '22px',
-    background: '#ffffff',
-    border: '1px solid rgba(79, 100, 111, 0.12)',
+    minHeight: '108px',
+    padding: '16px',
+    borderRadius: '12px',
+    background: '#f8fbff',
+    border: '1px solid #dee7e7',
     display: 'flex',
     flexDirection: 'column',
     alignItems: 'center',
@@ -885,99 +1315,135 @@ const styles = {
 
   emptyTitle: {
     color: '#002642',
-    fontSize: '20px',
+    fontSize: '18px',
     fontWeight: '850',
   },
 
   emptyText: {
     margin: 0,
     color: '#4f646f',
-    fontSize: '15px',
-    lineHeight: 1.45,
+    fontSize: '14px',
+    lineHeight: 1.4,
     textAlign: 'center',
   },
 
   formStack: {
     display: 'flex',
     flexDirection: 'column',
-    gap: '9px',
+    gap: '8px',
   },
 
   label: {
     color: '#4f646f',
     fontWeight: '750',
-    fontSize: '14px',
+    fontSize: '13px',
   },
 
   input: {
     width: '100%',
-    height: '48px',
+    height: '40px',
     boxSizing: 'border-box',
-    borderRadius: '14px',
-    border: '2px solid #dee7e7',
+    borderRadius: '10px',
+    border: '1px solid #dbe6f0',
     background: '#ffffff',
-    padding: '0 15px',
+    padding: '0 14px',
     color: '#002642',
-    fontSize: '15px',
+    fontSize: '13px',
     outline: 'none',
   },
 
+  select: {
+    width: '100%',
+    height: '40px',
+    boxSizing: 'border-box',
+    borderRadius: '10px',
+    border: '1px solid #dbe6f0',
+    background: '#ffffff',
+    padding: '0 14px',
+    color: '#002642',
+    fontSize: '13px',
+    fontWeight: '700',
+    outline: 'none',
+    cursor: 'pointer',
+  },
+
   primaryButton: {
-    height: '48px',
-    padding: '0 20px',
+    height: '40px',
+    padding: '0 16px',
     background: '#002642',
     border: 'none',
-    borderRadius: '14px',
+    borderRadius: '10px',
     color: '#f4faff',
+    fontSize: '13px',
     fontWeight: '800',
     cursor: 'pointer',
-    transition: 'transform 0.18s ease, box-shadow 0.18s ease',
+    whiteSpace: 'nowrap',
   },
 
   primaryButtonDisabled: {
-    height: '48px',
-    padding: '0 20px',
+    height: '40px',
+    padding: '0 16px',
     background: '#94a3b8',
     border: 'none',
-    borderRadius: '14px',
+    borderRadius: '10px',
     color: '#f8fafc',
+    fontSize: '13px',
     fontWeight: '800',
     cursor: 'default',
     opacity: 0.65,
+    whiteSpace: 'nowrap',
   },
 
   secondaryButton: {
-    height: '48px',
-    padding: '0 22px',
+    height: '40px',
+    padding: '0 16px',
     background: '#eef2ff',
     border: '1px solid rgba(99, 102, 241, 0.18)',
-    borderRadius: '14px',
+    borderRadius: '10px',
     color: '#3730a3',
+    fontSize: '13px',
     fontWeight: '800',
     cursor: 'pointer',
+    whiteSpace: 'nowrap',
   },
 
   secondaryButtonDisabled: {
-    height: '48px',
-    padding: '0 20px',
+    height: '40px',
+    padding: '0 16px',
     background: '#e2e8f0',
     border: 'none',
-    borderRadius: '14px',
+    borderRadius: '10px',
     color: '#475569',
+    fontSize: '13px',
     fontWeight: '850',
     cursor: 'default',
     opacity: 0.65,
+    whiteSpace: 'nowrap',
+  },
+
+  copyButton: {
+    height: '40px',
+    minWidth: '104px',
+    padding: '0 14px',
+    borderRadius: '10px',
+    border: '1px solid rgba(17, 24, 39, 0.12)',
+    background: '#eef2ff',
+    color: '#0f172a',
+    fontSize: '13px',
+    fontWeight: '800',
+    cursor: 'pointer',
+    whiteSpace: 'nowrap',
   },
 
   previewBox: {
     marginTop: '4px',
-    padding: '20px',
-    borderRadius: '22px',
-    background: '#f8fafc',
-    border: '1px solid rgba(226, 232, 240, 0.95)',
+    padding: '16px',
+    borderRadius: '14px',
+    background: '#f8fbff',
+    border: '1px solid #dee7e7',
     display: 'flex',
     flexDirection: 'column',
-    gap: '16px',
+    gap: '14px',
   },
 
   previewTitle: {
@@ -987,6 +1453,12 @@ const styles = {
     textAlign: 'center',
   },
 
+  joinFieldCard: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '8px',
+  },
+
   infoGrid: {
     width: '100%',
     display: 'grid',
@@ -994,14 +1466,25 @@ const styles = {
     gap: '10px',
   },
 
+  employeeInfoGrid: {
+    alignItems: 'stretch',
+  },
+
   infoItem: {
     padding: '12px',
-    borderRadius: '16px',
-    background: '#f4faff',
-    border: '1px solid rgba(79, 100, 111, 0.1)',
+    borderRadius: '12px',
+    background: '#f8fbff',
+    border: '1px solid #dee7e7',
     display: 'flex',
     flexDirection: 'column',
     gap: '4px',
+  },
+
+  employeeInfoItem: {
+    minHeight: '78px',
+    padding: '14px',
+    background: '#ffffff',
+    justifyContent: 'center',
   },
 
   infoLabel: {
@@ -1017,19 +1500,45 @@ const styles = {
     overflowWrap: 'anywhere',
   },
 
-  branchList: {
-    display: 'grid',
-    gap: '12px',
-    gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))',
+  assignedBranchList: {
+    display: 'flex',
+    flexWrap: 'wrap',
+    gap: '8px',
+    marginTop: '2px',
   },
 
-  branchItem: {
-    padding: '14px 16px',
-    borderRadius: '16px',
+  assignedBranchPill: {
+    display: 'inline-flex',
+    alignItems: 'center',
+    minHeight: '30px',
+    padding: '0 12px',
+    borderRadius: '999px',
     background: '#ffffff',
-    border: '1px solid rgba(226, 232, 240, 0.98)',
-    color: '#0f172a',
+    border: '1px solid #dee7e7',
+    color: '#002642',
+    fontSize: '13px',
+    fontWeight: '700',
+  },
+
+  pendingPanel: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '8px',
+    padding: '14px 16px',
+    borderRadius: '12px',
+    background: 'rgba(215, 173, 207, 0.18)',
+    border: '1px solid rgba(215, 173, 207, 0.45)',
+  },
+
+  pendingTitle: {
+    color: '#002642',
+    fontSize: '16px',
     fontWeight: '850',
-    textAlign: 'center',
+  },
+
+  pendingText: {
+    color: '#475569',
+    fontSize: '14px',
+    lineHeight: 1.5,
   },
 };

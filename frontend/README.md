@@ -29,11 +29,17 @@ The frontend is connected to the real FastAPI backend and supports:
 
 ## Environment
 
-Create `frontend/.env` from `frontend/.env.example`:
+Production builds use:
+
+```env
+VITE_API_URL=https://shiftplanner.online/api
+```
+
+Local development uses `frontend/.env.development`:
 
 ```env
 VITE_API_URL=http://localhost:8000
-````
+```
 
 The backend must be reachable from the browser at that URL.
 

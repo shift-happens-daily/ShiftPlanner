@@ -11,18 +11,18 @@ enum AuthError: LocalizedError {
     var errorDescription: String? {
         switch self {
         case .emptyEmail:
-            return localized("Email is required.", "Почта обязательна.")
+            return "Email is required"
         case .emptyPassword:
-            return localized("Password is required.", "Пароль обязателен.")
+            return "Password is required"
         case .emptyName:
-            return localized("Name is required.", "Имя обязательно.")
+            return "Name is required"
         case .invalidEmail:
-            return localized("Enter a valid email.", "Введите корректную почту.")
+            return "Enter a valid email"
         case .passwordTooShort:
-            return localized("Password must be at least 8 characters.", "Пароль должен содержать минимум 8 символов.")
+            return "Password must be at least 8 characters"
             
         case .passwordsDontMatch:
-            return localized("Passwords do not match.", "Пароли не совпадают.")
+            return "Passwords do not match"
         }
     }
 }
@@ -41,9 +41,7 @@ final class MockAuthRepository: AuthRepository {
             name: "Test User",
             role: .manager,
             employeeId: nil,
-            company: nil,
-            branch: nil,
-            position: nil
+            company: nil
         )
 
         currentUser = user
@@ -70,9 +68,7 @@ final class MockAuthRepository: AuthRepository {
             name: name,
             role: role,
             employeeId: nil,
-            company: nil,
-            branch: nil,
-            position: nil
+            company: nil
         )
 
         currentUser = user

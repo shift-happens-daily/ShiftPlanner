@@ -10,11 +10,11 @@ enum AppTheme: String, CaseIterable, Identifiable {
     var title: String {
         switch self {
         case .light:
-            return localized("Light", "Светлая")
+            return "Light"
         case .dark:
-            return localized("Dark", "Темная")
+            return "Dark"
         case .dopamine:
-            return localized("Dopamine", "Дофаминовая")
+            return "Dopamine"
         }
     }
 

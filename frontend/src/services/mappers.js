@@ -17,8 +17,13 @@ export function mapCurrentUser(profile) {
     email: profile?.email || '',
     role: profile?.role || null,
     employeeId: profile?.employee_id ?? null,
+    employeeStatus: profile?.employee_status ?? null,
+    managerStatus: profile?.manager_status ?? null,
+    companyId: profile?.company_id ?? profile?.company?.id ?? null,
     company: profile?.company || null,
     branch: profile?.branch || null,
+    branch_id: profile?.branch_id ?? profile?.branch?.id ?? null,
+    branches: profile?.branches || null,
     position: profile?.position || null,
   };
 }

@@ -6,8 +6,8 @@ Run from the project root after installing project dependencies and PostgreSQL:
     export TEST_DATABASE_URL='postgresql+psycopg://user:password@localhost:5432/shiftplanner_test'
     pytest -q test_schedule_solver_example.py
 
-Expected: the solver creates one draft schedule for 2026-06-22..2026-06-28
-and persists continuous shifts plus shift assignments in the current schema.
+Expected: the solver creates one draft schedule for 2026-06-22..2026-06-28,
+persists continuous shifts, writes slot audit rows, and records any uncovered demand.
 """
 
 from __future__ import annotations
@@ -83,23 +83,46 @@ def test_generate_schedule_with_complex_dataset(db_session):
     assert result.total_required_slots > 0
 
     schedule_row = db_session.execute(
-        text("SELECT status FROM schedules WHERE id = :id"),
+        text("SELECT status, solver_status FROM schedules WHERE id = :id"),
         {"id": result.schedule_id},
     ).mappings().one()
     assert schedule_row["status"] == "draft"
+    assert schedule_row["solver_status"] in {"optimal", "feasible"}
 
     assignment_count = db_session.execute(
+        text("SELECT COUNT(*) FROM schedule_assignments WHERE schedule_id = :id"),
+        {"id": result.schedule_id},
+    ).scalar_one()
+    assert assignment_count == len(result.assignments)
+
+    slot_count = db_session.execute(
         text(
             """
             SELECT COUNT(*)
-            FROM shift_assignments sa
-            JOIN shifts s ON s.id = sa.shift_id
-            WHERE s.schedule_id = :id
+            FROM schedule_assignment_slots slots
+            JOIN schedule_assignments assignments
+              ON assignments.id = slots.schedule_assignment_id
+            WHERE assignments.schedule_id = :id
             """
         ),
         {"id": result.schedule_id},
     ).scalar_one()
-    assert assignment_count == len(result.assignments)
+    assert slot_count == sum(len(item.slots) for item in result.assignments)
+
+    bad_slot_statuses = db_session.execute(
+        text(
+            """
+            SELECT COUNT(*)
+            FROM schedule_assignment_slots slots
+            JOIN schedule_assignments assignments
+              ON assignments.id = slots.schedule_assignment_id
+            WHERE assignments.schedule_id = :id
+              AND slots.availability_status NOT IN ('available', 'if_needed')
+            """
+        ),
+        {"id": result.schedule_id},
+    ).scalar_one()
+    assert bad_slot_statuses == 0
 
     # No employee should get more than one shift per day in this schema/model.
     duplicates = db_session.execute(
@@ -107,11 +130,10 @@ def test_generate_schedule_with_complex_dataset(db_session):
             """
             SELECT COUNT(*)
             FROM (
-                SELECT sa.employee_id, s.shift_date, COUNT(*) AS shift_count
-                FROM shift_assignments sa
-                JOIN shifts s ON s.id = sa.shift_id
-                WHERE s.schedule_id = :id
-                GROUP BY sa.employee_id, s.shift_date
+                SELECT employee_id, work_date, COUNT(*) AS shift_count
+                FROM schedule_assignments
+                WHERE schedule_id = :id
+                GROUP BY employee_id, work_date
                 HAVING COUNT(*) > 1
             ) AS duplicate_days
             """

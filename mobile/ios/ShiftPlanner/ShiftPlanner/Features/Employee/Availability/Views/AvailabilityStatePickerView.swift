@@ -2,7 +2,6 @@ import SwiftUI
 
 struct AvailabilityStatePickerView: View {
     @EnvironmentObject private var themeManager: ThemeManager
-    @EnvironmentObject private var languageManager: LanguageManager
     let selectedState: AvailabilityState
     let onSelectState: (AvailabilityState) -> Void
     let onCopyPreviousWeek: () -> Void
@@ -44,13 +43,13 @@ struct AvailabilityStatePickerView: View {
             }
 
             HStack(spacing: 16) {
-                Button(languageManager.text("Copy previous week", "Копировать прошлую"), action: onCopyPreviousWeek)
+                Button("Copy previous week", action: onCopyPreviousWeek)
                     .buttonStyle(.plain)
                     .font(.footnote)
                     .foregroundStyle(themeManager.selectedTheme.accentColor)
                     .disabled(isSaving)
 
-                Button(languageManager.text("Reset week", "Сбросить неделю"), action: onResetWeek)
+                Button("Reset week", action: onResetWeek)
                     .buttonStyle(.plain)
                     .font(.footnote)
                     .foregroundStyle(themeManager.selectedTheme.destructiveColor)

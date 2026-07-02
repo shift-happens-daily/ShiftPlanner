@@ -2,40 +2,13 @@ import Foundation
 
 final class APIClient {
     static let shared = APIClient()
-    private static let iso8601FormatterWithFractionalSeconds: ISO8601DateFormatter = {
-        let formatter = ISO8601DateFormatter()
-        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-        return formatter
-    }()
-    private static let iso8601Formatter: ISO8601DateFormatter = {
-        let formatter = ISO8601DateFormatter()
-        formatter.formatOptions = [.withInternetDateTime]
-        return formatter
-    }()
-    private static let backendDateFormatterWithFractionalSeconds: DateFormatter = {
-        let formatter = DateFormatter()
-        formatter.calendar = Calendar(identifier: .iso8601)
-        formatter.locale = Locale(identifier: "en_US_POSIX")
-        formatter.timeZone = TimeZone(secondsFromGMT: 0)
-        formatter.dateFormat = "yyyy-MM-dd'T'HH:mm:ss.SSSSSS"
-        return formatter
-    }()
-    private static let backendDateFormatter: DateFormatter = {
-        let formatter = DateFormatter()
-        formatter.calendar = Calendar(identifier: .iso8601)
-        formatter.locale = Locale(identifier: "en_US_POSIX")
-        formatter.timeZone = TimeZone(secondsFromGMT: 0)
-        formatter.dateFormat = "yyyy-MM-dd'T'HH:mm:ss"
-        return formatter
-    }()
 
     private init() {}
 
-    let baseURL = APIClient.makeBaseURL()
+    let baseURL = URL(string: "http://10.91.61.1:8000")!
 
     private let session = URLSession.shared
     private let accessTokenKey = "shiftplanner.accessToken"
-    private static let apiBaseURLKey = "shiftplanner.apiBaseURL"
 
     var accessToken: String? {
         get { UserDefaults.standard.string(forKey: accessTokenKey) }
@@ -66,13 +39,7 @@ final class APIClient {
     }
 
     func send<T: Decodable>(_ request: URLRequest, as type: T.Type) async throws -> T {
-        let (data, response): (Data, URLResponse)
-
-        do {
-            (data, response) = try await session.data(for: request)
-        } catch {
-            throw mapTransportError(error)
-        }
+        let (data, response) = try await session.data(for: request)
 
         guard let httpResponse = response as? HTTPURLResponse else {
             throw APIClientError.invalidResponse
@@ -83,33 +50,21 @@ final class APIClient {
         }
 
         do {
-            return try Self.makeJSONDecoder().decode(type, from: data)
+            return try JSONDecoder().decode(type, from: data)
         } catch {
             throw APIClientError.decodingFailed
         }
     }
 
     func sendWithoutResponseBody(_ request: URLRequest) async throws {
-        let response: URLResponse
-
-        do {
-            (_, response) = try await session.data(for: request)
-        } catch {
-            throw mapTransportError(error)
-        }
+        let (_, response) = try await session.data(for: request)
 
         guard let httpResponse = response as? HTTPURLResponse else {
             throw APIClientError.invalidResponse
         }
 
         guard (200...299).contains(httpResponse.statusCode) else {
-            throw APIClientError.requestFailed(
-                message: LanguageManager.localizedFormat(
-                    "Request failed with status code %d.",
-                    "Запрос завершился с кодом %d.",
-                    httpResponse.statusCode
-                )
-            )
+            throw APIClientError.requestFailed(message: "Request failed with status code \(httpResponse.statusCode).")
         }
     }
 
@@ -131,74 +86,7 @@ final class APIClient {
             return .requestFailed(message: rawMessage)
         }
 
-        return .requestFailed(
-            message: LanguageManager.localizedFormat(
-                "Request failed with status code %d.",
-                "Запрос завершился с кодом %d.",
-                statusCode
-            )
-        )
-    }
-
-    private func mapTransportError(_ error: Error) -> APIClientError {
-        guard let urlError = error as? URLError else {
-            return .requestFailed(message: error.localizedDescription)
-        }
-
-        switch urlError.code {
-        case .timedOut, .cannotConnectToHost, .cannotFindHost, .networkConnectionLost, .notConnectedToInternet:
-            return .requestFailed(
-                message: LanguageManager.localized(
-                    "Cannot reach the server at \(baseURL.absoluteString). Start the backend and, for iPhone Simulator, use http://127.0.0.1:8000.",
-                    "Не удается подключиться к серверу \(baseURL.absoluteString). Запустите бэкенд и, если это симулятор iPhone, используйте http://127.0.0.1:8000."
-                )
-            )
-        default:
-            return .requestFailed(message: urlError.localizedDescription)
-        }
-    }
-
-    private static func makeBaseURL() -> URL {
-        let candidate =
-            ProcessInfo.processInfo.environment["API_BASE_URL"] ??
-            UserDefaults.standard.string(forKey: apiBaseURLKey) ??
-            defaultBaseURLString
-
-        guard let url = URL(string: candidate) else {
-            fatalError("Invalid API base URL: \(candidate)")
-        }
-
-        return url
-    }
-
-    private static var defaultBaseURLString: String {
-        #if targetEnvironment(simulator)
-        return "http://127.0.0.1:8000"
-        #else
-        return "http://10.91.61.1:8000"
-        #endif
-    }
-
-    private static func makeJSONDecoder() -> JSONDecoder {
-        let decoder = JSONDecoder()
-        decoder.dateDecodingStrategy = .custom { decoder in
-            let container = try decoder.singleValueContainer()
-            let value = try container.decode(String.self)
-
-            if let date =
-                iso8601FormatterWithFractionalSeconds.date(from: value) ??
-                iso8601Formatter.date(from: value) ??
-                backendDateFormatterWithFractionalSeconds.date(from: value) ??
-                backendDateFormatter.date(from: value) {
-                return date
-            }
-
-            throw DecodingError.dataCorruptedError(
-                in: container,
-                debugDescription: "Invalid ISO8601 date: \(value)"
-            )
-        }
-        return decoder
+        return .requestFailed(message: "Request failed with status code \(statusCode).")
     }
 
     private func humanReadableValidationMessage(from error: APIValidationErrorItem) -> String {
@@ -208,11 +96,11 @@ final class APIClient {
 
         switch field {
         case "password" where error.msg.contains("at least 8 characters"):
-            return localized("Password must be at least 8 characters.", "Пароль должен содержать минимум 8 символов.")
+            return "Password must be at least 8 characters."
         case "email":
-            return localized("Please enter a valid email.", "Введите корректную почту.")
+            return "Please enter a valid email."
         case "full_name":
-            return localized("Name is required.", "Имя обязательно.")
+            return "Name is required."
         default:
             return error.msg.prefix(1).uppercased() + error.msg.dropFirst() + "."
         }
@@ -227,9 +115,9 @@ enum APIClientError: LocalizedError {
     var errorDescription: String? {
         switch self {
         case .invalidResponse:
-            return localized("Server returned an invalid response.", "Сервер вернул некорректный ответ.")
+            return "Server returned an invalid response."
         case .decodingFailed:
-            return localized("Failed to decode server response.", "Не удалось декодировать ответ сервера.")
+            return "Failed to decode server response."
         case let .requestFailed(message):
             return message
         }

@@ -1,11 +1,28 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../../context/useAuth';
+import { deleteAccountRequest } from '../../services/authService';
+import { leaveCompany, updateMyPosition } from '../../services/employeeService';
 import { extractApiErrorMessage } from '../../services/error';
+import { listPositions } from '../../services/positionService';
+import { useUserBranches } from '../../hooks/useUserBranches';
+import { useTabResponsive } from '../../utils/tabResponsive';
+import { getBranchLabel, getPositionLabel } from '../../utils/employeeDisplay';
+import { useUnsavedChanges } from '../../context/useUnsavedChanges';
+
+const POSITION_SCOPE = 'profile-position';
 
 export default function ProfileTab({ language, user }) {
-  const { refreshUser } = useAuth();
+  const r = useTabResponsive(1040);
+  const navigate = useNavigate();
+  const { markUnsaved, markSaved } = useUnsavedChanges();
+  const { refreshUser, clearAuth } = useAuth();
   const [isRefreshing, setIsRefreshing] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
+  const [successMessage, setSuccessMessage] = useState('');
+  const [positions, setPositions] = useState([]);
+  const [selectedPositionId, setSelectedPositionId] = useState('');
 
   const texts = {
     ru: {
@@ -14,16 +31,32 @@ export default function ProfileTab({ language, user }) {
       fullName: 'Полное имя',
       email: 'Email',
       role: 'Роль',
-      employeeId: 'ID сотрудника',
       company: 'Компания',
-      branch: 'Филиал',
+      branch: 'Филиалы',
       position: 'Позиция',
       refresh: 'Обновить',
       empty: 'Нет данных',
       noCompany: 'Не привязана',
+      pendingApproval: 'Ожидает подтверждения менеджера',
       manager: 'Менеджер',
       employee: 'Сотрудник',
       refreshError: 'Не удалось обновить профиль.',
+      deleteAccount: 'Удалить аккаунт',
+      confirmDeleteAccount: 'Удалить аккаунт без возможности восстановления?',
+      accountDeleted: 'Аккаунт удалён.',
+      deleteAccountError: 'Не удалось удалить аккаунт.',
+      leaveCompany: 'Покинуть компанию',
+      confirmLeaveCompany: 'Отвязать аккаунт от текущей компании?',
+      leftCompany: 'Вы покинули компанию.',
+      leaveCompanyError: 'Не удалось покинуть компанию.',
+      savePosition: 'Сохранить позицию',
+      selectPosition: 'Выберите позицию',
+      positionSaved: 'Позиция сохранена.',
+      positionError: 'Не удалось обновить позицию.',
+      positionSection: 'Моя позиция',
+      positionSectionHint: 'Выберите позицию из списка компании.',
+      noPosition: 'Без позиции',
+      noBranch: 'Без филиала',
     },
     en: {
       title: 'Profile',
@@ -31,16 +64,32 @@ export default function ProfileTab({ language, user }) {
       fullName: 'Full name',
       email: 'Email',
       role: 'Role',
-      employeeId: 'Employee ID',
       company: 'Company',
-      branch: 'Branch',
+      branch: 'Branches',
       position: 'Position',
       refresh: 'Refresh',
       empty: 'No data',
       noCompany: 'Not linked',
+      pendingApproval: 'Waiting for manager approval',
       manager: 'Manager',
       employee: 'Employee',
       refreshError: 'Failed to refresh profile.',
+      deleteAccount: 'Delete account',
+      confirmDeleteAccount: 'Delete your account permanently?',
+      accountDeleted: 'Account deleted.',
+      deleteAccountError: 'Failed to delete account.',
+      leaveCompany: 'Leave company',
+      confirmLeaveCompany: 'Unlink your account from the current company?',
+      leftCompany: 'You left the company.',
+      leaveCompanyError: 'Failed to leave company.',
+      savePosition: 'Save position',
+      selectPosition: 'Select position',
+      positionSaved: 'Position saved.',
+      positionError: 'Failed to update position.',
+      positionSection: 'My position',
+      positionSectionHint: 'Select a position from your company list.',
+      noPosition: 'No position',
+      noBranch: 'No branch',
     },
   };
 
@@ -49,14 +98,51 @@ export default function ProfileTab({ language, user }) {
   const role = user?.role;
   const isManager = role === 'manager';
   const isEmployee = role === 'employee';
+  const isPendingEmployee = isEmployee && user?.employeeStatus === 'pending';
+  const hasCompany = Boolean(user?.company);
+
+  const { branchesLabel } = useUserBranches(user);
 
   const fullName = user?.fullName || user?.full_name || user?.name || t.empty;
   const email = user?.email || t.empty;
-  const employeeId = user?.employeeId || user?.employee_id;
 
   const companyName = user?.company?.name;
-  const branchName = user?.branch?.name;
-  const positionName = user?.position?.name;
+  const positionName = getPositionLabel(
+    {
+      id: user?.position?.id ?? user?.position_id,
+      ...user?.position,
+    },
+    t.noPosition,
+  );
+  const branchName = getBranchLabel(branchesLabel, t.noBranch);
+
+  useEffect(() => {
+    if (!isEmployee || !hasCompany) {
+      return undefined;
+    }
+
+    let cancelled = false;
+
+    async function loadPositions() {
+      try {
+        const data = await listPositions();
+        if (cancelled) return;
+        const items = Array.isArray(data) ? data : [];
+        setPositions(items);
+        setSelectedPositionId(String(user?.position?.id || user?.position_id || ''));
+      } catch {
+        if (!cancelled) {
+          setPositions([]);
+        }
+      }
+    }
+
+    void loadPositions();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [hasCompany, isEmployee, user?.position?.id, user?.position_id]);
 
   const rows = [
     {
@@ -68,12 +154,11 @@ export default function ProfileTab({ language, user }) {
       value: email,
     },
     {
-      label: "User ID",
+      label: 'User ID',
       value: user?.publicId || user?.public_id || '-',
     },
   ];
 
-  // Добавляем "Роль" только для менеджера
   if (isManager) {
     rows.push({
       label: t.role,
@@ -83,33 +168,33 @@ export default function ProfileTab({ language, user }) {
 
   rows.push({
     label: t.company,
-    value: companyName || t.noCompany,
-    muted: !companyName,
+    value: companyName || (isPendingEmployee ? t.pendingApproval : t.noCompany),
+    muted: !companyName && !isPendingEmployee,
   });
 
   if (isEmployee) {
     rows.push(
       {
-        label: t.employeeId,
-        value: employeeId || t.empty,
-        muted: !employeeId,
-      },
-      {
         label: t.branch,
-        value: branchName || t.empty,
-        muted: !branchName,
+        value: branchName,
+        muted: branchesLabel ? false : true,
       },
       {
         label: t.position,
-        value: positionName || t.empty,
-        muted: !positionName,
+        value: positionName,
+        muted: user?.position?.name ? false : true,
       }
     );
   }
 
+  const clearMessages = () => {
+    setErrorMessage('');
+    setSuccessMessage('');
+  };
+
   const handleRefresh = async () => {
     setIsRefreshing(true);
-    setErrorMessage('');
+    clearMessages();
 
     try {
       await refreshUser();
@@ -120,36 +205,187 @@ export default function ProfileTab({ language, user }) {
     }
   };
 
+  const handleSavePosition = async () => {
+    if (!selectedPositionId) {
+      setErrorMessage(t.selectPosition);
+      return;
+    }
+
+    clearMessages();
+    setIsSubmitting(true);
+
+    try {
+      await updateMyPosition({ position_id: Number(selectedPositionId) });
+      await refreshUser();
+      markSaved(POSITION_SCOPE);
+      setSuccessMessage(t.positionSaved);
+    } catch (error) {
+      setErrorMessage(extractApiErrorMessage(error, t.positionError, language));
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const handleLeaveCompany = async () => {
+    if (!window.confirm(t.confirmLeaveCompany)) return;
+
+    clearMessages();
+    setIsSubmitting(true);
+
+    try {
+      await leaveCompany();
+      await refreshUser();
+      setSuccessMessage(t.leftCompany);
+    } catch (error) {
+      setErrorMessage(extractApiErrorMessage(error, t.leaveCompanyError, language));
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const handleDeleteAccount = async () => {
+    if (!window.confirm(t.confirmDeleteAccount)) return;
+
+    clearMessages();
+    setIsSubmitting(true);
+
+    try {
+      await deleteAccountRequest();
+      clearAuth();
+      navigate('/', { replace: true });
+    } catch (error) {
+      setErrorMessage(extractApiErrorMessage(error, t.deleteAccountError, language));
+      setIsSubmitting(false);
+    }
+  };
+
   return (
-    <section style={styles.page}>
-      <div style={styles.card}>
-        <div style={styles.header}>
+    <section style={{
+      ...styles.page,
+      padding: r.isMobile ? 10 : styles.page.padding,
+    }}
+    >
+      <div style={{
+        ...styles.card,
+        width: '100%',
+        padding: r.isMobile ? 16 : styles.card.padding,
+        borderRadius: r.isMobile ? 18 : styles.card.borderRadius,
+        boxShadow: r.isMobile ? 'none' : styles.card.boxShadow,
+        gap: r.isMobile ? 16 : styles.card.gap,
+      }}
+      >
+        <div style={{ ...styles.header, ...r.header }}>
           <div>
-            <h2 style={styles.title}>{t.title}</h2>
+            <h2 style={{ ...styles.title, ...r.title }}>{t.title}</h2>
             <p style={styles.subtitle}>{t.subtitle}</p>
           </div>
 
           <button
             type="button"
             onClick={handleRefresh}
-            style={isRefreshing ? styles.refreshButtonDisabled : styles.refreshButton}
-            disabled={isRefreshing}
+            style={{
+              ...(isRefreshing ? styles.refreshButtonDisabled : styles.refreshButton),
+              ...r.fullWidth,
+            }}
+            disabled={isRefreshing || isSubmitting}
           >
             {isRefreshing ? '...' : t.refresh}
           </button>
         </div>
 
         {errorMessage && <div style={styles.error}>{errorMessage}</div>}
+        {successMessage && <div style={styles.success}>{successMessage}</div>}
 
-        <div style={styles.rows}>
+        <div style={{
+          ...styles.rows,
+          gridTemplateColumns: r.gridCols('repeat(2, minmax(320px, 1fr))'),
+          gap: r.isMobile ? 12 : styles.rows.gap,
+        }}
+        >
           {rows.map((row) => (
-            <div key={row.label} style={styles.row}>
+            <div
+              key={row.label}
+              style={{
+                ...styles.row,
+                minHeight: r.isMobile ? 88 : styles.row.minHeight,
+                padding: r.isMobile ? '16px 14px' : styles.row.padding,
+              }}
+            >
               <span style={styles.label}>{row.label}</span>
-              <span style={row.muted ? styles.valueMuted : styles.value}>
+              <span style={{
+                ...(row.muted ? styles.valueMuted : styles.value),
+                fontSize: r.isMobile ? 17 : undefined,
+              }}
+              >
                 {row.value || t.empty}
               </span>
             </div>
           ))}
+        </div>
+
+        {isEmployee && hasCompany && (
+          <div style={{
+            ...styles.section,
+            padding: r.isMobile ? '16px 14px' : styles.section.padding,
+          }}
+          >
+            <h3 style={styles.sectionTitle}>{t.positionSection}</h3>
+            <p style={styles.sectionHint}>{t.positionSectionHint}</p>
+
+            <div style={styles.formStack}>
+              <label style={styles.fieldLabel}>{t.position}</label>
+              <select
+                value={selectedPositionId}
+                onChange={(event) => {
+                  setSelectedPositionId(event.target.value);
+                  markUnsaved(POSITION_SCOPE);
+                }}
+                style={{ ...styles.select, ...r.fullWidth }}
+                disabled={isSubmitting}
+              >
+                <option value="">{t.selectPosition}</option>
+                {positions.map((position) => (
+                  <option key={position.id} value={position.id}>
+                    {getPositionLabel(position)}
+                  </option>
+                ))}
+              </select>
+
+              <button
+                type="button"
+                onClick={handleSavePosition}
+                style={{
+                  ...(isSubmitting ? styles.primaryButtonDisabled : styles.primaryButton),
+                  ...(r.isMobile ? { alignSelf: 'stretch', width: '100%' } : {}),
+                }}
+                disabled={isSubmitting}
+              >
+                {t.savePosition}
+              </button>
+            </div>
+          </div>
+        )}
+
+        <div style={styles.actionsFooter}>
+          {isEmployee && hasCompany && (
+            <button
+              type="button"
+              onClick={handleLeaveCompany}
+              style={isSubmitting ? styles.warningButtonDisabled : styles.warningButton}
+              disabled={isSubmitting}
+            >
+              {t.leaveCompany}
+            </button>
+          )}
+
+          <button
+            type="button"
+            onClick={handleDeleteAccount}
+            style={isSubmitting ? styles.dangerButtonDisabled : styles.dangerButton}
+            disabled={isSubmitting}
+          >
+            {t.deleteAccount}
+          </button>
         </div>
       </div>
     </section>
@@ -161,26 +397,26 @@ const styles = {
     width: '100%',
     height: '100%',
     boxSizing: 'border-box',
-    padding: '56px 24px',
+    padding: '24px',
+    paddingBottom: '32px',
     display: 'flex',
     justifyContent: 'center',
     alignItems: 'flex-start',
-    overflow: 'auto',
+    overflowY: 'auto',
+    overflowX: 'hidden',
   },
 
   card: {
     width: 'min(100%, 1040px)',
-    minHeight: '520px',
-    maxHeight: '100%',
     boxSizing: 'border-box',
     padding: '36px 44px',
     borderRadius: '28px',
     background: '#f4faff',
     border: '1px solid rgba(222, 231, 231, 0.95)',
     boxShadow: '0 24px 60px rgba(0, 38, 66, 0.18)',
-    overflow: 'hidden',
     display: 'flex',
     flexDirection: 'column',
+    gap: '24px',
   },
 
   header: {
@@ -188,7 +424,6 @@ const styles = {
     justifyContent: 'space-between',
     alignItems: 'center',
     gap: '16px',
-    marginBottom: '20px',
   },
 
   title: {
@@ -230,7 +465,6 @@ const styles = {
   },
 
   error: {
-    marginBottom: '14px',
     padding: '10px 12px',
     borderRadius: '12px',
     background: 'rgba(215, 173, 207, 0.35)',
@@ -239,15 +473,21 @@ const styles = {
     fontWeight: '600',
   },
 
+  success: {
+    padding: '10px 12px',
+    borderRadius: '12px',
+    background: '#dee7e7',
+    color: '#002642',
+    fontSize: '14px',
+    fontWeight: '600',
+  },
+
   rows: {
-    flex: 1,
     display: 'grid',
     gridTemplateColumns: 'repeat(2, minmax(320px, 1fr))',
     gap: '34px 42px',
     alignContent: 'flex-start',
     justifyContent: 'center',
-    overflow: 'auto',
-    minHeight: 0,
   },
 
   row: {
@@ -283,5 +523,126 @@ const styles = {
     fontSize: '20px',
     fontWeight: '700',
     overflowWrap: 'anywhere',
+  },
+
+  section: {
+    padding: '22px 24px',
+    borderRadius: '20px',
+    background: '#ffffff',
+    border: '1px solid rgba(79, 100, 111, 0.12)',
+  },
+
+  sectionTitle: {
+    margin: 0,
+    color: '#002642',
+    fontSize: '18px',
+    fontWeight: '800',
+  },
+
+  sectionHint: {
+    margin: '6px 0 16px',
+    color: '#4f646f',
+    fontSize: '13px',
+  },
+
+  formStack: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '12px',
+  },
+
+  fieldLabel: {
+    color: '#4f646f',
+    fontSize: '13px',
+    fontWeight: '700',
+  },
+
+  select: {
+    height: '42px',
+    borderRadius: '12px',
+    border: '2px solid #dee7e7',
+    padding: '0 12px',
+    color: '#002642',
+    background: '#fff',
+    fontSize: '14px',
+  },
+
+  primaryButton: {
+    alignSelf: 'flex-start',
+    padding: '10px 16px',
+    border: 'none',
+    borderRadius: '12px',
+    background: '#002642',
+    color: '#f4faff',
+    fontSize: '14px',
+    fontWeight: '700',
+    cursor: 'pointer',
+  },
+
+  primaryButtonDisabled: {
+    alignSelf: 'flex-start',
+    padding: '10px 16px',
+    border: 'none',
+    borderRadius: '12px',
+    background: '#4f646f',
+    color: '#f4faff',
+    fontSize: '14px',
+    fontWeight: '700',
+    cursor: 'default',
+    opacity: 0.7,
+  },
+
+  actionsFooter: {
+    display: 'flex',
+    flexDirection: 'column',
+    alignItems: 'center',
+    gap: '12px',
+    paddingTop: '8px',
+  },
+
+  warningButton: {
+    padding: '10px 16px',
+    border: 'none',
+    borderRadius: '12px',
+    background: '#4f646f',
+    color: '#f4faff',
+    fontSize: '14px',
+    fontWeight: '700',
+    cursor: 'pointer',
+  },
+
+  warningButtonDisabled: {
+    padding: '10px 16px',
+    border: 'none',
+    borderRadius: '12px',
+    background: '#4f646f',
+    color: '#f4faff',
+    fontSize: '14px',
+    fontWeight: '700',
+    cursor: 'default',
+    opacity: 0.7,
+  },
+
+  dangerButton: {
+    padding: '10px 16px',
+    border: 'none',
+    borderRadius: '12px',
+    background: '#8d1d1d',
+    color: '#fff',
+    fontSize: '14px',
+    fontWeight: '700',
+    cursor: 'pointer',
+  },
+
+  dangerButtonDisabled: {
+    padding: '10px 16px',
+    border: 'none',
+    borderRadius: '12px',
+    background: '#8d1d1d',
+    color: '#fff',
+    fontSize: '14px',
+    fontWeight: '700',
+    cursor: 'default',
+    opacity: 0.7,
   },
 };

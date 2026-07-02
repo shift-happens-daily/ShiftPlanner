@@ -37,16 +37,7 @@ final class CompanySetupViewModel: ObservableObject {
     func createCompany() async {
         let trimmedName = companyName.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmedName.isEmpty else {
-            errorMessage = localized("Company name is required.", "Введите название компании.")
-            return
-        }
-
-        let normalizedBranchNames = branches
-            .map { $0.name.trimmingCharacters(in: .whitespacesAndNewlines) }
-            .filter { !$0.isEmpty }
-
-        if hasBranches && normalizedBranchNames.isEmpty {
-            errorMessage = localized("Add at least one branch.", "Добавьте хотя бы один филиал.")
+            errorMessage = "Company name is required."
             return
         }
 
@@ -54,36 +45,7 @@ final class CompanySetupViewModel: ObservableObject {
         errorMessage = nil
 
         do {
-            let normalizedAddress = companyAddress.trimmingCharacters(in: .whitespacesAndNewlines)
-            var company = try await repository.createCompany(name: trimmedName)
-
-            if !normalizedAddress.isEmpty {
-                company = try await repository.updateMyCompany(
-                    name: trimmedName,
-                    address: normalizedAddress
-                )
-            }
-
-            if hasBranches {
-                var createdBranches: [AppBranchOption] = []
-
-                for branch in branches {
-                    let branchName = branch.name.trimmingCharacters(in: .whitespacesAndNewlines)
-                    let branchAddress = branch.address.trimmingCharacters(in: .whitespacesAndNewlines)
-
-                    guard !branchName.isEmpty else { continue }
-
-                    let createdBranch = try await repository.createBranch(
-                        name: branchName,
-                        address: branchAddress.isEmpty ? nil : branchAddress
-                    )
-                    createdBranches.append(createdBranch)
-                }
-
-                createdCompany = company.withBranches(createdBranches)
-            } else {
-                createdCompany = company
-            }
+            createdCompany = try await repository.createCompany(name: trimmedName)
         } catch {
             errorMessage = error.localizedDescription
         }

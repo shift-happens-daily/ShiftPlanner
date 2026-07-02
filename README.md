@@ -1,524 +1,198 @@
-````md
 # ShiftPlanner
 
-ShiftPlanner is a web application for shift planning and employee schedule management.
+<p align="center">
+  <img src="pic\v1.svg" width="180" alt="ShiftPlanner Logo">
+</p>
 
-The project includes:
+<p align="center">
+  <strong>Smart employee shift scheduling platform</strong><br>
+  Generate schedules in minutes, manage your workforce, and simplify shift planning.
+</p>
 
-- React + Vite frontend
-- FastAPI backend
-- PostgreSQL database
-- Docker Compose setup for local development
+
+## About
+
+ShiftPlanner is a workforce scheduling platform designed to simplify employee shift management for businesses such as cafés, restaurants, retail stores, and other service companies.
+
+Instead of manually assigning shifts every week, managers can define staffing requirements, employee availability, and workplace structure. The system then generates a schedule automatically while employees access their shifts through the web and mobile applications.
+
+The project was developed as a university software engineering project following an MVP-first approach.
+
+## Features
+
+### 👨‍💼 Manager
+
+- Company creation and management
+- Employee management
+- Branch management
+- Position management
+- Invite employees using invite codes
+- Define shift requirements
+- Import requirements from Excel (.xlsx)
+- Generate schedules automatically
+- Publish schedules
+- View reports
+
+### 👷 Employee
+
+- Join company via invite code
+- Select branch and position
+- Set availability
+- Request preferred days off
+- View assigned shifts
+- Access personal reports
+
+### 🔐 Authentication
+
 - JWT authentication
-- role-based access control for managers and employees
-- company creation and invite-code joining
-- branch and position management
-- employee availability and absences
-- schedule requirements
-- schedule generation and publishing
-- reports
-- XLSX import for shift requirements
+- Role-based authorization
+- Secure password hashing
 
----
+## Tech Stack
+
+| Layer | Technologies |
+|--------|--------------|
+| **Frontend (Web)** | React |
+| **Backend** | Python, FastAPI |
+| **Database** | PostgreSQL |
+| **Mobile (Android)** | Android Studio, Kotlin, Jetpack Compose |
+| **Mobile (iOS)** | Swift |
+| **Documentation** | Swagger / OpenAPI |
+| **Infrastructure** | Docker, Docker Compose |
 
 ## Project Structure
 
 ```text
 ShiftPlanner/
-  backend/
-    app/
-    db/
-      schema.sql
-      seed.sql
-    Dockerfile
-    requirements.txt
-    .env.example
+│
+├── .github/     
+│
+├── backend/                 # FastAPI backend
+│   ├── app/                 # Application source code
+│   ├── db/                  # Database schema
+│   ├── tests/               # Backend tests
+│   ├── .env.example
+│   ├── db-backend.md 
+│   ├── Dockerfile
+│   ├── front_back.md
+│   ├── requirements.txt
+│   ├── test_db.py
+│   └── test_solver.py
+│
+├── frontend/                # React web application
+│   ├── public/
+│   ├── src/
+│   ├── .dockerignore
+│   ├── .env.development
+│   ├── eslint.config.js
+│   ├── index.html
+│   ├── Dockerfile
+│   ├── nginx.conf
+│   ├── package.json
+│   ├── package-lock.json
+│   ├── README.md
+│   ├── vite.config.js
+│   └── .env.example
+│
+├── mobile/
+│   ├── android/             
+│   ├── ios/           
+│   └── README.md
+│
+├── nginx/                   # Reverse proxy configuration
+│   ├── Dockerfile
+│   ├── docker-entrypoint.d/
+│   ├── renewal-hooks/ 
+│   ├── default.conf
+│   └── default.http.conf
+│
+├── pic/                     # Images and project assets
+│
+├── .gitignore
+├── docker-compose.yml
+├── docker-compose.override.yml
+├── LICENSE
+└── README.md
+```
+## Team
 
-  frontend/
-    src/
-    Dockerfile
-    package.json
-    .env.example
+| Name | Role |
+|------|------|
+| Karina Krotova | Team Lead / Product Manager / Database |
+| Ksenia Minaeva | Fullstack |
+| Albina Fadeeva | Scheduling Algorithm |
+| Fidan Akhmedova | Frontend |
+| Victoriya Gorbacheva | Mobile Development |
 
-  docker-compose.yml
-  README.md
-````
+## 🚀 Quick Start
 
----
+ShiftPlanner can be used in two ways:
 
-## Tech Stack
+- **Online:** Visit the production deployment at **https://shiftplanner.online**
+- **Locally:** Run the project using Docker Compose.
 
-### Frontend
-
-* React
-* Vite
-* React Router DOM
-* Axios
-* xlsx
-
-### Backend
-
-* Python
-* FastAPI
-* PostgreSQL
-* SQLAlchemy
-* Pydantic
-* JWT auth with `python-jose`
-* password hashing with `passlib` and `bcrypt`
-* XLSX processing with `openpyxl`
-
-### Infrastructure
-
-* Docker
-* Docker Compose
-
----
-
-## How To Run The Project
-
-The recommended way is to run the whole project with Docker Compose.
-
-This starts:
-
-* PostgreSQL
-* Backend
-* Frontend
-
----
-
-## 1. Clone Repository
+### 1. Clone the repository
 
 ```bash
-git clone <repo-url>
+git clone https://github.com/shift-happens-daily/ShiftPlanner.git
 cd ShiftPlanner
 ```
 
----
+### 2. Configure environment variables
 
-## 2. Create Environment Files
-
-### Backend
-
-Create `backend/.env` from `backend/.env.example`.
-
-Example:
-
-```env
-DATABASE_URL=postgresql+psycopg://shiftplanner_user:shiftplanner_password@postgres:5432/shiftplanner
-FRONTEND_ORIGINS=http://localhost:5173
-JWT_SECRET_KEY=change-me-in-production
-JWT_ALGORITHM=HS256
-ACCESS_TOKEN_EXPIRE_MINUTES=60
-```
-
-When backend is running inside Docker Compose, the database host should be:
+Create the required environment files from the provided templates:
 
 ```text
-postgres
+backend/.env.example  →  backend/.env
+frontend/.env.example →  frontend/.env
 ```
 
-not `localhost`.
+Update the environment variables if necessary (database connection, JWT secret, API URL, etc.).
 
-### Frontend
+### 3. Start the application
 
-Create `frontend/.env` from `frontend/.env.example`.
-
-Example:
-
-```env
-VITE_API_URL=http://localhost:8000
-```
-
----
-
-## 3. Run With Docker Compose
-
-From the project root:
+Run all services with Docker Compose:
 
 ```bash
 docker compose up --build
 ```
 
-After startup, the services will be available at:
+This will start:
 
-```text
-Frontend: http://localhost:5173
-Backend:  http://localhost:8000
-Swagger:  http://localhost:8000/docs
-Postgres: localhost:5432
-```
+- PostgreSQL database
+- FastAPI backend
+- React frontend
+- Nginx reverse proxy
 
----
+### 4. Access the application
 
-## 4. Run In Background
+Once the containers are running, the application will be available at:
 
-```bash
-docker compose up --build -d
-```
+| Service | URL |
+|---------|-----|
+| Web Application | http://localhost:5173 |
+| Backend API | http://localhost:8000 |
+| Swagger Documentation | http://localhost:8000/docs |
 
-View logs:
+### 5. Stop the application
 
-```bash
-docker compose logs -f
-```
-
-View logs for one service:
-
-```bash
-docker compose logs -f backend
-docker compose logs -f frontend
-docker compose logs -f postgres
-```
-
----
-
-## 5. Stop Project
+To stop all running containers:
 
 ```bash
 docker compose down
 ```
 
-Stop project and delete database data:
+## 🌐 Live Demo
 
-```bash
-docker compose down -v
-```
+ShiftPlanner is publicly available and can be accessed using the links below.
 
-Use `down -v` carefully because it removes the PostgreSQL volume.
+| Service | Link |
+|---------|------|
+| 🌍 **Web Application** | https://shiftplanner.online |
+| 📱 **Mobile Application** | In progress |
 
----
+You can explore the application directly in your browser without setting up a local development environment.
 
-## 6. Reset Database
+## 📄 License
 
-If the database schema changed, reset the database:
-
-```bash
-docker compose down -v
-docker compose up --build
-```
-
-This recreates PostgreSQL and applies the initialization SQL files again.
-
-If you want to reset the database manually while the PostgreSQL container is running:
-
-```bash
-docker exec shiftplanner_postgres psql -U shiftplanner_user -d shiftplanner -c "DROP SCHEMA IF EXISTS public CASCADE; CREATE SCHEMA public;"
-```
-
-Then apply schema:
-
-### PowerShell
-
-```powershell
-Get-Content backend/db/schema.sql | docker exec -i shiftplanner_postgres psql -U shiftplanner_user -d shiftplanner
-```
-
-Apply seed data if demo accounts are needed:
-
-```powershell
-Get-Content backend/db/seed.sql | docker exec -i shiftplanner_postgres psql -U shiftplanner_user -d shiftplanner
-```
-
-### Git Bash / Linux / macOS
-
-```bash
-docker exec -i shiftplanner_postgres psql -U shiftplanner_user -d shiftplanner < backend/db/schema.sql
-docker exec -i shiftplanner_postgres psql -U shiftplanner_user -d shiftplanner < backend/db/seed.sql
-```
-
----
-
-## Demo Accounts
-
-Demo accounts are available only if `backend/db/seed.sql` was applied.
-
-```text
-Manager:
-manager@example.com / manager123
-
-Employee:
-ivan@example.com / employee123
-```
-
-Demo company:
-
-```text
-Company: Coffee Bar Barnaul
-Invite code: COFFEE123
-Branch: Main Branch
-Positions: Barista, Cashier
-```
-
-If seed data is not applied, create a new manager, company, branch, position, and employee manually through the UI.
-
----
-
-## Main User Flows
-
-### Manager Flow
-
-1. Register or log in as manager.
-2. Create a company.
-3. Copy the invite code.
-4. Create a branch.
-5. Create positions.
-6. Add employees or ask employees to join by invite code.
-7. Create shift requirements.
-8. Generate schedule.
-9. Publish schedule.
-10. Check reports.
-
-### Employee Flow
-
-1. Register or log in as employee.
-2. Open the Company tab.
-3. Enter invite code.
-4. Choose branch and position.
-5. Join company.
-6. Fill availability and desired days off.
-7. Check personal schedule.
-8. Create shift exchange requests if needed.
-9. Check personal reports.
-
----
-
-## Data Source Rules
-
-The backend is the source of truth for company data.
-
-The frontend does not restore company membership from `localStorage`.
-
-Current user data is loaded from:
-
-```text
-GET /auth/me
-```
-
-For managers:
-
-```text
-company is attached through companies.manager_user_id
-```
-
-For employees:
-
-```text
-company, branch, and position are attached through employees table
-```
-
-If `/auth/me` does not return a company, the frontend shows that the user is not attached to a company.
-
----
-
-## Useful Commands
-
-Check running containers:
-
-```bash
-docker ps
-```
-
-Check all containers:
-
-```bash
-docker ps -a
-```
-
-Open PostgreSQL shell:
-
-```bash
-docker exec -it shiftplanner_postgres psql -U shiftplanner_user -d shiftplanner
-```
-
-Check companies:
-
-```sql
-SELECT id, name, invite_code, manager_user_id FROM companies ORDER BY id;
-```
-
-Exit PostgreSQL:
-
-```sql
-\q
-```
-
----
-
-## Local Development Without Full Docker Compose
-
-You can also run only PostgreSQL in Docker and start backend/frontend locally.
-
-### Start PostgreSQL
-
-```bash
-docker compose -f backend/docker-compose.yml up -d
-```
-
-### Start Backend Locally
-
-```bash
-cd backend
-python -m venv .venv
-```
-
-Windows:
-
-```bash
-.venv\Scripts\activate
-```
-
-macOS / Linux:
-
-```bash
-source .venv/bin/activate
-```
-
-Install dependencies:
-
-```bash
-pip install -r requirements.txt
-```
-
-Run backend:
-
-```bash
-uvicorn app.main:app --reload
-```
-
-### Start Frontend Locally
-
-In a new terminal:
-
-```bash
-cd frontend
-npm install
-npm run dev
-```
-
----
-
-## Verification
-
-Backend health check:
-
-```text
-http://localhost:8000/health
-```
-
-Swagger:
-
-```text
-http://localhost:8000/docs
-```
-
-Frontend:
-
-```text
-http://localhost:5173
-```
-
-Recommended manual check:
-
-1. Open frontend.
-2. Register or log in as manager.
-3. Create company.
-4. Create branch.
-5. Create position.
-6. Register or log in as employee.
-7. Join company by invite code.
-8. Reload the page.
-9. Check that company data does not disappear.
-10. Create requirements.
-11. Generate and publish schedule.
-12. Check reports.
-
----
-
-## Troubleshooting
-
-### Docker is not running
-
-If you see an error like:
-
-```text
-open //./pipe/dockerDesktopLinuxEngine: The system cannot find the file specified
-```
-
-Start Docker Desktop and wait until Docker Engine is running.
-
-Then run:
-
-```bash
-docker compose up --build
-```
-
-### Container name conflict
-
-If you see:
-
-```text
-The container name "/shiftplanner_postgres" is already in use
-```
-
-Remove the old container:
-
-```bash
-docker rm -f shiftplanner_postgres
-```
-
-Then start again:
-
-```bash
-docker compose up --build
-```
-
-### Database schema is outdated
-
-Reset the database:
-
-```bash
-docker compose down -v
-docker compose up --build
-```
-
-### Frontend cannot reach backend
-
-Check `frontend/.env`:
-
-```env
-VITE_API_URL=http://localhost:8000
-```
-
-Check that backend is running:
-
-```text
-http://localhost:8000/health
-```
-
-### Backend cannot reach database
-
-If backend runs inside Docker Compose, `DATABASE_URL` should use:
-
-```text
-postgres:5432
-```
-
-If backend runs locally, `DATABASE_URL` should use:
-
-```text
-localhost:5432
-```
-
----
-
-## Current Limitations
-
-* Schedule generation is intentionally simple.
-* Availability and absences are stored but are not fully used by the generation algorithm yet.
-* No advanced conflict detection.
-* No automatic reassignment after shift exchange approval.
-* No refresh tokens.
-* Active access tokens are stored in memory and reset after backend restart.
-
-```
-```
+This project is licensed under the MIT License. See the [LICENSE](LICENSE) file for details.

@@ -73,3 +73,6 @@ Thumbs.db
 
 # Local stage docs
 backend/docs/backend-stage-2.md
+
+docker-compose.override.yml
+docker-compose.local.yml

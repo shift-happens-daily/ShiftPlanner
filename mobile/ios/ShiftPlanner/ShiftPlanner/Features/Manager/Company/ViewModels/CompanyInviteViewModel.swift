@@ -5,8 +5,6 @@ import Combine
 final class CompanyInviteViewModel: ObservableObject {
     @Published var inviteCode = ""
     @Published var preview: AppCompanyInvitePreview?
-    @Published var selectedBranchId: Int?
-    @Published var selectedPositionId: Int?
     @Published var joinedUser: AppUser?
     @Published var isLoading = false
     @Published var errorMessage: String?
@@ -17,14 +15,10 @@ final class CompanyInviteViewModel: ObservableObject {
         self.repository = repository
     }
 
-    var canJoinCompany: Bool {
-        !isLoading && preview != nil
-    }
-
     func previewCompany() async {
         let code = normalizedInviteCode
         guard !code.isEmpty else {
-            errorMessage = localized("Invite code is required.", "Введите инвайт-код.")
+            errorMessage = "Invite code is required."
             return
         }
 
@@ -32,14 +26,9 @@ final class CompanyInviteViewModel: ObservableObject {
         errorMessage = nil
 
         do {
-            let loadedPreview = try await repository.previewInvite(code: code)
-            preview = loadedPreview
-            selectedBranchId = nil
-            selectedPositionId = nil
+            preview = try await repository.previewInvite(code: code)
         } catch {
             preview = nil
-            selectedBranchId = nil
-            selectedPositionId = nil
             errorMessage = error.localizedDescription
         }
 
@@ -49,7 +38,7 @@ final class CompanyInviteViewModel: ObservableObject {
     func joinCompany() async {
         let code = normalizedInviteCode
         guard !code.isEmpty else {
-            errorMessage = localized("Invite code is required.", "Введите инвайт-код.")
+            errorMessage = "Invite code is required."
             return
         }
 
@@ -57,11 +46,7 @@ final class CompanyInviteViewModel: ObservableObject {
         errorMessage = nil
 
         do {
-            joinedUser = try await repository.joinCompany(
-                inviteCode: code,
-                branchId: selectedBranchId,
-                positionId: selectedPositionId
-            )
+            joinedUser = try await repository.joinCompany(inviteCode: code)
         } catch {
             errorMessage = error.localizedDescription
         }

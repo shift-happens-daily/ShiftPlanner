@@ -35,24 +35,32 @@ def main() -> None:
             text(
                 """
                 SELECT
-                    shifts.shift_date,
-                    shifts.start_time,
-                    shifts.end_time,
+                    schedule_assignments.work_date,
+                    schedule_assignments.start_time,
+                    schedule_assignments.end_time,
                     users.full_name AS employee_name,
-                    positions.name AS position_name
-                FROM shifts
-                JOIN shift_assignments
-                  ON shift_assignments.shift_id = shifts.id
+                    positions.name AS position_name,
+                    COUNT(*) FILTER (
+                        WHERE schedule_assignment_slots.availability_status = 'if_needed'
+                    ) AS if_needed_slot_count
+                FROM schedule_assignments
                 JOIN employees
-                  ON employees.id = shift_assignments.employee_id
+                  ON employees.id = schedule_assignments.employee_id
                 JOIN users
                   ON users.id = employees.user_id
                 JOIN positions
-                  ON positions.id = shifts.position_id
-                WHERE shifts.schedule_id = :schedule_id
+                  ON positions.id = schedule_assignments.position_id
+                JOIN schedule_assignment_slots
+                  ON schedule_assignment_slots.schedule_assignment_id =
+                     schedule_assignments.id
+                WHERE schedule_assignments.schedule_id = :schedule_id
+                GROUP BY
+                    schedule_assignments.id,
+                    users.full_name,
+                    positions.name
                 ORDER BY
-                    shifts.shift_date,
-                    shifts.start_time,
+                    schedule_assignments.work_date,
+                    schedule_assignments.start_time,
                     positions.name,
                     users.full_name
                 """
@@ -62,7 +70,7 @@ def main() -> None:
 
         schedule_by_date = defaultdict(list)
         for row in rows:
-            schedule_by_date[row["shift_date"]].append(row)
+            schedule_by_date[row["work_date"]].append(row)
 
         print(
             f"Schedule {result.schedule_id}: {START_DATE} through {END_DATE} "
@@ -77,9 +85,15 @@ def main() -> None:
         for work_date in sorted(schedule_by_date):
             print(f"\n{work_date:%A, %Y-%m-%d}")
             for row in schedule_by_date[work_date]:
+                fallback = (
+                    f", if_needed slots={row['if_needed_slot_count']}"
+                    if row["if_needed_slot_count"]
+                    else ""
+                )
                 print(
                     f"  {row['start_time']:%H:%M}-{row['end_time']:%H:%M}  "
                     f"{row['position_name']:<10} {row['employee_name']}"
+                    f"{fallback}"
                 )
 
         if result.uncovered_slots:

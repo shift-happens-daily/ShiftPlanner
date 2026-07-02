@@ -1,16 +1,29 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import * as XLSX from 'xlsx';
-import { listEmployees } from '../../services/employeeService';
 import { extractApiErrorMessage, localizeBackendMessage } from '../../services/error';
 import {
+  assignRequirement,
   createExchangeRequest,
   defaultSchedulePeriod,
-  generateSchedule,
+  deleteShift,
+  fetchScheduleVersions,
+  formatLocalDate,
+  generateScheduleForPeriod,
   getMySchedule,
-  mergePublishedSchedule,
-  publishSchedule,
+  getSchedule,
+  listAvailableEmployees,
+  listExchangeRequests,
+  publishScheduleForPeriod,
+  updateExchangeRequest,
   updateShift,
 } from '../../services/scheduleService';
+import { filterRealEmployees, listEmployees } from '../../services/employeeService';
+import { useTabResponsive } from '../../utils/tabResponsive';
+import { getPositionLabel } from '../../utils/employeeDisplay';
+import { usePositionTitleRevision } from '../../hooks/usePositionTitleRevision';
+import { useUnsavedChanges } from '../../context/useUnsavedChanges';
+
+const EXCHANGE_NOTE_SCOPE = 'schedule-exchange-note';
 
 function defaultPeriod() {
   return defaultSchedulePeriod();
@@ -28,12 +41,32 @@ function formatTime(value) {
   return String(value || '').slice(0, 5);
 }
 
-function parseTimeToHours(value) {
-  if (!value) return 0;
-  const parts = String(value).split(':');
-  const hours = Number(parts[0] || 0);
-  const minutes = Number(parts[1] || 0);
-  return hours + minutes / 60;
+function getShiftDurationLabel(shift, language) {
+  const start = String(shift?.start_time || '').split(':').map(Number);
+  const end = String(shift?.end_time || '').split(':').map(Number);
+  if (start.length < 2 || end.length < 2 || start.some(Number.isNaN) || end.some(Number.isNaN)) {
+    return '';
+  }
+
+  const startMinutes = (start[0] * 60) + start[1];
+  const endMinutes = (end[0] * 60) + end[1];
+  const duration = endMinutes - startMinutes;
+  if (duration <= 0) return '';
+
+  const hours = Math.floor(duration / 60);
+  const minutes = duration % 60;
+  if (language === 'ru') {
+    return minutes ? `${hours} ч ${minutes} мин` : `${hours} ч`;
+  }
+  return minutes ? `${hours}h ${minutes}m` : `${hours}h`;
+}
+
+function formatTimeForApi(value) {
+  const raw = String(value || '').trim();
+  if (!raw) return raw;
+  if (/^\d{2}:\d{2}:\d{2}$/.test(raw)) return raw;
+  if (/^\d{2}:\d{2}$/.test(raw)) return `${raw}:00`;
+  return raw.slice(0, 8);
 }
 
 function formatDate(value) {
@@ -42,8 +75,7 @@ function formatDate(value) {
     return '';
   }
 
-  const iso = date.toISOString().slice(0, 10);
-  return iso;
+  return formatLocalDate(date);
 }
 
 function formatDisplayDate(value) {
@@ -59,12 +91,68 @@ function formatDisplayDate(value) {
   });
 }
 
+function parseDateKey(value) {
+  const date = new Date(`${value}T12:00:00`);
+  return Number.isNaN(date.getTime()) ? null : date;
+}
+
+function startOfMonthDate(value) {
+  const source = parseDateKey(value) || new Date();
+  source.setHours(12, 0, 0, 0);
+  return new Date(source.getFullYear(), source.getMonth(), 1, 12, 0, 0, 0);
+}
+
+function endOfMonthDate(value) {
+  const source = parseDateKey(value) || new Date();
+  source.setHours(12, 0, 0, 0);
+  return new Date(source.getFullYear(), source.getMonth() + 1, 0, 12, 0, 0, 0);
+}
+
+function buildCalendarGrid(anchorDateKey) {
+  const monthStart = startOfMonthDate(anchorDateKey);
+  const monthEnd = endOfMonthDate(anchorDateKey);
+  const gridStart = new Date(monthStart);
+  const startOffset = (gridStart.getDay() + 6) % 7;
+  gridStart.setDate(gridStart.getDate() - startOffset);
+
+  const gridEnd = new Date(monthEnd);
+  const endOffset = 6 - ((gridEnd.getDay() + 6) % 7);
+  gridEnd.setDate(gridEnd.getDate() + endOffset);
+
+  const days = [];
+  const cursor = new Date(gridStart);
+  while (cursor <= gridEnd) {
+    days.push({
+      date: formatLocalDate(cursor),
+      day: cursor.getDate(),
+      isCurrentMonth: cursor.getMonth() === monthStart.getMonth(),
+    });
+    cursor.setDate(cursor.getDate() + 1);
+  }
+
+  return {
+    days,
+    startDate: formatLocalDate(gridStart),
+    endDate: formatLocalDate(gridEnd),
+  };
+}
+
+function isSameDateKey(left, right) {
+  return formatDate(left) === formatDate(right);
+}
+
 function getShiftId(shift) {
   return shift?.id || shift?.shift_id;
 }
 
 function getShiftPosition(shift) {
-  return shift?.position || shift?.position_title || shift?.position_name || shift?.position?.title || shift?.position?.name || '—';
+  return getPositionLabel({
+    position_id: shift?.position_id || shift?.position?.id,
+    position_title: shift?.position_title || shift?.position_name,
+    title: typeof shift?.position === 'string' ? shift.position : undefined,
+    name: shift?.position?.name,
+    position: typeof shift?.position === 'object' ? shift.position : undefined,
+  }, '—');
 }
 
 function getShiftEmployeeName(shift) {
@@ -73,10 +161,6 @@ function getShiftEmployeeName(shift) {
 
 function getShiftCompany(shift) {
   return shift?.company_name || shift?.company?.name || shift?.company || '—';
-}
-
-function getEmployeePositionId(employee) {
-  return employee?.position_id || employee?.position?.id;
 }
 
 function getShiftPositionId(shift) {
@@ -117,7 +201,10 @@ function exportScheduleDraftToXlsx(schedule, translations) {
   const unfilled = normalizeArray(schedule.unfilled_requirements).map((item) => ({
     requirement_id: item.requirement_id || '',
     date: item.date || '',
-    position: item.position_title || item.position || '',
+    position: getPositionLabel({
+      position_id: item.position_id,
+      position_title: item.position_title || item.position,
+    }, item.position_title || item.position || ''),
     start_time: formatTime(item.start_time),
     end_time: formatTime(item.end_time),
     missing_staff: item.missing_staff || 0,
@@ -158,31 +245,25 @@ function exportScheduleDraftToXlsx(schedule, translations) {
 }
 
 export default function ScheduleTab({ language, userRole }) {
+  const positionTitleRevision = usePositionTitleRevision();
+  const { markUnsaved, markSaved } = useUnsavedChanges();
   const isManager = userRole === 'manager';
+  const r = useTabResponsive(1480);
 
   const [periodForm, setPeriodForm] = useState(defaultPeriod);
-
-  const scheduleStorageKey = 'shiftplanner_manager_draft_schedule';
-  const [schedule, setSchedule] = useState(() => {
-    const rawSchedule = localStorage.getItem(scheduleStorageKey);
-
-    if (!rawSchedule) {
-      return null;
-    }
-
-    try {
-      return JSON.parse(rawSchedule);
-    } catch {
-      localStorage.removeItem(scheduleStorageKey);
-      return null;
-    }
-  });
+  const [schedule, setSchedule] = useState(null);
 
   const [mySchedule, setMySchedule] = useState([]);
-  const [employeeViewMode, setEmployeeViewMode] = useState('day');
-  const [employees, setEmployees] = useState([]);
+  const [employeeViewMode, setEmployeeViewMode] = useState('month');
+  const [selectedEmployeeDate, setSelectedEmployeeDate] = useState(() => formatLocalDate(new Date()));
+  const [employeeCalendarMonth, setEmployeeCalendarMonth] = useState(() => formatLocalDate(new Date()));
   const [exchangeNotes, setExchangeNotes] = useState({});
+  const [exchangeRequests, setExchangeRequests] = useState([]);
   const [reassignEmployeeIds, setReassignEmployeeIds] = useState({});
+  const [availableByShift, setAvailableByShift] = useState({});
+  const [assignEmployeeIds, setAssignEmployeeIds] = useState({});
+  const [manualEmployees, setManualEmployees] = useState([]);
+  const [manualEmployeesLoaded, setManualEmployeesLoaded] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
@@ -191,8 +272,6 @@ export default function ScheduleTab({ language, userRole }) {
   const texts = {
     ru: {
       titleManager: 'Расписание',
-      titleEmployee: 'Мое расписание',
-      subtitleEmployee: 'Здесь отображаются опубликованные смены.',
       day: 'День',
       week: 'Неделя',
       month: 'Месяц',
@@ -205,7 +284,7 @@ export default function ScheduleTab({ language, userRole }) {
       remove: 'Убрать сотрудника',
       noSchedule: 'Расписание ещё не сгенерировано',
       noScheduleHint: 'Выберите неделю (Пн–Вс) и нажмите «Сгенерировать черновик».',
-      noScheduleRequirements: 'Перед генерацией должны быть настроены шаблоны потребности, часы филиала и availability сотрудников.',
+      noScheduleRequirements: 'Перед генерацией должны быть настроены шаблоны потребности, часы филиала и доступность сотрудников.',
       loading: 'Загрузка...',
       unfilled: 'Незаполненные требования',
       shifts: 'Смены',
@@ -228,6 +307,11 @@ export default function ScheduleTab({ language, userRole }) {
       schedulePreview: 'Предпросмотр расписания',
       chooseEmployee: 'Выберите сотрудника',
       noEmployeesForPosition: 'Нет сотрудников этой позиции',
+      noEmployeesAvailable: 'Нет доступных сотрудников',
+      assign: 'Назначить',
+      loadEmployees: 'Загрузить кандидатов',
+      assigned: 'Сотрудник назначен на смену.',
+      assignError: 'Не удалось назначить сотрудника.',
       noPublishedScheduleTitle: 'Пока нет опубликованных смен',
       noPublishedScheduleHint: 'Когда менеджер опубликует расписание, ваши смены появятся здесь.',
       noPublishedScheduleStep1: 'Дождитесь публикации от менеджера',
@@ -237,11 +321,19 @@ export default function ScheduleTab({ language, userRole }) {
       howTwo: '2. «Сгенерировать» создает черновик смен.',
       howThree: '3. «Опубликовать» делает расписание видимым сотрудникам.',
       company: 'Компания',
+      exchangeRequests: 'Запросы на обмен',
+      exchangeNotePlaceholder: 'Причина обмена',
+      requestExchange: 'Запросить обмен',
+      exchangeRequested: 'Запрос на обмен отправлен.',
+      exchangeNoteRequired: 'Укажите причину обмена.',
+      exchangeApprove: 'Одобрить',
+      exchangeReject: 'Отклонить',
+      exchangeApproved: 'Запрос на обмен одобрен.',
+      exchangeRejected: 'Запрос на обмен отклонён.',
+      noExchangeRequests: 'Нет ожидающих запросов на обмен.',
     },
     en: {
       titleManager: 'Schedule',
-      titleEmployee: 'My schedule',
-      subtitleEmployee: 'Published shifts appear here.',
       day: 'Day',
       week: 'Week',
       month: 'Month',
@@ -277,6 +369,11 @@ export default function ScheduleTab({ language, userRole }) {
       schedulePreview: 'Schedule preview',
       chooseEmployee: 'Choose employee',
       noEmployeesForPosition: 'No employees for this position',
+      noEmployeesAvailable: 'No available employees',
+      assign: 'Assign',
+      loadEmployees: 'Load candidates',
+      assigned: 'Employee assigned to shift.',
+      assignError: 'Failed to assign employee.',
       noPublishedScheduleTitle: 'No published shifts yet',
       noPublishedScheduleHint: 'When your manager publishes the schedule, your shifts will appear here.',
       noPublishedScheduleStep1: 'Wait for the manager to publish the schedule',
@@ -286,13 +383,23 @@ export default function ScheduleTab({ language, userRole }) {
       howTwo: '2. Generate creates a draft shift schedule.',
       howThree: '3. Publish makes the schedule visible to employees.',
       company: 'Company',
+      exchangeRequests: 'Exchange requests',
+      exchangeNotePlaceholder: 'Reason for exchange',
+      requestExchange: 'Request exchange',
+      exchangeRequested: 'Exchange request submitted.',
+      exchangeNoteRequired: 'Enter a reason for the exchange.',
+      exchangeApprove: 'Approve',
+      exchangeReject: 'Reject',
+      exchangeApproved: 'Exchange request approved.',
+      exchangeRejected: 'Exchange request rejected.',
+      noExchangeRequests: 'No pending exchange requests.',
     },
   };
 
   const t = texts[language] || texts.ru;
 
   const scheduleShifts = useMemo(() => normalizeArray(schedule?.shifts), [schedule]);
-  const unfilledRequirements = useMemo(() => normalizeArray(schedule?.unfilled_requirements), [schedule]);
+  const unfilledRequirements = useMemo(() => normalizeArray(schedule?.unfilled_requirements), [schedule, positionTitleRevision]);
   const conflicts = useMemo(() => normalizeArray(schedule?.conflicts), [schedule]);
 
   const employeeSchedule = mySchedule;
@@ -307,15 +414,50 @@ export default function ScheduleTab({ language, userRole }) {
     [employeeSchedule]
   );
   const employeeDates = useMemo(() => {
-    const dates = [...new Set(normalizeArray(employeeSchedule).map((shift) => formatDate(shift.date || new Date())))];
-    return dates.sort();
-  }, [employeeSchedule]);
+    return Object.keys(groupedMySchedule).sort();
+  }, [groupedMySchedule]);
 
   const employeeTimelineDates = useMemo(() => {
     if (employeeViewMode === 'day') return employeeDates.slice(0, 1);
     if (employeeViewMode === 'week') return employeeDates.slice(0, 7);
     return employeeDates.slice(0, 30);
   }, [employeeDates, employeeViewMode]);
+
+  const employeeCalendarGrid = useMemo(
+    () => buildCalendarGrid(employeeCalendarMonth),
+    [employeeCalendarMonth]
+  );
+
+  const selectedEmployeeDateShifts = useMemo(
+    () => normalizeArray(groupedMySchedule[selectedEmployeeDate]).sort((a, b) =>
+      String(a.start_time || '').localeCompare(String(b.start_time || ''))
+    ),
+    [groupedMySchedule, selectedEmployeeDate]
+  );
+
+  const employeeCalendarMonthLabel = useMemo(() => {
+    const date = startOfMonthDate(employeeCalendarMonth);
+    return date.toLocaleDateString(language === 'ru' ? 'ru-RU' : 'en-US', {
+      month: 'long',
+      year: 'numeric',
+    });
+  }, [employeeCalendarMonth, language]);
+
+  const employeeCalendarMonthKey = useMemo(() => {
+    const date = startOfMonthDate(employeeCalendarMonth);
+    return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
+  }, [employeeCalendarMonth]);
+
+  const employeeWeekdayLabels = useMemo(() => {
+    const monday = new Date('2026-06-29T12:00:00');
+    return Array.from({ length: 7 }, (_, index) => {
+      const date = new Date(monday);
+      date.setDate(monday.getDate() + index);
+      return date.toLocaleDateString(language === 'ru' ? 'ru-RU' : 'en-US', { weekday: 'short' });
+    });
+  }, [language]);
+
+  const shiftDotColors = ['#007aff', '#34c759', '#ff3b30', '#ff9500'];
 
   useEffect(() => {
     if (!errorMessage && !successMessage) return undefined;
@@ -333,27 +475,22 @@ export default function ScheduleTab({ language, userRole }) {
     setSuccessMessage('');
   };
 
-  useEffect(() => {
-    if (!isManager) {
-      return;
-    }
-
-    if (schedule) {
-      localStorage.setItem(scheduleStorageKey, JSON.stringify(schedule));
-    } else {
-      localStorage.removeItem(scheduleStorageKey);
-    }
-  }, [isManager, schedule, scheduleStorageKey]);
-
   const loadManagerData = useCallback(async () => {
-    const employeesData = await listEmployees();
-    setEmployees(normalizeArray(employeesData));
-  }, []);
+    const [requestsData, versions] = await Promise.all([
+      listExchangeRequests(),
+      fetchScheduleVersions(periodForm),
+    ]);
+    setExchangeRequests(normalizeArray(requestsData));
+    setSchedule(versions.draft || null);
+  }, [periodForm]);
 
   const loadEmployeeData = useCallback(async () => {
-    const shifts = await getMySchedule();
+    const shifts = await getMySchedule({
+      date_from: employeeCalendarGrid.startDate,
+      date_to: employeeCalendarGrid.endDate,
+    });
     setMySchedule(normalizeArray(shifts));
-  }, []);
+  }, [employeeCalendarGrid.endDate, employeeCalendarGrid.startDate]);
 
   const loadData = useCallback(async () => {
     setIsLoading(true);
@@ -380,12 +517,45 @@ export default function ScheduleTab({ language, userRole }) {
     return () => clearTimeout(timer);
   }, [loadData]);
 
+  useEffect(() => {
+    if (!isManager || !schedule?.id || unfilledRequirements.length === 0) {
+      setManualEmployees([]);
+      setManualEmployeesLoaded(false);
+      return undefined;
+    }
+
+    let cancelled = false;
+
+    async function loadManualEmployees() {
+      setManualEmployeesLoaded(false);
+      try {
+        const employees = filterRealEmployees(normalizeArray(await listEmployees()));
+        if (!cancelled) {
+          setManualEmployees(employees);
+          setManualEmployeesLoaded(true);
+        }
+      } catch (error) {
+        if (!cancelled) {
+          setManualEmployees([]);
+          setManualEmployeesLoaded(true);
+          setErrorMessage(extractApiErrorMessage(error, t.assignError, language));
+        }
+      }
+    }
+
+    void loadManualEmployees();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [isManager, language, schedule?.id, t.assignError, unfilledRequirements.length]);
+
   const handleGenerate = async () => {
     clearMessages();
     setIsSubmitting(true);
 
     try {
-      const generated = await generateSchedule(periodForm);
+      const generated = await generateScheduleForPeriod(periodForm);
       setSchedule(generated);
       setReassignEmployeeIds({});
       setSuccessMessage(t.generated);
@@ -403,8 +573,8 @@ export default function ScheduleTab({ language, userRole }) {
     setIsSubmitting(true);
 
     try {
-      const publishedSchedule = await publishSchedule(schedule.id);
-      setSchedule((prev) => mergePublishedSchedule(prev, publishedSchedule));
+      const publishedSchedule = await publishScheduleForPeriod(schedule);
+      setSchedule(publishedSchedule);
       setSuccessMessage(t.publishedDone);
     } catch (error) {
       setErrorMessage(extractApiErrorMessage(error, null, language));
@@ -441,13 +611,120 @@ export default function ScheduleTab({ language, userRole }) {
     setIsSubmitting(true);
 
     try {
-      const payload = action === 'remove'
-        ? { action }
-        : { action, employee_id: Number(reassignEmployeeIds[shiftId]) };
-
-      const updatedSchedule = await updateShift(schedule.id, shiftId, payload);
-      setSchedule(updatedSchedule);
+      if (action === 'remove') {
+        await deleteShift(schedule.id, shiftId);
+        const updatedSchedule = await getSchedule(schedule.id);
+        setSchedule(updatedSchedule);
+      } else {
+        const updatedSchedule = await updateShift(schedule.id, shiftId, {
+          action: 'reassign',
+          employee_id: Number(reassignEmployeeIds[shiftId]),
+        });
+        setSchedule(updatedSchedule);
+      }
       setSuccessMessage(t.shiftUpdated);
+    } catch (error) {
+      setErrorMessage(extractApiErrorMessage(error, null, language));
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const handleLoadAvailableForShift = async (shift) => {
+    if (!schedule?.id || !shift) return;
+
+    const shiftId = getShiftId(shift);
+    const positionId = getShiftPositionId(shift);
+    if (!positionId) return;
+
+    try {
+      const employees = await listAvailableEmployees(schedule.id, {
+        date: shift.date,
+        start_time: formatTimeForApi(shift.start_time),
+        end_time: formatTimeForApi(shift.end_time),
+        position_id: positionId,
+      });
+      setAvailableByShift((prev) => ({
+        ...prev,
+        [shiftId]: Array.isArray(employees) ? employees : [],
+      }));
+    } catch (error) {
+      setErrorMessage(extractApiErrorMessage(error, t.assignError, language));
+    }
+  };
+
+  const handleAssignRequirement = async (requirementId) => {
+    const employeeId = assignEmployeeIds[requirementId];
+    if (!schedule?.id || !requirementId || !employeeId) return;
+
+    clearMessages();
+    setIsSubmitting(true);
+
+    try {
+      const updatedSchedule = await assignRequirement(schedule.id, requirementId, {
+        employee_id: Number(employeeId),
+      });
+      setSchedule(updatedSchedule);
+      setAssignEmployeeIds((prev) => ({ ...prev, [requirementId]: '' }));
+      setSuccessMessage(t.assigned);
+    } catch (error) {
+      setErrorMessage(extractApiErrorMessage(error, t.assignError, language));
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const handleCreateExchangeRequest = async (shiftId) => {
+    const note = String(exchangeNotes[shiftId] || '').trim();
+    if (!note) {
+      setErrorMessage(t.exchangeNoteRequired);
+      return;
+    }
+
+    clearMessages();
+    setIsSubmitting(true);
+
+    try {
+      await createExchangeRequest({
+        shift_id: Number(shiftId),
+        note,
+      });
+      setExchangeNotes((prev) => ({ ...prev, [shiftId]: '' }));
+      markSaved(EXCHANGE_NOTE_SCOPE);
+      setSuccessMessage(t.exchangeRequested);
+    } catch (error) {
+      setErrorMessage(extractApiErrorMessage(error, null, language));
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const shiftEmployeeCalendarMonth = (deltaMonths) => {
+    const current = startOfMonthDate(employeeCalendarMonth);
+    current.setMonth(current.getMonth() + deltaMonths);
+    const nextMonth = formatLocalDate(current);
+    setEmployeeCalendarMonth(nextMonth);
+    setSelectedEmployeeDate(nextMonth);
+  };
+
+  const selectEmployeeCalendarDate = (dateKey) => {
+    setSelectedEmployeeDate(dateKey);
+    const selected = parseDateKey(dateKey);
+    const month = startOfMonthDate(employeeCalendarMonth);
+    if (selected && selected.getMonth() !== month.getMonth()) {
+      setEmployeeCalendarMonth(formatLocalDate(new Date(selected.getFullYear(), selected.getMonth(), 1, 12, 0, 0, 0)));
+    }
+  };
+
+  const handleExchangeDecision = async (requestId, status) => {
+    clearMessages();
+    setIsSubmitting(true);
+
+    try {
+      await updateExchangeRequest(requestId, { status });
+      const requestsData = await listExchangeRequests();
+      setExchangeRequests(normalizeArray(requestsData));
+      setSuccessMessage(status === 'approved' ? t.exchangeApproved : t.exchangeRejected);
     } catch (error) {
       setErrorMessage(extractApiErrorMessage(error, null, language));
     } finally {
@@ -481,10 +758,28 @@ export default function ScheduleTab({ language, userRole }) {
     )
   );
 
+  const pageStyle = {
+    ...styles.page,
+    ...r.page,
+    ...(r.isMobile ? {} : styles.desktopViewportPage),
+  };
+
+  const shellStyle = {
+    ...styles.shell,
+    ...r.shell,
+    width: 'min(100%, 1480px)',
+    padding: 0,
+    borderRadius: 0,
+    background: 'transparent',
+    border: 'none',
+    boxShadow: 'none',
+    ...(r.isMobile ? {} : styles.desktopScaleShell),
+  };
+
   if (isLoading) {
     return (
-      <section style={styles.page}>
-        <div style={styles.shell}>
+      <section style={pageStyle}>
+        <div style={shellStyle}>
           <div style={styles.emptyBox}>{t.loading}</div>
         </div>
       </section>
@@ -492,13 +787,13 @@ export default function ScheduleTab({ language, userRole }) {
   }
 
   return (
-    <section style={styles.page}>
-      <div style={styles.shell}>
+    <section style={pageStyle}>
+      <div style={shellStyle}>
         {renderToast()}
 
-        <header style={styles.header}>
+        <header style={{ ...styles.header, ...r.header }}>
           <div>
-            <h2 style={styles.title}>{isManager ? t.titleManager : t.titleEmployee}</h2>
+            <h2 style={{ ...styles.title, ...r.title }}>{isManager ? t.titleManager : t.titleEmployee}</h2>
             <p style={styles.subtitle}>{isManager ? t.subtitleManager : t.subtitleEmployee}</p>
           </div>
 
@@ -511,7 +806,7 @@ export default function ScheduleTab({ language, userRole }) {
         </header>
 
         {isManager ? (
-          <div style={styles.managerLayout}>
+          <div style={{ ...styles.managerLayout, ...r.splitLayout('300px minmax(0, 1fr)') }}>
             <aside style={styles.sidebar}>
               <section style={styles.panel}>
                 <h3 style={styles.panelTitle}>{t.period}</h3>
@@ -524,7 +819,7 @@ export default function ScheduleTab({ language, userRole }) {
                       onChange={(event) =>
                         setPeriodForm((prev) => ({ ...prev, start_date: event.target.value }))
                       }
-                      style={styles.input}
+                      style={styles.dateInput}
                     />
                   </Field>
 
@@ -535,7 +830,7 @@ export default function ScheduleTab({ language, userRole }) {
                       onChange={(event) =>
                         setPeriodForm((prev) => ({ ...prev, end_date: event.target.value }))
                       }
-                      style={styles.input}
+                      style={styles.dateInput}
                     />
                   </Field>
 
@@ -589,6 +884,43 @@ export default function ScheduleTab({ language, userRole }) {
                 <span>{t.howTwo}</span>
                 <span>{t.howThree}</span>
               </section>
+
+              <section style={styles.panel}>
+                <h3 style={styles.panelTitle}>{t.exchangeRequests}</h3>
+
+                {exchangeRequests.length === 0 ? (
+                  <p style={styles.emptyText}>{t.noExchangeRequests}</p>
+                ) : (
+                  <div style={styles.compactList}>
+                    {exchangeRequests.map((request) => (
+                      <div key={request.id} style={styles.compactItem}>
+                        <strong style={styles.itemTitle}>{request.employee_name}</strong>
+                        <span style={styles.itemMeta}>
+                          {t.note}: {request.note}
+                        </span>
+                        <div style={styles.inlineActions}>
+                          <button
+                            type="button"
+                            onClick={() => handleExchangeDecision(request.id, 'approved')}
+                            style={isSubmitting ? styles.smallPrimaryButtonDisabled : styles.smallPrimaryButton}
+                            disabled={isSubmitting}
+                          >
+                            {t.exchangeApprove}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleExchangeDecision(request.id, 'rejected')}
+                            style={isSubmitting ? styles.smallSecondaryButtonDisabled : styles.smallSecondaryButton}
+                            disabled={isSubmitting}
+                          >
+                            {t.exchangeReject}
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </section>
             </aside>
 
             <main style={styles.previewArea}>
@@ -623,10 +955,7 @@ export default function ScheduleTab({ language, userRole }) {
                       <div style={styles.shiftList}>
                         {scheduleShifts.map((shift) => {
                           const shiftId = getShiftId(shift);
-                          const shiftPositionId = getShiftPositionId(shift);
-                          const availableEmployees = employees.filter((employee) => (
-                            String(getEmployeePositionId(employee)) === String(shiftPositionId)
-                          ));
+                          const availableEmployees = availableByShift[shiftId] || [];
 
                           return (
                             <div key={shiftId} style={styles.shiftCard}>
@@ -640,6 +969,15 @@ export default function ScheduleTab({ language, userRole }) {
                               </div>
 
                               <div style={styles.shiftActions}>
+                                <button
+                                  type="button"
+                                  onClick={() => handleLoadAvailableForShift(shift)}
+                                  style={styles.smallSecondaryButton}
+                                  disabled={isSubmitting}
+                                >
+                                  {t.loadEmployees}
+                                </button>
+
                                 <select
                                   value={reassignEmployeeIds[shiftId] || ''}
                                   onChange={(event) =>
@@ -648,6 +986,7 @@ export default function ScheduleTab({ language, userRole }) {
                                       [shiftId]: event.target.value,
                                     }))
                                   }
+                                  onFocus={() => handleLoadAvailableForShift(shift)}
                                   style={styles.select}
                                 >
                                   <option value="">
@@ -662,7 +1001,7 @@ export default function ScheduleTab({ language, userRole }) {
 
                                 <button
                                   type="button"
-                                  onClick={() => handleShiftAction(shiftId, 'reassign')}
+                                  onClick={() => handleShiftAction(shiftId, 'reassign', shift)}
                                   style={styles.smallPrimaryButton}
                                   disabled={!reassignEmployeeIds[shiftId] || isSubmitting}
                                 >
@@ -671,7 +1010,7 @@ export default function ScheduleTab({ language, userRole }) {
 
                                 <button
                                   type="button"
-                                  onClick={() => handleShiftAction(shiftId, 'remove')}
+                                  onClick={() => handleShiftAction(shiftId, 'remove', shift)}
                                   style={styles.smallSecondaryButton}
                                   disabled={isSubmitting}
                                 >
@@ -693,9 +1032,17 @@ export default function ScheduleTab({ language, userRole }) {
                         <p style={styles.emptyText}>{t.empty}</p>
                       ) : (
                         <div style={styles.compactList}>
-                          {unfilledRequirements.map((item) => (
-                            <div key={item.requirement_id} style={styles.compactItem}>
-                              <strong style={styles.itemTitle}>{item.position_title}</strong>
+                          {unfilledRequirements.map((item) => {
+                            const requirementId = item.requirement_id;
+
+                            return (
+                            <div key={requirementId} style={styles.compactItem}>
+                              <strong style={styles.itemTitle}>
+                                {getPositionLabel({
+                                  position_id: item.position_id,
+                                  position_title: item.position_title || item.position,
+                                }, item.position_title || '—')}
+                              </strong>
                               <span style={styles.itemMeta}>{item.date}</span>
                               <span style={styles.itemMeta}>
                                 {formatTime(item.start_time)} — {formatTime(item.end_time)}
@@ -703,8 +1050,42 @@ export default function ScheduleTab({ language, userRole }) {
                               <span style={styles.staffBadge}>
                                 {t.missingStaff}: {item.missing_staff}
                               </span>
+                              <div style={styles.shiftActions}>
+                                <select
+                                  value={assignEmployeeIds[requirementId] || ''}
+                                  onChange={(event) => setAssignEmployeeIds((prev) => ({
+                                    ...prev,
+                                    [requirementId]: event.target.value,
+                                  }))}
+                                  style={styles.select}
+                                  disabled={isSubmitting}
+                                >
+                                  <option value="">
+                                    {!manualEmployeesLoaded
+                                      ? t.loading
+                                      : manualEmployees.length
+                                        ? t.chooseEmployee
+                                        : t.noEmployeesAvailable}
+                                  </option>
+                                  {manualEmployees.map((employee) => (
+                                    <option key={employee.id} value={employee.id}>
+                                      {employee.full_name}
+                                      {employee.position?.name ? ` (${employee.position.name})` : ''}
+                                    </option>
+                                  ))}
+                                </select>
+                                <button
+                                  type="button"
+                                  onClick={() => handleAssignRequirement(requirementId)}
+                                  style={styles.smallPrimaryButton}
+                                  disabled={isSubmitting || !assignEmployeeIds[requirementId]}
+                                >
+                                  {t.assign}
+                                </button>
+                              </div>
                             </div>
-                          ))}
+                            );
+                          })}
                         </div>
                       )}
                     </section>
@@ -734,25 +1115,194 @@ export default function ScheduleTab({ language, userRole }) {
             </main>
           </div>
         ) : (
-          <main style={styles.employeeArea}>
-            <section style={styles.panel}>
-              <div style={styles.panelHeader}>
+          <main style={{ ...styles.employeeArea, ...r.employeeArea }}>
+            <section style={{ ...styles.employeeCalendarPanel, ...r.employeePanel }}>
+              <div style={{
+                ...styles.employeeCalendarHeader,
+                ...(r.isMobile ? { alignItems: 'stretch' } : {}),
+              }}
+              >
                 <div>
-                  <h3 style={styles.panelTitle}>{t.titleEmployee}</h3>
-                  <p style={styles.panelHint}>{t.subtitleEmployee}</p>
+                  <h3 style={styles.employeeCalendarTitle}>{employeeCalendarMonthLabel}</h3>
+                  <p style={styles.panelHint}>{formatDisplayDate(selectedEmployeeDate)}</p>
                 </div>
 
-                <div style={styles.modeSegment}>
+                <div style={styles.calendarNav}>
+                  <button
+                    type="button"
+                    onClick={() => shiftEmployeeCalendarMonth(-1)}
+                    style={styles.calendarNavButton}
+                    aria-label="Previous month"
+                  >
+                    ←
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const today = formatLocalDate(new Date());
+                      setEmployeeCalendarMonth(today);
+                      setSelectedEmployeeDate(today);
+                    }}
+                    style={styles.calendarTodayButton}
+                  >
+                    {employeeCalendarMonthKey}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => shiftEmployeeCalendarMonth(1)}
+                    style={styles.calendarNavButton}
+                    aria-label="Next month"
+                  >
+                    →
+                  </button>
+                </div>
+              </div>
+
+              <div style={styles.monthCalendar}>
+                <div style={styles.monthWeekdays}>
+                  {employeeWeekdayLabels.map((weekday) => (
+                    <div key={weekday} style={styles.monthWeekday}>{weekday}</div>
+                  ))}
+                </div>
+
+                <div style={styles.monthGrid}>
+                  {employeeCalendarGrid.days.map((calendarDay) => {
+                    const shiftsForDate = normalizeArray(groupedMySchedule[calendarDay.date]);
+                    const isSelected = calendarDay.date === selectedEmployeeDate;
+                    const isTodayDate = isSameDateKey(calendarDay.date, formatLocalDate(new Date()));
+
+                    return (
+                      <button
+                        key={calendarDay.date}
+                        type="button"
+                        onClick={() => selectEmployeeCalendarDate(calendarDay.date)}
+                        style={{
+                          ...styles.monthDayCell,
+                          ...(calendarDay.isCurrentMonth ? {} : styles.monthDayMuted),
+                          ...(isSelected ? styles.monthDaySelected : {}),
+                        }}
+                      >
+                        <span style={{
+                          ...styles.monthDayNumber,
+                          ...(isTodayDate ? styles.monthDayToday : {}),
+                          ...(isSelected ? styles.monthDayNumberSelected : {}),
+                        }}
+                        >
+                          {calendarDay.day}
+                        </span>
+
+                        <span style={styles.monthDots}>
+                          {shiftsForDate.slice(0, 4).map((shift, index) => (
+                            <span
+                              key={`${getShiftId(shift)}-${index}`}
+                              style={{
+                                ...styles.monthDot,
+                                background: shiftDotColors[index % shiftDotColors.length],
+                              }}
+                            />
+                          ))}
+                        </span>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              <section style={styles.selectedDatePanel}>
+                <div style={styles.selectedDateHeader}>
+                  <div>
+                    <h3 style={styles.panelTitle}>{formatDisplayDate(selectedEmployeeDate)}</h3>
+                    <p style={styles.panelHint}>{selectedEmployeeDate}</p>
+                  </div>
+                  <span style={styles.selectedDateCount}>{selectedEmployeeDateShifts.length}</span>
+                </div>
+
+                {selectedEmployeeDateShifts.length === 0 ? (
+                  <div style={styles.selectedDateEmpty}>
+                    <strong style={styles.emptyTitle}>
+                      {employeeSchedule.length === 0 ? t.noPublishedScheduleTitle : t.empty}
+                    </strong>
+                    <span style={styles.emptySubtitle}>
+                      {employeeSchedule.length === 0 ? t.noPublishedScheduleHint : t.empty}
+                    </span>
+                  </div>
+                ) : (
+                  <div style={styles.selectedShiftList}>
+                    {selectedEmployeeDateShifts.map((shift) => {
+                      const shiftId = getShiftId(shift);
+                      const durationLabel = getShiftDurationLabel(shift, language);
+
+                      return (
+                        <div
+                          key={shiftId}
+                          style={{
+                            ...styles.calendarShiftCard,
+                            ...(r.isMobile ? { padding: 14 } : {}),
+                          }}
+                        >
+                          <div style={{
+                            ...styles.calendarShiftInfo,
+                            ...(r.isMobile ? { alignItems: 'center', justifyContent: 'center' } : {}),
+                          }}
+                          >
+                            <span style={styles.calendarShiftTimeInline}>
+                              {formatTime(shift.start_time)} - {formatTime(shift.end_time)}
+                            </span>
+                            <strong style={styles.calendarShiftTitle}>{getShiftPosition(shift)}</strong>
+                            {durationLabel && <span style={styles.calendarDurationBadge}>{durationLabel}</span>}
+                          </div>
+
+                          <div style={{
+                            ...styles.calendarExchangeRow,
+                            ...(r.isMobile ? { gridTemplateColumns: '1fr' } : {}),
+                          }}
+                          >
+                            <textarea
+                              value={exchangeNotes[shiftId] || ''}
+                              onChange={(event) => {
+                                setExchangeNotes((prev) => ({
+                                  ...prev,
+                                  [shiftId]: event.target.value,
+                                }));
+                                markUnsaved(EXCHANGE_NOTE_SCOPE);
+                              }}
+                              placeholder={t.exchangeNotePlaceholder}
+                              style={styles.calendarExchangeInput}
+                              disabled={isSubmitting}
+                            />
+
+                            <button
+                              type="button"
+                              onClick={() => handleCreateExchangeRequest(shiftId)}
+                              style={{
+                                ...(isSubmitting ? styles.smallSecondaryButtonDisabled : styles.calendarExchangeButton),
+                                width: '100%',
+                              }}
+                              disabled={isSubmitting}
+                            >
+                              {t.requestExchange}
+                            </button>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </section>
+
+              <div style={{ display: 'none' }}>
+              <div style={{ ...styles.panelHeader, ...r.panelHeader }}>
+                <div style={{ ...styles.modeSegment, ...r.modeSegment }}>
                   {['day', 'week', 'month'].map((mode) => (
                     <button
                       key={mode}
                       type="button"
                       onClick={() => setEmployeeViewMode(mode)}
-                      style={
-                        employeeViewMode === mode
-                          ? { ...styles.modeButton, ...styles.modeButtonActive }
-                          : styles.modeButton
-                      }
+                      style={{
+                        ...styles.modeButton,
+                        ...(employeeViewMode === mode ? styles.modeButtonActive : {}),
+                        ...r.modeButton,
+                      }}
                     >
                       {t[mode] || mode}
                     </button>
@@ -761,7 +1311,7 @@ export default function ScheduleTab({ language, userRole }) {
               </div>
 
               {employeeSchedule.length === 0 ? (
-                <div style={styles.emptyHero}>
+                <div style={{ ...styles.emptyHero, ...(r.isMobile ? { padding: '32px 16px' } : {}) }}>
                   <div style={styles.emptyHeroInner}>
                     <div style={styles.emptyIcon}>🕒</div>
                     <h3 style={styles.emptyTitle}>{t.noPublishedScheduleTitle}</h3>
@@ -777,7 +1327,11 @@ export default function ScheduleTab({ language, userRole }) {
                   </div>
                 </div>
               ) : (
-                <div style={styles.employeeTimelineScroll}>
+                <div style={{
+                  ...styles.employeeTimelineScroll,
+                  ...(r.isMobile ? { overflowY: 'visible', flex: 'none' } : {}),
+                }}
+                >
                   <div style={styles.employeeTimeline}>
                     {employeeTimelineDates.map((date) => {
                       const shiftsForDate = normalizeArray(employeeSchedule).filter(
@@ -785,8 +1339,16 @@ export default function ScheduleTab({ language, userRole }) {
                       );
 
                       return (
-                        <section key={date} style={styles.timelineDay}>
-                          <div style={styles.timelineDayHeader}>
+                        <section key={date} style={{
+                          ...styles.timelineDay,
+                          ...(r.isMobile ? { padding: 14, borderRadius: 16 } : {}),
+                        }}
+                        >
+                          <div style={{
+                            ...styles.timelineDayHeader,
+                            ...(r.isMobile ? { flexDirection: 'column', alignItems: 'flex-start', gap: 4 } : {}),
+                          }}
+                          >
                             <strong style={styles.itemTitle}>{formatDisplayDate(date)}</strong>
                             <span style={styles.itemMeta}>{date}</span>
                           </div>
@@ -797,6 +1359,76 @@ export default function ScheduleTab({ language, userRole }) {
                             <div style={styles.shiftList}>
                               {shiftsForDate.map((shift) => {
                                 const shiftId = getShiftId(shift);
+                                const timeLabel = `${formatTime(shift.start_time)} — ${formatTime(shift.end_time)}`;
+
+                                if (r.isMobile) {
+                                  return (
+                                    <div
+                                      key={shiftId}
+                                      style={{
+                                        padding: '14px 16px',
+                                        borderRadius: 14,
+                                        background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+                                        color: '#fff',
+                                        border: '1px solid rgba(255,255,255,0.12)',
+                                        boxShadow: '0 2px 8px rgba(102,126,234,0.25)',
+                                        display: 'flex',
+                                        flexDirection: 'column',
+                                        alignItems: 'center',
+                                        textAlign: 'center',
+                                      }}
+                                    >
+                                      <div style={{ fontWeight: 800, fontSize: 15, marginBottom: 4, width: '100%' }}>
+                                        {getShiftPosition(shift)}
+                                      </div>
+                                      <div style={{ fontSize: 13, opacity: 0.92, marginBottom: 6, width: '100%' }}>
+                                        {getShiftCompany(shift)}
+                                      </div>
+                                      <div style={{
+                                        display: 'inline-block',
+                                        padding: '4px 10px',
+                                        borderRadius: 999,
+                                        background: 'rgba(255,255,255,0.18)',
+                                        fontSize: 13,
+                                        fontWeight: 700,
+                                      }}
+                                      >
+                                        {timeLabel}
+                                      </div>
+                                      <textarea
+                                        value={exchangeNotes[shiftId] || ''}
+                                        onChange={(event) => {
+                                          setExchangeNotes((prev) => ({
+                                            ...prev,
+                                            [shiftId]: event.target.value,
+                                          }));
+                                          markUnsaved(EXCHANGE_NOTE_SCOPE);
+                                        }}
+                                        placeholder={t.exchangeNotePlaceholder}
+                                        style={{
+                                          ...styles.textarea,
+                                          marginTop: 10,
+                                          minHeight: 48,
+                                          background: 'rgba(255,255,255,0.95)',
+                                          color: '#002642',
+                                        }}
+                                        disabled={isSubmitting}
+                                      />
+                                      <button
+                                        type="button"
+                                        onClick={() => handleCreateExchangeRequest(shiftId)}
+                                        style={{
+                                          ...(isSubmitting ? styles.smallSecondaryButtonDisabled : styles.smallSecondaryButton),
+                                          marginTop: 8,
+                                          width: '100%',
+                                        }}
+                                        disabled={isSubmitting}
+                                      >
+                                        {t.requestExchange}
+                                      </button>
+                                    </div>
+                                  );
+                                }
 
                                 return (
                                   <div key={shiftId} style={styles.shiftCard}>
@@ -804,10 +1436,32 @@ export default function ScheduleTab({ language, userRole }) {
                                       <div style={styles.shiftRow}>
                                         <strong style={styles.itemTitle}>{getShiftPosition(shift)}</strong>
                                         <span style={styles.itemMeta}>· {getShiftCompany(shift)}</span>
-                                        <span style={styles.timeBadge}>
-                                          {formatTime(shift.start_time)} — {formatTime(shift.end_time)}
-                                        </span>
+                                        <span style={styles.timeBadge}>{timeLabel}</span>
                                       </div>
+                                      <textarea
+                                        value={exchangeNotes[shiftId] || ''}
+                                        onChange={(event) => {
+                                          setExchangeNotes((prev) => ({
+                                            ...prev,
+                                            [shiftId]: event.target.value,
+                                          }));
+                                          markUnsaved(EXCHANGE_NOTE_SCOPE);
+                                        }}
+                                        placeholder={t.exchangeNotePlaceholder}
+                                        style={{ ...styles.textarea, marginTop: 10 }}
+                                        disabled={isSubmitting}
+                                      />
+                                      <button
+                                        type="button"
+                                        onClick={() => handleCreateExchangeRequest(shiftId)}
+                                        style={{
+                                          ...(isSubmitting ? styles.smallSecondaryButtonDisabled : styles.smallPrimaryButton),
+                                          marginTop: 8,
+                                        }}
+                                        disabled={isSubmitting}
+                                      >
+                                        {t.requestExchange}
+                                      </button>
                                     </div>
                                   </div>
                                 );
@@ -820,6 +1474,7 @@ export default function ScheduleTab({ language, userRole }) {
                   </div>
                 </div>
               )}
+              </div>
             </section>
           </main>
         )}
@@ -851,32 +1506,48 @@ const styles = {
     width: '100%',
     height: '100%',
     boxSizing: 'border-box',
-    padding: '22px',
+    padding: '16px 24px 18px',
+    overflowY: 'hidden',
+    overflowX: 'hidden',
+    background: '#f4faff',
+  },
+
+  desktopViewportPage: {
+    height: 'calc(100dvh - 96px)',
     overflow: 'hidden',
   },
 
   shell: {
-    width: 'min(100%, 1280px)',
+    width: 'min(100%, 1480px)',
     height: '100%',
     margin: '0 auto',
     boxSizing: 'border-box',
-    padding: '26px',
-    borderRadius: '30px',
-    background: '#ffffff',
-    border: '1px solid rgba(222, 231, 231, 0.95)',
-    boxShadow: '0 22px 58px rgba(0, 38, 66, 0.18)',
+    padding: 0,
+    borderRadius: 0,
+    background: 'transparent',
+    border: 'none',
+    boxShadow: 'none',
     display: 'flex',
     flexDirection: 'column',
     overflow: 'hidden',
     position: 'relative',
   },
+
+  desktopScaleShell: {
+    width: '125%',
+    height: '125%',
+    transform: 'scale(0.8)',
+    transformOrigin: 'top left',
+  },
+
   header: {
     flexShrink: 0,
     display: 'flex',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    gap: '18px',
-    marginBottom: '18px',
+    flexDirection: 'column',
+    justifyContent: 'flex-start',
+    alignItems: 'stretch',
+    gap: '12px',
+    marginBottom: '14px',
   },
 
   title: {
@@ -884,21 +1555,23 @@ const styles = {
     color: '#002642',
     fontSize: '28px',
     fontWeight: '900',
-    letterSpacing: '-0.03em',
+    letterSpacing: 0,
   },
 
   subtitle: {
     maxWidth: '820px',
-    margin: '6px 0 0',
+    margin: '4px 0 0',
     color: '#4f646f',
-    fontSize: '14px',
+    fontSize: '13px',
     fontWeight: '600',
     lineHeight: 1.45,
   },
 
   headerStats: {
-    display: 'flex',
-    gap: '10px',
+    width: '100%',
+    display: 'grid',
+    gridTemplateColumns: 'repeat(2, minmax(0, 1fr))',
+    gap: '12px',
   },
 
   managerLayout: {
@@ -906,7 +1579,7 @@ const styles = {
     minHeight: 0,
     display: 'grid',
     gridTemplateColumns: '300px minmax(0, 1fr)',
-    gap: '18px',
+    gap: '14px',
     overflow: 'hidden',
   },
 
@@ -914,7 +1587,7 @@ const styles = {
     minHeight: 0,
     display: 'flex',
     flexDirection: 'column',
-    gap: '14px',
+    gap: '12px',
     overflowY: 'auto',
   },
 
@@ -922,7 +1595,7 @@ const styles = {
     minHeight: 0,
     display: 'grid',
     gridTemplateRows: 'minmax(0, 1fr) auto',
-    gap: '16px',
+    gap: '14px',
     overflow: 'hidden',
   },
 
@@ -931,14 +1604,15 @@ const styles = {
     overflow: 'hidden',
     display: 'flex',
     flexDirection: 'column',
-    gap: '16px',
+    gap: '14px',
   },
 
   panel: {
     padding: '18px',
-    borderRadius: '22px',
-    background: '#f4faff',
-    border: '1px solid rgba(79, 100, 111, 0.12)',
+    borderRadius: '14px',
+    background: '#ffffff',
+    border: '1px solid #dee7e7',
+    boxShadow: '0 12px 30px rgba(0, 38, 66, 0.04)',
     overflow: 'hidden',
     display: 'flex',
     flexDirection: 'column',
@@ -958,7 +1632,7 @@ const styles = {
     margin: 0,
     color: '#002642',
     fontSize: '18px',
-    fontWeight: '850',
+    fontWeight: '900',
   },
 
   panelHint: {
@@ -970,8 +1644,8 @@ const styles = {
 
   modeSegment: {
     display: 'inline-flex',
-    borderRadius: '999px',
-    background: '#eceff4',
+    borderRadius: '12px',
+    background: '#eef3f6',
     padding: '4px',
     gap: '6px',
     flexShrink: 0,
@@ -980,18 +1654,401 @@ const styles = {
   modeButton: {
     minWidth: '70px',
     border: 'none',
-    borderRadius: '999px',
+    borderRadius: '9px',
     background: 'transparent',
     color: '#4f646f',
-    padding: '10px 14px',
+    padding: '9px 13px',
     fontSize: '13px',
-    fontWeight: '700',
+    fontWeight: '800',
     cursor: 'pointer',
   },
 
   modeButtonActive: {
     background: '#002642',
     color: '#f4faff',
+  },
+
+  employeeCalendarPanel: {
+    padding: '16px',
+    borderRadius: '14px',
+    background: '#ffffff',
+    border: '1px solid #dee7e7',
+    boxShadow: '0 12px 30px rgba(0, 38, 66, 0.04)',
+    overflow: 'hidden',
+    display: 'grid',
+    gridTemplateRows: 'auto minmax(260px, 1fr) minmax(230px, 0.55fr)',
+    gap: '12px',
+    flex: 1,
+    minHeight: 0,
+  },
+
+  employeeCalendarHeader: {
+    display: 'flex',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    gap: '14px',
+    flexWrap: 'wrap',
+  },
+
+  employeeCalendarTitle: {
+    margin: 0,
+    color: '#002642',
+    fontSize: '24px',
+    fontWeight: '900',
+    textTransform: 'capitalize',
+  },
+
+  calendarNav: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '10px',
+  },
+
+  calendarNavButton: {
+    width: '48px',
+    height: '40px',
+    borderRadius: '10px',
+    border: '1px solid #dee7e7',
+    background: '#eef3f6',
+    color: '#002642',
+    fontSize: '22px',
+    fontWeight: '800',
+    cursor: 'pointer',
+  },
+
+  calendarTodayButton: {
+    height: '40px',
+    padding: '0 16px',
+    borderRadius: '10px',
+    border: '1px solid #dbe6f0',
+    background: '#ffffff',
+    color: '#002642',
+    fontSize: '14px',
+    fontWeight: '850',
+    cursor: 'pointer',
+    whiteSpace: 'nowrap',
+  },
+
+  monthCalendar: {
+    minHeight: 0,
+    display: 'grid',
+    gridTemplateRows: '28px minmax(0, 1fr)',
+    border: '1px solid #dee7e7',
+    borderRadius: '12px',
+    overflow: 'hidden',
+    background: '#ffffff',
+  },
+
+  monthWeekdays: {
+    display: 'grid',
+    gridTemplateColumns: 'repeat(7, minmax(0, 1fr))',
+    background: '#f4faff',
+    borderBottom: '1px solid #dee7e7',
+  },
+
+  monthWeekday: {
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    color: '#4f646f',
+    fontSize: '12px',
+    fontWeight: '850',
+    textTransform: 'capitalize',
+  },
+
+  monthGrid: {
+    minHeight: 0,
+    display: 'grid',
+    gridTemplateColumns: 'repeat(7, minmax(0, 1fr))',
+    gridAutoRows: 'minmax(46px, 1fr)',
+    background: '#dee7e7',
+    gap: '1px',
+  },
+
+  monthDayCell: {
+    minWidth: 0,
+    minHeight: 0,
+    border: 0,
+    background: '#ffffff',
+    color: '#002642',
+    cursor: 'pointer',
+    padding: '6px',
+    display: 'flex',
+    flexDirection: 'column',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: '4px',
+  },
+
+  monthDayMuted: {
+    background: '#f8fbfd',
+    color: '#8da0a9',
+  },
+
+  monthDaySelected: {
+    background: '#eaf6ff',
+    boxShadow: 'inset 0 0 0 2px #002642',
+  },
+
+  monthDayNumber: {
+    width: '28px',
+    height: '28px',
+    borderRadius: '50%',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    fontSize: '16px',
+    fontWeight: '800',
+  },
+
+  monthDayToday: {
+    border: '2px solid #007aff',
+    color: '#007aff',
+  },
+
+  monthDayNumberSelected: {
+    background: '#002642',
+    color: '#ffffff',
+    borderColor: '#002642',
+  },
+
+  monthDots: {
+    minHeight: '7px',
+    display: 'flex',
+    justifyContent: 'center',
+    alignItems: 'center',
+    gap: '3px',
+  },
+
+  monthDot: {
+    width: '6px',
+    height: '6px',
+    borderRadius: '50%',
+    display: 'block',
+  },
+
+  selectedDatePanel: {
+    minHeight: 0,
+    borderRadius: '12px',
+    border: '1px solid #dee7e7',
+    background: '#f8fbfd',
+    padding: '12px',
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '10px',
+    overflow: 'hidden',
+  },
+
+  selectedDateHeader: {
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: '14px',
+    flexShrink: 0,
+  },
+
+  selectedDateCount: {
+    minWidth: '40px',
+    height: '32px',
+    padding: '0 10px',
+    borderRadius: '999px',
+    background: '#002642',
+    color: '#ffffff',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    fontSize: '15px',
+    fontWeight: '900',
+  },
+
+  selectedDateEmpty: {
+    flex: 1,
+    minHeight: '100px',
+    borderRadius: '10px',
+    background: '#ffffff',
+    border: '1px solid #edf2f2',
+    display: 'flex',
+    flexDirection: 'column',
+    justifyContent: 'center',
+    gap: '6px',
+    padding: '18px',
+  },
+
+  selectedShiftList: {
+    minHeight: 0,
+    overflowY: 'auto',
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '8px',
+    paddingRight: '4px',
+  },
+
+  calendarShiftCard: {
+    padding: '14px',
+    borderRadius: '10px',
+    background: '#ffffff',
+    border: '1px solid #edf2f2',
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '10px',
+  },
+
+  calendarShiftInfo: {
+    minWidth: 0,
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: '10px',
+    flexWrap: 'wrap',
+    overflow: 'hidden',
+  },
+
+  calendarShiftTimeInline: {
+    height: '34px',
+    padding: '0 12px',
+    borderRadius: '9px',
+    background: '#002642',
+    color: '#ffffff',
+    display: 'inline-flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    fontSize: '15px',
+    fontWeight: '900',
+    whiteSpace: 'nowrap',
+    flexShrink: 0,
+  },
+
+  calendarDurationBadge: {
+    height: '34px',
+    padding: '0 12px',
+    borderRadius: '9px',
+    background: '#d7adcf',
+    color: '#002642',
+    border: '1px solid rgba(215, 173, 207, 0.85)',
+    display: 'inline-flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    fontSize: '13px',
+    fontWeight: '850',
+    whiteSpace: 'nowrap',
+    flexShrink: 0,
+  },
+
+  calendarShiftTime: {
+    borderRadius: '10px',
+    background: '#002642',
+    color: '#ffffff',
+    padding: '10px 8px',
+    display: 'flex',
+    flexDirection: 'column',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: '5px',
+    minHeight: '86px',
+  },
+
+  calendarShiftTimeStart: {
+    fontSize: '22px',
+    fontWeight: '900',
+    lineHeight: 1,
+  },
+
+  calendarShiftTimeLine: {
+    width: '22px',
+    height: '2px',
+    borderRadius: '999px',
+    background: 'rgba(255, 255, 255, 0.55)',
+  },
+
+  calendarShiftTimeEnd: {
+    fontSize: '16px',
+    fontWeight: '850',
+    lineHeight: 1,
+    opacity: 0.9,
+  },
+
+  calendarShiftBody: {
+    minWidth: 0,
+    display: 'flex',
+    flexDirection: 'column',
+    justifyContent: 'center',
+    gap: '10px',
+  },
+
+  calendarShiftTitle: {
+    minWidth: 0,
+    color: '#002642',
+    fontSize: '18px',
+    fontWeight: '900',
+    lineHeight: 1.2,
+    whiteSpace: 'nowrap',
+    overflow: 'hidden',
+    textOverflow: 'ellipsis',
+  },
+
+  calendarExchangeRow: {
+    display: 'grid',
+    gridTemplateColumns: 'minmax(0, 1fr) 180px',
+    gap: '10px',
+    alignItems: 'stretch',
+  },
+
+  calendarShiftMetaRow: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '8px',
+    flexWrap: 'wrap',
+  },
+
+  calendarExchangePanel: {
+    minWidth: 0,
+    display: 'grid',
+    gridTemplateRows: '1fr auto',
+    gap: '8px',
+  },
+
+  calendarExchangeTextarea: {
+    width: '100%',
+    minHeight: '62px',
+    boxSizing: 'border-box',
+    borderRadius: '10px',
+    border: '1px solid #dbe6f0',
+    background: '#f8fbfd',
+    padding: '10px 12px',
+    color: '#002642',
+    fontSize: '13px',
+    resize: 'vertical',
+    outline: 'none',
+  },
+
+  calendarExchangeInput: {
+    width: '100%',
+    height: '42px',
+    minHeight: '42px',
+    boxSizing: 'border-box',
+    borderRadius: '9px',
+    border: '1px solid #dbe6f0',
+    background: '#f8fbfd',
+    padding: '11px 12px',
+    color: '#002642',
+    fontSize: '13px',
+    resize: 'none',
+    outline: 'none',
+    overflow: 'hidden',
+  },
+
+  calendarExchangeButton: {
+    width: '100%',
+    height: '42px',
+    padding: '0 14px',
+    background: '#002642',
+    border: 'none',
+    borderRadius: '9px',
+    color: '#f4faff',
+    fontSize: '13px',
+    fontWeight: '850',
+    cursor: 'pointer',
+    whiteSpace: 'nowrap',
   },
 
   employeeTimelineScroll: {
@@ -1008,10 +2065,10 @@ const styles = {
 
   timelineDay: {
     padding: '16px',
-    borderRadius: '20px',
+    borderRadius: '14px',
     background: '#ffffff',
-    border: '1px solid rgba(222, 231, 231, 0.95)',
-    boxShadow: '0 8px 18px rgba(0, 38, 66, 0.08)',
+    border: '1px solid #dee7e7',
+    boxShadow: '0 10px 24px rgba(0, 38, 66, 0.035)',
   },
 
   timelineDayHeader: {
@@ -1042,23 +2099,39 @@ const styles = {
 
   input: {
     width: '100%',
-    height: '42px',
+    height: '40px',
     boxSizing: 'border-box',
-    borderRadius: '13px',
-    border: '2px solid #dee7e7',
+    borderRadius: '10px',
+    border: '1px solid #dbe6f0',
     background: '#ffffff',
-    padding: '0 13px',
+    padding: '0 14px',
     color: '#002642',
-    fontSize: '14px',
+    fontSize: '13px',
     outline: 'none',
+  },
+
+  dateInput: {
+    width: '100%',
+    height: '40px',
+    boxSizing: 'border-box',
+    borderRadius: '10px',
+    border: '1px solid #dbe6f0',
+    background: '#ffffff',
+    padding: '0 14px',
+    color: '#002642',
+    colorScheme: 'light',
+    fontSize: '13px',
+    fontWeight: '700',
+    outline: 'none',
+    cursor: 'pointer',
   },
 
   select: {
     width: '210px',
-    height: '38px',
+    height: '36px',
     boxSizing: 'border-box',
-    borderRadius: '12px',
-    border: '2px solid #dee7e7',
+    borderRadius: '10px',
+    border: '1px solid #dbe6f0',
     background: '#ffffff',
     padding: '0 12px',
     color: '#002642',
@@ -1070,8 +2143,8 @@ const styles = {
     width: '100%',
     minHeight: '58px',
     boxSizing: 'border-box',
-    borderRadius: '13px',
-    border: '2px solid #dee7e7',
+    borderRadius: '10px',
+    border: '1px solid #dbe6f0',
     background: '#ffffff',
     padding: '10px 12px',
     color: '#002642',
@@ -1081,24 +2154,26 @@ const styles = {
   },
 
   primaryButton: {
-    height: '42px',
-    padding: '0 18px',
+    height: '40px',
+    padding: '0 16px',
     background: '#002642',
     border: 'none',
-    borderRadius: '13px',
+    borderRadius: '10px',
     color: '#f4faff',
+    fontSize: '13px',
     fontWeight: '850',
     cursor: 'pointer',
     whiteSpace: 'nowrap',
   },
 
   primaryButtonDisabled: {
-    height: '42px',
-    padding: '0 18px',
+    height: '40px',
+    padding: '0 16px',
     background: '#4f646f',
     border: 'none',
-    borderRadius: '13px',
+    borderRadius: '10px',
     color: '#f4faff',
+    fontSize: '13px',
     fontWeight: '850',
     cursor: 'default',
     opacity: 0.65,
@@ -1106,24 +2181,26 @@ const styles = {
   },
 
   secondaryButton: {
-    height: '42px',
-    padding: '0 18px',
-    background: '#d7adcf',
-    border: 'none',
-    borderRadius: '13px',
-    color: '#002642',
+    height: '40px',
+    padding: '0 16px',
+    background: '#eef2ff',
+    border: '1px solid rgba(99, 102, 241, 0.18)',
+    borderRadius: '10px',
+    color: '#3730a3',
+    fontSize: '13px',
     fontWeight: '850',
     cursor: 'pointer',
     whiteSpace: 'nowrap',
   },
 
   secondaryButtonDisabled: {
-    height: '42px',
-    padding: '0 18px',
-    background: '#d7adcf',
-    border: 'none',
-    borderRadius: '13px',
-    color: '#002642',
+    height: '40px',
+    padding: '0 16px',
+    background: '#eef2ff',
+    border: '1px solid rgba(99, 102, 241, 0.18)',
+    borderRadius: '10px',
+    color: '#3730a3',
+    fontSize: '13px',
     fontWeight: '850',
     cursor: 'default',
     opacity: 0.65,
@@ -1131,11 +2208,11 @@ const styles = {
   },
 
   smallPrimaryButton: {
-    height: '36px',
-    padding: '0 13px',
+    height: '34px',
+    padding: '0 12px',
     background: '#002642',
     border: 'none',
-    borderRadius: '12px',
+    borderRadius: '9px',
     color: '#f4faff',
     fontSize: '13px',
     fontWeight: '850',
@@ -1144,22 +2221,59 @@ const styles = {
   },
 
   smallSecondaryButton: {
-    height: '36px',
-    padding: '0 13px',
-    background: 'rgba(215, 173, 207, 0.42)',
-    border: 'none',
-    borderRadius: '12px',
-    color: '#002642',
+    height: '34px',
+    padding: '0 12px',
+    background: '#eef2ff',
+    border: '1px solid rgba(99, 102, 241, 0.18)',
+    borderRadius: '9px',
+    color: '#3730a3',
     fontSize: '13px',
     fontWeight: '850',
     cursor: 'pointer',
     whiteSpace: 'nowrap',
   },
 
+  smallPrimaryButtonDisabled: {
+    height: '34px',
+    padding: '0 12px',
+    background: '#4f646f',
+    border: 'none',
+    borderRadius: '9px',
+    color: '#f4faff',
+    fontSize: '13px',
+    fontWeight: '850',
+    cursor: 'default',
+    opacity: 0.65,
+    whiteSpace: 'nowrap',
+  },
+
+  smallSecondaryButtonDisabled: {
+    height: '34px',
+    padding: '0 12px',
+    background: '#eef2ff',
+    border: '1px solid rgba(99, 102, 241, 0.18)',
+    borderRadius: '9px',
+    color: '#3730a3',
+    fontSize: '13px',
+    fontWeight: '850',
+    cursor: 'default',
+    opacity: 0.65,
+    whiteSpace: 'nowrap',
+  },
+
+  inlineActions: {
+    display: 'flex',
+    flexWrap: 'wrap',
+    gap: '8px',
+    marginTop: '8px',
+  },
+
   helpBox: {
     padding: '18px',
-    borderRadius: '22px',
-    background: '#dee7e7',
+    borderRadius: '14px',
+    background: '#ffffff',
+    border: '1px solid #dee7e7',
+    boxShadow: '0 12px 30px rgba(0, 38, 66, 0.04)',
     color: '#002642',
     display: 'flex',
     flexDirection: 'column',
@@ -1176,42 +2290,50 @@ const styles = {
   },
 
   metric: {
-    minWidth: '110px',
-    padding: '11px 14px',
-    borderRadius: '16px',
-    background: '#dee7e7',
+    minWidth: 0,
+    height: '46px',
+    boxSizing: 'border-box',
+    padding: '0 18px',
+    borderRadius: '12px',
+    background: '#ffffff',
+    border: '1px solid #dee7e7',
     color: '#002642',
     display: 'flex',
-    flexDirection: 'column',
-    gap: '3px',
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: '12px',
+    boxShadow: '0 8px 20px rgba(0, 38, 66, 0.035)',
   },
 
   metricLabel: {
-    fontSize: '12px',
+    fontSize: '13px',
     color: '#4f646f',
     fontWeight: '800',
   },
 
   metricValue: {
-    fontSize: '19px',
+    fontSize: '24px',
     fontWeight: '900',
     color: '#002642',
   },
 
   statusDraft: {
-    padding: '8px 12px',
+    padding: '7px 11px',
     borderRadius: '999px',
-    background: '#dee7e7',
+    background: '#f4faff',
     color: '#002642',
+    border: '1px solid #dee7e7',
     fontSize: '13px',
     fontWeight: '850',
   },
 
   statusPublished: {
-    padding: '8px 12px',
+    padding: '7px 11px',
     borderRadius: '999px',
-    background: 'rgba(215, 173, 207, 0.55)',
-    color: '#002642',
+    background: '#eef2ff',
+    color: '#3730a3',
+    border: '1px solid rgba(99, 102, 241, 0.18)',
     fontSize: '13px',
     fontWeight: '850',
   },
@@ -1225,10 +2347,10 @@ const styles = {
   },
 
   shiftCard: {
-    padding: '14px 16px',
-    borderRadius: '18px',
-    background: '#f4faff',
-    border: '1px solid rgba(79, 100, 111, 0.1)',
+    padding: '12px 14px',
+    borderRadius: '12px',
+    background: '#ffffff',
+    border: '1px solid #edf2f2',
     display: 'flex',
     justifyContent: 'space-between',
     alignItems: 'center',
@@ -1260,9 +2382,9 @@ const styles = {
   timeBadge: {
     padding: '4px 10px',
     borderRadius: '999px',
-    background: '#dee7e7',
+    background: '#f4faff',
     color: '#002642',
-    border: '1px solid rgba(79, 100, 111, 0.1)',
+    border: '1px solid #dee7e7',
     fontSize: '12px',
     fontWeight: '700',
     whiteSpace: 'nowrap',
@@ -1272,7 +2394,7 @@ const styles = {
     minHeight: '160px',
     display: 'grid',
     gridTemplateColumns: '1fr 1fr',
-    gap: '16px',
+    gap: '14px',
   },
 
   compactList: {
@@ -1286,9 +2408,9 @@ const styles = {
 
   compactItem: {
     padding: '12px 13px',
-    borderRadius: '16px',
-    background: '#f4faff',
-    border: '1px solid rgba(79, 100, 111, 0.1)',
+    borderRadius: '12px',
+    background: '#ffffff',
+    border: '1px solid #edf2f2',
     display: 'flex',
     flexDirection: 'column',
     gap: '3px',
@@ -1310,8 +2432,9 @@ const styles = {
     width: 'fit-content',
     padding: '7px 11px',
     borderRadius: '999px',
-    background: 'rgba(215, 173, 207, 0.45)',
-    color: '#002642',
+    background: '#eef2ff',
+    color: '#3730a3',
+    border: '1px solid rgba(99, 102, 241, 0.18)',
     fontSize: '13px',
     fontWeight: '850',
   },
@@ -1322,10 +2445,11 @@ const styles = {
     flexDirection: 'column',
     alignItems: 'center',
     justifyContent: 'center',
-    padding: '48px 32px',
-    background: 'linear-gradient(180deg, #f8fbff 0%, #f4faff 100%)',
-    borderRadius: '22px',
-    border: '1px solid rgba(79, 100, 111, 0.12)',
+    padding: '42px 28px',
+    background: '#ffffff',
+    borderRadius: '14px',
+    border: '1px solid #dee7e7',
+    boxShadow: '0 12px 30px rgba(0, 38, 66, 0.04)',
   },
 
   emptyHeroInner: {
@@ -1340,9 +2464,9 @@ const styles = {
   emptyIcon: {
     width: '56px',
     height: '56px',
-    borderRadius: '18px',
-    background: '#ffffff',
-    border: '1px solid rgba(203, 213, 225, 0.9)',
+    borderRadius: '14px',
+    background: '#f4faff',
+    border: '1px solid #dee7e7',
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'center',
@@ -1369,9 +2493,9 @@ const styles = {
   emptyNote: {
     margin: '4px 0 0',
     padding: '12px 14px',
-    borderRadius: '14px',
-    background: '#ffffff',
-    border: '1px solid rgba(203, 213, 225, 0.85)',
+    borderRadius: '12px',
+    background: '#f8fbff',
+    border: '1px solid #dee7e7',
     color: '#64748b',
     fontSize: '13px',
     fontWeight: '600',
@@ -1384,9 +2508,9 @@ const styles = {
     listStyle: 'none',
     width: '100%',
     boxSizing: 'border-box',
-    borderRadius: '16px',
-    background: '#ffffff',
-    border: '1px solid rgba(203, 213, 225, 0.85)',
+    borderRadius: '12px',
+    background: '#f8fbff',
+    border: '1px solid #dee7e7',
     display: 'flex',
     flexDirection: 'column',
     gap: '10px',
@@ -1423,8 +2547,9 @@ const styles = {
 
   emptyBox: {
     padding: '26px',
-    borderRadius: '20px',
-    background: '#f4faff',
+    borderRadius: '14px',
+    background: '#ffffff',
+    border: '1px solid #dee7e7',
     color: '#4f646f',
     fontWeight: '800',
     textAlign: 'center',

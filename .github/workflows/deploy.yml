@@ -1,0 +1,235 @@
+name: CI/CD
+
+on:
+  pull_request:
+    branches:
+      - main
+      - dev
+  push:
+    branches:
+      - main
+      - dev
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  backend-tests:
+    name: Backend tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_DB: shiftplanner
+          POSTGRES_USER: shiftplanner_user
+          POSTGRES_PASSWORD: shiftplanner_password
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U shiftplanner_user -d shiftplanner"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+
+    env:
+      DATABASE_URL: postgresql+psycopg://shiftplanner_user:shiftplanner_password@localhost:5432/shiftplanner
+      FRONTEND_ORIGINS: http://localhost:5173,https://shiftplanner.online
+      JWT_SECRET_KEY: ci-test-secret
+      JWT_ALGORITHM: HS256
+      ACCESS_TOKEN_EXPIRE_MINUTES: "60"
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: backend/requirements.txt
+
+      - name: Install backend dependencies
+        working-directory: backend
+        run: python -m pip install --upgrade pip && pip install -r requirements.txt
+
+      - name: Install PostgreSQL client
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes postgresql-client
+
+      - name: Initialize test database
+        working-directory: backend
+        env:
+          PGPASSWORD: shiftplanner_password
+        run: |
+          until pg_isready -h localhost -p 5432 -U shiftplanner_user -d shiftplanner; do
+            sleep 2
+          done
+          psql -v ON_ERROR_STOP=1 -h localhost -U shiftplanner_user -d shiftplanner -f db/schema.sql
+          psql -v ON_ERROR_STOP=1 -h localhost -U shiftplanner_user -d shiftplanner -f db/seed.sql
+
+      - name: Run backend tests
+        working-directory: backend
+        run: python -m pytest
+
+  frontend-build:
+    name: Frontend build
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install frontend dependencies
+        working-directory: frontend
+        run: npm ci
+
+      - name: Build frontend
+        working-directory: frontend
+        env:
+          VITE_API_URL: /api
+        run: npm run build
+
+      - name: Check built API URL
+        working-directory: frontend
+        run: |
+          if grep -R "localhost:8000" -n dist; then
+            echo "Frontend bundle contains localhost API URL" >&2
+            exit 1
+          fi
+
+      - name: Run lint as warning
+        working-directory: frontend
+        run: npm run lint || echo "::warning::Frontend lint currently has existing issues; build remains the blocking check."
+
+  compose-check:
+    name: Docker Compose config
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Validate production compose file
+        run: docker compose -f docker-compose.yml config
+
+      - name: Ensure production compose does not use localhost API
+        run: |
+          if docker compose -f docker-compose.yml config | grep -E "VITE_API_URL:.*localhost"; then
+            echo "Production compose contains localhost VITE_API_URL" >&2
+            exit 1
+          fi
+
+  deploy:
+    name: Deploy production
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    environment: production
+    needs:
+      - backend-tests
+      - frontend-build
+      - compose-check
+    if: github.event_name == 'workflow_dispatch' || github.ref == 'refs/heads/main' || github.ref == 'refs/heads/dev'
+
+    env:
+      VPS_HOST: ${{ secrets.DEPLOY_IP }}
+      VPS_USER: ${{ secrets.DEPLOY_LOGIN }}
+      VPS_SSH_PORT: ${{ secrets.DEPLOY_SSH_PORT || '22' }}
+
+    steps:
+      - name: Validate deployment configuration
+        env:
+          VPS_PASSWORD: ${{ secrets.DEPLOY_SSH_PASSWORD }}
+        run: |
+          : "${VPS_HOST:?GitHub secret DEPLOY_IP is required}"
+          : "${VPS_USER:?GitHub secret DEPLOY_LOGIN is required}"
+          : "${VPS_PASSWORD:?GitHub secret DEPLOY_SSH_PASSWORD is required}"
+
+      - name: Install SSH client dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes sshpass
+
+      - name: Configure SSH host key
+        run: |
+          mkdir -p ~/.ssh
+          chmod 700 ~/.ssh
+          ssh-keyscan -p "$VPS_SSH_PORT" -H "$VPS_HOST" >> ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/known_hosts
+
+      - name: Deploy Docker Compose stack
+        env:
+          SSHPASS: ${{ secrets.DEPLOY_SSH_PASSWORD }}
+        run: |
+          sshpass -e ssh \
+            -p "$VPS_SSH_PORT" \
+            "$VPS_USER@$VPS_HOST" \
+            "bash -s -- '$GITHUB_SHA'" <<'REMOTE_SCRIPT'
+          set -Eeuo pipefail
+
+          readonly SHA="$1"
+          readonly DEPLOY_DIR="$HOME/shiftplanner"
+          readonly REPOSITORY="https://github.com/shift-happens-daily/ShiftPlanner.git"
+          readonly COMPOSE_PROJECT="shiftplanner"
+          readonly COMPOSE="docker compose -f docker-compose.yml -p $COMPOSE_PROJECT"
+
+          command -v git >/dev/null
+          command -v docker >/dev/null
+          docker compose version >/dev/null
+          test "$(id -u)" -eq 0
+
+          if [ ! -d "$DEPLOY_DIR/.git" ]; then
+            rm -rf -- "$DEPLOY_DIR"
+            git clone "$REPOSITORY" "$DEPLOY_DIR"
+          fi
+
+          cd "$DEPLOY_DIR"
+          readonly PREVIOUS_SHA="$(git rev-parse HEAD)"
+
+          git remote set-url origin "$REPOSITORY"
+          git fetch --prune origin
+          git cat-file -e "${SHA}^{commit}"
+          git reset --hard "$SHA"
+          git clean -fd
+
+          if [ -f /etc/letsencrypt/live/shiftplanner.online/fullchain.pem ] && \
+             [ -f /etc/letsencrypt/live/shiftplanner.online/privkey.pem ]; then
+            echo "Using existing Let's Encrypt certificate for shiftplanner.online."
+          else
+            echo "WARNING: Let's Encrypt certificate for shiftplanner.online was not found."
+            echo "Nginx will start in HTTP-only mode until the certificate exists on the host."
+          fi
+
+          if $COMPOSE up -d --build --force-recreate --remove-orphans --wait --wait-timeout 180; then
+            docker exec shiftplanner_frontend sh -c '! grep -R "localhost:8000" -n /usr/share/nginx/html'
+            install -D -m 755 \
+              nginx/renewal-hooks/pre/shiftplanner-nginx \
+              /etc/letsencrypt/renewal-hooks/pre/shiftplanner-nginx
+            install -D -m 755 \
+              nginx/renewal-hooks/post/shiftplanner-nginx \
+              /etc/letsencrypt/renewal-hooks/post/shiftplanner-nginx
+            docker image prune -f
+          else
+            git reset --hard "$PREVIOUS_SHA"
+            $COMPOSE up -d --build --force-recreate --remove-orphans
+            exit 1
+          fi
+          REMOTE_SCRIPT

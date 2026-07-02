@@ -4,10 +4,15 @@ import { useNavigate } from 'react-router-dom';
 import DashboardTabs from '../components/DashboardTabs';
 import LanguageSwitcher from '../components/LanguageSwitcher';
 import { useAuth } from '../context/useAuth';
+import { UnsavedChangesProvider } from '../context/UnsavedChangesContext';
+import { useUnsavedChanges } from '../context/useUnsavedChanges';
 import { getStoredLanguage } from '../services/language';
+import { useIsMobile } from '../hooks/useMediaQuery';
 
-export default function EmployeeDashboard() {
+function EmployeeDashboardContent() {
+  const isMobile = useIsMobile();
   const { user, logout } = useAuth();
+  const { confirmDiscardChanges, resetUnsavedChanges } = useUnsavedChanges();
   const navigate = useNavigate();
   const [language, setLanguage] = useState(getStoredLanguage);
 
@@ -25,6 +30,8 @@ export default function EmployeeDashboard() {
   const t = texts[language] || texts.ru;
 
   const handleLogout = () => {
+    if (!confirmDiscardChanges()) return;
+    resetUnsavedChanges();
     logout();
     navigate('/');
   };
@@ -36,7 +43,11 @@ export default function EmployeeDashboard() {
   const rightSlot = (
     <>
       <LanguageSwitcher onLanguageChange={handleLanguageChange} variant="light" />
-      <button type="button" onClick={handleLogout} style={styles.logoutBtn}>
+      <button type="button" onClick={handleLogout} style={{
+        ...styles.logoutBtn,
+        ...(isMobile ? styles.logoutBtnMobile : {}),
+      }}
+      >
         {t.logout}
       </button>
     </>
@@ -54,6 +65,14 @@ export default function EmployeeDashboard() {
   );
 }
 
+export default function EmployeeDashboard() {
+  return (
+    <UnsavedChangesProvider>
+      <EmployeeDashboardContent />
+    </UnsavedChangesProvider>
+  );
+}
+
 const styles = {
   container: {
     width: '100vw',
@@ -65,7 +84,7 @@ const styles = {
 
   logoutBtn: {
     height: '42px',
-    padding: '0 px',
+    padding: '0 14px',
     background: '#d7adcf',
     border: 'none',
     borderRadius: '14px',
@@ -74,5 +93,12 @@ const styles = {
     cursor: 'pointer',
     whiteSpace: 'nowrap',
     boxShadow: '0 10px 24px rgba(0, 38, 66, 0.08)',
+  },
+
+  logoutBtnMobile: {
+    height: '36px',
+    padding: '0 10px',
+    borderRadius: '12px',
+    fontSize: '12px',
   },
 };

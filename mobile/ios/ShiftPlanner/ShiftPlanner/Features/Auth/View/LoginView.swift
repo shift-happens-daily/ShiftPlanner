@@ -3,7 +3,6 @@ import SwiftUI
 struct LoginView: View {
     @ObservedObject var viewModel: AuthViewModel
     @EnvironmentObject private var themeManager: ThemeManager
-    @EnvironmentObject private var languageManager: LanguageManager
     let onShowSignUp: () -> Void
     
     var body: some View {
@@ -15,25 +14,18 @@ struct LoginView: View {
                     .font(.largeTitle)
                     .bold()
                     .foregroundStyle(themeManager.selectedTheme.primaryTextColor)
-                Text(languageManager.text("Sign in to your account", "Войдите в аккаунт"))
+                Text("Sign in to your account")
                     .foregroundStyle(themeManager.selectedTheme.secondaryTextColor)
             }
-
-            Picker(languageManager.text("Language", "Язык"), selection: $languageManager.selectedLanguage) {
-                ForEach(AppLanguage.allCases) { language in
-                    Text(language.title).tag(language)
-                }
-            }
-            .pickerStyle(.segmented)
             
             VStack(spacing: 12) {
-                TextField(languageManager.text("Email", "Почта"), text: $viewModel.email)
+                TextField("Email", text: $viewModel.email)
                     .autocapitalization(.none)
                     .autocorrectionDisabled(true)
                     .keyboardType(.emailAddress)
                     .themeInputField()
                 
-                SecureField(languageManager.text("Password", "Пароль"), text: $viewModel.password)
+                SecureField("Password", text: $viewModel.password)
                     .themeInputField()
             }
             
@@ -52,14 +44,14 @@ struct LoginView: View {
                     ProgressView()
                         .tint(themeManager.selectedTheme.primaryActionTextColor)
                 } else {
-                    Text(languageManager.text("Login", "Войти"))
+                    Text("Login")
                 }
             }
             .buttonStyle(.plain)
             .themePrimaryAction(isEnabled: !viewModel.isLoading)
             .disabled(viewModel.isLoading)
             
-            Button(languageManager.text("Create account", "Создать аккаунт")) {
+            Button("Create account") {
                 onShowSignUp()
             }
             .buttonStyle(.plain)

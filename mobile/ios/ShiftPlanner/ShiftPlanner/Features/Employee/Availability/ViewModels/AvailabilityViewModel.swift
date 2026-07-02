@@ -12,22 +12,22 @@ enum AvailabilityState: String, CaseIterable, Identifiable, Codable {
     var title: String {
         switch self {
         case .canWork:
-            return localized("Can work", "Могу")
+            return "Can work"
         case .preferNotToWork:
-            return localized("Prefer not", "Нежелательно")
+            return "Prefer not"
         case .unavailable:
-            return localized("Unavailable", "Не могу")
+            return "Unavailable"
         }
     }
 
     var shortTitle: String {
         switch self {
         case .canWork:
-            return localized("Can", "Да")
+            return "Can"
         case .preferNotToWork:
-            return localized("Maybe", "Можно")
+            return "Maybe"
         case .unavailable:
-            return localized("Off", "Нет")
+            return "Off"
         }
     }
 
@@ -69,50 +69,32 @@ final class AvailabilityViewModel: ObservableObject {
     @Published var isSaving = false
     @Published var errorMessage: String?
     @Published var statusMessage: String?
-    @Published private(set) var backendSyncNote: String?
 
     let timeSlots = Array(stride(from: 8 * 60, to: 22 * 60, by: 30))
 
     private var calendar: Calendar
     private var weekStorage: [Date: [[AvailabilityState]]] = [:]
-    private var remoteTemplateStates: [[AvailabilityState]]
-    private var locallyStoredWeekStarts: Set<Date> = []
     private var lastPaintedCell: AvailabilityGridCell?
     private let employeeId: Int?
     private let repository: AvailabilityRepository
-    private let localStore: AvailabilityLocalStore
     private var hasLoadedRemoteAvailability = false
 
     init(
         referenceDate: Date = Date(),
         employeeId: Int?,
-        repository: AvailabilityRepository,
-        localStore: AvailabilityLocalStore? = nil
+        repository: AvailabilityRepository
     ) {
         var calendar = Calendar(identifier: .gregorian)
         calendar.firstWeekday = 2
         self.calendar = calendar
         self.employeeId = employeeId
         self.repository = repository
-        self.localStore = localStore ?? UserDefaultsAvailabilityLocalStore()
 
         let weekStart = Self.startOfWeek(for: referenceDate, calendar: calendar)
-        let defaultWeek = Self.makeDefaultWeek(slotCount: timeSlots.count)
         self.currentWeekStart = weekStart
         self.weekDates = Self.buildWeekDates(from: weekStart, calendar: calendar)
-        self.weeklyStates = defaultWeek
-        self.remoteTemplateStates = defaultWeek
-
-        if let employeeId {
-            let storedWeeks = self.localStore.loadWeeks(employeeId: employeeId)
-            if let storedCurrentWeek = storedWeeks[weekStart] {
-                self.weeklyStates = storedCurrentWeek
-            }
-            self.weekStorage = storedWeeks
-            self.locallyStoredWeekStarts = Set(storedWeeks.keys)
-        }
-
-        self.weekStorage[weekStart] = self.weekStorage[weekStart] ?? self.weeklyStates
+        self.weeklyStates = Self.makeDefaultWeek(slotCount: timeSlots.count)
+        self.weekStorage[weekStart] = weeklyStates
     }
 
     var canSave: Bool {
@@ -122,10 +104,8 @@ final class AvailabilityViewModel: ObservableObject {
     var weekTitle: String {
         guard let lastDay = weekDates.last else { return "" }
         let startFormatter = DateFormatter()
-        startFormatter.locale = LanguageManager.storedLocale
         startFormatter.dateFormat = "MMM d"
         let endFormatter = DateFormatter()
-        endFormatter.locale = LanguageManager.storedLocale
         endFormatter.dateFormat = calendar.isDate(currentWeekStart, equalTo: lastDay, toGranularity: .month) ? "d" : "MMM d"
         return "\(startFormatter.string(from: currentWeekStart)) - \(endFormatter.string(from: lastDay))"
     }
@@ -133,7 +113,6 @@ final class AvailabilityViewModel: ObservableObject {
     func shortDayLabel(for dayIndex: Int) -> String {
         guard weekDates.indices.contains(dayIndex) else { return "" }
         let formatter = DateFormatter()
-        formatter.locale = LanguageManager.storedLocale
         formatter.dateFormat = "EEE"
         return formatter.string(from: weekDates[dayIndex]).uppercased()
     }
@@ -196,7 +175,6 @@ final class AvailabilityViewModel: ObservableObject {
         let currentState = weeklyStates[slotIndex][dayIndex]
         weeklyStates[slotIndex][dayIndex] = currentState == selectedState ? .unavailable : selectedState
         weekStorage[currentWeekStart] = weeklyStates
-        persistLocallyIfPossible()
         lastPaintedCell = cell
     }
 
@@ -209,7 +187,7 @@ final class AvailabilityViewModel: ObservableObject {
         hasLoadedRemoteAvailability = true
 
         guard let employeeId else {
-            statusMessage = localized("Availability can be saved after joining a company.", "Сохранение доступности появится после присоединения к компании.")
+            statusMessage = "Availability can be saved after joining a company."
             return
         }
 
@@ -229,7 +207,7 @@ final class AvailabilityViewModel: ObservableObject {
 
     func saveAvailability() async {
         guard let employeeId else {
-            errorMessage = localized("Availability can be saved after joining a company.", "Сохранение доступности появится после присоединения к компании.")
+            errorMessage = "Availability can be saved after joining a company."
             return
         }
 
@@ -241,11 +219,7 @@ final class AvailabilityViewModel: ObservableObject {
             let payload = buildUpsertPayload()
             _ = try await repository.saveAvailability(employeeId: employeeId, payload: payload)
             weekStorage[currentWeekStart] = weeklyStates
-            localStore.saveWeeks(weekStorage, employeeId: employeeId)
-            statusMessage = localized(
-                "Availability saved. 'Prefer not' stays only on this device until the backend supports it.",
-                "Доступность сохранена. 'Нежелательно' пока хранится только на этом устройстве, пока бэкенд это не поддерживает."
-            )
+            statusMessage = "Availability saved."
         } catch {
             errorMessage = error.localizedDescription
         }
@@ -261,19 +235,12 @@ final class AvailabilityViewModel: ObservableObject {
         let previousWeek = weekStorage[previousWeekStart] ?? Self.makeDefaultWeek(slotCount: timeSlots.count)
         weeklyStates = previousWeek
         weekStorage[currentWeekStart] = weeklyStates
-        persistLocallyIfPossible()
     }
 
     func resetWeek() {
         weeklyStates = Self.makeDefaultWeek(slotCount: timeSlots.count)
         weekStorage[currentWeekStart] = weeklyStates
         lastPaintedCell = nil
-        persistLocallyIfPossible()
-        statusMessage = localized(
-            "This week was cleared locally. Tap Save to overwrite the shared weekly availability on the backend.",
-            "Эта неделя очищена локально. Нажмите Сохранить, чтобы перезаписать общее недельное расписание на бэкенде."
-        )
-        errorMessage = nil
     }
 
     private func moveWeek(by dayOffset: Int) {
@@ -285,9 +252,8 @@ final class AvailabilityViewModel: ObservableObject {
 
         currentWeekStart = newWeekStart
         weekDates = Self.buildWeekDates(from: newWeekStart, calendar: calendar)
-        weeklyStates = weekStorage[newWeekStart] ?? remoteTemplateStates
+        weeklyStates = weekStorage[newWeekStart] ?? Self.makeDefaultWeek(slotCount: timeSlots.count)
         weekStorage[newWeekStart] = weeklyStates
-        persistLocallyIfPossible()
     }
 
     private func applyAvailabilityResponse(_ response: EmployeeAvailabilityResponseDTO) {
@@ -309,20 +275,8 @@ final class AvailabilityViewModel: ObservableObject {
             }
         }
 
-        remoteTemplateStates = restoredWeek
-
-        if locallyStoredWeekStarts.contains(currentWeekStart) {
-            weeklyStates = weekStorage[currentWeekStart] ?? restoredWeek
-            weekStorage[currentWeekStart] = weeklyStates
-        } else {
-            weeklyStates = restoredWeek
-            weekStorage[currentWeekStart] = restoredWeek
-        }
-
-        backendSyncNote = localized(
-            "Can work syncs with the server. 'Prefer not' is stored only on this device for now.",
-            "'Могу' синхронизируется с сервером. 'Нежелательно' пока хранится только на этом устройстве."
-        )
+        weeklyStates = restoredWeek
+        weekStorage[currentWeekStart] = restoredWeek
     }
 
     private func buildUpsertPayload() -> EmployeeAvailabilityUpsertDTO {
@@ -335,7 +289,7 @@ final class AvailabilityViewModel: ObservableObject {
 
             for slotIndex in 0...dayStates.count {
                 let state: AvailabilityState? = slotIndex < dayStates.count ? dayStates[slotIndex] : nil
-                let isAvailable = state == .canWork
+                let isAvailable = state == .canWork || state == .preferNotToWork
 
                 if isAvailable {
                     if activeStartSlot == nil {
@@ -358,20 +312,6 @@ final class AvailabilityViewModel: ObservableObject {
             weeklyAvailability: blocks,
             desiredDaysOff: []
         )
-    }
-
-    private func applyServerCompatibleStates(from states: [[AvailabilityState]]) -> [[AvailabilityState]] {
-        states.map { row in
-            row.map { state in
-                state == .canWork ? .canWork : .unavailable
-            }
-        }
-    }
-
-    private func persistLocallyIfPossible() {
-        guard let employeeId else { return }
-        locallyStoredWeekStarts = Set(weekStorage.keys)
-        localStore.saveWeeks(weekStorage, employeeId: employeeId)
     }
 
     private func minutes(from timeString: String) -> Int {

@@ -8,7 +8,6 @@ enum CompanyInviteMode: Equatable {
 struct CompanyInviteView: View {
     @Environment(\.dismiss) private var dismiss
     @EnvironmentObject private var themeManager: ThemeManager
-    @EnvironmentObject private var languageManager: LanguageManager
     @StateObject private var viewModel: CompanyInviteViewModel
 
     let mode: CompanyInviteMode
@@ -27,8 +26,8 @@ struct CompanyInviteView: View {
     var body: some View {
         NavigationStack {
             Form {
-                Section(languageManager.text("Invite code", "Инвайт-код")) {
-                    TextField(languageManager.text("Enter invite code", "Введите код"), text: $viewModel.inviteCode)
+                Section("Invite code") {
+                    TextField("Enter invite code", text: $viewModel.inviteCode)
                         .textInputAutocapitalization(.characters)
                         .autocorrectionDisabled(true)
                         .themeInputField()
@@ -42,7 +41,7 @@ struct CompanyInviteView: View {
                             ProgressView()
                                 .tint(themeManager.selectedTheme.primaryActionTextColor)
                         } else {
-                            Text(languageManager.text("Preview company", "Показать компанию"))
+                            Text("Preview company")
                         }
                     }
                     .buttonStyle(.plain)
@@ -51,21 +50,21 @@ struct CompanyInviteView: View {
                 }
 
                 if let preview = viewModel.preview {
-                    Section(languageManager.text("Preview", "Предпросмотр")) {
+                    Section("Preview") {
                         VStack(alignment: .leading, spacing: 8) {
                             Text(preview.name)
                                 .font(.headline)
                                 .foregroundStyle(themeManager.selectedTheme.primaryTextColor)
-                            Text("\(languageManager.text("Invite code", "Инвайт-код")): \(preview.inviteCode)")
+                            Text("Invite code: \(preview.inviteCode)")
                                 .foregroundStyle(themeManager.selectedTheme.secondaryTextColor)
 
                             if !preview.branches.isEmpty {
-                                Text("\(languageManager.text("Branches", "Филиалы")): \(preview.branches.map(\.name).joined(separator: ", "))")
+                                Text("Branches: \(preview.branches.map(\.name).joined(separator: ", "))")
                                     .font(.footnote)
                             }
 
                             if !preview.positions.isEmpty {
-                                Text("\(languageManager.text("Positions", "Должности")): \(preview.positions.map(\.name).joined(separator: ", "))")
+                                Text("Positions: \(preview.positions.map(\.name).joined(separator: ", "))")
                                     .font(.footnote)
                             }
                         }
@@ -73,40 +72,6 @@ struct CompanyInviteView: View {
                     }
 
                     if mode == .employeeJoin {
-                        Section(languageManager.text("Work setup", "Настройка работы")) {
-                            if preview.branches.isEmpty {
-                                Text(languageManager.text("No branches were added yet, so you can join without choosing one.", "Филиалы пока не добавлены, поэтому можно вступить без выбора филиала."))
-                                    .font(.footnote)
-                                    .foregroundStyle(themeManager.selectedTheme.secondaryTextColor)
-                            } else {
-                                Picker(
-                                    languageManager.text("Branch", "Филиал"),
-                                    selection: $viewModel.selectedBranchId
-                                ) {
-                                    Text(languageManager.text("None", "Не выбрано")).tag(Optional<Int>.none)
-                                    ForEach(preview.branches) { branch in
-                                        Text(branch.name).tag(Optional(branch.id))
-                                    }
-                                }
-                            }
-
-                            if preview.positions.isEmpty {
-                                Text(languageManager.text("No positions were added yet, so you can join without choosing one.", "Должности пока не добавлены, поэтому можно вступить без выбора должности."))
-                                    .font(.footnote)
-                                    .foregroundStyle(themeManager.selectedTheme.secondaryTextColor)
-                            } else {
-                                Picker(
-                                    languageManager.text("Position", "Должность"),
-                                    selection: $viewModel.selectedPositionId
-                                ) {
-                                    Text(languageManager.text("None", "Не выбрано")).tag(Optional<Int>.none)
-                                    ForEach(preview.positions) { position in
-                                        Text(position.name).tag(Optional(position.id))
-                                    }
-                                }
-                            }
-                        }
-
                         Section {
                             Button {
                                 Task {
@@ -121,16 +86,16 @@ struct CompanyInviteView: View {
                                     ProgressView()
                                         .tint(themeManager.selectedTheme.primaryActionTextColor)
                                 } else {
-                                    Text(languageManager.text("Join company", "Присоединиться"))
+                                    Text("Join company")
                                 }
                             }
                             .buttonStyle(.plain)
-                            .themePrimaryAction(isEnabled: viewModel.canJoinCompany)
-                            .disabled(!viewModel.canJoinCompany)
+                            .themePrimaryAction(isEnabled: !viewModel.isLoading)
+                            .disabled(viewModel.isLoading)
                         }
                     } else {
                         Section {
-                            Text(languageManager.text("Manager join by invite code will be enabled once the backend supports multi-manager membership.", "Вход менеджера по инвайт-коду появится, когда бэкенд начнет поддерживать несколько менеджеров в компании."))
+                            Text("Manager join by invite code will be enabled once the backend supports multi-manager membership.")
                                 .font(.footnote)
                                 .foregroundStyle(.secondary)
                         }
@@ -144,7 +109,7 @@ struct CompanyInviteView: View {
                     }
                 }
             }
-            .navigationTitle(mode == .employeeJoin ? languageManager.text("Join Company", "Вступить в компанию") : languageManager.text("Invite Code", "Инвайт-код"))
+            .navigationTitle(mode == .employeeJoin ? "Join Company" : "Invite Code")
             .navigationBarTitleDisplayMode(.inline)
             .scrollContentBackground(.hidden)
             .background(themeManager.selectedTheme.screenBackground)

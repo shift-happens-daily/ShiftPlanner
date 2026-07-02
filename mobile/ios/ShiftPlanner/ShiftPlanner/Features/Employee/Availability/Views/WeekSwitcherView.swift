@@ -2,7 +2,6 @@ import SwiftUI
 
 struct WeekSwitcherView: View {
     @EnvironmentObject private var themeManager: ThemeManager
-    @EnvironmentObject private var languageManager: LanguageManager
     let title: String
     let onPreviousWeek: () -> Void
     let onNextWeek: () -> Void
@@ -20,7 +19,7 @@ struct WeekSwitcherView: View {
             Spacer()
 
             VStack(spacing: 4) {
-                Text(languageManager.text("Week", "Неделя"))
+                Text("Week")
                     .font(.caption)
                     .foregroundStyle(themeManager.selectedTheme.secondaryTextColor)
                 Text(title)
