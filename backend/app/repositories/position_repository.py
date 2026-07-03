@@ -1,7 +1,7 @@
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.models import EmployeePosition, Position, Shift, ShiftRequirement
+from app.models import Employee, Position, Shift, ShiftRequirement
 
 
 def list_positions(db: Session, company_id: int | None = None) -> list[Position]:
@@ -25,8 +25,8 @@ def get_position_by_id(db: Session, position_id: int) -> Position | None:
 
 def position_is_in_use(db: Session, position_id: int) -> bool:
     employee_id = db.scalar(
-        select(EmployeePosition.employee_id)
-        .where(EmployeePosition.position_id == position_id)
+        select(Employee.id)
+        .where(Employee.position_id == position_id)
         .limit(1)
     )
     if employee_id is not None:

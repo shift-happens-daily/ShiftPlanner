@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends, Response, status
 from sqlalchemy.orm import Session
 
-from app.api.dependencies import get_current_user, require_active_manager
+from app.api.dependencies import get_current_user, require_role
 from app.api.responses import FORBIDDEN_RESPONSE, NOT_FOUND_RESPONSE, UNAUTHORIZED_RESPONSE, VALIDATION_ERROR_RESPONSE
 from app.database import get_db
 from app.schemas.auth import UserRead
@@ -31,10 +31,10 @@ def get_positions(
 )
 def create_position(
     payload: PositionCreate,
-    current_user: UserRead = Depends(require_active_manager),
+    _: UserRead = Depends(require_role("manager")),
     db: Session = Depends(get_db),
 ) -> PositionRead:
-    return position_service.create_position(db, payload, current_user)
+    return position_service.create_position(db, payload)
 
 
 @router.delete(
@@ -44,7 +44,7 @@ def create_position(
 )
 def delete_position(
     position_id: int,
-    current_user: UserRead = Depends(require_active_manager),
+    current_user: UserRead = Depends(require_role("manager")),
     db: Session = Depends(get_db),
 ) -> Response:
     position_service.delete_position(db, position_id, current_user)

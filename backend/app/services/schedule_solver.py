@@ -1,10 +1,4 @@
-"""CP-SAT employee schedule generator for the normalized slot-based schema.
-
-The public entry point is :func:`generate_schedule`. It reads all input through
-the supplied SQLAlchemy session, solves the requested date range, and persists
-one continuous row per employee/day in ``schedule_assignments`` plus slot-level
-audit rows in ``schedule_assignment_slots``.
-"""
+"""CP-SAT employee schedule generator for the current ShiftPlanner schema."""
 
 from __future__ import annotations
 
@@ -29,6 +23,7 @@ class EmployeeData:
     weekly_target_slots: int
     min_daily_slots: int
     max_daily_slots: int
+    branch_id: int | None = None
 
 
 @dataclass(frozen=True)
@@ -36,6 +31,7 @@ class DemandKey:
     work_date: date
     slot_time: time
     position_id: int
+    branch_id: int | None = None
 
 
 @dataclass(frozen=True)
@@ -84,7 +80,7 @@ def generate_schedule(
     db: Session,
     *,
     company_id: int,
-    branch_id: int,
+    branch_id: int | None = None,
     start_date: date,
     end_date: date,
     max_time_seconds: float = 60.0,
@@ -210,12 +206,9 @@ def generate_schedule(
         schedule_id = _save_result(
             db,
             company_id=company_id,
-            branch_id=branch_id,
             start_date=start_date,
             end_date=end_date,
-            solver_status=solver_status,
             assignments=assignments,
-            uncovered=uncovered,
         )
         if commit:
             db.commit()
@@ -237,155 +230,181 @@ def _load_data(
     db: Session,
     *,
     company_id: int,
-    branch_id: int,
+    branch_id: int | None,
     start_date: date,
     end_date: date,
 ) -> LoadedData:
-    branch_exists = db.execute(
-        text(
-            """
-            SELECT 1
-            FROM branches
-            WHERE id = :branch_id AND company_id = :company_id
-            """
-        ),
-        {"branch_id": branch_id, "company_id": company_id},
-    ).scalar_one_or_none()
-    if branch_exists is None:
-        raise ScheduleDataError("branch does not belong to the requested company")
+    if branch_id is not None:
+        branch_exists = db.execute(
+            text(
+                """
+                SELECT 1
+                FROM branches
+                WHERE id = :branch_id AND company_id = :company_id
+                """
+            ),
+            {"branch_id": branch_id, "company_id": company_id},
+        ).scalar_one_or_none()
+        if branch_exists is None:
+            raise ScheduleDataError("branch does not belong to the requested company")
+
+    if branch_id is None:
+        employee_branch_filter = ""
+        requirement_branch_filter = ""
+        employee_scope_params = {"company_id": company_id}
+        requirement_scope_params = {
+            "company_id": company_id,
+            "start_date": start_date,
+            "end_date": end_date,
+        }
+        absence_scope_params = {
+            "company_id": company_id,
+            "start_date": start_date,
+            "end_date": end_date,
+        }
+    else:
+        employee_branch_filter = """
+              AND (
+                  branch_id = :branch_id
+                  OR branch_id IS NULL
+              )
+        """
+        requirement_branch_filter = """
+                  AND (
+                      branch_id = :branch_id
+                      OR branch_id IS NULL
+                  )
+        """
+        employee_scope_params = {"company_id": company_id, "branch_id": branch_id}
+        requirement_scope_params = {
+            "company_id": company_id,
+            "branch_id": branch_id,
+            "start_date": start_date,
+            "end_date": end_date,
+        }
+        absence_scope_params = {
+            "company_id": company_id,
+            "branch_id": branch_id,
+            "start_date": start_date,
+            "end_date": end_date,
+        }
 
     employee_rows = db.execute(
         text(
-            """
+            f"""
             SELECT
-                employees.id,
-                employee_positions.position_id,
-                weekly_target_minutes,
-                min_daily_minutes,
-                max_daily_minutes
+                id,
+                branch_id,
+                position_id,
+                max_hours_per_week
             FROM employees
-            JOIN employee_branches
-              ON employee_branches.employee_id = employees.id
-             AND employee_branches.branch_id = :branch_id
-            JOIN employee_positions
-              ON employee_positions.employee_id = employees.id
             WHERE company_id = :company_id
               AND is_active = TRUE
+            {employee_branch_filter}
             ORDER BY id
             """
         ),
-        {"company_id": company_id, "branch_id": branch_id},
+        employee_scope_params,
     ).mappings()
     employees = [
         EmployeeData(
             id=row["id"],
             position_id=row["position_id"],
-            weekly_target_slots=row["weekly_target_minutes"] // SLOT_MINUTES,
-            min_daily_slots=row["min_daily_minutes"] // SLOT_MINUTES,
-            max_daily_slots=row["max_daily_minutes"] // SLOT_MINUTES,
+            weekly_target_slots=max((row["max_hours_per_week"] or 0) * SLOTS_PER_HOUR, 0),
+            min_daily_slots=0,
+            max_daily_slots=max((row["max_hours_per_week"] or 0) * SLOTS_PER_HOUR, 0),
+            branch_id=row["branch_id"],
         )
         for row in employee_rows
+        if row["position_id"] is not None
     ]
 
-    hours_by_weekday = {
-        row["day_of_week"]: (row["start_time"], row["finish_time"])
-        for row in db.execute(
-            text(
-                """
-                SELECT day_of_week, start_time, finish_time
-                FROM business_hours
-                WHERE company_id = :company_id AND branch_id = :branch_id
-                ORDER BY day_of_week
-                """
-            ),
-            {"company_id": company_id, "branch_id": branch_id},
-        ).mappings()
-    }
-
     dates = list(_date_range(start_date, end_date))
-    business_slots = {
-        work_date: _time_slots(*hours_by_weekday[work_date.weekday()])
-        if work_date.weekday() in hours_by_weekday
-        else []
-        for work_date in dates
-    }
-
-    recurring_demand = {
-        (row["day_of_week"], row["slot_time"], row["position_id"]): row["required_count"]
-        for row in db.execute(
+    requirement_rows = list(
+        db.execute(
             text(
-                """
-                SELECT day_of_week, slot_time, position_id, required_count
-                FROM staffing_requirements
-                WHERE company_id = :company_id AND branch_id = :branch_id
-                  AND required_count > 0
+                f"""
+                SELECT
+                    branch_id,
+                    position_id,
+                    shift_date,
+                    start_time,
+                    end_time,
+                    required_employees
+                FROM shift_requirements
+                WHERE company_id = :company_id
+                  AND shift_date BETWEEN :start_date AND :end_date
+                {requirement_branch_filter}
+                ORDER BY shift_date, start_time, end_time, id
                 """
             ),
-            {"company_id": company_id, "branch_id": branch_id},
+            requirement_scope_params,
         ).mappings()
-    }
-    demand = {
-        DemandKey(work_date, slot_time, position_id): required_count
-        for work_date in dates
-        for (weekday, slot_time, position_id), required_count in recurring_demand.items()
-        if weekday == work_date.weekday()
+    )
+    business_slot_sets = {work_date: set() for work_date in dates}
+    demand: dict[DemandKey, int] = defaultdict(int)
+    for row in requirement_rows:
+        for slot_time in _time_slots(row["start_time"], row["end_time"]):
+            business_slot_sets[row["shift_date"]].add(slot_time)
+            demand[
+                DemandKey(
+                    work_date=row["shift_date"],
+                    slot_time=slot_time,
+                    position_id=row["position_id"],
+                    branch_id=row["branch_id"],
+                )
+            ] += row["required_employees"]
+
+    business_slots = {
+        work_date: sorted(slot_times)
+        for work_date, slot_times in business_slot_sets.items()
     }
 
     availability_rows = db.execute(
         text(
-            """
+            f"""
             SELECT
                 availability.employee_id,
-                availability.availability_date,
-                availability.slot_time,
+                availability.weekday,
+                availability.start_time,
+                availability.end_time,
                 availability.availability_status
             FROM employee_availability AS availability
             JOIN employees ON employees.id = availability.employee_id
-            JOIN employee_branches
-              ON employee_branches.employee_id = employees.id
-             AND employee_branches.branch_id = :branch_id
             WHERE employees.company_id = :company_id
               AND employees.is_active = TRUE
-              AND availability.availability_date BETWEEN :start_date AND :end_date
+            {employee_branch_filter.replace("branch_id", "employees.branch_id")}
             """
         ),
-        {
-            "company_id": company_id,
-            "branch_id": branch_id,
-            "start_date": start_date,
-            "end_date": end_date,
-        },
+        employee_scope_params,
     ).mappings()
-    availability = {
-        (
-            row["employee_id"],
-            row["availability_date"],
-            row["slot_time"],
-        ): row["availability_status"]
-        for row in availability_rows
-    }
+    availability: dict[tuple[int, date, time], str] = {}
+    for row in availability_rows:
+        for work_date in dates:
+            if work_date.weekday() != row["weekday"]:
+                continue
+            for slot_time in business_slots[work_date]:
+                if not _slot_in_range(slot_time, row["start_time"], row["end_time"]):
+                    continue
+                key = (row["employee_id"], work_date, slot_time)
+                current = availability.get(key)
+                if current is None or _availability_priority(row["availability_status"]) > _availability_priority(current):
+                    availability[key] = row["availability_status"]
 
     absence_rows = db.execute(
         text(
-            """
+            f"""
             SELECT absences.employee_id, absences.start_date, absences.end_date
             FROM absences
             JOIN employees ON employees.id = absences.employee_id
-            JOIN employee_branches
-              ON employee_branches.employee_id = employees.id
-             AND employee_branches.branch_id = :branch_id
             WHERE employees.company_id = :company_id
               AND employees.is_active = TRUE
+            {employee_branch_filter.replace("branch_id", "employees.branch_id")}
               AND absences.start_date <= :end_date
               AND absences.end_date >= :start_date
             """
         ),
-        {
-            "company_id": company_id,
-            "branch_id": branch_id,
-            "start_date": start_date,
-            "end_date": end_date,
-        },
+        absence_scope_params,
     ).mappings()
     absent_dates = {
         (row["employee_id"], absent_date)
@@ -407,11 +426,6 @@ def _load_data(
 
 
 def _validate_loaded_data(data: LoadedData) -> None:
-    if not 3 <= len(data.employees) <= 100:
-        raise ScheduleDataError(
-            "the selected branch must have between 3 and 100 active employees"
-        )
-
     for employee in data.employees:
         if employee.min_daily_slots > employee.max_daily_slots:
             raise ScheduleDataError(
@@ -463,6 +477,7 @@ def _build_model(data: LoadedData):
             assignment_vars[(employee.id, demand_key.work_date, demand_key.slot_time)]
             for employee in data.employees
             if employee.position_id == demand_key.position_id
+            and _branch_matches(employee.branch_id, demand_key.branch_id)
             and (employee.id, demand_key.work_date, demand_key.slot_time) in assignment_vars
         ]
         candidate_counts[demand_key] = len(matching)
@@ -490,7 +505,12 @@ def _build_model(data: LoadedData):
                 variable = assignment_vars.get((employee.id, work_date, slot_time))
                 if variable is None:
                     continue
-                demand_key = DemandKey(work_date, slot_time, employee.position_id)
+                demand_key = DemandKey(
+                    work_date=work_date,
+                    slot_time=slot_time,
+                    position_id=employee.position_id,
+                    branch_id=employee.branch_id,
+                )
                 if demand_key not in demanded_keys:
                     overstaff_vars[demand_key] = variable
 
@@ -676,51 +696,58 @@ def _save_result(
     db: Session,
     *,
     company_id: int,
-    branch_id: int,
     start_date: date,
     end_date: date,
-    solver_status: str,
     assignments: list[GeneratedAssignment],
-    uncovered: list[UncoveredSlot],
 ) -> int:
+    db.execute(
+        text(
+            """
+            DELETE FROM schedules
+            WHERE company_id = :company_id
+              AND start_date = :start_date
+              AND end_date = :end_date
+              AND status = 'draft'
+            """
+        ),
+        {
+            "company_id": company_id,
+            "start_date": start_date,
+            "end_date": end_date,
+        },
+    )
     schedule_id = db.execute(
         text(
             """
-            INSERT INTO schedules (
-                company_id, branch_id, start_date, end_date, status, solver_status
-            )
-            VALUES (
-                :company_id, :branch_id, :start_date, :end_date, 'draft', :solver_status
-            )
+            INSERT INTO schedules (company_id, start_date, end_date, status)
+            VALUES (:company_id, :start_date, :end_date, 'draft')
             RETURNING id
             """
         ),
         {
             "company_id": company_id,
-            "branch_id": branch_id,
             "start_date": start_date,
             "end_date": end_date,
-            "solver_status": solver_status,
         },
     ).scalar_one()
 
     for assignment in assignments:
-        assignment_id = db.execute(
+        shift_id = db.execute(
             text(
                 """
-                INSERT INTO schedule_assignments (
+                INSERT INTO shifts (
                     schedule_id,
-                    employee_id,
+                    company_id,
                     position_id,
-                    work_date,
+                    shift_date,
                     start_time,
                     end_time
                 )
                 VALUES (
                     :schedule_id,
-                    :employee_id,
+                    :company_id,
                     :position_id,
-                    :work_date,
+                    :shift_date,
                     :start_time,
                     :end_time
                 )
@@ -729,9 +756,9 @@ def _save_result(
             ),
             {
                 "schedule_id": schedule_id,
-                "employee_id": assignment.employee_id,
+                "company_id": company_id,
                 "position_id": assignment.position_id,
-                "work_date": assignment.work_date,
+                "shift_date": assignment.work_date,
                 "start_time": assignment.start_time,
                 "end_time": assignment.end_time,
             },
@@ -739,63 +766,11 @@ def _save_result(
         db.execute(
             text(
                 """
-                INSERT INTO schedule_assignment_slots (
-                    schedule_assignment_id, slot_time, availability_status
-                )
-                VALUES (
-                    :schedule_assignment_id, :slot_time, :availability_status
-                )
+                INSERT INTO shift_assignments (shift_id, employee_id, status)
+                VALUES (:shift_id, :employee_id, 'assigned')
                 """
             ),
-            [
-                {
-                    "schedule_assignment_id": assignment_id,
-                    "slot_time": slot_time,
-                    "availability_status": source,
-                }
-                for slot_time, source in assignment.slots
-            ],
-        )
-
-    if uncovered:
-        db.execute(
-            text(
-                """
-                INSERT INTO uncovered_slots (
-                    schedule_id,
-                    work_date,
-                    day_of_week,
-                    slot_time,
-                    position_id,
-                    required_count,
-                    uncovered_count,
-                    reason
-                )
-                VALUES (
-                    :schedule_id,
-                    :work_date,
-                    :day_of_week,
-                    :slot_time,
-                    :position_id,
-                    :required_count,
-                    :uncovered_count,
-                    :reason
-                )
-                """
-            ),
-            [
-                {
-                    "schedule_id": schedule_id,
-                    "work_date": item.key.work_date,
-                    "day_of_week": item.key.work_date.weekday(),
-                    "slot_time": item.key.slot_time,
-                    "position_id": item.key.position_id,
-                    "required_count": item.required_count,
-                    "uncovered_count": item.uncovered_count,
-                    "reason": item.reason,
-                }
-                for item in uncovered
-            ],
+            {"shift_id": shift_id, "employee_id": assignment.employee_id},
         )
 
     return schedule_id
@@ -806,6 +781,30 @@ def _new_solver(*, max_time_seconds: float, num_workers: int) -> cp_model.CpSolv
     solver.parameters.max_time_in_seconds = max_time_seconds
     solver.parameters.num_search_workers = num_workers
     return solver
+
+
+def _branch_matches(
+    employee_branch_id: int | None,
+    demand_branch_id: int | None,
+) -> bool:
+    return (
+        employee_branch_id is None
+        or demand_branch_id is None
+        or employee_branch_id == demand_branch_id
+    )
+
+
+def _availability_priority(status_value: str) -> int:
+    priorities = {
+        "if_needed": 1,
+        "available": 2,
+        "unavailable": 3,
+    }
+    return priorities.get(status_value, 0)
+
+
+def _slot_in_range(slot_time: time, start_time: time, end_time: time) -> bool:
+    return start_time <= slot_time < end_time
 
 
 def _date_range(start_date: date, end_date: date) -> Iterable[date]:

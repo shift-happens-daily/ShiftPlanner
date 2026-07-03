@@ -3,7 +3,7 @@ from fastapi.security import OAuth2PasswordRequestForm
 from sqlalchemy.orm import Session
 
 from app.api.dependencies import get_current_user, oauth2_scheme
-from app.api.responses import UNAUTHORIZED_RESPONSE, VALIDATION_ERROR_RESPONSE
+from app.api.responses import FORBIDDEN_RESPONSE, UNAUTHORIZED_RESPONSE, VALIDATION_ERROR_RESPONSE
 from app.database import get_db
 from app.schemas.auth import (
     CurrentUserResponse,
@@ -68,14 +68,14 @@ def get_me(
 @router.delete(
     "/me",
     status_code=status.HTTP_204_NO_CONTENT,
-    responses={**UNAUTHORIZED_RESPONSE},
+    responses={**UNAUTHORIZED_RESPONSE, **FORBIDDEN_RESPONSE},
 )
 def delete_me(
     token: str = Depends(oauth2_scheme),
     current_user=Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> Response:
-    auth_service.delete_current_user_account(db, current_user, token)
+    auth_service.delete_current_employee_account(db, current_user, token)
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 

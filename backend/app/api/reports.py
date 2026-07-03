@@ -3,7 +3,7 @@ from datetime import date
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session
 
-from app.api.dependencies import require_active_manager, require_role
+from app.api.dependencies import require_role
 from app.api.responses import BAD_REQUEST_RESPONSE, FORBIDDEN_RESPONSE, NOT_FOUND_RESPONSE, UNAUTHORIZED_RESPONSE, VALIDATION_ERROR_RESPONSE
 from app.database import get_db
 from app.schemas.auth import UserRead
@@ -21,16 +21,11 @@ router = APIRouter()
 def get_employee_report(
     start_date: date | None = Query(default=None),
     end_date: date | None = Query(default=None),
-    current_user: UserRead = Depends(require_active_manager),
+    current_user: UserRead = Depends(require_role("manager")),
     db: Session = Depends(get_db),
 ) -> list[EmployeeReportRead]:
     if current_user.company_id is None:
-        from fastapi import HTTPException, status
-
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Manager is not linked to a company.",
-        )
+        return []
     return report_service.list_employee_reports(
         db,
         start_date=start_date,

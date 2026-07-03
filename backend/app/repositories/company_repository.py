@@ -2,10 +2,10 @@ import secrets
 import string
 from datetime import UTC, datetime
 
-from sqlalchemy import or_, select
-from sqlalchemy.orm import Session, joinedload
+from sqlalchemy import select
+from sqlalchemy.orm import Session
 
-from app.models import Branch, Company, CompanyManager, EmployeeBranch, ShiftRequirement
+from app.models import Branch, Company, Employee, ShiftRequirement
 
 
 def list_companies(db: Session) -> list[Company]:
@@ -22,19 +22,10 @@ def create_company(
         invite_code=_generate_unique_invite_code(db),
         invite_code_generated_at=datetime.now(UTC).replace(tzinfo=None),
         invite_code_expires_at=None,
+        manager_user_id=manager_user_id,
     )
 
     db.add(company)
-    db.flush()
-    if manager_user_id is not None:
-        db.add(
-            CompanyManager(
-                company_id=company.id,
-                user_id=manager_user_id,
-                manager_role="owner",
-                membership_status="active",
-            )
-        )
     db.commit()
     db.refresh(company)
 
@@ -69,16 +60,6 @@ def regenerate_invite_code(db: Session, company: Company) -> Company:
     return company
 
 
-def regenerate_manager_invite_code(db: Session, company: Company) -> Company:
-    company.manager_invite_code = _generate_unique_invite_code(db)
-    company.manager_invite_code_generated_at = datetime.now(UTC).replace(tzinfo=None)
-    company.manager_invite_code_expires_at = None
-    db.add(company)
-    db.commit()
-    db.refresh(company)
-    return company
-
-
 def get_default_company(db: Session) -> Company:
     company = db.scalars(select(Company).order_by(Company.id)).first()
 
@@ -88,6 +69,7 @@ def get_default_company(db: Session) -> Company:
             invite_code=_generate_unique_invite_code(db),
             invite_code_generated_at=datetime.now(UTC).replace(tzinfo=None),
             invite_code_expires_at=None,
+            manager_user_id=None,
         )
         db.add(company)
         db.commit()
@@ -106,149 +88,15 @@ def get_company_by_invite_code(db: Session, invite_code: str) -> Company | None:
     ).first()
 
 
-def get_company_by_manager_invite_code(db: Session, invite_code: str) -> Company | None:
-    return db.scalars(
-        select(Company).where(Company.manager_invite_code == invite_code)
-    ).first()
-
-
 def get_company_by_manager_user_id(
     db: Session,
     manager_user_id: int,
 ) -> Company | None:
     return db.scalars(
         select(Company)
-        .join(CompanyManager, CompanyManager.company_id == Company.id)
-        .where(
-            CompanyManager.user_id == manager_user_id,
-            CompanyManager.membership_status == "active",
-        )
+        .where(Company.manager_user_id == manager_user_id)
         .order_by(Company.id.desc())
     ).first()
-
-
-def get_manager_membership(db: Session, company_id: int, user_id: int) -> CompanyManager | None:
-    return db.scalars(
-        select(CompanyManager)
-        .options(joinedload(CompanyManager.user), joinedload(CompanyManager.company))
-        .where(CompanyManager.company_id == company_id, CompanyManager.user_id == user_id)
-    ).first()
-
-
-def get_manager_membership_by_id(db: Session, membership_id: int) -> CompanyManager | None:
-    return db.scalars(
-        select(CompanyManager)
-        .options(joinedload(CompanyManager.user), joinedload(CompanyManager.company))
-        .where(CompanyManager.id == membership_id)
-    ).first()
-
-
-def get_latest_manager_membership_by_user_id(db: Session, user_id: int) -> CompanyManager | None:
-    return db.scalars(
-        select(CompanyManager)
-        .options(joinedload(CompanyManager.user), joinedload(CompanyManager.company))
-        .where(CompanyManager.user_id == user_id)
-        .order_by(CompanyManager.id.desc())
-    ).first()
-
-
-def get_active_manager_membership(db: Session, company_id: int, user_id: int) -> CompanyManager | None:
-    return db.scalars(
-        select(CompanyManager)
-        .options(joinedload(CompanyManager.user), joinedload(CompanyManager.company))
-        .where(
-            CompanyManager.company_id == company_id,
-            CompanyManager.user_id == user_id,
-            CompanyManager.membership_status == "active",
-        )
-    ).first()
-
-
-def get_owner_manager_membership(db: Session, company_id: int, user_id: int) -> CompanyManager | None:
-    return db.scalars(
-        select(CompanyManager)
-        .where(
-            CompanyManager.company_id == company_id,
-            CompanyManager.user_id == user_id,
-            CompanyManager.manager_role == "owner",
-            CompanyManager.membership_status == "active",
-        )
-    ).first()
-
-
-def is_owner_or_first_manager(db: Session, *, company_id: int, user_id: int) -> bool:
-    membership = get_active_manager_membership(db, company_id, user_id)
-    if membership is None:
-        return False
-    if membership.manager_role == "owner":
-        return True
-
-    first_active_user_id = db.scalar(
-        select(CompanyManager.user_id)
-        .where(
-            CompanyManager.company_id == company_id,
-            CompanyManager.membership_status == "active",
-        )
-        .order_by(CompanyManager.id)
-        .limit(1)
-    )
-    return first_active_user_id == user_id
-
-
-def list_pending_manager_memberships(db: Session, company_id: int) -> list[CompanyManager]:
-    return list(
-        db.scalars(
-            select(CompanyManager)
-            .options(joinedload(CompanyManager.user), joinedload(CompanyManager.company))
-            .where(
-                CompanyManager.company_id == company_id,
-                CompanyManager.membership_status == "pending",
-            )
-            .order_by(CompanyManager.created_at, CompanyManager.id)
-        )
-    )
-
-
-def create_or_update_manager_membership(
-    db: Session,
-    *,
-    company_id: int,
-    user_id: int,
-    manager_role: str = "manager",
-    membership_status: str = "pending",
-) -> CompanyManager:
-    membership = get_manager_membership(db, company_id, user_id)
-    if membership is None:
-        membership = CompanyManager(
-            company_id=company_id,
-            user_id=user_id,
-            manager_role=manager_role,
-            membership_status=membership_status,
-        )
-    else:
-        if membership.manager_role != "owner":
-            membership.manager_role = manager_role
-        membership.membership_status = membership_status
-        membership.updated_at = datetime.now(UTC).replace(tzinfo=None)
-
-    db.add(membership)
-    db.commit()
-    db.refresh(membership)
-    return get_manager_membership_by_id(db, membership.id)
-
-
-def update_manager_membership_status(
-    db: Session,
-    membership: CompanyManager,
-    *,
-    membership_status: str,
-) -> CompanyManager:
-    membership.membership_status = membership_status
-    membership.updated_at = datetime.now(UTC).replace(tzinfo=None)
-    db.add(membership)
-    db.commit()
-    db.refresh(membership)
-    return get_manager_membership_by_id(db, membership.id)
 
 
 def get_default_branch_for_company(db: Session, company_id: int) -> Branch | None:
@@ -304,8 +152,8 @@ def update_branch(
 
 def branch_is_in_use(db: Session, branch_id: int) -> bool:
     employee_id = db.scalar(
-        select(EmployeeBranch.employee_id)
-        .where(EmployeeBranch.branch_id == branch_id)
+        select(Employee.id)
+        .where(Employee.branch_id == branch_id)
         .limit(1)
     )
     if employee_id is not None:
@@ -339,12 +187,7 @@ def _generate_unique_invite_code(db: Session, max_attempts: int = 20) -> str:
         invite_code = _generate_invite_code()
         existing_id = db.scalar(
             select(Company.id)
-            .where(
-                or_(
-                    Company.invite_code == invite_code,
-                    Company.manager_invite_code == invite_code,
-                )
-            )
+            .where(Company.invite_code == invite_code)
             .limit(1)
         )
         if existing_id is None:

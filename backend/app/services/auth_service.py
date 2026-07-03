@@ -6,7 +6,6 @@ from sqlalchemy.orm import Session
 
 from app.repositories import company_repository, employee_repository, user_repository
 from app.schemas.auth import (
-    CurrentUserBranchAssignmentRead,
     CurrentUserBranchRead,
     CurrentUserCompanyRead,
     CurrentUserPositionRead,
@@ -137,9 +136,14 @@ def get_current_user_profile(db: Session, current_user: UserRead) -> CurrentUser
     return _build_current_user_response(db, user)
 
 
-def delete_current_user_account(db: Session, current_user: UserRead, token: str) -> None:
-    user = user_repository.get_user_by_id(db, current_user.id)
+def delete_current_employee_account(db: Session, current_user: UserRead, token: str) -> None:
+    if current_user.role != "employee":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only employee accounts can be deleted through this endpoint.",
+        )
 
+    user = user_repository.get_user_by_id(db, current_user.id)
     if user is None:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
@@ -158,21 +162,11 @@ def _build_user_read(db: Session, user) -> UserRead:
     employee = employee_repository.get_employee_by_user_id(db, user.id)
     company_id = None
 
-    manager_status = None
-    manager_role = None
-    employee_status = None
-
     if user.role == "manager":
-        membership = company_repository.get_latest_manager_membership_by_user_id(db, user.id)
-        if membership is not None:
-            manager_status = membership.membership_status
-            manager_role = membership.manager_role
-            if membership.membership_status == "active":
-                company_id = membership.company_id
+        company = company_repository.get_company_by_manager_user_id(db, user.id)
+        company_id = company.id if company else None
     elif employee is not None:
-        employee_status = "active" if employee.is_active else "pending"
-        if employee.is_active:
-            company_id = employee.company_id
+        company_id = employee.company_id
 
     return UserRead(
         id=user.id,
@@ -182,15 +176,12 @@ def _build_user_read(db: Session, user) -> UserRead:
         role=user.role,
         employee_id=employee.id if employee else None,
         company_id=company_id,
-        manager_status=manager_status,
-        manager_role=manager_role,
-        employee_status=employee_status,
     )
 
 
 def _build_register_response(db: Session, user) -> RegisterResponse:
     employee = employee_repository.get_employee_by_user_id(db, user.id)
-    company_id = employee.company_id if employee and employee.is_active else None
+    company_id = employee.company_id if employee else None
 
     return RegisterResponse(
         id=user.id,
@@ -200,7 +191,6 @@ def _build_register_response(db: Session, user) -> RegisterResponse:
         role=user.role,
         employee_id=employee.id if employee else None,
         company_id=company_id,
-        employee_status=("active" if employee.is_active else "pending") if employee else None,
     )
 
 
@@ -209,18 +199,10 @@ def _build_current_user_response(db: Session, user) -> CurrentUserResponse:
     company = None
     company_id = None
     branch = None
-    branches = []
     position = None
-    manager_status = None
-    manager_role = None
-    employee_status = None
 
     if user.role == "manager":
-        membership = company_repository.get_latest_manager_membership_by_user_id(db, user.id)
-        company_model = membership.company if membership and membership.membership_status == "active" else None
-        if membership is not None:
-            manager_status = membership.membership_status
-            manager_role = membership.manager_role
+        company_model = company_repository.get_company_by_manager_user_id(db, user.id)
 
         if company_model is not None:
             company_id = company_model.id
@@ -234,35 +216,22 @@ def _build_current_user_response(db: Session, user) -> CurrentUserResponse:
         employee = employee_repository.get_employee_by_user_id(db, user.id)
 
         if employee is not None:
-            employee_status = "active" if employee.is_active else "pending"
-            if employee.is_active:
-                company_id = employee.company_id
+            company_id = employee.company_id
 
-            if employee.is_active and employee.company is not None:
+            if employee.company is not None:
                 company = CurrentUserCompanyRead(
                     id=employee.company.id,
                     name=employee.company.name,
                     invite_code=employee.company.invite_code or "",
                 )
 
-            if employee.is_active and employee.branch is not None:
+            if employee.branch is not None:
                 branch = CurrentUserBranchRead(
                     id=employee.branch.id,
                     name=employee.branch.name,
                 )
 
-            if employee.is_active:
-                branches = [
-                    CurrentUserBranchAssignmentRead(
-                        id=link.branch.id,
-                        name=link.branch.name,
-                        is_primary=link.is_primary,
-                    )
-                    for link in sorted(employee.branch_links, key=lambda item: (not item.is_primary, item.branch_id))
-                    if link.branch is not None
-                ]
-
-            if employee.is_active and employee.position is not None:
+            if employee.position is not None:
                 position = CurrentUserPositionRead(
                     id=employee.position.id,
                     name=employee.position.name,
@@ -276,14 +245,10 @@ def _build_current_user_response(db: Session, user) -> CurrentUserResponse:
         role=user.role,
         employee_id=employee.id if employee else None,
         company_id=company_id,
-        manager_status=manager_status,
-        manager_role=manager_role,
-        employee_status=employee_status,
-        branch_id=employee.branch_id if employee and employee.is_active else None,
-        position_id=employee.position_id if employee and employee.is_active else None,
+        branch_id=employee.branch_id if employee else None,
+        position_id=employee.position_id if employee else None,
         company=company,
         branch=branch,
-        branches=branches,
         position=position,
     )
 

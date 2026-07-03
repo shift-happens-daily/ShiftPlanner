@@ -3,15 +3,15 @@ from datetime import date
 from sqlalchemy import delete, select
 from sqlalchemy.orm import Session, joinedload, selectinload
 
-from app.models import Absence, Employee, EmployeeAvailability, EmployeeBranch, EmployeeDesiredDayOff, EmployeePosition, User
+from app.models import Absence, Employee, EmployeeAvailability, EmployeeDesiredDayOff, User
 
 
 def _employee_options():
     return (
         joinedload(Employee.user),
         joinedload(Employee.company),
-        selectinload(Employee.branch_links).joinedload(EmployeeBranch.branch),
-        selectinload(Employee.position_links).joinedload(EmployeePosition.position),
+        joinedload(Employee.branch),
+        joinedload(Employee.position),
         selectinload(Employee.availability_blocks),
         selectinload(Employee.desired_days_off),
     )
@@ -32,18 +32,7 @@ def list_employees_by_company(db: Session, company_id: int) -> list[Employee]:
         db.scalars(
             select(Employee)
             .options(*_employee_options())
-            .where(Employee.company_id == company_id, Employee.is_active.is_(True))
-            .order_by(Employee.id)
-        )
-    )
-
-
-def list_pending_employees_by_company(db: Session, company_id: int) -> list[Employee]:
-    return list(
-        db.scalars(
-            select(Employee)
-            .options(*_employee_options())
-            .where(Employee.company_id == company_id, Employee.is_active.is_(False))
+            .where(Employee.company_id == company_id)
             .order_by(Employee.id)
         )
     )
@@ -81,25 +70,17 @@ def create_employee(
     company_id: int,
     branch_id: int | None,
     position_id: int | None,
-    branch_ids: list[int] | None = None,
-    primary_branch_id: int | None = None,
-    is_active: bool = True,
 ) -> Employee:
     employee = Employee(
         user_id=user_id,
         company_id=company_id,
-        is_active=is_active,
+        branch_id=branch_id,
+        position_id=position_id,
     )
 
     db.add(employee)
-    db.flush()
-    if branch_ids is None:
-        _replace_employee_branch(db, employee.id, branch_id)
-    else:
-        replace_employee_branches(db, employee_id=employee.id, branch_ids=branch_ids, primary_branch_id=primary_branch_id)
-    _replace_employee_position(db, employee.id, position_id)
     db.commit()
-    db.expire_all()
+    db.refresh(employee)
 
     return get_employee_by_id(db, employee.id)
 
@@ -111,37 +92,15 @@ def update_employee_membership(
     company_id: int,
     branch_id: int | None,
     position_id: int | None,
-    branch_ids: list[int] | None = None,
-    primary_branch_id: int | None = None,
-    is_active: bool | None = None,
 ) -> Employee:
     employee.company_id = company_id
-    if is_active is not None:
-        employee.is_active = is_active
+    employee.branch_id = branch_id
+    employee.position_id = position_id
 
     db.add(employee)
-    db.flush()
-    if branch_ids is None:
-        _replace_employee_branch(db, employee.id, branch_id)
-    else:
-        replace_employee_branches(db, employee_id=employee.id, branch_ids=branch_ids, primary_branch_id=primary_branch_id)
-    _replace_employee_position(db, employee.id, position_id)
     db.commit()
-    db.expire_all()
+    db.refresh(employee)
 
-    return get_employee_by_id(db, employee.id)
-
-
-def update_employee_status(
-    db: Session,
-    *,
-    employee: Employee,
-    is_active: bool,
-) -> Employee:
-    employee.is_active = is_active
-    db.add(employee)
-    db.commit()
-    db.expire_all()
     return get_employee_by_id(db, employee.id)
 
 
@@ -151,11 +110,10 @@ def update_employee_position(
     employee: Employee,
     position_id: int | None,
 ) -> Employee:
+    employee.position_id = position_id
     db.add(employee)
-    db.flush()
-    _replace_employee_position(db, employee.id, position_id)
     db.commit()
-    db.expire_all()
+    db.refresh(employee)
     return get_employee_by_id(db, employee.id)
 
 
@@ -165,31 +123,10 @@ def update_employee_branch(
     employee: Employee,
     branch_id: int | None,
 ) -> Employee:
+    employee.branch_id = branch_id
     db.add(employee)
-    db.flush()
-    _replace_employee_branch(db, employee.id, branch_id)
     db.commit()
-    db.expire_all()
-    return get_employee_by_id(db, employee.id)
-
-
-def update_employee_branches(
-    db: Session,
-    *,
-    employee: Employee,
-    branch_ids: list[int],
-    primary_branch_id: int,
-) -> Employee:
-    db.add(employee)
-    db.flush()
-    replace_employee_branches(
-        db,
-        employee_id=employee.id,
-        branch_ids=branch_ids,
-        primary_branch_id=primary_branch_id,
-    )
-    db.commit()
-    db.expire_all()
+    db.refresh(employee)
     return get_employee_by_id(db, employee.id)
 
 
@@ -236,6 +173,7 @@ def replace_availability(
         db.add(EmployeeDesiredDayOff(employee_id=employee_id, weekday=weekday))
 
     db.commit()
+    db.expire_all()
 
     return get_employee_by_id(db, employee_id)
 
@@ -244,49 +182,11 @@ def list_employees_by_position(db: Session, position_id: int) -> list[Employee]:
     return list(
         db.scalars(
             select(Employee)
-            .join(EmployeePosition, EmployeePosition.employee_id == Employee.id)
             .options(*_employee_options())
-            .where(EmployeePosition.position_id == position_id, Employee.is_active.is_(True))
+            .where(Employee.position_id == position_id, Employee.is_active.is_(True))
             .order_by(Employee.id)
         )
     )
-
-
-def employee_has_position(db: Session, employee_id: int, position_id: int) -> bool:
-    return db.scalar(
-        select(EmployeePosition.id)
-        .where(EmployeePosition.employee_id == employee_id, EmployeePosition.position_id == position_id)
-        .limit(1)
-    ) is not None
-
-
-def _replace_employee_branch(db: Session, employee_id: int, branch_id: int | None) -> None:
-    branch_ids = [] if branch_id is None else [branch_id]
-    replace_employee_branches(db, employee_id=employee_id, branch_ids=branch_ids, primary_branch_id=branch_id)
-
-
-def replace_employee_branches(
-    db: Session,
-    *,
-    employee_id: int,
-    branch_ids: list[int],
-    primary_branch_id: int | None,
-) -> None:
-    db.execute(delete(EmployeeBranch).where(EmployeeBranch.employee_id == employee_id))
-    for branch_id in branch_ids:
-        db.add(
-            EmployeeBranch(
-                employee_id=employee_id,
-                branch_id=branch_id,
-                is_primary=primary_branch_id is not None and branch_id == primary_branch_id,
-            )
-        )
-
-
-def _replace_employee_position(db: Session, employee_id: int, position_id: int | None) -> None:
-    db.execute(delete(EmployeePosition).where(EmployeePosition.employee_id == employee_id))
-    if position_id is not None:
-        db.add(EmployeePosition(employee_id=employee_id, position_id=position_id, is_primary=True))
 
 
 def list_absences(
@@ -341,10 +241,5 @@ def get_absence_by_id(db: Session, absence_id: int) -> Absence | None:
 
 def delete_absence(db: Session, absence: Absence) -> None:
     db.delete(absence)
-    db.commit()
-
-
-def delete_employee(db: Session, employee: Employee) -> None:
-    db.delete(employee)
     db.commit()
 

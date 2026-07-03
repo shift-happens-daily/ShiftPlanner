@@ -26,6 +26,7 @@ from app.schemas.schedule import (
     ShiftRead,
     UnfilledRequirementRead,
 )
+from . import schedule_solver
 
 
 def list_requirements(
@@ -184,17 +185,7 @@ def update_requirement(
     return _build_requirement_read(db, updated_requirement)
 
 
-def create_bulk_requirements(
-    db: Session,
-    payload: ScheduleRequirementBulkCreate,
-    current_user: UserRead,
-) -> ScheduleRequirementBulkRead:
-    if current_user.company_id is None:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Manager is not linked to a company.",
-        )
-
+def create_bulk_requirements(db: Session, payload: ScheduleRequirementBulkCreate) -> ScheduleRequirementBulkRead:
     positions = {item.id: item for item in position_repository.list_positions(db)}
     items: list[dict] = []
     current_date = payload.start_date
@@ -207,14 +198,9 @@ def create_bulk_requirements(
                         status_code=status.HTTP_400_BAD_REQUEST,
                         detail=f"Position {template.position_id} was not found.",
                     )
-                if position.company_id != current_user.company_id:
-                    raise HTTPException(
-                        status_code=status.HTTP_403_FORBIDDEN,
-                        detail="Position does not belong to the authenticated user's company.",
-                    )
                 items.append(
                     {
-                        "company_id": current_user.company_id,
+                        "company_id": position.company_id,
                         "position_id": template.position_id,
                         "shift_date": current_date,
                         "start_time": template.start_time,
@@ -251,85 +237,41 @@ def generate_schedule(
         company_id=current_user.company_id,
     )
 
-    generated_shifts: list[dict] = []
-    unfilled: list[dict] = []
-
-    for requirement in requirements:
-        employee = next(iter(employee_repository.list_employees_by_position(db, requirement.position_id)), None)
-        position = position_repository.get_position_by_id(db, requirement.position_id)
-        position_title = position.name if position else ""
-
-        if employee is None:
-            unfilled.append(
-                {
-                    "requirement_id": requirement.id,
-                    "position_id": requirement.position_id,
-                    "position_title": position_title,
-                    "date": requirement.shift_date,
-                    "start_time": requirement.start_time,
-                    "end_time": requirement.end_time,
-                    "missing_staff": requirement.required_employees,
-                }
-            )
-            continue
-
-        generated_shifts.append(
-            {
-                "employee_id": employee.id,
-                "employee_name": employee.user.full_name,
-                "position_id": requirement.position_id,
-                "position_name": position_title,
-                "date": requirement.shift_date,
-                "start_time": requirement.start_time,
-                "end_time": requirement.end_time,
-            }
-        )
-
-        if requirement.required_employees > 1:
-            unfilled.append(
-                {
-                    "requirement_id": requirement.id,
-                    "position_id": requirement.position_id,
-                    "position_title": position_title,
-                    "date": requirement.shift_date,
-                    "start_time": requirement.start_time,
-                    "end_time": requirement.end_time,
-                    "missing_staff": requirement.required_employees - 1,
-                }
-            )
-
     schedule_start = start_date or (min((item.shift_date for item in requirements), default=date.today()))
     schedule_end = end_date or (max((item.shift_date for item in requirements), default=schedule_start))
-    schedule = schedule_repository.create_schedule(
-        db,
-        company_id=current_user.company_id,
-        start_date=schedule_start,
-        end_date=schedule_end,
-        generated_shifts=generated_shifts,
-    )
-    return _build_schedule_read(db, schedule.id, schedule.status, unfilled)
 
-
-def get_schedule(db: Session, schedule_id: int, current_user: UserRead) -> ScheduleRead:
-    if current_user.company_id is None:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="User is not linked to a company.",
+    if not requirements:
+        schedule = schedule_repository.create_schedule(
+            db,
+            company_id=current_user.company_id,
+            start_date=schedule_start,
+            end_date=schedule_end,
+            generated_shifts=[],
         )
+        return _build_schedule_read(db, schedule.id, schedule.status)
 
+    try:
+        result = schedule_solver.generate_schedule(
+            db,
+            company_id=current_user.company_id,
+            start_date=schedule_start,
+            end_date=schedule_end,
+            commit=True,
+        )
+    except schedule_solver.ScheduleDataError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(exc),
+        ) from exc
+
+    schedule = schedule_repository.get_schedule(db, result.schedule_id)
+    return _build_schedule_read(db, result.schedule_id, schedule.status)
+
+
+def get_schedule(db: Session, schedule_id: int) -> ScheduleRead:
     schedule = schedule_repository.get_schedule(db, schedule_id)
     if schedule is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Schedule was not found.")
-    if schedule.company_id != current_user.company_id:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Schedule does not belong to the authenticated user's company.",
-        )
-    if current_user.role == "employee" and schedule.status != "published":
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Employees can only view published schedules.",
-        )
     return _build_schedule_read(db, schedule.id, schedule.status)
 
 
@@ -352,31 +294,6 @@ def get_latest_schedule(
     if schedule is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Schedule was not found.")
     return _build_schedule_read(db, schedule.id, schedule.status)
-
-
-def list_schedules(
-    db: Session,
-    current_user: UserRead,
-    *,
-    start_date: date | None = None,
-    end_date: date | None = None,
-    schedule_status: str | None = None,
-) -> list[ScheduleRead]:
-    if current_user.company_id is None:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Manager is not linked to a company.",
-        )
-    _ensure_date_range(start_date, end_date)
-
-    schedules = schedule_repository.list_schedules(
-        db,
-        company_id=current_user.company_id,
-        start_date=start_date,
-        end_date=end_date,
-        schedule_status=schedule_status,
-    )
-    return [_build_schedule_read(db, schedule.id, schedule.status) for schedule in schedules]
 
 
 def create_manual_shift(
@@ -518,7 +435,6 @@ def assign_requirement(
         shift_date=requirement.shift_date,
         start_time=requirement.start_time,
         end_time=requirement.end_time,
-        require_position_match=False,
     )
     schedule_repository.create_shift(
         db,
@@ -543,7 +459,7 @@ def list_available_employees(
     end_time,
     position_id: int,
     branch_id: int | None = None,
-    include_other_positions: bool = False,
+    include_unavailable: bool = False,
 ) -> list[AvailableEmployeeRead]:
     schedule = _get_manager_schedule(db, schedule_id, current_user)
     _ensure_time_range(start_time, end_time)
@@ -561,15 +477,13 @@ def list_available_employees(
         company_id=current_user.company_id,
         position_id=position_id,
         branch_id=branch_id,
-        include_other_positions=include_other_positions,
     )
     available: list[AvailableEmployeeRead] = []
-    seen_employee_ids: set[int] = set()
+    unavailable_group: list[AvailableEmployeeRead] = []
+
     for row in rows:
         employee_id = row["employee_id"]
-        if employee_id in seen_employee_ids:
-            continue
-        seen_employee_ids.add(employee_id)
+        # Always skip employees with absences or overlapping shifts — hard constraints
         if schedule_repository.employee_has_absence_on_date(db, employee_id=employee_id, shift_date=shift_date):
             continue
         if schedule_repository.has_overlapping_assignment(
@@ -588,30 +502,37 @@ def list_available_employees(
             start_time=start_time,
             end_time=end_time,
         )
-        if availability_status not in {"available", "if_needed"}:
+        is_reachable = availability_status in {"available", "if_needed"}
+        if not is_reachable and not include_unavailable:
             continue
-        available.append(
-            AvailableEmployeeRead(
-                id=employee_id,
-                full_name=row["full_name"],
-                position=AvailableEmployeePositionRead(
-                    id=row["position_id"],
-                    name=row["position_name"],
-                ),
-                branch=(
-                    AvailableEmployeeBranchRead(id=row["branch_id"], name=row["branch_name"])
-                    if row["branch_id"] is not None
-                    else None
-                ),
-                availability_status=availability_status,
-                assigned_hours=schedule_repository.sum_assigned_hours_for_employee(
-                    db,
-                    schedule_id=schedule.id,
-                    employee_id=employee_id,
-                ),
-            )
+
+        employee_read = AvailableEmployeeRead(
+            id=employee_id,
+            full_name=row["full_name"],
+            position=AvailableEmployeePositionRead(
+                id=row["position_id"],
+                name=row["position_name"],
+            ),
+            branch=(
+                AvailableEmployeeBranchRead(id=row["branch_id"], name=row["branch_name"])
+                if row["branch_id"] is not None
+                else None
+            ),
+            availability_status=availability_status if is_reachable else "unavailable",
+            assigned_hours=schedule_repository.sum_assigned_hours_for_employee(
+                db,
+                schedule_id=schedule.id,
+                employee_id=employee_id,
+            ),
         )
-    return sorted(available, key=lambda item: (item.availability_status != "available", item.full_name, item.id))
+        if is_reachable:
+            available.append(employee_read)
+        else:
+            unavailable_group.append(employee_read)
+
+    available.sort(key=lambda item: (item.availability_status != "available", item.full_name, item.id))
+    unavailable_group.sort(key=lambda item: item.full_name)
+    return available + unavailable_group
 
 
 def update_schedule_requirement(
@@ -663,44 +584,13 @@ def publish_schedule(db: Session, schedule_id: int, current_user: UserRead) -> S
     return _build_schedule_read(db, published_schedule.id, published_schedule.status)
 
 
-def delete_schedule(db: Session, schedule_id: int, current_user: UserRead) -> None:
-    if current_user.company_id is None:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Manager is not linked to a company.",
-        )
-
-    schedule = schedule_repository.get_schedule(db, schedule_id)
-    if schedule is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Schedule was not found.")
-    if schedule.company_id != current_user.company_id:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Schedule does not belong to the authenticated manager's company.",
-        )
-
-    schedule_repository.delete_schedule(db, schedule)
-
-
-def list_my_schedule(
-    db: Session,
-    current_user: UserRead,
-    *,
-    start_date: date | None = None,
-    end_date: date | None = None,
-) -> list[ShiftRead]:
+def list_my_schedule(db: Session, current_user: UserRead) -> list[ShiftRead]:
     if current_user.employee_id is None:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="This employee account is not linked to an employee profile.",
         )
-    _ensure_date_range(start_date, end_date)
-    rows = schedule_repository.list_published_shift_rows_for_employee_period(
-        db,
-        current_user.employee_id,
-        start_date=start_date,
-        end_date=end_date,
-    )
+    rows = schedule_repository.list_published_shift_rows_for_employee(db, current_user.employee_id)
     return [_build_shift_read(row) for row in rows]
 
 
@@ -765,6 +655,10 @@ def _build_schedule_read(
                 1
                 for row in rows
                 if row["position_id"] == requirement.position_id
+                and _matches_requirement_branch(
+                    row["employee_branch_id"],
+                    requirement.branch_id,
+                )
                 and row["employee_id"] is not None
                 and row["shift_date"] == requirement.shift_date
                 and row["start_time"] == requirement.start_time
@@ -785,8 +679,6 @@ def _build_schedule_read(
                 )
     return ScheduleRead(
         id=schedule_id,
-        start_date=schedule.start_date,
-        end_date=schedule.end_date,
         status=status_value,
         shifts=[_build_shift_read(row) for row in rows],
         conflicts=[],
@@ -804,6 +696,16 @@ def _build_shift_read(row: dict) -> ShiftRead:
         date=row["shift_date"],
         start_time=row["start_time"],
         end_time=row["end_time"],
+    )
+
+def _matches_requirement_branch(
+    employee_branch_id: int | None,
+    requirement_branch_id: int | None,
+) -> bool:
+    return (
+        employee_branch_id is None
+        or requirement_branch_id is None
+        or employee_branch_id == requirement_branch_id
     )
 
 
@@ -847,7 +749,6 @@ def _validate_employee_assignment(
     start_time,
     end_time,
     exclude_shift_id: int | None = None,
-    require_position_match: bool = True,
 ) -> None:
     schedule = schedule_repository.get_schedule(db, schedule_id)
     employee = employee_repository.get_employee_by_id(db, employee_id)
@@ -863,7 +764,7 @@ def _validate_employee_assignment(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Employee is inactive.",
         )
-    if require_position_match and not employee_repository.employee_has_position(db, employee.id, position_id):
+    if employee.position_id != position_id:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Employee does not match the required position for this shift.",
@@ -896,14 +797,6 @@ def _ensure_time_range(start_time, end_time) -> None:
         )
 
 
-def _ensure_date_range(start_date: date | None, end_date: date | None) -> None:
-    if start_date is not None and end_date is not None and end_date < start_date:
-        raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail="date_to must be later than or equal to date_from.",
-        )
-
-
 def _build_requirement_read(db: Session, requirement) -> ScheduleRequirementRead:
     position = position_repository.get_position_by_id(db, requirement.position_id)
     return ScheduleRequirementRead(
@@ -918,21 +811,10 @@ def _build_requirement_read(db: Session, requirement) -> ScheduleRequirementRead
         end_time=requirement.end_time,
     )
 
-def delete_requirement(db: Session, requirement_id: int, current_user: UserRead) -> None:
-    if current_user.company_id is None:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Manager is not linked to a company.",
-        )
-
+def delete_requirement(db: Session, requirement_id: int) -> None:
     requirement = schedule_repository.get_requirement_by_id(db, requirement_id)
 
     if not requirement:
         raise HTTPException(status_code=404, detail="Requirement not found")
-    if requirement.company_id != current_user.company_id:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Requirement does not belong to the authenticated user's company.",
-        )
 
     schedule_repository.delete_requirement(db, requirement)
