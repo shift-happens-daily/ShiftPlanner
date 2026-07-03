@@ -250,6 +250,7 @@ def get_available_employees(
     end_time: time = Query(),
     position_id: int = Query(ge=1),
     branch_id: int | None = Query(default=None, ge=1),
+    include_unavailable: bool = Query(default=False),
     current_user: UserRead = Depends(require_role("manager")),
     db: Session = Depends(get_db),
 ) -> list[AvailableEmployeeRead]:
@@ -262,6 +263,7 @@ def get_available_employees(
         end_time=end_time,
         position_id=position_id,
         branch_id=branch_id,
+        include_unavailable=include_unavailable,
     )
 
 

@@ -188,6 +188,7 @@ interface ShiftPlannerApi {
         @Query("start_time") startTime: String,
         @Query("end_time") endTime: String,
         @Query("position_id") positionId: Int,
-        @Query("branch_id") branchId: Int?
+        @Query("branch_id") branchId: Int?,
+        @Query("include_unavailable") includeUnavailable: Boolean = false
     ): List<AvailableEmployeeResponseDto>
 }

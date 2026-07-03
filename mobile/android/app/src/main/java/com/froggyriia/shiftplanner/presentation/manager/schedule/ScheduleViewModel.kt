@@ -20,14 +20,19 @@ import java.util.Calendar
 import java.util.Date
 import java.util.Locale
 
+// ── View mode / filter ────────────────────────────────────────────────────────
+
+enum class ScheduleViewMode { LIST, CALENDAR }
+enum class ShiftFilter { ALL, FILLED, UNFILLED }
+
 // ── Draft models ──────────────────────────────────────────────────────────────
 
 data class ShiftDraft(
-    val shiftId: Int? = null,       // null → create, non-null → update
+    val shiftId: Int? = null,
     val date: String = "",
     val positionId: Int? = null,
-    val startMinutes: Int = 8 * 60, // 08:00
-    val endMinutes: Int = 16 * 60   // 16:00
+    val startMinutes: Int = 8 * 60,
+    val endMinutes: Int = 16 * 60
 )
 
 data class UnfilledReqDraft(
@@ -46,6 +51,8 @@ data class ScheduleUiState(
     val positions: List<RequirementPositionOption> = emptyList(),
     val weekDates: List<String> = emptyList(),
     val weekLabel: String = "",
+    val viewMode: ScheduleViewMode = ScheduleViewMode.LIST,
+    val shiftFilter: ShiftFilter = ShiftFilter.ALL,
     val isLoading: Boolean = false,
     val isGenerating: Boolean = false,
     val isPublishing: Boolean = false,
@@ -72,7 +79,6 @@ class ScheduleViewModel(
     init {
         refreshWeek()
         viewModelScope.launch {
-            // Load positions and latest schedule in parallel
             launch {
                 runCatching { requirementsRepository.fetchPositions() }
                     .getOrNull()
@@ -80,6 +86,16 @@ class ScheduleViewModel(
             }
             loadLatestSchedule()
         }
+    }
+
+    // ── View mode / filter ────────────────────────────────────────────────────
+
+    fun setViewMode(mode: ScheduleViewMode) {
+        _uiState.value = _uiState.value.copy(viewMode = mode)
+    }
+
+    fun setFilter(filter: ShiftFilter) {
+        _uiState.value = _uiState.value.copy(shiftFilter = filter)
     }
 
     // ── Schedule lifecycle ────────────────────────────────────────────────────
@@ -155,9 +171,7 @@ class ScheduleViewModel(
                     )
                 )
                 _uiState.value = _uiState.value.copy(
-                    schedule = updated,
-                    statusMessage = "Shift created.",
-                    errorMessage = null
+                    schedule = updated, statusMessage = "Shift created.", errorMessage = null
                 )
                 onDone(true)
             } catch (e: Exception) {
@@ -181,7 +195,6 @@ class ScheduleViewModel(
         viewModelScope.launch {
             try {
                 val parsedDate = dateFormat.parse(draft.date) ?: Date()
-                // Preserve existing employeeId
                 val existing = _uiState.value.schedule?.shifts?.firstOrNull { it.id == shiftId }
                 val updated = repository.updateShift(
                     scheduleId = schedId,
@@ -195,9 +208,7 @@ class ScheduleViewModel(
                     )
                 )
                 _uiState.value = _uiState.value.copy(
-                    schedule = updated,
-                    statusMessage = "Shift updated.",
-                    errorMessage = null
+                    schedule = updated, statusMessage = "Shift updated.", errorMessage = null
                 )
                 onDone(true)
             } catch (e: Exception) {
@@ -243,9 +254,7 @@ class ScheduleViewModel(
                     quantity = draft.quantity
                 )
                 _uiState.value = _uiState.value.copy(
-                    schedule = updated,
-                    statusMessage = "Requirement updated.",
-                    errorMessage = null
+                    schedule = updated, statusMessage = "Requirement updated.", errorMessage = null
                 )
                 onDone(true)
             } catch (e: Exception) {
@@ -262,7 +271,7 @@ class ScheduleViewModel(
         viewModelScope.launch {
             _uiState.value = _uiState.value.copy(loadingEmployees = true)
             try {
-                val employees = repository.fetchAvailableEmployees(schedId, shift, null)
+                val employees = repository.fetchAvailableEmployees(schedId, shift, null, includeUnavailable = true)
                 _uiState.value = _uiState.value.copy(availableEmployees = employees, loadingEmployees = false)
             } catch (e: Exception) {
                 _uiState.value = _uiState.value.copy(loadingEmployees = false, errorMessage = e.message)
@@ -280,10 +289,37 @@ class ScheduleViewModel(
         viewModelScope.launch {
             _uiState.value = _uiState.value.copy(loadingEmployees = true)
             try {
-                val employees = repository.fetchAvailableEmployees(schedId, fakeShift, null)
+                val employees = repository.fetchAvailableEmployees(schedId, fakeShift, null, includeUnavailable = true)
                 _uiState.value = _uiState.value.copy(availableEmployees = employees, loadingEmployees = false)
             } catch (e: Exception) {
                 _uiState.value = _uiState.value.copy(loadingEmployees = false, errorMessage = e.message)
+            }
+        }
+    }
+
+    fun assignShift(shiftId: Int, employeeId: Int) {
+        val schedId = _uiState.value.schedule?.id ?: return
+        val existing = _uiState.value.schedule?.shifts?.firstOrNull { it.id == shiftId } ?: return
+        viewModelScope.launch {
+            try {
+                val updated = repository.updateShift(
+                    scheduleId = schedId,
+                    shiftId = shiftId,
+                    mutation = ScheduleShiftMutation(
+                        date = existing.date,
+                        startMinutes = existing.startMinutes,
+                        endMinutes = existing.endMinutes,
+                        positionId = existing.positionId,
+                        employeeId = employeeId
+                    )
+                )
+                _uiState.value = _uiState.value.copy(
+                    schedule = updated,
+                    availableEmployees = emptyList(),
+                    statusMessage = "Employee assigned."
+                )
+            } catch (e: Exception) {
+                _uiState.value = _uiState.value.copy(errorMessage = e.message)
             }
         }
     }
@@ -324,18 +360,28 @@ class ScheduleViewModel(
         _uiState.value = _uiState.value.copy(weekDates = dates, weekLabel = label)
     }
 
-    // ── Helpers ───────────────────────────────────────────────────────────────
+    // ── Filtered helpers ──────────────────────────────────────────────────────
 
     fun shiftsForDate(date: String): List<AppScheduledShift> {
         val target = dateFormat.parse(date) ?: return emptyList()
+        val filter = _uiState.value.shiftFilter
         return _uiState.value.schedule?.shifts
             ?.filter { isSameDay(it.date, target) }
+            ?.filter { shift ->
+                when (filter) {
+                    ShiftFilter.ALL -> true
+                    ShiftFilter.FILLED -> shift.hasAssignedEmployee
+                    ShiftFilter.UNFILLED -> !shift.hasAssignedEmployee
+                }
+            }
             ?.sortedBy { it.startMinutes }
             ?: emptyList()
     }
 
     fun unfilledForDate(date: String): List<AppUnfilledRequirement> {
         val target = dateFormat.parse(date) ?: return emptyList()
+        // Unfilled reqs only shown in ALL or UNFILLED filter
+        if (_uiState.value.shiftFilter == ShiftFilter.FILLED) return emptyList()
         return _uiState.value.schedule?.unfilledRequirements
             ?.filter { isSameDay(it.date, target) }
             ?.sortedBy { it.startMinutes }
@@ -371,7 +417,6 @@ class ScheduleViewModel(
     companion object {
         fun minutesToDisplay(minutes: Int): String = "%02d:%02d".format(minutes / 60, minutes % 60)
 
-        /** Every 30-minute step as (minutes, "HH:mm") pairs, 00:00–23:30 */
         val minuteOptions: List<Pair<Int, String>> = (0..47).map { slot ->
             val m = slot * 30
             m to "%02d:%02d".format(m / 60, m % 60)

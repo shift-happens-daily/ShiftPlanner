@@ -14,7 +14,8 @@ interface ScheduleRepository {
     suspend fun fetchAvailableEmployees(
         scheduleId: Int,
         shift: AppScheduledShift,
-        branchId: Int?
+        branchId: Int?,
+        includeUnavailable: Boolean = false
     ): List<AppAvailableEmployee>
     suspend fun assignRequirement(
         scheduleId: Int,

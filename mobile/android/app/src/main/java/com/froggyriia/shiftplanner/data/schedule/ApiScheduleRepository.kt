@@ -53,7 +53,8 @@ class ApiScheduleRepository(
     override suspend fun fetchAvailableEmployees(
         scheduleId: Int,
         shift: AppScheduledShift,
-        branchId: Int?
+        branchId: Int?,
+        includeUnavailable: Boolean
     ): List<AppAvailableEmployee> = wrap {
         apiClient.api.getAvailableEmployees(
             scheduleId = scheduleId,
@@ -61,7 +62,8 @@ class ApiScheduleRepository(
             startTime = minutesToTime(shift.startMinutes),
             endTime = minutesToTime(shift.endMinutes),
             positionId = shift.positionId,
-            branchId = branchId
+            branchId = branchId,
+            includeUnavailable = includeUnavailable
         ).map { it.toEmployee() }
     }
 
@@ -179,7 +181,6 @@ class ApiScheduleRepository(
 
     private fun AvailableEmployeeResponseDto.toEmployee(): AppAvailableEmployee {
         val status = AppEmployeeAvailabilityStatus.fromApiValue(availabilityStatus)
-            ?: AppEmployeeAvailabilityStatus.AVAILABLE
         return AppAvailableEmployee(
             id = id,
             fullName = fullName,

@@ -1,23 +1,36 @@
 package com.froggyriia.shiftplanner.presentation.manager.schedule
 
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.CalendarMonth
 import androidx.compose.material.icons.filled.ChevronLeft
 import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.List
 import androidx.compose.material.icons.filled.PersonAdd
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Badge
@@ -30,9 +43,11 @@ import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExposedDropdownMenuBox
 import androidx.compose.material3.ExposedDropdownMenuDefaults
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.IconButtonDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedButton
@@ -43,6 +58,7 @@ import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.VerticalDivider
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -53,8 +69,13 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import com.froggyriia.shiftplanner.domain.model.AppAvailableEmployee
 import com.froggyriia.shiftplanner.domain.model.AppEmployeeAvailabilityStatus
 import com.froggyriia.shiftplanner.domain.model.AppScheduleStatus
@@ -67,6 +88,12 @@ import java.util.Locale
 
 private val DAY_LABELS = listOf("Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun")
 
+// Calendar layout constants
+private val HOUR_HEIGHT = 60.dp
+private val TIME_COL_WIDTH = 40.dp
+private val CAL_START_HOUR = 6
+private val CAL_END_HOUR = 23
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ScheduleScreen(
@@ -76,10 +103,9 @@ fun ScheduleScreen(
     val state by viewModel.uiState.collectAsState()
     val snackbarHostState = remember { SnackbarHostState() }
 
-    // Sheet / dialog state
     var showGenerateSheet by rememberSaveable { mutableStateOf(false) }
-    var shiftDraft by remember { mutableStateOf<ShiftDraft?>(null) }          // remember ok — sheet-local
-    var unfilledDraft by remember { mutableStateOf<UnfilledReqDraft?>(null) } // same
+    var shiftDraft by remember { mutableStateOf<ShiftDraft?>(null) }
+    var unfilledDraft by remember { mutableStateOf<UnfilledReqDraft?>(null) }
     var assigningShift by remember { mutableStateOf<AppScheduledShift?>(null) }
     var assigningReq by remember { mutableStateOf<AppUnfilledRequirement?>(null) }
     var deleteShiftTarget by remember { mutableStateOf<AppScheduledShift?>(null) }
@@ -215,10 +241,10 @@ fun ScheduleScreen(
             employees = state.availableEmployees,
             isLoading = state.loadingEmployees,
             onAssign = { emp ->
-                assigningReq?.let { req -> viewModel.assignRequirement(req.id, emp.id) }
+                assigningShift?.let { viewModel.assignShift(it.id, emp.id) }
+                assigningReq?.let { viewModel.assignRequirement(it.id, emp.id) }
                 assigningShift = null
                 assigningReq = null
-                viewModel.clearAvailableEmployees()
             },
             onDismiss = {
                 assigningShift = null
@@ -245,7 +271,7 @@ fun ScheduleScreen(
     }
 }
 
-// ── Schedule body ─────────────────────────────────────────────────────────────
+// ── No schedule placeholder ───────────────────────────────────────────────────
 
 @Composable
 private fun NoScheduleContent(
@@ -279,6 +305,8 @@ private fun NoScheduleContent(
     }
 }
 
+// ── Schedule content (list or calendar) ──────────────────────────────────────
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun ScheduleContent(
@@ -296,7 +324,7 @@ private fun ScheduleContent(
     val isDraft = schedule.status == AppScheduleStatus.DRAFT
 
     Column(modifier) {
-        // Status + controls row
+        // Status badge + Regenerate
         Row(
             Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp),
             horizontalArrangement = Arrangement.SpaceBetween,
@@ -333,59 +361,358 @@ private fun ScheduleContent(
             IconButton(onClick = viewModel::nextWeek) { Icon(Icons.Default.ChevronRight, "Next week") }
         }
 
-        LazyColumn(Modifier.fillMaxSize()) {
-            state.weekDates.forEachIndexed { index, date ->
-                val shifts = viewModel.shiftsForDate(date)
-                val unfilled = viewModel.unfilledForDate(date)
-                val isEmpty = shifts.isEmpty() && unfilled.isEmpty()
-
-                item(key = "header_$date") {
-                    ScheduleDayHeader(
-                        dayLabel = DAY_LABELS[index],
-                        date = date,
-                        showAddButton = isDraft,
-                        onAddClick = { onAddShift(date) }
+        // Controls: view mode toggle + filter chips
+        Row(
+            Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 2.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween
+        ) {
+            // Filter chips
+            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                ShiftFilter.entries.forEach { filter ->
+                    FilterChip(
+                        selected = state.shiftFilter == filter,
+                        onClick = { viewModel.setFilter(filter) },
+                        label = {
+                            Text(
+                                when (filter) {
+                                    ShiftFilter.ALL -> "All"
+                                    ShiftFilter.FILLED -> "Filled"
+                                    ShiftFilter.UNFILLED -> "Unfilled"
+                                },
+                                style = MaterialTheme.typography.labelSmall
+                            )
+                        }
                     )
                 }
-
-                if (isEmpty) {
-                    item(key = "empty_$date") {
-                        Text(
-                            "No shifts",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.padding(horizontal = 16.dp, vertical = 2.dp)
-                        )
-                    }
-                }
-
-                items(shifts, key = { "shift_${it.id}" }) { shift ->
-                    ShiftCard(
-                        shift = shift,
-                        isDraft = isDraft,
-                        onEdit = { onEditShift(shift) },
-                        onAssign = { onAssignShift(shift) },
-                        onDelete = { onDeleteShift(shift) }
-                    )
-                }
-
-                items(unfilled, key = { "req_${it.id}" }) { req ->
-                    UnfilledRequirementCard(
-                        req = req,
-                        isDraft = isDraft,
-                        onEdit = { onEditReq(req) },
-                        onAssign = { onAssignReq(req) }
-                    )
-                }
-
-                item(key = "divider_$date") { HorizontalDivider() }
             }
-            item { Spacer(Modifier.height(16.dp)) }
+
+            // View mode toggle
+            Row {
+                IconButton(
+                    onClick = { viewModel.setViewMode(ScheduleViewMode.LIST) },
+                    colors = IconButtonDefaults.iconButtonColors(
+                        containerColor = if (state.viewMode == ScheduleViewMode.LIST)
+                            MaterialTheme.colorScheme.secondaryContainer else Color.Transparent
+                    )
+                ) { Icon(Icons.Default.List, "List view") }
+                IconButton(
+                    onClick = { viewModel.setViewMode(ScheduleViewMode.CALENDAR) },
+                    colors = IconButtonDefaults.iconButtonColors(
+                        containerColor = if (state.viewMode == ScheduleViewMode.CALENDAR)
+                            MaterialTheme.colorScheme.secondaryContainer else Color.Transparent
+                    )
+                ) { Icon(Icons.Default.CalendarMonth, "Calendar view") }
+            }
+        }
+
+        HorizontalDivider()
+
+        // Content
+        when (state.viewMode) {
+            ScheduleViewMode.LIST -> ScheduleListView(
+                state = state,
+                viewModel = viewModel,
+                isDraft = isDraft,
+                onAddShift = onAddShift,
+                onEditShift = onEditShift,
+                onAssignShift = onAssignShift,
+                onEditReq = onEditReq,
+                onAssignReq = onAssignReq,
+                onDeleteShift = onDeleteShift
+            )
+            ScheduleViewMode.CALENDAR -> ScheduleCalendarView(
+                state = state,
+                viewModel = viewModel,
+                isDraft = isDraft,
+                onEditShift = onEditShift,
+                onAssignShift = onAssignShift,
+                onEditReq = onEditReq,
+                onAssignReq = onAssignReq
+            )
         }
     }
 }
 
-// ── Cards ─────────────────────────────────────────────────────────────────────
+// ── List view ─────────────────────────────────────────────────────────────────
+
+@Composable
+private fun ScheduleListView(
+    state: ScheduleUiState,
+    viewModel: ScheduleViewModel,
+    isDraft: Boolean,
+    onAddShift: (String) -> Unit,
+    onEditShift: (AppScheduledShift) -> Unit,
+    onAssignShift: (AppScheduledShift) -> Unit,
+    onEditReq: (AppUnfilledRequirement) -> Unit,
+    onAssignReq: (AppUnfilledRequirement) -> Unit,
+    onDeleteShift: (AppScheduledShift) -> Unit
+) {
+    LazyColumn(Modifier.fillMaxSize()) {
+        state.weekDates.forEachIndexed { index, date ->
+            val shifts = viewModel.shiftsForDate(date)
+            val unfilled = viewModel.unfilledForDate(date)
+            val isEmpty = shifts.isEmpty() && unfilled.isEmpty()
+
+            item(key = "header_$date") {
+                ScheduleDayHeader(
+                    dayLabel = DAY_LABELS[index],
+                    date = date,
+                    showAddButton = isDraft,
+                    onAddClick = { onAddShift(date) }
+                )
+            }
+
+            if (isEmpty) {
+                item(key = "empty_$date") {
+                    Text(
+                        "No shifts",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp)
+                    )
+                }
+            }
+
+            items(shifts, key = { "shift_${it.id}" }) { shift ->
+                ShiftCard(
+                    shift = shift,
+                    isDraft = isDraft,
+                    onEdit = { onEditShift(shift) },
+                    onAssign = { onAssignShift(shift) },
+                    onDelete = { onDeleteShift(shift) }
+                )
+            }
+
+            items(unfilled, key = { "req_${it.id}" }) { req ->
+                UnfilledRequirementCard(
+                    req = req,
+                    isDraft = isDraft,
+                    onEdit = { onEditReq(req) },
+                    onAssign = { onAssignReq(req) }
+                )
+            }
+
+            item(key = "divider_$date") { HorizontalDivider() }
+        }
+        item { Spacer(Modifier.height(16.dp)) }
+    }
+}
+
+// ── Calendar view ─────────────────────────────────────────────────────────────
+
+@Composable
+private fun ScheduleCalendarView(
+    state: ScheduleUiState,
+    viewModel: ScheduleViewModel,
+    isDraft: Boolean,
+    onEditShift: (AppScheduledShift) -> Unit,
+    onAssignShift: (AppScheduledShift) -> Unit,
+    onEditReq: (AppUnfilledRequirement) -> Unit,
+    onAssignReq: (AppUnfilledRequirement) -> Unit
+) {
+    val totalHours = CAL_END_HOUR - CAL_START_HOUR
+    val totalHeight = HOUR_HEIGHT * totalHours
+    val vertScroll = rememberScrollState()
+    val horzScroll = rememberScrollState()
+    val dateFmt = remember { SimpleDateFormat("d", Locale.US) }
+    val parseFmt = remember { SimpleDateFormat("yyyy-MM-dd", Locale.US) }
+
+    Column(Modifier.fillMaxSize()) {
+        // Day headers — scroll together with content
+        Row(
+            Modifier
+                .fillMaxWidth()
+                .horizontalScroll(horzScroll)
+        ) {
+            Spacer(Modifier.width(TIME_COL_WIDTH))
+            VerticalDivider(Modifier.height(40.dp))
+            state.weekDates.forEachIndexed { i, date ->
+                val dayNum = runCatching { dateFmt.format(parseFmt.parse(date)!!) }.getOrDefault("?")
+                Column(
+                    Modifier.width(HOUR_HEIGHT), // reuse same unit for square-ish column
+                    horizontalAlignment = Alignment.CenterHorizontally
+                ) {
+                    Text(
+                        DAY_LABELS[i],
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Text(
+                        dayNum,
+                        style = MaterialTheme.typography.labelMedium,
+                        fontWeight = FontWeight.SemiBold
+                    )
+                }
+            }
+        }
+
+        HorizontalDivider()
+
+        // Scrollable grid body
+        Row(
+            Modifier
+                .fillMaxSize()
+                .horizontalScroll(horzScroll)
+                .verticalScroll(vertScroll)
+        ) {
+            // Time labels
+            Box(Modifier.width(TIME_COL_WIDTH).height(totalHeight)) {
+                for (h in CAL_START_HOUR until CAL_END_HOUR) {
+                    val yOffset = HOUR_HEIGHT * (h - CAL_START_HOUR)
+                    Text(
+                        "%02d".format(h),
+                        modifier = Modifier.offset(y = yOffset + 2.dp).align(Alignment.TopEnd).padding(end = 4.dp),
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        fontSize = 10.sp
+                    )
+                }
+            }
+
+            VerticalDivider(Modifier.height(totalHeight))
+
+            // Day columns
+            state.weekDates.forEach { date ->
+                val shifts = viewModel.shiftsForDate(date)
+                val unfilled = viewModel.unfilledForDate(date)
+
+                Box(
+                    Modifier
+                        .width(HOUR_HEIGHT) // square-ish column
+                        .height(totalHeight)
+                ) {
+                    // Hour grid lines
+                    for (h in 0..totalHours) {
+                        HorizontalDivider(
+                            Modifier
+                                .fillMaxWidth()
+                                .offset(y = HOUR_HEIGHT * h),
+                            color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f)
+                        )
+                    }
+
+                    // Assigned / unassigned shifts
+                    shifts.forEach { shift ->
+                        val topDp = HOUR_HEIGHT * (shift.startMinutes / 60f - CAL_START_HOUR)
+                        val heightDp = (HOUR_HEIGHT * (shift.endMinutes - shift.startMinutes) / 60f).coerceAtLeast(20.dp)
+                        CalendarShiftBlock(
+                            shift = shift,
+                            isDraft = isDraft,
+                            modifier = Modifier
+                                .offset(y = topDp)
+                                .fillMaxWidth()
+                                .height(heightDp)
+                                .padding(horizontal = 1.dp, vertical = 1.dp),
+                            onEdit = { onEditShift(shift) },
+                            onAssign = { onAssignShift(shift) }
+                        )
+                    }
+
+                    // Unfilled requirements
+                    unfilled.forEach { req ->
+                        val topDp = HOUR_HEIGHT * (req.startMinutes / 60f - CAL_START_HOUR)
+                        val heightDp = (HOUR_HEIGHT * (req.endMinutes - req.startMinutes) / 60f).coerceAtLeast(20.dp)
+                        CalendarUnfilledBlock(
+                            req = req,
+                            isDraft = isDraft,
+                            modifier = Modifier
+                                .offset(y = topDp)
+                                .fillMaxWidth()
+                                .height(heightDp)
+                                .padding(horizontal = 1.dp, vertical = 1.dp),
+                            onAssign = { onAssignReq(req) },
+                            onEdit = { onEditReq(req) }
+                        )
+                    }
+                }
+
+                VerticalDivider(Modifier.height(totalHeight))
+            }
+        }
+    }
+}
+
+@Composable
+private fun CalendarShiftBlock(
+    shift: AppScheduledShift,
+    isDraft: Boolean,
+    modifier: Modifier = Modifier,
+    onEdit: () -> Unit,
+    onAssign: () -> Unit
+) {
+    val bgColor = if (shift.hasAssignedEmployee)
+        MaterialTheme.colorScheme.primaryContainer
+    else
+        MaterialTheme.colorScheme.secondaryContainer
+
+    Box(
+        modifier
+            .clip(RoundedCornerShape(3.dp))
+            .background(bgColor)
+            .clickable(enabled = isDraft) { if (shift.hasAssignedEmployee) onEdit() else onAssign() }
+            .padding(2.dp)
+    ) {
+        Column {
+            Text(
+                "${ScheduleViewModel.minutesToDisplay(shift.startMinutes)}–${ScheduleViewModel.minutesToDisplay(shift.endMinutes)}",
+                style = MaterialTheme.typography.labelSmall,
+                fontSize = 9.sp,
+                maxLines = 1,
+                overflow = TextOverflow.Clip,
+                color = MaterialTheme.colorScheme.onPrimaryContainer
+            )
+            Text(
+                shift.employeeName?.split(" ")?.firstOrNull() ?: "?",
+                style = MaterialTheme.typography.labelSmall,
+                fontSize = 9.sp,
+                maxLines = 1,
+                overflow = TextOverflow.Clip,
+                fontWeight = FontWeight.Medium,
+                color = MaterialTheme.colorScheme.onPrimaryContainer
+            )
+        }
+    }
+}
+
+@Composable
+private fun CalendarUnfilledBlock(
+    req: AppUnfilledRequirement,
+    isDraft: Boolean,
+    modifier: Modifier = Modifier,
+    onAssign: () -> Unit,
+    onEdit: () -> Unit
+) {
+    Box(
+        modifier
+            .clip(RoundedCornerShape(3.dp))
+            .background(MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.7f))
+            .border(1.dp, MaterialTheme.colorScheme.error.copy(alpha = 0.5f), RoundedCornerShape(3.dp))
+            .clickable(enabled = isDraft) { onAssign() }
+            .padding(2.dp)
+    ) {
+        Column {
+            Text(
+                "×${req.missingStaff}",
+                style = MaterialTheme.typography.labelSmall,
+                fontSize = 9.sp,
+                maxLines = 1,
+                color = MaterialTheme.colorScheme.onErrorContainer,
+                fontWeight = FontWeight.Bold
+            )
+            Text(
+                "${ScheduleViewModel.minutesToDisplay(req.startMinutes)}–${ScheduleViewModel.minutesToDisplay(req.endMinutes)}",
+                style = MaterialTheme.typography.labelSmall,
+                fontSize = 9.sp,
+                maxLines = 1,
+                overflow = TextOverflow.Clip,
+                color = MaterialTheme.colorScheme.onErrorContainer
+            )
+        }
+    }
+}
+
+// ── List view cards ───────────────────────────────────────────────────────────
 
 @Composable
 private fun ScheduleDayHeader(
@@ -474,7 +801,117 @@ private fun UnfilledRequirementCard(
     }
 }
 
-// ── Sheets ────────────────────────────────────────────────────────────────────
+// ── Assign employee sheet ─────────────────────────────────────────────────────
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun AssignEmployeeSheet(
+    employees: List<AppAvailableEmployee>,
+    isLoading: Boolean,
+    onAssign: (AppAvailableEmployee) -> Unit,
+    onDismiss: () -> Unit
+) {
+    val available = employees.filter { it.availabilityStatus != AppEmployeeAvailabilityStatus.UNAVAILABLE }
+    val unavailable = employees.filter { it.availabilityStatus == AppEmployeeAvailabilityStatus.UNAVAILABLE }
+
+    ModalBottomSheet(onDismissRequest = onDismiss) {
+        Column(Modifier.fillMaxWidth().padding(bottom = 32.dp)) {
+            Text(
+                "Select Employee",
+                style = MaterialTheme.typography.titleMedium,
+                modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp)
+            )
+            when {
+                isLoading -> Box(
+                    Modifier.fillMaxWidth().padding(32.dp),
+                    contentAlignment = Alignment.Center
+                ) { CircularProgressIndicator() }
+
+                employees.isEmpty() -> Text(
+                    "No employees available.",
+                    modifier = Modifier.padding(16.dp),
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+
+                else -> LazyColumn {
+                    if (available.isNotEmpty()) {
+                        item {
+                            Text(
+                                "Available",
+                                style = MaterialTheme.typography.labelMedium,
+                                color = MaterialTheme.colorScheme.primary,
+                                modifier = Modifier.padding(horizontal = 16.dp, vertical = 6.dp)
+                            )
+                        }
+                        items(available) { emp ->
+                            EmployeeRow(emp = emp, onAssign = { onAssign(emp) })
+                            HorizontalDivider(Modifier.padding(horizontal = 16.dp))
+                        }
+                    }
+
+                    if (unavailable.isNotEmpty()) {
+                        item {
+                            Text(
+                                "Unavailable",
+                                style = MaterialTheme.typography.labelMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.padding(horizontal = 16.dp, vertical = 6.dp)
+                            )
+                        }
+                        items(unavailable) { emp ->
+                            EmployeeRow(emp = emp, onAssign = { onAssign(emp) })
+                            HorizontalDivider(Modifier.padding(horizontal = 16.dp))
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun EmployeeRow(
+    emp: AppAvailableEmployee,
+    onAssign: () -> Unit
+) {
+    val isUnavailable = emp.availabilityStatus == AppEmployeeAvailabilityStatus.UNAVAILABLE
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp, vertical = 8.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Column(Modifier.weight(1f)) {
+            Text(
+                emp.fullName,
+                style = MaterialTheme.typography.bodyLarge,
+                color = if (isUnavailable) MaterialTheme.colorScheme.onSurfaceVariant
+                else MaterialTheme.colorScheme.onSurface
+            )
+            Text(
+                buildString {
+                    append(emp.positionName)
+                    append("  •  ")
+                    append(
+                        when (emp.availabilityStatus) {
+                            AppEmployeeAvailabilityStatus.AVAILABLE -> "✓ Available"
+                            AppEmployeeAvailabilityStatus.IF_NEEDED -> "△ If needed"
+                            AppEmployeeAvailabilityStatus.UNAVAILABLE -> "✕ Unavailable"
+                        }
+                    )
+                    append("  •  ${emp.assignedHours.toInt()}h")
+                },
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+        TextButton(onClick = onAssign) {
+            Text(if (isUnavailable) "Override" else "Assign")
+        }
+    }
+}
+
+// ── Edit sheets ───────────────────────────────────────────────────────────────
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -584,44 +1021,6 @@ private fun UnfilledReqEditSheet(
                     enabled = draft.endMinutes > draft.startMinutes,
                     modifier = Modifier.weight(1f)
                 ) { Text("Save") }
-            }
-        }
-    }
-}
-
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
-private fun AssignEmployeeSheet(
-    employees: List<AppAvailableEmployee>,
-    isLoading: Boolean,
-    onAssign: (AppAvailableEmployee) -> Unit,
-    onDismiss: () -> Unit
-) {
-    ModalBottomSheet(onDismissRequest = onDismiss) {
-        Column(Modifier.fillMaxWidth().padding(bottom = 32.dp)) {
-            Text("Select Employee", style = MaterialTheme.typography.titleMedium, modifier = Modifier.padding(16.dp))
-            when {
-                isLoading -> Box(Modifier.fillMaxWidth().padding(32.dp), contentAlignment = Alignment.Center) { CircularProgressIndicator() }
-                employees.isEmpty() -> Text("No available employees.", modifier = Modifier.padding(16.dp), color = MaterialTheme.colorScheme.onSurfaceVariant)
-                else -> LazyColumn {
-                    items(employees) { emp ->
-                        Row(
-                            Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Column(Modifier.weight(1f)) {
-                                Text(emp.fullName, style = MaterialTheme.typography.bodyLarge)
-                                Text(
-                                    "${emp.positionName}  •  ${if (emp.availabilityStatus == AppEmployeeAvailabilityStatus.AVAILABLE) "✓ Available" else "△ If needed"}  •  ${emp.assignedHours}h",
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                                )
-                            }
-                            TextButton(onClick = { onAssign(emp) }) { Text("Assign") }
-                        }
-                        HorizontalDivider()
-                    }
-                }
             }
         }
     }

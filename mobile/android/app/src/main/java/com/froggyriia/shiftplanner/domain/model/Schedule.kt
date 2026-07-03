@@ -15,11 +15,12 @@ enum class AppScheduleStatus(val apiValue: String) {
 
 enum class AppEmployeeAvailabilityStatus(val apiValue: String) {
     AVAILABLE("available"),
-    IF_NEEDED("if_needed");
+    IF_NEEDED("if_needed"),
+    UNAVAILABLE("unavailable");
 
     companion object {
-        fun fromApiValue(value: String): AppEmployeeAvailabilityStatus? =
-            entries.firstOrNull { it.apiValue == value }
+        fun fromApiValue(value: String): AppEmployeeAvailabilityStatus =
+            entries.firstOrNull { it.apiValue == value } ?: UNAVAILABLE
     }
 }
 

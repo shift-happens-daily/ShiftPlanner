@@ -459,6 +459,7 @@ def list_available_employees(
     end_time,
     position_id: int,
     branch_id: int | None = None,
+    include_unavailable: bool = False,
 ) -> list[AvailableEmployeeRead]:
     schedule = _get_manager_schedule(db, schedule_id, current_user)
     _ensure_time_range(start_time, end_time)
@@ -478,8 +479,11 @@ def list_available_employees(
         branch_id=branch_id,
     )
     available: list[AvailableEmployeeRead] = []
+    unavailable_group: list[AvailableEmployeeRead] = []
+
     for row in rows:
         employee_id = row["employee_id"]
+        # Always skip employees with absences or overlapping shifts — hard constraints
         if schedule_repository.employee_has_absence_on_date(db, employee_id=employee_id, shift_date=shift_date):
             continue
         if schedule_repository.has_overlapping_assignment(
@@ -498,30 +502,37 @@ def list_available_employees(
             start_time=start_time,
             end_time=end_time,
         )
-        if availability_status not in {"available", "if_needed"}:
+        is_reachable = availability_status in {"available", "if_needed"}
+        if not is_reachable and not include_unavailable:
             continue
-        available.append(
-            AvailableEmployeeRead(
-                id=employee_id,
-                full_name=row["full_name"],
-                position=AvailableEmployeePositionRead(
-                    id=row["position_id"],
-                    name=row["position_name"],
-                ),
-                branch=(
-                    AvailableEmployeeBranchRead(id=row["branch_id"], name=row["branch_name"])
-                    if row["branch_id"] is not None
-                    else None
-                ),
-                availability_status=availability_status,
-                assigned_hours=schedule_repository.sum_assigned_hours_for_employee(
-                    db,
-                    schedule_id=schedule.id,
-                    employee_id=employee_id,
-                ),
-            )
+
+        employee_read = AvailableEmployeeRead(
+            id=employee_id,
+            full_name=row["full_name"],
+            position=AvailableEmployeePositionRead(
+                id=row["position_id"],
+                name=row["position_name"],
+            ),
+            branch=(
+                AvailableEmployeeBranchRead(id=row["branch_id"], name=row["branch_name"])
+                if row["branch_id"] is not None
+                else None
+            ),
+            availability_status=availability_status if is_reachable else "unavailable",
+            assigned_hours=schedule_repository.sum_assigned_hours_for_employee(
+                db,
+                schedule_id=schedule.id,
+                employee_id=employee_id,
+            ),
         )
-    return sorted(available, key=lambda item: (item.availability_status != "available", item.full_name, item.id))
+        if is_reachable:
+            available.append(employee_read)
+        else:
+            unavailable_group.append(employee_read)
+
+    available.sort(key=lambda item: (item.availability_status != "available", item.full_name, item.id))
+    unavailable_group.sort(key=lambda item: item.full_name)
+    return available + unavailable_group
 
 
 def update_schedule_requirement(
