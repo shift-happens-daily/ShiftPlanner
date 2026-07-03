@@ -576,6 +576,9 @@ const styles = {
   },
 
   contentMobile: {
+    overflowY: 'auto',
+    overflowX: 'hidden',
+    WebkitOverflowScrolling: 'touch',
     paddingBottom: 'calc(72px + env(safe-area-inset-bottom, 0px))',
   },
 

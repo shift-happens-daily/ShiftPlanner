@@ -45,6 +45,332 @@ const scheduleShiftBlockLineStyle = {
   textAlign: 'center',
 };
 
+const MOBILE_MANAGER_SCHEDULE_STYLES = {
+  page: {
+    padding: '6px 8px 10px',
+  },
+  shell: {
+    gap: 8,
+  },
+  title: {
+    fontSize: 18,
+  },
+  statusBadge: {
+    padding: '5px 10px',
+    fontSize: 11,
+  },
+  versionButton: {
+    height: 32,
+    padding: '0 10px',
+    fontSize: 12,
+    borderRadius: 8,
+  },
+  controlsPanel: {
+    padding: 10,
+    gap: 8,
+  },
+  label: {
+    fontSize: 11,
+  },
+  input: {
+    height: 34,
+    padding: '0 10px',
+    fontSize: 13,
+    borderRadius: 8,
+  },
+  actionButton: {
+    height: 34,
+    padding: '0 12px',
+    fontSize: 12,
+    borderRadius: 8,
+    minWidth: 0,
+    flex: '1 1 calc(50% - 4px)',
+  },
+  navPanel: {
+    padding: 10,
+    gap: 8,
+  },
+  navButton: {
+    fontSize: 16,
+  },
+  navLabel: {
+    fontSize: 12,
+  },
+  viewModeButton: {
+    height: 30,
+    padding: '0 10px',
+    fontSize: 12,
+    borderRadius: 8,
+    flex: 1,
+  },
+  unfilledPanel: {
+    padding: '10px 12px',
+  },
+  unfilledTitle: {
+    fontSize: 14,
+    marginBottom: 8,
+  },
+  unfilledItem: {
+    padding: '8px 10px',
+    gap: 8,
+    borderRadius: 10,
+  },
+  unfilledPosition: {
+    fontSize: 13,
+  },
+  unfilledMeta: {
+    fontSize: 11,
+  },
+  unfilledSelect: {
+    minWidth: 0,
+    width: '100%',
+    height: 32,
+    fontSize: 12,
+  },
+  unfilledAssignButton: {
+    height: 32,
+    padding: '0 12px',
+    fontSize: 12,
+    width: '100%',
+  },
+  sectionGap: 8,
+  dateHeader: {
+    fontSize: 12,
+    fontWeight: 800,
+    color: '#4f646f',
+    padding: '0 2px',
+  },
+  shiftCard: {
+    padding: '8px 10px',
+    borderRadius: 10,
+  },
+  shiftPosition: {
+    fontSize: 13,
+    marginBottom: 2,
+  },
+  shiftEmployee: {
+    fontSize: 12,
+    marginBottom: 2,
+  },
+  shiftTime: {
+    fontSize: 11,
+  },
+  emptyBox: {
+    padding: '10px 12px',
+    borderRadius: 10,
+    fontSize: 12,
+    fontWeight: 600,
+  },
+  calendarPanel: {
+    padding: 10,
+    gap: 8,
+    borderRadius: 12,
+  },
+  calendarTitle: {
+    fontSize: 16,
+  },
+  calendarMonthKey: {
+    height: 30,
+    padding: '0 10px',
+    fontSize: 12,
+  },
+  calendarNavButton: {
+    width: 34,
+    height: 30,
+    fontSize: 15,
+  },
+  monthWeekday: {
+    fontSize: 10,
+  },
+  monthCalendar: {
+    gridTemplateRows: '20px minmax(0, 1fr)',
+  },
+  monthGrid: {
+    gridAutoRows: 'minmax(32px, 1fr)',
+  },
+  monthDots: {
+    minHeight: 5,
+    gap: 2,
+  },
+  monthDayCell: {
+    padding: 2,
+    gap: 2,
+  },
+  monthDayNumber: {
+    width: 22,
+    height: 22,
+    fontSize: 12,
+  },
+  monthDot: {
+    width: 4,
+    height: 4,
+  },
+  selectedDayPanel: {
+    padding: 8,
+    gap: 6,
+    borderRadius: 10,
+  },
+  selectedDayTitle: {
+    fontSize: 14,
+  },
+  selectedDayHint: {
+    fontSize: 11,
+  },
+  selectedDayCount: {
+    minWidth: 26,
+    height: 24,
+    padding: '0 8px',
+    fontSize: 12,
+  },
+};
+
+const SHIFT_DOT_COLORS = ['#667eea', '#34c759', '#ff9500', '#ff3b30'];
+
+function parseDateKey(value) {
+  if (!value) return null;
+  const date = new Date(`${value}T12:00:00`);
+  return Number.isNaN(date.getTime()) ? null : date;
+}
+
+function startOfMonthDate(value) {
+  const source = parseDateKey(value) || new Date();
+  source.setHours(12, 0, 0, 0);
+  return new Date(source.getFullYear(), source.getMonth(), 1, 12, 0, 0, 0);
+}
+
+function endOfMonthDate(value) {
+  const source = parseDateKey(value) || new Date();
+  source.setHours(12, 0, 0, 0);
+  return new Date(source.getFullYear(), source.getMonth() + 1, 0, 12, 0, 0, 0);
+}
+
+function buildCalendarGrid(anchorDateKey) {
+  const monthStart = startOfMonthDate(anchorDateKey);
+  const monthEnd = endOfMonthDate(anchorDateKey);
+  const gridStart = new Date(monthStart);
+  const startOffset = (gridStart.getDay() + 6) % 7;
+  gridStart.setDate(gridStart.getDate() - startOffset);
+
+  const gridEnd = new Date(monthEnd);
+  const endOffset = 6 - ((gridEnd.getDay() + 6) % 7);
+  gridEnd.setDate(gridEnd.getDate() + endOffset);
+
+  const days = [];
+  const cursor = new Date(gridStart);
+  while (cursor <= gridEnd) {
+    days.push({
+      date: formatLocalDate(cursor),
+      day: cursor.getDate(),
+      isCurrentMonth: cursor.getMonth() === monthStart.getMonth(),
+    });
+    cursor.setDate(cursor.getDate() + 1);
+  }
+
+  return {
+    days,
+    startDate: formatLocalDate(gridStart),
+    endDate: formatLocalDate(gridEnd),
+  };
+}
+
+function isSameDateKey(left, right) {
+  return formatDate(left) === formatDate(right);
+}
+
+function formatDisplayDate(value, language = 'ru') {
+  const date = parseDateKey(formatDate(value));
+  if (!date) {
+    return value;
+  }
+
+  return date.toLocaleDateString(language === 'ru' ? 'ru-RU' : 'en-US', {
+    weekday: 'short',
+    month: 'short',
+    day: 'numeric',
+  });
+}
+
+function isDateWithinRange(dateKey, startDate, endDate) {
+  if (!dateKey || !startDate || !endDate) return true;
+  return dateKey >= startDate && dateKey <= endDate;
+}
+
+function buildGroupedScheduleCounts(displaySchedule, unfilledNotFoundRequirements) {
+  const byDate = {};
+
+  normalizeArray(displaySchedule?.shifts).forEach((shift) => {
+    const key = formatDate(shift.date);
+    if (!byDate[key]) {
+      byDate[key] = { shifts: 0, unfilled: 0 };
+    }
+    byDate[key].shifts += 1;
+  });
+
+  unfilledNotFoundRequirements.forEach((item) => {
+    const key = formatDate(item.date);
+    if (!byDate[key]) {
+      byDate[key] = { shifts: 0, unfilled: 0 };
+    }
+    byDate[key].unfilled += 1;
+  });
+
+  return byDate;
+}
+
+function renderMobileShiftCard(entry, t, mobileStyles) {
+  const isUnfilled = entry.kind === 'unfilled';
+  const timeLabel = `${String(entry.startTime || '').slice(0, 5)} - ${String(entry.endTime || '').slice(0, 5)}`;
+
+  return (
+    <div
+      key={entry.key}
+      style={{
+        padding: '14px 16px',
+        borderRadius: 14,
+        background: isUnfilled
+          ? 'linear-gradient(135deg, #ffd6a5 0%, #ffb085 100%)'
+          : 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+        color: isUnfilled ? '#5a1a1a' : '#fff',
+        border: isUnfilled ? '2px dashed #8d1d1d' : '1px solid rgba(255,255,255,0.12)',
+        boxShadow: isUnfilled
+          ? '0 2px 8px rgba(141, 29, 29, 0.12)'
+          : '0 2px 8px rgba(102,126,234,0.25)',
+        ...scheduleShiftBlockStyle,
+        ...mobileStyles?.shiftCard,
+      }}
+    >
+      <div style={{
+        ...scheduleShiftBlockLineStyle,
+        fontWeight: 800,
+        fontSize: 15,
+        marginBottom: 4,
+        ...mobileStyles?.shiftPosition,
+      }}
+      >
+        {entry.position}
+      </div>
+      <div style={{
+        ...scheduleShiftBlockLineStyle,
+        fontSize: 14,
+        marginBottom: 4,
+        ...mobileStyles?.shiftEmployee,
+      }}
+      >
+        {isUnfilled ? t.notFound : entry.employee}
+      </div>
+      <div style={{
+        ...scheduleShiftBlockLineStyle,
+        fontSize: 13,
+        opacity: 0.92,
+        ...mobileStyles?.shiftTime,
+      }}
+      >
+        {timeLabel}
+      </div>
+    </div>
+  );
+}
+
 function formatTimeForApi(value) {
   const raw = String(value || '').trim();
   if (!raw) return raw;
@@ -522,6 +848,13 @@ function buildDayScheduleEntries(dateKey, displaySchedule, unfilledNotFoundRequi
   return [...shiftEntries, ...unfilledEntries].sort((a, b) => a.sortTime - b.sortTime);
 }
 
+function buildMobileScheduleSections(visibleDates, displaySchedule, unfilledNotFoundRequirements) {
+  return visibleDates.map((dateKey) => ({
+    dateKey,
+    entries: buildDayScheduleEntries(dateKey, displaySchedule, unfilledNotFoundRequirements),
+  }));
+}
+
 function buildDateScheduleItems(dateKey, displaySchedule, unfilledNotFoundRequirements, notFoundLabel) {
   const shiftItems = normalizeArray(displaySchedule?.shifts)
     .filter((shift) => formatDate(shift.date) === dateKey)
@@ -843,6 +1176,7 @@ export default function ScheduleReview({ language }) {
   const positionTitleRevision = usePositionTitleRevision();
   const { markUnsaved, markSaved } = useUnsavedChanges();
   const isMobile = r.isMobile;
+  const mobileStyles = isMobile ? MOBILE_MANAGER_SCHEDULE_STYLES : null;
   const { user, isLoading: isAuthLoading } = useAuth();
   const hasCompany = Boolean(user?.company);
   const [viewMode, setViewMode] = useState('day');
@@ -855,6 +1189,8 @@ export default function ScheduleReview({ language }) {
   const [manualEmployeesLoaded, setManualEmployeesLoaded] = useState(false);
   const [employeesLoaded, setEmployeesLoaded] = useState(false);
   const [selectedDateIndex, setSelectedDateIndex] = useState(0);
+  const [mobileCalendarMonth, setMobileCalendarMonth] = useState(() => formatLocalDate(new Date()));
+  const [mobileMonthSelectedDate, setMobileMonthSelectedDate] = useState(() => formatLocalDate(new Date()));
   const [isLoading, setIsLoading] = useState(true);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState('');
@@ -899,6 +1235,7 @@ export default function ScheduleReview({ language }) {
       noEmployeesAvailable: 'Нет доступных сотрудников',
       assigned: 'Сотрудник назначен на смену.',
       assignError: 'Не удалось назначить сотрудника.',
+      shiftsForDay: 'Смены на день',
     },
     en: {
       title: 'Generated Schedule Review',
@@ -938,6 +1275,7 @@ export default function ScheduleReview({ language }) {
       noEmployeesAvailable: 'No available employees',
       assigned: 'Employee assigned to shift.',
       assignError: 'Failed to assign employee.',
+      shiftsForDay: 'Shifts for day',
     },
   };
 
@@ -993,7 +1331,10 @@ export default function ScheduleReview({ language }) {
   }, []);
 
   const activateMonthView = useCallback(() => {
-    applyMonthRangeFromStart(periodForm.start_date || formatLocalDate(new Date()));
+    const range = applyMonthRangeFromStart(periodForm.start_date || formatLocalDate(new Date()));
+    const anchor = range?.start_date || periodForm.start_date || formatLocalDate(new Date());
+    setMobileCalendarMonth(anchor);
+    setMobileMonthSelectedDate(anchor);
     setViewMode('month');
   }, [applyMonthRangeFromStart, periodForm.start_date]);
 
@@ -1009,6 +1350,61 @@ export default function ScheduleReview({ language }) {
 
   const scheduleStartDate = viewPeriod.start_date;
   const scheduleEndDate = viewPeriod.end_date;
+
+  useEffect(() => {
+    if (!isMobile || viewMode !== 'month') {
+      return;
+    }
+
+    const anchor = scheduleStartDate || periodForm.start_date || formatLocalDate(new Date());
+    setMobileCalendarMonth(anchor);
+    setMobileMonthSelectedDate((current) => (
+      isDateWithinRange(current, scheduleStartDate, scheduleEndDate) ? current : anchor
+    ));
+  }, [isMobile, viewMode, scheduleStartDate, scheduleEndDate, periodForm.start_date]);
+
+  const groupedScheduleByDate = useMemo(
+    () => buildGroupedScheduleCounts(displaySchedule, unfilledNotFoundRequirements),
+    [displaySchedule, unfilledNotFoundRequirements, positionTitleRevision],
+  );
+
+  const mobileCalendarGrid = useMemo(
+    () => buildCalendarGrid(mobileCalendarMonth),
+    [mobileCalendarMonth],
+  );
+
+  const mobileCalendarMonthLabel = useMemo(() => {
+    const date = startOfMonthDate(mobileCalendarMonth);
+    return date.toLocaleDateString(language === 'ru' ? 'ru-RU' : 'en-US', {
+      month: 'long',
+      year: 'numeric',
+    });
+  }, [language, mobileCalendarMonth]);
+
+  const mobileCalendarMonthKey = useMemo(() => {
+    const date = startOfMonthDate(mobileCalendarMonth);
+    return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
+  }, [mobileCalendarMonth]);
+
+  const mobileWeekdayLabels = useMemo(() => {
+    const base = startOfMonthDate(mobileCalendarMonth);
+    return Array.from({ length: 7 }, (_, index) => {
+      const day = new Date(base);
+      day.setDate(day.getDate() - ((day.getDay() + 6) % 7) + index);
+      return day.toLocaleDateString(language === 'ru' ? 'ru-RU' : 'en-US', { weekday: 'short' });
+    });
+  }, [language, mobileCalendarMonth]);
+
+  const mobileSelectedDayEntries = useMemo(
+    () => buildDayScheduleEntries(mobileMonthSelectedDate, displaySchedule, unfilledNotFoundRequirements),
+    [mobileMonthSelectedDate, displaySchedule, unfilledNotFoundRequirements, positionTitleRevision],
+  );
+
+  const shiftMobileCalendarMonth = useCallback((delta) => {
+    const current = startOfMonthDate(mobileCalendarMonth);
+    current.setMonth(current.getMonth() + delta);
+    setMobileCalendarMonth(formatLocalDate(current));
+  }, [mobileCalendarMonth]);
 
   const schedules = useMemo(
     () => buildFullScheduleRange(
@@ -1035,12 +1431,6 @@ export default function ScheduleReview({ language }) {
     return Math.max(0, dates.length - pageSize);
   }, [dates.length, viewMode]);
 
-  const currentDateKey = dates[selectedDateIndex] || dates[0] || '';
-  const mobileDayEntries = useMemo(
-    () => buildDayScheduleEntries(currentDateKey, displaySchedule, unfilledNotFoundRequirements),
-    [currentDateKey, displaySchedule, unfilledNotFoundRequirements, positionTitleRevision],
-  );
-
   const navStep = viewMode === '3day' ? 3 : 1;
 
   const visibleDates = useMemo(() => {
@@ -1050,6 +1440,18 @@ export default function ScheduleReview({ language }) {
     const pageSize = viewMode === 'day' ? 1 : 3;
     return dates.slice(start, start + pageSize);
   }, [dates, maxVisibleStartIndex, selectedDateIndex, viewMode]);
+
+  const mobileScheduleSections = useMemo(
+    () => buildMobileScheduleSections(visibleDates, displaySchedule, unfilledNotFoundRequirements),
+    [visibleDates, displaySchedule, unfilledNotFoundRequirements, positionTitleRevision],
+  );
+
+  const mobileSectionsToRender = useMemo(() => {
+    if (viewMode === 'month') {
+      return mobileScheduleSections.filter((section) => section.entries.length > 0);
+    }
+    return mobileScheduleSections;
+  }, [mobileScheduleSections, viewMode]);
 
   const navigationLabel = useMemo(() => {
     if (viewMode === 'month') {
@@ -1304,6 +1706,7 @@ export default function ScheduleReview({ language }) {
     padding: isMobile ? 10 : '16px 24px 18px',
     overflow: isMobile ? 'auto' : 'hidden',
     background: '#f4faff',
+    ...mobileStyles?.page,
   };
   const shellStyle = {
     width: isMobile ? '100%' : '125%',
@@ -1322,6 +1725,7 @@ export default function ScheduleReview({ language }) {
     overflow: isMobile ? 'visible' : 'hidden',
     transform: isMobile ? 'none' : 'scale(0.8)',
     transformOrigin: 'top left',
+    ...mobileStyles?.shell,
   };
   const panelStyle = {
     background: '#ffffff',
@@ -1338,6 +1742,7 @@ export default function ScheduleReview({ language }) {
     color: '#002642',
     colorScheme: 'light',
     boxSizing: 'border-box',
+    ...mobileStyles?.input,
   };
   const dateInputStyle = {
     ...inputStyle,
@@ -1352,6 +1757,7 @@ export default function ScheduleReview({ language }) {
     color: '#fff',
     border: 'none',
     fontWeight: 800,
+    ...mobileStyles?.actionButton,
   };
   const secondaryButtonStyle = {
     height: 40,
@@ -1361,6 +1767,7 @@ export default function ScheduleReview({ language }) {
     color: '#3730a3',
     border: '1px solid rgba(99, 102, 241, 0.18)',
     fontWeight: 800,
+    ...mobileStyles?.actionButton,
   };
 
   if (isLoading || isAuthLoading) {
@@ -1389,7 +1796,15 @@ export default function ScheduleReview({ language }) {
           }}
           >
             <div style={{ width: isMobile ? '100%' : 'auto' }}>
-              <h2 style={{ margin: 0, color: '#002642', fontSize: isMobile ? 22 : 28, fontWeight: 900, letterSpacing: 0 }}>{t.title}</h2>
+              <h2 style={{
+                margin: 0,
+                color: '#002642',
+                fontSize: isMobile ? 22 : 28,
+                fontWeight: 900,
+                letterSpacing: 0,
+                ...mobileStyles?.title,
+              }}
+              >{t.title}</h2>
               {!isMobile && (
                 <p style={{ margin: '4px 0 0', color: '#4f646f', fontSize: 13, fontWeight: 600, maxWidth: 680 }}>{t.subtitle}</p>
               )}
@@ -1403,6 +1818,7 @@ export default function ScheduleReview({ language }) {
                 fontSize: 13,
                 border: '1px solid #dee7e7',
                 ...getStatusBadgeStyle(scheduleStatus),
+                ...mobileStyles?.statusBadge,
               }}>
                 {t.status}: {getStatusLabel(scheduleStatus, t)}
               </span>
@@ -1436,6 +1852,7 @@ export default function ScheduleReview({ language }) {
                     fontSize: 13,
                     cursor: isDisabled ? 'default' : 'pointer',
                     opacity: isDisabled ? 0.55 : 1,
+                    ...mobileStyles?.versionButton,
                   }}
                 >
                   {label}
@@ -1465,6 +1882,7 @@ export default function ScheduleReview({ language }) {
           marginBottom: 0,
           flexWrap: 'wrap',
           flexDirection: isMobile ? 'column' : 'row',
+          ...mobileStyles?.controlsPanel,
         }}
         >
           <label style={{
@@ -1475,6 +1893,7 @@ export default function ScheduleReview({ language }) {
             fontSize: 12,
             fontWeight: 800,
             width: isMobile ? '100%' : 'auto',
+            ...mobileStyles?.label,
           }}
           >
             {t.startDate}
@@ -1604,9 +2023,10 @@ export default function ScheduleReview({ language }) {
             ...panelStyle,
             marginBottom: 0,
             padding: '16px 18px',
+            ...mobileStyles?.unfilledPanel,
           }}>
-            <h3 style={{ margin: '0 0 12px', color: '#002642', fontSize: 16 }}>{t.unfilledTitle}</h3>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+            <h3 style={{ margin: '0 0 12px', color: '#002642', fontSize: 16, ...mobileStyles?.unfilledTitle }}>{t.unfilledTitle}</h3>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: isMobile ? 8 : 12 }}>
               {unfilledRequirements.map((item) => {
                 const requirementId = item.requirement_id;
 
@@ -1616,22 +2036,24 @@ export default function ScheduleReview({ language }) {
                     style={{
                       display: 'flex',
                       gap: 12,
-                      alignItems: 'center',
+                      alignItems: isMobile ? 'stretch' : 'center',
                       flexWrap: 'wrap',
+                      flexDirection: isMobile ? 'column' : 'row',
                       padding: '10px 12px',
                       borderRadius: 12,
                       background: '#fff',
                       border: '1px solid #edf2f2',
+                      ...mobileStyles?.unfilledItem,
                     }}
                   >
-                    <div style={{ minWidth: 180 }}>
-                      <strong style={{ color: '#002642' }}>
+                    <div style={{ minWidth: isMobile ? 0 : 180, width: isMobile ? '100%' : undefined }}>
+                      <strong style={{ color: '#002642', ...mobileStyles?.unfilledPosition }}>
                         {getPositionLabel({
                           position_id: item.position_id,
                           position_title: item.position_title || item.position,
                         }, item.position_title || '—')}
                       </strong>
-                      <div style={{ color: '#4f646f', fontSize: 13 }}>
+                      <div style={{ color: '#4f646f', fontSize: 13, ...mobileStyles?.unfilledMeta }}>
                         {formatDate(item.date)} · {String(item.start_time || '').slice(0, 5)}–{String(item.end_time || '').slice(0, 5)}
                       </div>
                       {unfilledNotFoundRequirements.some((entry) => entry.requirement_id === requirementId) && (
@@ -1648,9 +2070,11 @@ export default function ScheduleReview({ language }) {
                         [requirementId]: event.target.value,
                       }))}
                       style={{
-                        minWidth: 200,
+                        minWidth: isMobile ? 0 : 200,
+                        width: isMobile ? '100%' : undefined,
                         ...inputStyle,
                         height: 36,
+                        ...mobileStyles?.unfilledSelect,
                       }}
                       disabled={isSubmitting}
                     >
@@ -1679,6 +2103,7 @@ export default function ScheduleReview({ language }) {
                         padding: '0 14px',
                         cursor: isSubmitting || !assignEmployeeIds[requirementId] ? 'default' : 'pointer',
                         opacity: isSubmitting || !assignEmployeeIds[requirementId] ? 0.6 : 1,
+                        ...mobileStyles?.unfilledAssignButton,
                       }}
                     >
                       {t.assign}
@@ -1699,6 +2124,7 @@ export default function ScheduleReview({ language }) {
           marginBottom: 0,
           flexWrap: 'wrap',
           flexDirection: isMobile ? 'column' : 'row',
+          ...mobileStyles?.navPanel,
         }}
         >
           <div style={{
@@ -1712,6 +2138,7 @@ export default function ScheduleReview({ language }) {
             width: isMobile ? '100%' : 'auto',
             justifyContent: 'center',
             boxSizing: 'border-box',
+            ...(isMobile && viewMode === 'month' ? { display: 'none' } : {}),
           }}
           >
             <button
@@ -1724,11 +2151,12 @@ export default function ScheduleReview({ language }) {
                 cursor: viewMode === 'month' || selectedDateIndex <= 0 ? 'default' : 'pointer',
                 fontSize: 18,
                 opacity: viewMode === 'month' || selectedDateIndex <= 0 ? 0.35 : 1,
+                ...mobileStyles?.navButton,
               }}
             >
               &larr;
             </button>
-            <strong style={{ color: '#002642' }}>{navigationLabel}</strong>
+            <strong style={{ color: '#002642', ...mobileStyles?.navLabel }}>{navigationLabel}</strong>
             <button
               type="button"
               onClick={() => setSelectedDateIndex((index) => Math.min(maxVisibleStartIndex, index + navStep))}
@@ -1739,13 +2167,20 @@ export default function ScheduleReview({ language }) {
                 cursor: viewMode === 'month' || selectedDateIndex >= maxVisibleStartIndex ? 'default' : 'pointer',
                 fontSize: 18,
                 opacity: viewMode === 'month' || selectedDateIndex >= maxVisibleStartIndex ? 0.35 : 1,
+                ...mobileStyles?.navButton,
               }}
             >
               &rarr;
             </button>
           </div>
 
-          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+          <div style={{
+            display: 'flex',
+            gap: 8,
+            flexWrap: 'wrap',
+            width: isMobile ? '100%' : 'auto',
+          }}
+          >
             {['day', '3day', 'month'].map((mode) => (
               <button
                 key={mode}
@@ -1767,6 +2202,7 @@ export default function ScheduleReview({ language }) {
                   color: viewMode === mode ? '#fff' : '#002642',
                   border: '1px solid #dee7e7',
                   cursor: 'pointer',
+                  ...mobileStyles?.viewModeButton,
                 }}
               >
                 {mode === 'day' ? t.day : mode === '3day' ? t.threeDay : t.month}
@@ -1802,8 +2238,322 @@ export default function ScheduleReview({ language }) {
             <p style={{ margin: '8px 0 0', color: '#4f646f', fontSize: 14 }}>{t.noShiftsInVersion}</p>
           </div>
         ) : isMobile ? (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-            {mobileDayEntries.length === 0 ? (
+          viewMode === 'month' ? (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: mobileStyles?.sectionGap || 10 }}>
+              <section style={{
+                ...panelStyle,
+                display: 'grid',
+                gridTemplateRows: 'auto auto minmax(0, 1fr)',
+                gap: 8,
+                ...mobileStyles?.calendarPanel,
+              }}
+              >
+                <div style={{
+                  display: 'flex',
+                  justifyContent: 'space-between',
+                  alignItems: 'center',
+                  gap: 8,
+                  flexWrap: 'wrap',
+                }}
+                >
+                  <div>
+                    <h3 style={{
+                      margin: 0,
+                      color: '#002642',
+                      fontSize: 18,
+                      fontWeight: 900,
+                      textTransform: 'capitalize',
+                      ...mobileStyles?.calendarTitle,
+                    }}
+                    >
+                      {mobileCalendarMonthLabel}
+                    </h3>
+                    <p style={{ ...mobileStyles?.selectedDayHint, margin: '2px 0 0', color: '#4f646f' }}>
+                      {scheduleStartDate} — {scheduleEndDate}
+                    </p>
+                  </div>
+
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                    <button
+                      type="button"
+                      onClick={() => shiftMobileCalendarMonth(-1)}
+                      style={{
+                        width: 48,
+                        height: 40,
+                        borderRadius: 10,
+                        border: '1px solid #dee7e7',
+                        background: '#eef3f6',
+                        color: '#002642',
+                        fontSize: 22,
+                        fontWeight: 800,
+                        cursor: 'pointer',
+                        ...mobileStyles?.calendarNavButton,
+                      }}
+                      aria-label="Previous month"
+                    >
+                      ←
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const today = formatLocalDate(new Date());
+                        setMobileCalendarMonth(today);
+                        setMobileMonthSelectedDate(today);
+                      }}
+                      style={{
+                        height: 40,
+                        padding: '0 16px',
+                        borderRadius: 10,
+                        border: '1px solid #dbe6f0',
+                        background: '#ffffff',
+                        color: '#002642',
+                        fontSize: 14,
+                        fontWeight: 850,
+                        cursor: 'pointer',
+                        whiteSpace: 'nowrap',
+                        ...mobileStyles?.calendarMonthKey,
+                      }}
+                    >
+                      {mobileCalendarMonthKey}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => shiftMobileCalendarMonth(1)}
+                      style={{
+                        width: 48,
+                        height: 40,
+                        borderRadius: 10,
+                        border: '1px solid #dee7e7',
+                        background: '#eef3f6',
+                        color: '#002642',
+                        fontSize: 22,
+                        fontWeight: 800,
+                        cursor: 'pointer',
+                        ...mobileStyles?.calendarNavButton,
+                      }}
+                      aria-label="Next month"
+                    >
+                      →
+                    </button>
+                  </div>
+                </div>
+
+                <div style={{
+                  display: 'grid',
+                  gridTemplateRows: '20px minmax(0, 1fr)',
+                  border: '1px solid #dee7e7',
+                  borderRadius: 10,
+                  overflow: 'hidden',
+                  background: '#ffffff',
+                  ...mobileStyles?.monthCalendar,
+                }}
+                >
+                  <div style={{
+                    display: 'grid',
+                    gridTemplateColumns: 'repeat(7, minmax(0, 1fr))',
+                    background: '#f4faff',
+                    borderBottom: '1px solid #dee7e7',
+                  }}
+                  >
+                    {mobileWeekdayLabels.map((weekday) => (
+                      <div
+                        key={weekday}
+                        style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          color: '#4f646f',
+                          fontSize: 12,
+                          fontWeight: 850,
+                          textTransform: 'capitalize',
+                          ...mobileStyles?.monthWeekday,
+                        }}
+                      >
+                        {weekday}
+                      </div>
+                    ))}
+                  </div>
+
+                  <div style={{
+                    display: 'grid',
+                    gridTemplateColumns: 'repeat(7, minmax(0, 1fr))',
+                    gridAutoRows: 'minmax(46px, 1fr)',
+                    background: '#dee7e7',
+                    gap: '1px',
+                    ...mobileStyles?.monthGrid,
+                  }}
+                  >
+                    {mobileCalendarGrid.days.map((calendarDay) => {
+                      const dayCounts = groupedScheduleByDate[calendarDay.date] || { shifts: 0, unfilled: 0 };
+                      const hasShifts = dayCounts.shifts > 0;
+                      const hasUnfilled = dayCounts.unfilled > 0;
+                      const isSelected = calendarDay.date === mobileMonthSelectedDate;
+                      const isTodayDate = isSameDateKey(calendarDay.date, formatLocalDate(new Date()));
+                      const inScheduleRange = isDateWithinRange(
+                        calendarDay.date,
+                        scheduleStartDate,
+                        scheduleEndDate,
+                      );
+
+                      return (
+                        <button
+                          key={calendarDay.date}
+                          type="button"
+                          onClick={() => setMobileMonthSelectedDate(calendarDay.date)}
+                          style={{
+                            minWidth: 0,
+                            minHeight: 0,
+                            border: 0,
+                            background: calendarDay.isCurrentMonth ? '#ffffff' : '#f8fbfd',
+                            color: calendarDay.isCurrentMonth ? '#002642' : '#8da0a9',
+                            cursor: 'pointer',
+                            padding: 6,
+                            display: 'flex',
+                            flexDirection: 'column',
+                            alignItems: 'center',
+                            justifyContent: 'space-between',
+                            gap: 4,
+                            opacity: inScheduleRange ? 1 : 0.45,
+                            ...(isSelected ? {
+                              background: '#eaf6ff',
+                              boxShadow: 'inset 0 0 0 2px #002642',
+                            } : {}),
+                            ...mobileStyles?.monthDayCell,
+                          }}
+                        >
+                          <span style={{
+                            width: 28,
+                            height: 28,
+                            borderRadius: '50%',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            fontSize: 16,
+                            fontWeight: 800,
+                            ...(isTodayDate ? { border: '2px solid #007aff', color: '#007aff' } : {}),
+                            ...(isSelected ? { background: '#002642', color: '#ffffff', borderColor: '#002642' } : {}),
+                            ...mobileStyles?.monthDayNumber,
+                          }}
+                          >
+                            {calendarDay.day}
+                          </span>
+
+                          <span style={{
+                            minHeight: 7,
+                            display: 'flex',
+                            justifyContent: 'center',
+                            alignItems: 'center',
+                            gap: 3,
+                            ...mobileStyles?.monthDots,
+                          }}
+                          >
+                            {hasShifts && (
+                              <span style={{
+                                width: 6,
+                                height: 6,
+                                borderRadius: '50%',
+                                display: 'block',
+                                background: SHIFT_DOT_COLORS[0],
+                                ...mobileStyles?.monthDot,
+                              }}
+                              />
+                            )}
+                            {hasUnfilled && (
+                              <span style={{
+                                width: 6,
+                                height: 6,
+                                borderRadius: '50%',
+                                display: 'block',
+                                background: '#ff9500',
+                                ...mobileStyles?.monthDot,
+                              }}
+                              />
+                            )}
+                          </span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              </section>
+
+              <section style={{
+                ...panelStyle,
+                background: '#f8fbfd',
+                display: 'flex',
+                flexDirection: 'column',
+                gap: 8,
+                ...mobileStyles?.selectedDayPanel,
+              }}
+              >
+                <div style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  gap: 10,
+                }}
+                >
+                  <div>
+                    <h3 style={{
+                      margin: 0,
+                      color: '#002642',
+                      fontSize: 18,
+                      fontWeight: 900,
+                      ...mobileStyles?.selectedDayTitle,
+                    }}
+                    >
+                      {formatDisplayDate(mobileMonthSelectedDate, language)}
+                    </h3>
+                    <p style={{ margin: '2px 0 0', color: '#4f646f', fontSize: 13, ...mobileStyles?.selectedDayHint }}>
+                      {mobileMonthSelectedDate}
+                    </p>
+                  </div>
+                  <span style={{
+                    minWidth: 40,
+                    height: 32,
+                    padding: '0 10px',
+                    borderRadius: 999,
+                    background: '#002642',
+                    color: '#ffffff',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    fontSize: 15,
+                    fontWeight: 900,
+                    ...mobileStyles?.selectedDayCount,
+                  }}
+                  >
+                    {mobileSelectedDayEntries.length}
+                  </span>
+                </div>
+
+                {mobileSelectedDayEntries.length === 0 ? (
+                  <div style={{
+                    padding: '10px 12px',
+                    textAlign: 'center',
+                    background: '#ffffff',
+                    borderRadius: 10,
+                    border: '1px solid #dee7e7',
+                    color: '#4f646f',
+                    fontWeight: 600,
+                    fontSize: 12,
+                    ...mobileStyles?.emptyBox,
+                  }}
+                  >
+                    {!isDateWithinRange(mobileMonthSelectedDate, scheduleStartDate, scheduleEndDate)
+                      ? t.noShiftsThisDay
+                      : (Object.keys(groupedScheduleByDate).length === 0 ? t.noShiftsInVersion : t.noShiftsThisDay)}
+                  </div>
+                ) : (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                    {mobileSelectedDayEntries.map((entry) => renderMobileShiftCard(entry, t, mobileStyles))}
+                  </div>
+                )}
+              </section>
+            </div>
+          ) : (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: mobileStyles?.sectionGap || 10 }}>
+            {mobileSectionsToRender.length === 0 ? (
               <div style={{
                 padding: '32px 18px',
                 textAlign: 'center',
@@ -1812,42 +2562,40 @@ export default function ScheduleReview({ language }) {
                 border: '1px solid #dee7e7',
                 color: '#4f646f',
                 fontWeight: 600,
+                ...mobileStyles?.emptyBox,
               }}
               >
                 {t.noShiftsThisDay}
               </div>
             ) : (
-              mobileDayEntries.map((entry) => {
-                const isUnfilled = entry.kind === 'unfilled';
-                const timeLabel = `${String(entry.startTime || '').slice(0, 5)} - ${String(entry.endTime || '').slice(0, 5)}`;
+              mobileSectionsToRender.map(({ dateKey, entries }) => (
+                <section key={dateKey} style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                  {visibleDates.length > 1 && (
+                    <div style={mobileStyles?.dateHeader}>{dateKey}</div>
+                  )}
 
-                return (
-                  <div
-                    key={entry.key}
-                    style={{
-                      padding: '14px 16px',
-                      borderRadius: 14,
-                      background: isUnfilled
-                        ? 'linear-gradient(135deg, #ffd6a5 0%, #ffb085 100%)'
-                        : 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
-                      color: isUnfilled ? '#5a1a1a' : '#fff',
-                      border: isUnfilled ? '2px dashed #8d1d1d' : '1px solid rgba(255,255,255,0.12)',
-                      boxShadow: isUnfilled
-                        ? '0 2px 8px rgba(141, 29, 29, 0.12)'
-                        : '0 2px 8px rgba(102,126,234,0.25)',
-                      ...scheduleShiftBlockStyle,
+                  {entries.length === 0 ? (
+                    <div style={{
+                      padding: '10px 12px',
+                      textAlign: 'center',
+                      background: '#f4faff',
+                      borderRadius: 10,
+                      border: '1px solid #dee7e7',
+                      color: '#4f646f',
+                      fontWeight: 600,
+                      fontSize: 12,
                     }}
-                  >
-                    <div style={{ ...scheduleShiftBlockLineStyle, fontWeight: 800, fontSize: 15, marginBottom: 4 }}>{entry.position}</div>
-                    <div style={{ ...scheduleShiftBlockLineStyle, fontSize: 14, marginBottom: 4 }}>
-                      {isUnfilled ? t.notFound : entry.employee}
+                    >
+                      {t.noShiftsThisDay}
                     </div>
-                    <div style={{ ...scheduleShiftBlockLineStyle, fontSize: 13, opacity: 0.92 }}>{timeLabel}</div>
-                  </div>
-                );
-              })
+                  ) : (
+                    entries.map((entry) => renderMobileShiftCard(entry, t, mobileStyles))
+                  )}
+                </section>
+              ))
             )}
           </div>
+          )
         ) : viewMode === 'day' ? (
           <div style={{ display: 'flex', flexDirection: 'column', gap: viewMode === 'month' ? 20 : 24 }}>
             {visibleDates.map((dateKey) => {
