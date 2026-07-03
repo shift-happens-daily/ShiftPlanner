@@ -14,7 +14,9 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ChevronLeft
 import androidx.compose.material.icons.filled.ChevronRight
+import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
@@ -22,6 +24,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
@@ -30,14 +33,13 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.froggyriia.shiftplanner.domain.model.AppScheduledShift
 import com.froggyriia.shiftplanner.domain.model.AppUser
 import com.froggyriia.shiftplanner.presentation.manager.schedule.ScheduleViewModel
 import java.text.SimpleDateFormat
 import java.util.Locale
-
-private val DAY_LABELS = listOf("Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun")
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -48,14 +50,23 @@ fun MyScheduleScreen(
     val state by viewModel.uiState.collectAsState()
 
     Scaffold(
-        topBar = { TopAppBar(title = { Text("My Schedule") }) }
+        topBar = {
+            TopAppBar(
+                title = { Text("My Schedule") },
+                actions = {
+                    IconButton(onClick = viewModel::loadMySchedule) {
+                        Icon(Icons.Default.Refresh, contentDescription = "Refresh")
+                    }
+                }
+            )
+        }
     ) { padding ->
         Column(Modifier.padding(padding)) {
-            // Week nav
+            // Week navigation
             Row(
                 Modifier
                     .fillMaxWidth()
-                    .padding(horizontal = 8.dp),
+                    .padding(horizontal = 4.dp),
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.SpaceBetween
             ) {
@@ -80,6 +91,29 @@ fun MyScheduleScreen(
                         Triple(index, date, viewModel.shiftsForDate(date))
                     }.filter { it.third.isNotEmpty() }
 
+                    // Weekly summary
+                    val totalHours = weekShifts
+                        .flatMap { it.third }
+                        .sumOf { (it.endMinutes - it.startMinutes) / 60.0 }
+                    val totalShifts = weekShifts.sumOf { it.third.size }
+
+                    Surface(
+                        color = MaterialTheme.colorScheme.secondaryContainer,
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Row(
+                            Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 24.dp, vertical = 12.dp),
+                            horizontalArrangement = Arrangement.spacedBy(32.dp)
+                        ) {
+                            WeekStat(label = "Shifts", value = "$totalShifts")
+                            WeekStat(label = "Hours", value = "${"%.1f".format(totalHours)}h")
+                        }
+                    }
+
+                    HorizontalDivider()
+
                     if (weekShifts.isEmpty()) {
                         Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                             Text(
@@ -89,14 +123,13 @@ fun MyScheduleScreen(
                         }
                     } else {
                         LazyColumn(Modifier.fillMaxSize()) {
-                            weekShifts.forEach { (index, date, shifts) ->
+                            weekShifts.forEach { (_, date, shifts) ->
                                 item(key = "header_$date") {
-                                    MyShiftDayHeader(dayLabel = DAY_LABELS[index], date = date)
+                                    MyShiftDayHeader(date = date)
                                 }
                                 items(shifts, key = { "shift_${it.id}" }) { shift ->
                                     MyShiftCard(shift = shift)
                                 }
-                                item(key = "divider_$date") { HorizontalDivider() }
                             }
                             item { Spacer(Modifier.height(16.dp)) }
                         }
@@ -108,35 +141,77 @@ fun MyScheduleScreen(
 }
 
 @Composable
-private fun MyShiftDayHeader(dayLabel: String, date: String) {
+private fun WeekStat(label: String, value: String) {
+    Column {
+        Text(
+            value,
+            style = MaterialTheme.typography.titleMedium,
+            fontWeight = FontWeight.Bold,
+            color = MaterialTheme.colorScheme.onSecondaryContainer
+        )
+        Text(
+            label,
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSecondaryContainer.copy(alpha = 0.7f)
+        )
+    }
+}
+
+@Composable
+private fun MyShiftDayHeader(date: String) {
     val displayDate = remember(date) {
         try {
             val sdf = SimpleDateFormat("yyyy-MM-dd", Locale.US)
             val out = SimpleDateFormat("EEEE, MMM d", Locale.US)
             out.format(sdf.parse(date)!!)
-        } catch (_: Exception) { dayLabel }
+        } catch (_: Exception) { date }
     }
     Text(
         displayDate,
         style = MaterialTheme.typography.titleSmall,
-        modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 12.dp, bottom = 4.dp)
+        fontWeight = FontWeight.SemiBold,
+        color = MaterialTheme.colorScheme.primary,
+        modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 16.dp, bottom = 4.dp)
     )
 }
 
 @Composable
 private fun MyShiftCard(shift: AppScheduledShift) {
+    val hours = (shift.endMinutes - shift.startMinutes) / 60.0
     Card(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(horizontal = 16.dp, vertical = 4.dp)
+            .padding(horizontal = 16.dp, vertical = 4.dp),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.primaryContainer
+        )
     ) {
-        Column(Modifier.padding(horizontal = 12.dp, vertical = 10.dp)) {
-            Text(shift.positionName, style = MaterialTheme.typography.bodyLarge)
+        Row(
+            Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp, vertical = 12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween
+        ) {
+            Column(Modifier.weight(1f)) {
+                Text(
+                    shift.positionName,
+                    style = MaterialTheme.typography.bodyLarge,
+                    fontWeight = FontWeight.Medium,
+                    color = MaterialTheme.colorScheme.onPrimaryContainer
+                )
+                Text(
+                    "${ScheduleViewModel.minutesToDisplay(shift.startMinutes)} – " +
+                    ScheduleViewModel.minutesToDisplay(shift.endMinutes),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.75f)
+                )
+            }
             Text(
-                "${ScheduleViewModel.minutesToDisplay(shift.startMinutes)} – " +
-                ScheduleViewModel.minutesToDisplay(shift.endMinutes),
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
+                "${"%.1f".format(hours)}h",
+                style = MaterialTheme.typography.titleSmall,
+                fontWeight = FontWeight.Bold,
+                color = MaterialTheme.colorScheme.onPrimaryContainer
             )
         }
     }

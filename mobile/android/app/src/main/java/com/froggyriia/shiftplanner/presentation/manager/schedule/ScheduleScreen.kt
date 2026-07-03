@@ -23,9 +23,15 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
+import android.content.ContentValues
+import android.content.Context
+import android.content.Intent
+import android.os.Build
+import android.provider.MediaStore
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.CalendarMonth
+import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.ChevronLeft
 import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material.icons.filled.Delete
@@ -69,6 +75,8 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
+import androidx.core.net.toUri
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
@@ -103,6 +111,7 @@ fun ScheduleScreen(
     val state by viewModel.uiState.collectAsState()
     val snackbarHostState = remember { SnackbarHostState() }
 
+    val context = LocalContext.current
     var showGenerateSheet by rememberSaveable { mutableStateOf(false) }
     var shiftDraft by remember { mutableStateOf<ShiftDraft?>(null) }
     var unfilledDraft by remember { mutableStateOf<UnfilledReqDraft?>(null) }
@@ -130,11 +139,22 @@ fun ScheduleScreen(
                 title = { Text("Schedule") },
                 actions = {
                     val schedule = state.schedule
-                    if (schedule != null && schedule.status == AppScheduleStatus.DRAFT) {
-                        if (state.isPublishing) {
-                            CircularProgressIndicator(modifier = Modifier.padding(end = 12.dp))
-                        } else {
-                            TextButton(onClick = viewModel::publishSchedule) { Text("Publish") }
+                    if (schedule != null) {
+                        IconButton(
+                            onClick = {
+                                val csv = viewModel.buildScheduleCsv()
+                                val uri = saveScheduleCsv(context, csv)
+                                if (uri != null) shareFile(context, uri, "text/csv")
+                            }
+                        ) {
+                            Icon(Icons.Default.Download, contentDescription = "Export CSV")
+                        }
+                        if (schedule.status == AppScheduleStatus.DRAFT) {
+                            if (state.isPublishing) {
+                                CircularProgressIndicator(modifier = Modifier.padding(end = 12.dp))
+                            } else {
+                                TextButton(onClick = viewModel::publishSchedule) { Text("Publish") }
+                            }
                         }
                     }
                 }
@@ -1095,4 +1115,41 @@ internal fun ScheduleDropdown(
             }
         }
     }
+}
+
+// ── File helpers ──────────────────────────────────────────────────────────────
+
+private fun saveScheduleCsv(context: Context, csv: String): String? {
+    return try {
+        val timestamp = java.text.SimpleDateFormat("yyyyMMdd_HHmm", Locale.US)
+            .format(java.util.Date())
+        val fileName = "schedule_$timestamp.csv"
+        val resolver = context.contentResolver
+        val values = ContentValues().apply {
+            put(MediaStore.Downloads.DISPLAY_NAME, fileName)
+            put(MediaStore.Downloads.MIME_TYPE, "text/csv")
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                put(MediaStore.Downloads.IS_PENDING, 1)
+            }
+        }
+        val uri = resolver.insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, values) ?: return null
+        resolver.openOutputStream(uri)?.use { it.write(csv.toByteArray()) }
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            values.clear()
+            values.put(MediaStore.Downloads.IS_PENDING, 0)
+            resolver.update(uri, values, null, null)
+        }
+        uri.toString()
+    } catch (_: Exception) { null }
+}
+
+private fun shareFile(context: Context, uriString: String, mimeType: String) {
+    val intent = Intent(Intent.ACTION_VIEW).apply {
+        setDataAndType(uriString.toUri(), mimeType)
+        addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_ACTIVITY_NEW_TASK)
+    }
+    context.startActivity(Intent.createChooser(intent, "Open file").apply {
+        addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+    })
+}
 }

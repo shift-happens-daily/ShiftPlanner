@@ -1,45 +1,70 @@
 package com.froggyriia.shiftplanner.presentation
 
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Assessment
+import androidx.compose.material.icons.filled.Assignment
+import androidx.compose.material.icons.filled.Business
+import androidx.compose.material.icons.filled.CalendarMonth
+import androidx.compose.material.icons.filled.CalendarToday
+import androidx.compose.material.icons.filled.EventAvailable
+import androidx.compose.material.icons.filled.Group
+import androidx.compose.material.icons.filled.Person
+import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
+import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import com.froggyriia.shiftplanner.AppContainer
-import com.froggyriia.shiftplanner.domain.model.AppUser
-import com.froggyriia.shiftplanner.domain.model.UserRole
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewmodel.compose.viewModel
-import androidx.compose.runtime.remember
+import com.froggyriia.shiftplanner.AppContainer
+import com.froggyriia.shiftplanner.data.reports.ReportsRepository
+import com.froggyriia.shiftplanner.domain.model.AppUser
+import com.froggyriia.shiftplanner.domain.model.MySelfReport
+import com.froggyriia.shiftplanner.domain.model.UserRole
 import com.froggyriia.shiftplanner.presentation.auth.AuthScreen
 import com.froggyriia.shiftplanner.presentation.auth.AuthViewModel
-import com.froggyriia.shiftplanner.presentation.manager.company.CompanyScreen
-import com.froggyriia.shiftplanner.presentation.manager.company.CompanyInviteSheet
-import com.froggyriia.shiftplanner.presentation.manager.company.CompanyInviteViewModel
-import com.froggyriia.shiftplanner.presentation.manager.employees.EmployeesScreen
-import com.froggyriia.shiftplanner.presentation.manager.employees.EmployeesViewModel
 import com.froggyriia.shiftplanner.presentation.employee.availability.AvailabilityScreen
 import com.froggyriia.shiftplanner.presentation.employee.availability.AvailabilityViewModel
+import com.froggyriia.shiftplanner.presentation.employee.schedule.MyScheduleScreen
+import com.froggyriia.shiftplanner.presentation.employee.schedule.MyScheduleViewModel
+import com.froggyriia.shiftplanner.presentation.manager.company.CompanyInviteSheet
+import com.froggyriia.shiftplanner.presentation.manager.company.CompanyInviteViewModel
+import com.froggyriia.shiftplanner.presentation.manager.company.CompanyScreen
+import com.froggyriia.shiftplanner.presentation.manager.employees.EmployeesScreen
+import com.froggyriia.shiftplanner.presentation.manager.employees.EmployeesViewModel
+import com.froggyriia.shiftplanner.presentation.manager.reports.ReportsScreen
+import com.froggyriia.shiftplanner.presentation.manager.reports.ReportsViewModel
 import com.froggyriia.shiftplanner.presentation.manager.requirements.RequirementsScreen
 import com.froggyriia.shiftplanner.presentation.manager.requirements.RequirementsViewModel
 import com.froggyriia.shiftplanner.presentation.manager.schedule.ScheduleScreen
 import com.froggyriia.shiftplanner.presentation.manager.schedule.ScheduleViewModel
-import com.froggyriia.shiftplanner.presentation.employee.schedule.MyScheduleScreen
-import com.froggyriia.shiftplanner.presentation.employee.schedule.MyScheduleViewModel
 
 @Composable
 fun AppRoot(
@@ -80,12 +105,13 @@ fun AppRoot(
 
 // ── Manager ───────────────────────────────────────────────────────────────────
 
-private enum class ManagerTab(val label: String) {
-    COMPANY("Company"),
-    EMPLOYEES("Employees"),
-    REQUIREMENTS("Requirements"),
-    SCHEDULE("Schedule"),
-    PROFILE("Profile")
+private enum class ManagerTab(val label: String, val icon: ImageVector) {
+    COMPANY("Company", Icons.Default.Business),
+    EMPLOYEES("Employees", Icons.Default.Group),
+    REQUIREMENTS("Reqs", Icons.Default.Assignment),
+    SCHEDULE("Schedule", Icons.Default.CalendarMonth),
+    REPORTS("Reports", Icons.Default.Assessment),
+    PROFILE("Profile", Icons.Default.Person)
 }
 
 @Composable
@@ -104,7 +130,7 @@ private fun ManagerShell(
                     NavigationBarItem(
                         selected = tab == selectedTab,
                         onClick = { selectedTab = tab },
-                        icon = { /* icons per tab can be added later */ },
+                        icon = { Icon(tab.icon, contentDescription = tab.label) },
                         label = { Text(tab.label) }
                     )
                 }
@@ -169,6 +195,20 @@ private fun ManagerShell(
                     )
                     ScheduleScreen(user = user, viewModel = scheduleVm)
                 }
+                ManagerTab.REPORTS -> {
+                    val reportsVm: ReportsViewModel = viewModel(
+                        key = "manager_reports",
+                        factory = remember {
+                            object : ViewModelProvider.Factory {
+                                override fun <T : ViewModel> create(modelClass: Class<T>): T {
+                                    @Suppress("UNCHECKED_CAST")
+                                    return ReportsViewModel(appContainer.reportsRepository) as T
+                                }
+                            }
+                        }
+                    )
+                    ReportsScreen(viewModel = reportsVm)
+                }
                 ManagerTab.PROFILE -> ProfileScreen(
                     user = user,
                     onLogout = onLogout
@@ -180,10 +220,10 @@ private fun ManagerShell(
 
 // ── Employee ──────────────────────────────────────────────────────────────────
 
-private enum class EmployeeTab(val label: String) {
-    AVAILABILITY("Availability"),
-    SCHEDULE("Schedule"),
-    PROFILE("Profile")
+private enum class EmployeeTab(val label: String, val icon: ImageVector) {
+    AVAILABILITY("Availability", Icons.Default.EventAvailable),
+    SCHEDULE("Schedule", Icons.Default.CalendarToday),
+    PROFILE("Profile", Icons.Default.Person)
 }
 
 @Composable
@@ -197,9 +237,9 @@ private fun EmployeeShell(
     var selectedTab by rememberSaveable { mutableStateOf(EmployeeTab.AVAILABILITY) }
     var showInviteSheet by rememberSaveable { mutableStateOf(false) }
 
-    val inviteVm = androidx.lifecycle.viewmodel.compose.viewModel<CompanyInviteViewModel>(
-        factory = object : androidx.lifecycle.ViewModelProvider.Factory {
-            override fun <T : androidx.lifecycle.ViewModel> create(modelClass: Class<T>): T {
+    val inviteVm = viewModel<CompanyInviteViewModel>(
+        factory = object : ViewModelProvider.Factory {
+            override fun <T : ViewModel> create(modelClass: Class<T>): T {
                 @Suppress("UNCHECKED_CAST")
                 return CompanyInviteViewModel(appContainer.companyRepository) as T
             }
@@ -213,7 +253,7 @@ private fun EmployeeShell(
                     NavigationBarItem(
                         selected = tab == selectedTab,
                         onClick = { selectedTab = tab },
-                        icon = { },
+                        icon = { Icon(tab.icon, contentDescription = tab.label) },
                         label = { Text(tab.label) }
                     )
                 }
@@ -271,6 +311,7 @@ private fun EmployeeShell(
                 }
                 EmployeeTab.PROFILE -> ProfileScreen(
                     user = user,
+                    reportsRepository = appContainer.reportsRepository,
                     onLogout = onLogout,
                     onDeleteAccount = onDeleteAccount
                 )
@@ -307,11 +348,9 @@ private fun PlaceholderWithJoin(
 ) {
     if (!user.hasCompany) {
         Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-            androidx.compose.foundation.layout.Column(
-                horizontalAlignment = Alignment.CenterHorizontally
-            ) {
+            Column(horizontalAlignment = Alignment.CenterHorizontally) {
                 Text("Join a company to access $screenName")
-                androidx.compose.material3.Button(
+                Button(
                     onClick = onJoinClick,
                     modifier = Modifier.padding(top = 16.dp)
                 ) { Text("Enter invite code") }
@@ -325,23 +364,72 @@ private fun PlaceholderWithJoin(
 @Composable
 private fun ProfileScreen(
     user: AppUser,
+    reportsRepository: ReportsRepository? = null,
     onLogout: () -> Unit,
     onDeleteAccount: (() -> Unit)? = null
 ) {
+    var myReport by remember { mutableStateOf<MySelfReport?>(null) }
+
+    LaunchedEffect(reportsRepository) {
+        if (reportsRepository != null) {
+            try {
+                myReport = reportsRepository.fetchMyReport(startDate = null, endDate = null)
+            } catch (_: Exception) { /* stats optional */ }
+        }
+    }
+
     Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-        androidx.compose.foundation.layout.Column(
+        Column(
             horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(12.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
             modifier = Modifier.padding(24.dp)
         ) {
-            Text(user.name, style = androidx.compose.material3.MaterialTheme.typography.headlineSmall)
-            Text(user.email, style = androidx.compose.material3.MaterialTheme.typography.bodyMedium)
-            androidx.compose.material3.Button(onClick = onLogout) { Text("Log out") }
+            Icon(
+                Icons.Default.Person,
+                contentDescription = null,
+                modifier = Modifier.padding(bottom = 4.dp),
+                tint = MaterialTheme.colorScheme.primary
+            )
+            Text(user.name, style = MaterialTheme.typography.headlineSmall)
+            Text(user.email, style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant)
+
+            // Stats (employees only)
+            myReport?.let { report ->
+                Spacer(Modifier.height(4.dp))
+                HorizontalDivider()
+                Spacer(Modifier.height(4.dp))
+                Text(
+                    "My Stats (all time)",
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Column(
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(4.dp)
+                ) {
+                    Text(
+                        "${"%.1f".format(report.totalHours)} hours",
+                        style = MaterialTheme.typography.titleLarge,
+                        fontWeight = FontWeight.Bold
+                    )
+                    Text(
+                        "${report.totalShifts} shifts",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+                Spacer(Modifier.height(4.dp))
+                HorizontalDivider()
+            }
+
+            Spacer(Modifier.height(4.dp))
+            Button(onClick = onLogout) { Text("Log out") }
             if (onDeleteAccount != null) {
-                androidx.compose.material3.OutlinedButton(
+                OutlinedButton(
                     onClick = onDeleteAccount,
-                    colors = androidx.compose.material3.ButtonDefaults.outlinedButtonColors(
-                        contentColor = androidx.compose.material3.MaterialTheme.colorScheme.error
+                    colors = ButtonDefaults.outlinedButtonColors(
+                        contentColor = MaterialTheme.colorScheme.error
                     )
                 ) { Text("Delete account") }
             }

@@ -348,6 +348,49 @@ class ScheduleViewModel(
         _uiState.value = _uiState.value.copy(errorMessage = null, statusMessage = null)
     }
 
+    /** Builds CSV from current schedule for export. */
+    fun buildScheduleCsv(): String {
+        val schedule = _uiState.value.schedule ?: return ""
+        val sb = StringBuilder()
+        sb.appendLine("Date,Employee,Position,Start,End,Hours,Status")
+        val dateFmt = SimpleDateFormat("yyyy-MM-dd", Locale.US)
+        val allShifts = schedule.shifts.sortedWith(compareBy({ dateFmt.format(it.date) }, { it.startMinutes }))
+        allShifts.forEach { shift ->
+            val hours = (shift.endMinutes - shift.startMinutes) / 60.0
+            sb.appendLine(
+                "${dateFmt.format(shift.date)}," +
+                "${csvEsc(shift.employeeName ?: "Unassigned")}," +
+                "${csvEsc(shift.positionName)}," +
+                "${minutesToDisplay(shift.startMinutes)}," +
+                "${minutesToDisplay(shift.endMinutes)}," +
+                "${"%.1f".format(hours)}," +
+                "${if (shift.hasAssignedEmployee) "Assigned" else "Unassigned"}"
+            )
+        }
+        schedule.unfilledRequirements
+            .sortedWith(compareBy({ dateFmt.format(it.date) }, { it.startMinutes }))
+            .forEach { req ->
+                val hours = (req.endMinutes - req.startMinutes) / 60.0
+                repeat(req.missingStaff) {
+                    sb.appendLine(
+                        "${dateFmt.format(req.date)}," +
+                        "UNFILLED," +
+                        "${csvEsc(req.positionTitle)}," +
+                        "${minutesToDisplay(req.startMinutes)}," +
+                        "${minutesToDisplay(req.endMinutes)}," +
+                        "${"%.1f".format(hours)}," +
+                        "Unfilled"
+                    )
+                }
+            }
+        return sb.toString()
+    }
+
+    private fun csvEsc(value: String): String =
+        if (value.contains(',') || value.contains('"') || value.contains('\n'))
+            "\"${value.replace("\"", "\"\"")}\""
+        else value
+
     // ── Week navigation ───────────────────────────────────────────────────────
 
     fun previousWeek() { weekOffset--; refreshWeek() }

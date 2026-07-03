@@ -181,6 +181,22 @@ interface ShiftPlannerApi {
         @Body request: ScheduleRequirementInScheduleUpdateDto
     ): ScheduleResponseDto
 
+    // ── Reports ───────────────────────────────────────────────────────────────
+
+    @GET("reports/employees")
+    suspend fun getEmployeeReports(
+        @Query("start_date") startDate: String?,
+        @Query("end_date") endDate: String?
+    ): List<EmployeeReportResponseDto>
+
+    @GET("reports/me")
+    suspend fun getMyReport(
+        @Query("start_date") startDate: String?,
+        @Query("end_date") endDate: String?
+    ): MySelfReportResponseDto
+
+    // ── Available employees ───────────────────────────────────────────────────
+
     @GET("schedule/{scheduleId}/employees/available")
     suspend fun getAvailableEmployees(
         @Path("scheduleId") scheduleId: Int,
