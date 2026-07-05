@@ -3,10 +3,13 @@
 import { useEffect, useMemo, useState } from 'react';
 import {
   deleteEmployee,
+  enrichEmployeesWithWorkLimits,
+  getEmployeeWorkLimits,
   listEmployeeAbsences,
   listEmployees,
   replaceEmployeeBranches,
   updateEmployeePosition,
+  updateEmployeeWorkLimits,
 } from '../../services/employeeService';
 import { extractApiErrorMessage } from '../../services/error';
 import { createPosition, deletePosition, listPositions, updatePosition } from '../../services/positionService';
@@ -22,12 +25,14 @@ import { formatLocalDate } from '../../services/scheduleService';
 import { getEmployeePositionLabel, getPositionLabel } from '../../utils/employeeDisplay';
 import { usePositionTitleRevision } from '../../hooks/usePositionTitleRevision';
 import { useUnsavedChanges } from '../../context/useUnsavedChanges';
+import { DEFAULT_DAILY_HOURS, DEFAULT_WEEKLY_HOURS } from '../../utils/employeeWorkLimits';
 
 const POSITION_CREATE_SCOPE = 'employees-position-create';
 const POSITION_EDIT_SCOPE = 'employees-position-edit';
 const LINK_USER_SCOPE = 'employees-link-user';
 const EMPLOYEE_POSITION_SCOPE = 'employees-employee-position';
 const EMPLOYEE_BRANCH_SCOPE = 'employees-employee-branch';
+const EMPLOYEE_WORK_LIMITS_SCOPE = 'employees-employee-work-limits';
 
 function normalizeArray(value) {
   return Array.isArray(value) ? value : [];
@@ -496,6 +501,10 @@ export default function EmployeesTab({ language, userRole, user }) {
   const [selectedEmployeeDetails, setSelectedEmployeeDetails] = useState({
     position_id: '',
   });
+  const [selectedEmployeeWorkLimits, setSelectedEmployeeWorkLimits] = useState({
+    max_hours_per_week: DEFAULT_WEEKLY_HOURS,
+    max_hours_per_day: DEFAULT_DAILY_HOURS,
+  });
   const [selectedEmployeeBranchIds, setSelectedEmployeeBranchIds] = useState([]);
   const [branchToAddId, setBranchToAddId] = useState('');
   const [branchAssignmentsRevision, setBranchAssignmentsRevision] = useState(0);
@@ -608,6 +617,16 @@ export default function EmployeesTab({ language, userRole, user }) {
       addBranch: 'Добавить филиал',
       removeBranch: 'Убрать',
       noBranchesAssigned: 'Филиалы не назначены',
+      workLimits: 'Ограничения рабочего времени',
+      weeklyHours: 'Часов в неделю',
+      weeklyHoursHint: 'Сколько часов сотрудник должен отработать за неделю',
+      maxDailyHours: 'Макс. часов в день',
+      maxDailyHoursHint: 'Максимальное количество рабочих часов в один день',
+      hoursUnit: 'ч',
+      workLimitsSaved: 'Ограничения рабочего времени сохранены.',
+      workLimitsError: 'Не удалось сохранить ограничения рабочего времени.',
+      invalidWeeklyHours: 'Укажите количество часов в неделю от 1 до 168.',
+      invalidDailyHours: 'Укажите максимум часов в день от 1 до 24.',
     },
     en: {
       employees: 'Employees',
@@ -697,6 +716,16 @@ export default function EmployeesTab({ language, userRole, user }) {
       addBranch: 'Add branch',
       removeBranch: 'Remove',
       noBranchesAssigned: 'No branches assigned',
+      workLimits: 'Work time limits',
+      weeklyHours: 'Hours per week',
+      weeklyHoursHint: 'How many hours the employee should work per week',
+      maxDailyHours: 'Max hours per day',
+      maxDailyHoursHint: 'Maximum working hours allowed in a single day',
+      hoursUnit: 'h',
+      workLimitsSaved: 'Work time limits saved.',
+      workLimitsError: 'Failed to save work time limits.',
+      invalidWeeklyHours: 'Enter weekly hours between 1 and 168.',
+      invalidDailyHours: 'Enter max daily hours between 1 and 24.',
     },
   };
 
@@ -792,6 +821,10 @@ export default function EmployeesTab({ language, userRole, user }) {
     if (!selectedEmployee) {
       setSelectedEmployeeDetails({ position_id: '' });
       setSelectedEmployeeBranchIds([]);
+      setSelectedEmployeeWorkLimits({
+        max_hours_per_week: DEFAULT_WEEKLY_HOURS,
+        max_hours_per_day: DEFAULT_DAILY_HOURS,
+      });
       setBranchToAddId('');
       return;
     }
@@ -802,6 +835,10 @@ export default function EmployeesTab({ language, userRole, user }) {
 
     setSelectedEmployeeDetails({
       position_id: selectedEmployee.position_id || selectedEmployee.position?.id || selectedEmployee.position?.position_id || '',
+    });
+    setSelectedEmployeeWorkLimits({
+      max_hours_per_week: selectedEmployee.max_hours_per_week ?? DEFAULT_WEEKLY_HOURS,
+      max_hours_per_day: selectedEmployee.max_hours_per_day ?? DEFAULT_DAILY_HOURS,
     });
     setSelectedEmployeeBranchIds(uniqueBranchIds([...getEmployeeBranchIds(selectedEmployee), ...resolvedBranchIds]));
     setBranchToAddId('');
@@ -831,7 +868,7 @@ export default function EmployeesTab({ language, userRole, user }) {
 
         if (!isMounted) return;
 
-        const safeEmployees = normalizeArray(employeesData);
+        const safeEmployees = enrichEmployeesWithWorkLimits(normalizeArray(employeesData));
         const safePositions = normalizeArray(positionsData);
         const safeBranches = normalizeArray(branchesData || []);
 
@@ -877,11 +914,15 @@ export default function EmployeesTab({ language, userRole, user }) {
       setErrorMessage('');
 
       try {
-        const absencesData = await listEmployeeAbsences(selectedEmployeeId);
+        const [absencesData, workLimitsData] = await Promise.all([
+          listEmployeeAbsences(selectedEmployeeId),
+          getEmployeeWorkLimits(selectedEmployeeId, selectedEmployee),
+        ]);
 
         if (!isMounted) return;
 
         setEmployeeAbsences(normalizeArray(absencesData));
+        setSelectedEmployeeWorkLimits(workLimitsData);
       } catch (error) {
         if (isMounted) {
           setEmployeeAbsences([]);
@@ -899,7 +940,7 @@ export default function EmployeesTab({ language, userRole, user }) {
     return () => {
       isMounted = false;
     };
-  }, [language, selectedEmployeeId, t.empty, userRole]);
+  }, [language, selectedEmployeeId, selectedEmployee, t.empty, userRole]);
 
   if (userRole !== 'manager') {
     return (
@@ -931,7 +972,7 @@ export default function EmployeesTab({ language, userRole, user }) {
   };
 
   const reloadEmployees = async (preferEmployeeId) => {
-    const employeesData = normalizeArray(await listEmployees());
+    const employeesData = enrichEmployeesWithWorkLimits(normalizeArray(await listEmployees()));
     setEmployees(employeesData);
 
     if (preferEmployeeId) {
@@ -1049,6 +1090,48 @@ export default function EmployeesTab({ language, userRole, user }) {
       setSuccessMessage(t.assignmentsSaved);
     } catch (error) {
       setErrorMessage(getFriendlyError(error, t.assignmentsError));
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const handleSaveWorkLimits = async () => {
+    if (!selectedEmployee) return;
+
+    const weekly = Number(selectedEmployeeWorkLimits.max_hours_per_week);
+    const daily = Number(selectedEmployeeWorkLimits.max_hours_per_day);
+
+    if (!Number.isFinite(weekly) || weekly < 1 || weekly > 168) {
+      setErrorMessage(t.invalidWeeklyHours);
+      return;
+    }
+
+    if (!Number.isFinite(daily) || daily < 1 || daily > 24) {
+      setErrorMessage(t.invalidDailyHours);
+      return;
+    }
+
+    clearMessages();
+    setIsSubmitting(true);
+
+    try {
+      const saved = await updateEmployeeWorkLimits(selectedEmployee.id, {
+        max_hours_per_week: Math.round(weekly),
+        max_hours_per_day: Math.round(daily),
+      });
+
+      setSelectedEmployeeWorkLimits(saved);
+      setEmployees((currentEmployees) =>
+        currentEmployees.map((employee) => (
+          String(employee.id) === String(selectedEmployee.id)
+            ? { ...employee, ...saved }
+            : employee
+        ))
+      );
+      markSaved(EMPLOYEE_WORK_LIMITS_SCOPE);
+      setSuccessMessage(t.workLimitsSaved);
+    } catch (error) {
+      setErrorMessage(getFriendlyError(error, t.workLimitsError));
     } finally {
       setIsSubmitting(false);
     }
@@ -1820,6 +1903,85 @@ export default function EmployeesTab({ language, userRole, user }) {
                 >
                   {t.save}
                 </button>
+
+                <div style={{
+                  ...styles.innerSection,
+                  ...mobileStyles?.innerSection,
+                  marginTop: 0,
+                }}>
+                  <div style={{ ...styles.innerHeader, ...mobileStyles?.innerHeader }}>
+                    <h4 style={{ ...styles.subTitle, ...mobileStyles?.subTitle }}>{t.workLimits}</h4>
+                  </div>
+
+                  <div style={{
+                    display: 'grid',
+                    gridTemplateColumns: r.gridCols(r.isMobile ? '1fr' : '1fr 1fr'),
+                    gap: r.isMobile ? 8 : 12,
+                  }}>
+                    <div style={{ ...(r.isMobile ? { display: 'flex', flexDirection: 'column', gap: 6 } : styles.stack) }}>
+                      <label style={{ ...styles.label, ...mobileStyles?.label, marginBottom: r.isMobile ? 4 : 8 }}>
+                        {t.weeklyHours}
+                      </label>
+                      <p style={{ ...styles.panelHint, ...mobileStyles?.panelHint }}>{t.weeklyHoursHint}</p>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                        <input
+                          type="number"
+                          min={1}
+                          max={168}
+                          step={1}
+                          value={selectedEmployeeWorkLimits.max_hours_per_week}
+                          onChange={(event) => {
+                            setSelectedEmployeeWorkLimits((prev) => ({
+                              ...prev,
+                              max_hours_per_week: event.target.value,
+                            }));
+                            markUnsaved(EMPLOYEE_WORK_LIMITS_SCOPE);
+                          }}
+                          style={{ ...styles.input, ...mobileStyles?.input, flex: 1 }}
+                        />
+                        <span style={{ ...styles.cardLabel, marginBottom: 0, flexShrink: 0 }}>{t.hoursUnit}</span>
+                      </div>
+                    </div>
+
+                    <div style={{ ...(r.isMobile ? { display: 'flex', flexDirection: 'column', gap: 6 } : styles.stack) }}>
+                      <label style={{ ...styles.label, ...mobileStyles?.label, marginBottom: r.isMobile ? 4 : 8 }}>
+                        {t.maxDailyHours}
+                      </label>
+                      <p style={{ ...styles.panelHint, ...mobileStyles?.panelHint }}>{t.maxDailyHoursHint}</p>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                        <input
+                          type="number"
+                          min={1}
+                          max={24}
+                          step={1}
+                          value={selectedEmployeeWorkLimits.max_hours_per_day}
+                          onChange={(event) => {
+                            setSelectedEmployeeWorkLimits((prev) => ({
+                              ...prev,
+                              max_hours_per_day: event.target.value,
+                            }));
+                            markUnsaved(EMPLOYEE_WORK_LIMITS_SCOPE);
+                          }}
+                          style={{ ...styles.input, ...mobileStyles?.input, flex: 1 }}
+                        />
+                        <span style={{ ...styles.cardLabel, marginBottom: 0, flexShrink: 0 }}>{t.hoursUnit}</span>
+                      </div>
+                    </div>
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={handleSaveWorkLimits}
+                    style={{
+                      ...styles.primaryButton,
+                      ...mobileStyles?.primaryButton,
+                      ...(r.isMobile ? r.fullWidth : {}),
+                    }}
+                    disabled={isSubmitting}
+                  >
+                    {t.save}
+                  </button>
+                </div>
 
                 <button
                   type="button"
