@@ -21,12 +21,20 @@ class CompanyUserPublicIdRequest(BaseModel):
 
 class CompanyLinkUserRequest(CompanyUserPublicIdRequest):
     branch_id: int | None = None
+    branch_ids: list[int] | None = None
+    primary_branch_id: int | None = Field(default=None, ge=1)
     position_id: int | None = None
 
 
 class LinkedEmployeePositionRead(BaseModel):
     id: int
     name: str
+
+
+class LinkedEmployeeBranchRead(BaseModel):
+    id: int
+    name: str
+    is_primary: bool
 
 
 class LinkedEmployeeRead(BaseModel):
@@ -36,7 +44,30 @@ class LinkedEmployeeRead(BaseModel):
     email: str
     branch_id: int | None = None
     position_id: int | None = None
+    branches: list[LinkedEmployeeBranchRead] = Field(default_factory=list)
     position: LinkedEmployeePositionRead | None = None
+
+
+class EmployeeRequestRead(BaseModel):
+    id: int
+    company_id: int
+    user_id: int
+    public_id: str
+    full_name: str
+    email: str
+    branch_id: int | None = None
+    position_id: int | None = None
+    branches: list[LinkedEmployeeBranchRead] = Field(default_factory=list)
+    position: LinkedEmployeePositionRead | None = None
+    is_active: bool
+
+
+class EmployeeRequestAcceptRequest(BaseModel):
+    branch_id: int | None = Field(default=None, ge=1)
+    branch_ids: list[int] | None = None
+    primary_branch_id: int | None = Field(default=None, ge=1)
+    position_id: int | None = Field(default=None, ge=1)
+
 
 def normalize_invite_code(value: str) -> str:
     if not isinstance(value, str):
@@ -107,6 +138,8 @@ class CompanyInvitePreviewRead(BaseModel):
 class CompanyJoinRequest(BaseModel):
     invite_code: str
     branch_id: int | None = Field(default=None, ge=1)
+    branch_ids: list[int] | None = None
+    primary_branch_id: int | None = Field(default=None, ge=1)
     position_id: int | None = Field(default=None, ge=1)
 
     @field_validator("invite_code", mode="before")

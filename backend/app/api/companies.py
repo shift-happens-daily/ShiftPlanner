@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends, Response, status
 from sqlalchemy.orm import Session
 
-from app.api.dependencies import get_current_user, require_manager, require_role
+from app.api.dependencies import get_current_user, require_active_manager, require_manager, require_role
 from app.api.responses import (
     BAD_REQUEST_RESPONSE,
     FORBIDDEN_RESPONSE,
@@ -21,6 +21,8 @@ from app.schemas.company import (
     CompanyRead,
     CompanySummaryRead,
     CompanyUpdate,
+    EmployeeRequestAcceptRequest,
+    EmployeeRequestRead,
     LinkedEmployeeRead,
 )
 from app.services import company_service
@@ -97,6 +99,50 @@ def join_company(
     db: Session = Depends(get_db),
 ) -> CurrentUserResponse:
     return company_service.join_company_by_invite(db, payload, current_user)
+
+
+@router.get(
+    "/me/employee-requests",
+    response_model=list[EmployeeRequestRead],
+    responses={**UNAUTHORIZED_RESPONSE, **FORBIDDEN_RESPONSE},
+)
+def list_employee_requests(
+    current_user: UserRead = Depends(require_active_manager),
+    db: Session = Depends(get_db),
+) -> list[EmployeeRequestRead]:
+    return company_service.list_employee_requests(db, current_user)
+
+
+@router.post(
+    "/me/employee-requests/{request_id}/accept",
+    response_model=EmployeeRequestRead,
+    responses={**BAD_REQUEST_RESPONSE, **UNAUTHORIZED_RESPONSE, **FORBIDDEN_RESPONSE, **NOT_FOUND_RESPONSE},
+)
+def accept_employee_request(
+    request_id: int,
+    payload: EmployeeRequestAcceptRequest | None = None,
+    current_user: UserRead = Depends(require_active_manager),
+    db: Session = Depends(get_db),
+) -> EmployeeRequestRead:
+    return company_service.accept_employee_request(
+        db,
+        request_id,
+        payload or EmployeeRequestAcceptRequest(),
+        current_user,
+    )
+
+
+@router.post(
+    "/me/employee-requests/{request_id}/decline",
+    response_model=EmployeeRequestRead,
+    responses={**BAD_REQUEST_RESPONSE, **UNAUTHORIZED_RESPONSE, **FORBIDDEN_RESPONSE, **NOT_FOUND_RESPONSE},
+)
+def decline_employee_request(
+    request_id: int,
+    current_user: UserRead = Depends(require_active_manager),
+    db: Session = Depends(get_db),
+) -> EmployeeRequestRead:
+    return company_service.decline_employee_request(db, request_id, current_user)
 
 
 @router.get(

@@ -6,6 +6,7 @@ from sqlalchemy.orm import Session
 
 from app.repositories import company_repository, employee_repository, user_repository
 from app.schemas.auth import (
+    CurrentUserBranchAssignmentRead,
     CurrentUserBranchRead,
     CurrentUserCompanyRead,
     CurrentUserPositionRead,
@@ -161,12 +162,14 @@ def create_placeholder_employee_password() -> str:
 def _build_user_read(db: Session, user) -> UserRead:
     employee = employee_repository.get_employee_by_user_id(db, user.id)
     company_id = None
+    employee_status = None
 
     if user.role == "manager":
         company = company_repository.get_company_by_manager_user_id(db, user.id)
         company_id = company.id if company else None
     elif employee is not None:
-        company_id = employee.company_id
+        employee_status = "active" if employee.is_active else "pending"
+        company_id = employee.company_id if employee.is_active else None
 
     return UserRead(
         id=user.id,
@@ -176,12 +179,13 @@ def _build_user_read(db: Session, user) -> UserRead:
         role=user.role,
         employee_id=employee.id if employee else None,
         company_id=company_id,
+        employee_status=employee_status,
     )
 
 
 def _build_register_response(db: Session, user) -> RegisterResponse:
     employee = employee_repository.get_employee_by_user_id(db, user.id)
-    company_id = employee.company_id if employee else None
+    company_id = employee.company_id if employee and employee.is_active else None
 
     return RegisterResponse(
         id=user.id,
@@ -191,6 +195,7 @@ def _build_register_response(db: Session, user) -> RegisterResponse:
         role=user.role,
         employee_id=employee.id if employee else None,
         company_id=company_id,
+        employee_status=("active" if employee.is_active else "pending") if employee else None,
     )
 
 
@@ -199,7 +204,9 @@ def _build_current_user_response(db: Session, user) -> CurrentUserResponse:
     company = None
     company_id = None
     branch = None
+    branches: list[CurrentUserBranchAssignmentRead] = []
     position = None
+    employee_status = None
 
     if user.role == "manager":
         company_model = company_repository.get_company_by_manager_user_id(db, user.id)
@@ -216,26 +223,39 @@ def _build_current_user_response(db: Session, user) -> CurrentUserResponse:
         employee = employee_repository.get_employee_by_user_id(db, user.id)
 
         if employee is not None:
-            company_id = employee.company_id
+            employee_status = "active" if employee.is_active else "pending"
 
-            if employee.company is not None:
-                company = CurrentUserCompanyRead(
-                    id=employee.company.id,
-                    name=employee.company.name,
-                    invite_code=employee.company.invite_code or "",
-                )
+            if employee.is_active:
+                company_id = employee.company_id
 
-            if employee.branch is not None:
-                branch = CurrentUserBranchRead(
-                    id=employee.branch.id,
-                    name=employee.branch.name,
-                )
+                if employee.company is not None:
+                    company = CurrentUserCompanyRead(
+                        id=employee.company.id,
+                        name=employee.company.name,
+                        invite_code=employee.company.invite_code or "",
+                    )
 
-            if employee.position is not None:
-                position = CurrentUserPositionRead(
-                    id=employee.position.id,
-                    name=employee.position.name,
-                )
+                if employee.branch is not None:
+                    branch = CurrentUserBranchRead(
+                        id=employee.branch.id,
+                        name=employee.branch.name,
+                    )
+
+                branches = [
+                    CurrentUserBranchAssignmentRead(
+                        id=link.branch.id,
+                        name=link.branch.name,
+                        is_primary=link.is_primary,
+                    )
+                    for link in sorted(employee.branch_links, key=lambda item: (not item.is_primary, item.branch_id))
+                    if link.branch is not None
+                ]
+
+                if employee.position is not None:
+                    position = CurrentUserPositionRead(
+                        id=employee.position.id,
+                        name=employee.position.name,
+                    )
 
     return CurrentUserResponse(
         id=user.id,
@@ -245,10 +265,12 @@ def _build_current_user_response(db: Session, user) -> CurrentUserResponse:
         role=user.role,
         employee_id=employee.id if employee else None,
         company_id=company_id,
-        branch_id=employee.branch_id if employee else None,
-        position_id=employee.position_id if employee else None,
+        employee_status=employee_status,
+        branch_id=employee.branch_id if employee and employee.is_active else None,
+        position_id=employee.position_id if employee and employee.is_active else None,
         company=company,
         branch=branch,
+        branches=branches,
         position=position,
     )
 
