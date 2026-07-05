@@ -31,6 +31,7 @@ from app.schemas.employee import (
     EmployeeCreate,
     EmployeePositionUpdate,
     EmployeeRead,
+    EmployeeWorkLimits,
 )
 from app.schemas.schedule import ShiftRead
 from app.services import auth_service, employee_service, schedule_service
@@ -75,6 +76,33 @@ def get_employee(
     db: Session = Depends(get_db),
 ) -> EmployeeRead:
     return employee_service.get_employee(db, employee_id, current_user)
+
+
+@router.get(
+    "/{employee_id}/work-limits",
+    response_model=EmployeeWorkLimits,
+    responses={**UNAUTHORIZED_RESPONSE, **FORBIDDEN_RESPONSE, **NOT_FOUND_RESPONSE},
+)
+def get_employee_work_limits(
+    employee_id: int,
+    current_user: UserRead = Depends(require_active_manager),
+    db: Session = Depends(get_db),
+) -> EmployeeWorkLimits:
+    return employee_service.get_work_limits(db, employee_id, current_user)
+
+
+@router.patch(
+    "/{employee_id}/work-limits",
+    response_model=EmployeeWorkLimits,
+    responses={**UNAUTHORIZED_RESPONSE, **FORBIDDEN_RESPONSE, **NOT_FOUND_RESPONSE, **VALIDATION_ERROR_RESPONSE},
+)
+def update_employee_work_limits(
+    employee_id: int,
+    payload: EmployeeWorkLimits,
+    current_user: UserRead = Depends(require_active_manager),
+    db: Session = Depends(get_db),
+) -> EmployeeWorkLimits:
+    return employee_service.update_work_limits(db, employee_id, payload, current_user)
 
 
 @router.get(

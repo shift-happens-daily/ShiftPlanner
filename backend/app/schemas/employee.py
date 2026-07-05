@@ -61,6 +61,11 @@ class EmployeeBranchUpdate(BaseModel):
     branch_id: int | None = Field(ge=1)
 
 
+class EmployeeWorkLimits(BaseModel):
+    max_hours_per_week: int = Field(ge=1)
+    max_hours_per_day: int = Field(ge=1, le=24)
+
+
 class EmployeeBranchesUpdate(BaseModel):
     branch_ids: list[int] = Field(min_length=1)
     primary_branch_id: int = Field(ge=1)
@@ -75,6 +80,8 @@ class EmployeeRead(BaseModel):
     branch_id: int | None
     position_id: int | None
     position_title: str
+    max_hours_per_week: int
+    max_hours_per_day: int
     branch: EmployeeBranchRead | None = None
     branches: list[EmployeeBranchAssignmentRead] = Field(default_factory=list)
     position: EmployeePositionRead | None = None

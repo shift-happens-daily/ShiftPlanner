@@ -53,6 +53,7 @@ class Employee(Base):
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"))
     company_id: Mapped[int] = mapped_column(ForeignKey("companies.id", ondelete="CASCADE"))
     max_hours_per_week: Mapped[int] = mapped_column(Integer, default=40, server_default="40")
+    max_hours_per_day: Mapped[int] = mapped_column(Integer, default=8, server_default="8")
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, server_default="true")
 
     user: Mapped[User] = relationship(back_populates="employee")

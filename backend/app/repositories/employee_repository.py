@@ -145,6 +145,21 @@ def update_employee_status(
     return get_employee_by_id(db, employee.id)
 
 
+def update_employee_work_limits(
+    db: Session,
+    *,
+    employee: Employee,
+    max_hours_per_week: int,
+    max_hours_per_day: int,
+) -> Employee:
+    employee.max_hours_per_week = max_hours_per_week
+    employee.max_hours_per_day = max_hours_per_day
+    db.add(employee)
+    db.commit()
+    db.expire_all()
+    return get_employee_by_id(db, employee.id)
+
+
 def update_employee_position(
     db: Session,
     *,

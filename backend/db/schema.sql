@@ -78,6 +78,7 @@ CREATE TABLE employees (
     branch_id INTEGER REFERENCES branches(id) ON DELETE SET NULL,
     position_id INTEGER REFERENCES positions(id) ON DELETE SET NULL,
     max_hours_per_week INTEGER DEFAULT 40 CHECK (max_hours_per_week > 0),
+    max_hours_per_day INTEGER DEFAULT 8 CHECK (max_hours_per_day > 0 AND max_hours_per_day <= 24),
     is_active BOOLEAN DEFAULT TRUE,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
