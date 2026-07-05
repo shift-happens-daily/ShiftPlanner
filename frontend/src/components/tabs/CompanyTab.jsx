@@ -4,13 +4,17 @@ import { useEffect, useState } from 'react';
 import { useAuth } from '../../context/useAuth';
 import {
   acceptEmployeeRequest,
+  acceptManagerRequest,
   createBranch,
   createCompany,
   declineEmployeeRequest,
+  declineManagerRequest,
   deleteBranch,
   joinCompany,
+  joinCompanyAsManager,
   listBranches,
   listEmployeeRequests,
+  listManagerRequests,
   previewInviteCode,
   regenerateInviteCode,
 } from '../../services/companyService';
@@ -25,6 +29,7 @@ import { useUnsavedChanges } from '../../context/useUnsavedChanges';
 const COMPANY_SCOPE = 'company-create';
 const BRANCH_SCOPE = 'company-branch';
 const JOIN_SCOPE = 'company-join';
+const MANAGER_JOIN_SCOPE = 'company-manager-join';
 
 function normalizeArray(value) {
   if (Array.isArray(value)) return value;
@@ -102,6 +107,7 @@ export default function CompanyTab({ language, userRole, user }) {
 
   const [companyName, setCompanyName] = useState('');
   const [employeeRequests, setEmployeeRequests] = useState([]);
+  const [managerRequests, setManagerRequests] = useState([]);
 
   const [errorMessage, setErrorMessage] = useState('');
   const [successMessage, setSuccessMessage] = useState('');
@@ -109,6 +115,7 @@ export default function CompanyTab({ language, userRole, user }) {
 
   const texts = {
     ru: {
+      title: 'Компания',
       currentCompany: 'Текущая компания',
       company: '',
       branch: 'Филиал',
@@ -132,8 +139,18 @@ export default function CompanyTab({ language, userRole, user }) {
       weekly: 'Каждую неделю',
       monthly: 'Каждый месяц',
       noCompany: 'Аккаунт еще не привязан к компании.',
-      noCompanyManager: 'Создайте компанию, чтобы получить инвайт-код для сотрудников.',
+      noCompanyManager: 'Создайте компанию или вступите по инвайт-коду другого менеджера.',
       noCompanyEmployee: 'Введите инвайт-код, чтобы присоединиться к своей компании.',
+      joinAsManager: 'Вступить в компанию по инвайт-коду',
+      joinAsManagerHint: 'Используйте тот же код, что и для сотрудников. Проверьте код и отправьте заявку.',
+      managerJoinPending: 'Заявка отправлена. Дождитесь подтверждения от владельца компании.',
+      managerJoinSuccess: 'Вы присоединились к компании как менеджер.',
+      managerPendingTitle: 'Заявка менеджера на рассмотрении',
+      managerPendingText: 'Владелец компании должен принять вашу заявку. После этого откроется доступ к управлению.',
+      managerRequests: 'Заявки менеджеров',
+      managerRequestsHint: 'Примите или отклоните заявки других менеджеров на вступление в компанию.',
+      noManagerRequests: 'Нет ожидающих заявок менеджеров.',
+      employeeInviteHint: 'Один код для сотрудников и других менеджеров.',
       previewInvite: 'Проверить код',
       joinCompany: 'Присоединиться',
       invitePlaceholder: 'Введите инвайт-код',
@@ -164,7 +181,7 @@ export default function CompanyTab({ language, userRole, user }) {
       noBranchesAssigned: 'Филиалы не назначены',
       positionsHint: '',
       employeeHint: 'После подтверждения менеджером станут доступны расписание и отчёты.',
-      managerHint: 'Скопируйте инвайт-код и отправьте его сотрудникам.',
+      managerHint: 'Скопируйте инвайт-код и отправьте его сотрудникам или другим менеджерам.',
       inviteFound: 'Инвайт-код найден.',
       joinSuccess: 'Вы успешно присоединились к компании!',
       joinPending: 'Заявка отправлена. Дождитесь подтверждения менеджера во вкладке «Компания».',
@@ -182,6 +199,7 @@ export default function CompanyTab({ language, userRole, user }) {
       requestPosition: 'Позиция в заявке',
     },
     en: {
+      title: 'Company',
       currentCompany: 'Current company',
       company: '',
       branch: 'Branch',
@@ -205,8 +223,18 @@ export default function CompanyTab({ language, userRole, user }) {
       weekly: 'Weekly',
       monthly: 'Monthly',
       noCompany: 'This account is not linked to a company yet.',
-      noCompanyManager: 'Create a company to get an invite code for employees.',
+      noCompanyManager: 'Create a company or join another manager\'s company with an invite code.',
       noCompanyEmployee: 'Enter an invite code to join your company.',
+      joinAsManager: 'Join a company with invite code',
+      joinAsManagerHint: 'Use the same code as employees. Preview the code, then submit your request.',
+      managerJoinPending: 'Request submitted. Wait for the company owner to approve it.',
+      managerJoinSuccess: 'You have joined the company as a manager.',
+      managerPendingTitle: 'Manager request pending',
+      managerPendingText: 'The company owner must approve your request. Management access will unlock after approval.',
+      managerRequests: 'Manager requests',
+      managerRequestsHint: 'Approve or decline requests from other managers to join your company.',
+      noManagerRequests: 'No pending manager requests.',
+      employeeInviteHint: 'One invite code for employees and other managers.',
       previewInvite: 'Preview invite',
       joinCompany: 'Join company',
       invitePlaceholder: 'Enter invite code',
@@ -237,7 +265,7 @@ export default function CompanyTab({ language, userRole, user }) {
       noBranchesAssigned: 'No branches assigned',
       positionsHint: '',
       employeeHint: 'Schedule and reports become available after a manager approves your request.',
-      managerHint: 'Copy the invite code and send it to employees.',
+      managerHint: 'Copy the invite code and send it to employees or other managers.',
       inviteFound: 'Invite found.',
       joinSuccess: 'You have successfully joined the company!',
       joinPending: 'Request submitted. Wait for manager approval in the Company tab.',
@@ -260,6 +288,7 @@ export default function CompanyTab({ language, userRole, user }) {
   const isManager = userRole === 'manager';
   const isEmployee = userRole === 'employee';
   const isPendingEmployee = isEmployee && user?.employeeStatus === 'pending';
+  const isPendingManager = isManager && user?.managerStatus === 'pending';
 
   const currentCompany = user?.company || null;
   const currentCompanyId = getCompanyId(currentCompany);
@@ -308,6 +337,20 @@ export default function CompanyTab({ language, userRole, user }) {
     }
   };
 
+  const loadManagerRequests = async () => {
+    if (!isManager || !currentCompanyId) {
+      setManagerRequests([]);
+      return;
+    }
+
+    try {
+      const data = await listManagerRequests();
+      setManagerRequests(normalizeArray(data));
+    } catch {
+      setManagerRequests([]);
+    }
+  };
+
   useEffect(() => {
     if (!isManager || !currentCompanyId) {
       setBranches([]);
@@ -319,6 +362,10 @@ export default function CompanyTab({ language, userRole, user }) {
 
   useEffect(() => {
     void loadEmployeeRequests();
+  }, [isManager, currentCompanyId]);
+
+  useEffect(() => {
+    void loadManagerRequests();
   }, [isManager, currentCompanyId]);
 
   const handlePreview = async () => {
@@ -371,6 +418,35 @@ export default function CompanyTab({ language, userRole, user }) {
       markSaved(JOIN_SCOPE);
       setSuccessMessage(
         joinedProfile?.employee_status === 'pending' ? t.joinPending : t.joinSuccess
+      );
+    } catch (error) {
+      setErrorMessage(extractApiErrorMessage(error, null, language));
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const handleJoinAsManager = async () => {
+    if (!canJoin) {
+      setErrorMessage(t.previewHint);
+      return;
+    }
+
+    clearMessages();
+    setIsSubmitting(true);
+
+    try {
+      const joinedProfile = await joinCompanyAsManager({
+        invite_code: inviteCode.trim(),
+      });
+
+      await refreshUser();
+
+      setInviteCode('');
+      setInvitePreview(null);
+      markSaved(MANAGER_JOIN_SCOPE);
+      setSuccessMessage(
+        joinedProfile?.manager_status === 'pending' ? t.managerJoinPending : t.managerJoinSuccess
       );
     } catch (error) {
       setErrorMessage(extractApiErrorMessage(error, null, language));
@@ -510,6 +586,38 @@ export default function CompanyTab({ language, userRole, user }) {
     try {
       await declineEmployeeRequest(requestId);
       await loadEmployeeRequests();
+      setSuccessMessage(t.requestDeclined);
+    } catch (error) {
+      setErrorMessage(extractApiErrorMessage(error, t.requestActionError, language));
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const handleAcceptManagerRequest = async (requestId) => {
+    clearMessages();
+    setIsSubmitting(true);
+
+    try {
+      await acceptManagerRequest(requestId);
+      await loadManagerRequests();
+      setSuccessMessage(t.requestAccepted);
+    } catch (error) {
+      setErrorMessage(extractApiErrorMessage(error, t.requestActionError, language));
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const handleDeclineManagerRequest = async (requestId) => {
+    if (!window.confirm(language === 'en' ? 'Decline this manager request?' : 'Отклонить заявку менеджера?')) return;
+
+    clearMessages();
+    setIsSubmitting(true);
+
+    try {
+      await declineManagerRequest(requestId);
+      await loadManagerRequests();
       setSuccessMessage(t.requestDeclined);
     } catch (error) {
       setErrorMessage(extractApiErrorMessage(error, t.requestActionError, language));
@@ -659,6 +767,8 @@ export default function CompanyTab({ language, userRole, user }) {
                           </div>
                       </div>
                     ))}
+
+                  <p style={styles.hint}>{t.employeeInviteHint}</p>
                 </div>
               </div>
             </section>
@@ -712,6 +822,49 @@ export default function CompanyTab({ language, userRole, user }) {
                     ))
                   )}
                 </div>
+              </div>
+            </section>
+
+            <section style={{
+              ...styles.requestsCard,
+              gridColumn: r.isMobile ? 'auto' : '1 / -1',
+            }}>
+              <div style={styles.requestsHeader}>
+                <h3 style={styles.sectionTitle}>{t.managerRequests}</h3>
+                <p style={styles.hint}>{t.managerRequestsHint}</p>
+              </div>
+
+              <div style={styles.requestList}>
+                {managerRequests.length === 0 ? (
+                  <div style={styles.emptyRequests}>{t.noManagerRequests}</div>
+                ) : (
+                  managerRequests.map((request) => (
+                    <div key={request.id} style={styles.requestItem}>
+                      <div style={styles.requestMain}>
+                        <strong style={styles.requestName}>{request.full_name || request.email}</strong>
+                        <span style={styles.requestMeta}>{request.email}</span>
+                      </div>
+                      <div style={styles.requestActions}>
+                        <button
+                          type="button"
+                          onClick={() => handleAcceptManagerRequest(request.id)}
+                          style={isSubmitting ? styles.primaryButtonDisabled : styles.primaryButton}
+                          disabled={isSubmitting}
+                        >
+                          {t.acceptRequest}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleDeclineManagerRequest(request.id)}
+                          style={isSubmitting ? styles.secondaryButtonDisabled : styles.secondaryButton}
+                          disabled={isSubmitting}
+                        >
+                          {t.declineRequest}
+                        </button>
+                      </div>
+                    </div>
+                  ))
+                )}
               </div>
             </section>
 
@@ -786,6 +939,11 @@ export default function CompanyTab({ language, userRole, user }) {
                     <strong style={styles.pendingTitle}>{t.pendingTitle}</strong>
                     <span style={styles.pendingText}>{t.pendingText}</span>
                   </div>
+                ) : isPendingManager ? (
+                  <div style={styles.pendingPanel}>
+                    <strong style={styles.pendingTitle}>{t.managerPendingTitle}</strong>
+                    <span style={styles.pendingText}>{t.managerPendingText}</span>
+                  </div>
                 ) : currentCompany ? (
                   <div style={isEmployee ? styles.employeeCompanyPanel : styles.companyPanel}>
                     <div style={isEmployee ? styles.employeeCompanyHero : undefined}>
@@ -834,7 +992,53 @@ export default function CompanyTab({ language, userRole, user }) {
               </div>
             </section>
 
-            {isManager && !currentCompany && (
+            {isManager && !currentCompany && !isPendingManager && (
+              <section style={{ ...styles.card, ...r.card }}>
+                <div style={styles.section}>
+                  <h3 style={styles.sectionTitle}>{t.joinAsManager}</h3>
+                  <p style={styles.hint}>{t.joinAsManagerHint}</p>
+
+                  <div style={styles.formStack}>
+                    <label style={styles.label}>{t.inviteCode}</label>
+                    <input
+                      value={inviteCode}
+                      onChange={(event) => {
+                        setInviteCode(event.target.value.toUpperCase());
+                        setInvitePreview(null);
+                        markUnsaved(MANAGER_JOIN_SCOPE);
+                      }}
+                      placeholder={t.invitePlaceholder}
+                      style={styles.input}
+                    />
+
+                    <button
+                      type="button"
+                      onClick={handlePreview}
+                      style={isSubmitting ? styles.secondaryButtonDisabled : styles.secondaryButton}
+                      disabled={isSubmitting}
+                    >
+                      {isSubmitting ? '...' : t.previewInvite}
+                    </button>
+                  </div>
+
+                  {invitePreview && (
+                    <div style={styles.previewBox}>
+                      <strong style={styles.previewTitle}>{previewCompanyName}</strong>
+                      <button
+                        type="button"
+                        onClick={handleJoinAsManager}
+                        style={canJoin ? styles.primaryButton : styles.primaryButtonDisabled}
+                        disabled={!canJoin}
+                      >
+                        {t.joinCompany}
+                      </button>
+                    </div>
+                  )}
+                </div>
+              </section>
+            )}
+
+            {isManager && !currentCompany && !isPendingManager && (
               <section style={{ ...styles.card, ...r.card }}>
                 <div style={styles.section}>
                   <h3 style={styles.sectionTitle}>{t.createCompany}</h3>
