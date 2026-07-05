@@ -15,6 +15,7 @@ from app.schemas.schedule import (
     ManualShiftCreate,
     RequirementAssignRequest,
     ScheduleGenerateRequest,
+    ScheduleListItemRead,
     ScheduleRead,
     ScheduleRequirementBulkCreate,
     ScheduleRequirementBulkRead,
@@ -224,7 +225,7 @@ def generate_schedule(
     db: Session,
     current_user: UserRead,
     payload: ScheduleGenerateRequest | None = None,
-) -> list[ScheduleRead]:
+) -> ScheduleRead:
     if current_user.company_id is None:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
@@ -236,33 +237,50 @@ def generate_schedule(
     if start_date is None or end_date is None:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail="start_date and end_date are required for weekly schedule generation.",
+            detail="branch_id, start_date and end_date are required for schedule generation.",
         )
-    _validate_week_period_http(start_date, end_date)
+    _validate_generation_period_http(start_date, end_date)
 
-    branches = company_repository.list_branches_for_company(db, current_user.company_id)
-    if not branches:
+    branch = company_repository.get_branch_by_id(db, payload.branch_id)
+    if branch is None or branch.company_id != current_user.company_id:
         raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Manager's company does not have a branch.",
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Branch does not belong to the authenticated user's company.",
+        )
+
+    conflict = schedule_repository.find_active_schedule_conflict(
+        db,
+        company_id=current_user.company_id,
+        branch_id=branch.id,
+        start_date=start_date,
+        end_date=end_date,
+    )
+    if conflict is not None:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=(
+                "Schedule already exists for this branch and period "
+                f"({conflict['status']}: {conflict['start_date']} - {conflict['end_date']})."
+            ),
         )
 
     try:
-        results = []
-        for branch in branches:
-            results.append(
-                schedule_solver.generate_schedule(
-                    db,
-                    company_id=current_user.company_id,
-                    branch_id=branch.id,
-                    start_date=start_date,
-                    end_date=end_date,
-                    commit=False,
-                )
-            )
+        result = schedule_solver.generate_schedule(
+            db,
+            company_id=current_user.company_id,
+            branch_id=branch.id,
+            start_date=start_date,
+            end_date=end_date,
+            commit=False,
+        )
         db.commit()
     except schedule_solver.ScheduleDataError as exc:
         db.rollback()
+        if str(exc).startswith("schedule already exists"):
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=str(exc),
+            ) from exc
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=str(exc),
@@ -271,11 +289,48 @@ def generate_schedule(
         db.rollback()
         raise
 
-    schedule_reads: list[ScheduleRead] = []
-    for result in results:
-        schedule = schedule_repository.get_schedule(db, result.schedule_id)
-        schedule_reads.append(_build_schedule_read(db, result.schedule_id, schedule.status))
-    return schedule_reads
+    schedule = schedule_repository.get_schedule(db, result.schedule_id)
+    return _build_schedule_read(db, result.schedule_id, schedule.status)
+
+
+def list_schedules(
+    db: Session,
+    current_user: UserRead,
+    *,
+    branch_id: int | None = None,
+    start_date: date | None = None,
+    end_date: date | None = None,
+    schedule_status: str | None = None,
+) -> list[ScheduleListItemRead]:
+    if current_user.company_id is None:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Manager is not linked to a company.",
+        )
+
+    if branch_id is not None:
+        branch = company_repository.get_branch_by_id(db, branch_id)
+        if branch is None or branch.company_id != current_user.company_id:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Branch does not belong to the authenticated user's company.",
+            )
+
+    if start_date is not None and end_date is not None and end_date < start_date:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="end_date must be later than or equal to start_date.",
+        )
+
+    rows = schedule_repository.list_schedules(
+        db,
+        company_id=current_user.company_id,
+        branch_id=branch_id,
+        start_date=start_date,
+        end_date=end_date,
+        schedule_status=schedule_status,
+    )
+    return [ScheduleListItemRead(**row) for row in rows]
 
 
 def get_schedule(db: Session, schedule_id: int) -> ScheduleRead:
@@ -770,6 +825,8 @@ def _build_schedule_read(
     return ScheduleRead(
         id=schedule_id,
         branch_id=schedule_branch_id,
+        start_date=schedule.start_date,
+        end_date=schedule.end_date,
         status=status_value,
         shifts=[_build_shift_read(row) for row in rows],
         conflicts=[],
@@ -835,7 +892,17 @@ def _validate_week_period_http(start_date: date, end_date: date) -> None:
     if start_date.weekday() != 0 or end_date != start_date + timedelta(days=6):
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail="Schedule generation requires one full Monday-Sunday week.",
+            detail="Schedule deletion requires one full Monday-Sunday week.",
+        )
+
+
+def _validate_generation_period_http(start_date: date, end_date: date) -> None:
+    allowed_lengths = {7, 14, 28}
+    period_days = (end_date - start_date).days + 1
+    if start_date.weekday() != 0 or period_days not in allowed_lengths:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Schedule generation requires a Monday start date and a 7, 14, or 28 day period.",
         )
 
 

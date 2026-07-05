@@ -21,6 +21,7 @@ from app.schemas.report import EmployeeReportRead
 from app.schemas.schedule import (
     ScheduleConflictRead,
     ScheduleGenerateRequest,
+    ScheduleListItemRead,
     ScheduleRead,
     ScheduleRequirementCreate,
     ScheduleRequirementRead,
@@ -53,6 +54,7 @@ __all__ = [
     "Role",
     "ScheduleConflictRead",
     "ScheduleGenerateRequest",
+    "ScheduleListItemRead",
     "ScheduleRead",
     "ScheduleRequirementCreate",
     "ScheduleRequirementRead",

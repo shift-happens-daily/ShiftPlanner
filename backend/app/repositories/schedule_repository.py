@@ -156,6 +156,73 @@ def get_latest_schedule(
     return db.scalars(query.order_by(Schedule.id.desc())).first()
 
 
+def list_schedules(
+    db: Session,
+    *,
+    company_id: int,
+    branch_id: int | None = None,
+    start_date: date | None = None,
+    end_date: date | None = None,
+    schedule_status: str | None = None,
+) -> list[dict]:
+    clauses = ["company_id = :company_id"]
+    params = {"company_id": company_id}
+    if branch_id is not None:
+        clauses.append("branch_id = :branch_id")
+        params["branch_id"] = branch_id
+    if schedule_status is not None:
+        clauses.append("status = :schedule_status")
+        params["schedule_status"] = schedule_status
+    if start_date is not None:
+        clauses.append("end_date >= :start_date")
+        params["start_date"] = start_date
+    if end_date is not None:
+        clauses.append("start_date <= :end_date")
+        params["end_date"] = end_date
+
+    query = text(
+        f"""
+        SELECT id, branch_id, start_date, end_date, status
+        FROM schedules
+        WHERE {" AND ".join(clauses)}
+        ORDER BY start_date, end_date, id
+        """
+    )
+    return [dict(row) for row in db.execute(query, params).mappings()]
+
+
+def find_active_schedule_conflict(
+    db: Session,
+    *,
+    company_id: int,
+    branch_id: int,
+    start_date: date,
+    end_date: date,
+) -> dict | None:
+    row = db.execute(
+        text(
+            """
+            SELECT id, branch_id, start_date, end_date, status
+            FROM schedules
+            WHERE company_id = :company_id
+              AND branch_id = :branch_id
+              AND status IN ('draft', 'published')
+              AND start_date <= :end_date
+              AND end_date >= :start_date
+            ORDER BY start_date, end_date, id
+            LIMIT 1
+            """
+        ),
+        {
+            "company_id": company_id,
+            "branch_id": branch_id,
+            "start_date": start_date,
+            "end_date": end_date,
+        },
+    ).mappings().first()
+    return None if row is None else dict(row)
+
+
 def list_schedule_shift_rows(db: Session, schedule_id: int) -> list[dict]:
     return list(
         db.execute(

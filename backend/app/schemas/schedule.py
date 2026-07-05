@@ -87,6 +87,7 @@ class ScheduleRequirementBulkRead(BaseModel):
 
 
 class ScheduleGenerateRequest(BaseModel):
+    branch_id: int = Field(ge=1)
     start_date: date | None = None
     end_date: date | None = None
 
@@ -129,10 +130,20 @@ class UnfilledRequirementRead(BaseModel):
 class ScheduleRead(BaseModel):
     id: int
     branch_id: int | None = None
+    start_date: date
+    end_date: date
     status: Literal["draft", "published", "archived"]
     shifts: list[ShiftRead]
     conflicts: list[ScheduleConflictRead]
     unfilled_requirements: list[UnfilledRequirementRead]
+
+
+class ScheduleListItemRead(BaseModel):
+    id: int
+    branch_id: int
+    start_date: date
+    end_date: date
+    status: Literal["draft", "published", "archived"]
 
 
 class ManualShiftCreate(BaseModel):

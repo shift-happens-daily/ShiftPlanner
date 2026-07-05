@@ -19,6 +19,7 @@ from app.schemas.schedule import (
     ManualShiftCreate,
     RequirementAssignRequest,
     ScheduleGenerateRequest,
+    ScheduleListItemRead,
     ScheduleRead,
     ScheduleRequirementBulkCreate,
     ScheduleRequirementBulkRead,
@@ -106,16 +107,41 @@ def create_bulk_requirements(
     return schedule_service.create_bulk_requirements(db, payload)
 
 
+@router.get(
+    "",
+    response_model=list[ScheduleListItemRead],
+    responses={**UNAUTHORIZED_RESPONSE, **FORBIDDEN_RESPONSE, **VALIDATION_ERROR_RESPONSE},
+)
+def get_schedules(
+    branch_id: int | None = Query(default=None, ge=1),
+    date_from: date | None = Query(default=None),
+    date_to: date | None = Query(default=None),
+    start_date: date | None = Query(default=None),
+    end_date: date | None = Query(default=None),
+    schedule_status: Literal["draft", "published", "archived"] | None = Query(default=None, alias="status"),
+    current_user: UserRead = Depends(require_role("manager")),
+    db: Session = Depends(get_db),
+) -> list[ScheduleListItemRead]:
+    return schedule_service.list_schedules(
+        db,
+        current_user,
+        branch_id=branch_id,
+        start_date=date_from or start_date,
+        end_date=date_to or end_date,
+        schedule_status=schedule_status,
+    )
+
+
 @router.post(
     "/generate",
-    response_model=list[ScheduleRead],
-    responses={**UNAUTHORIZED_RESPONSE, **FORBIDDEN_RESPONSE, **VALIDATION_ERROR_RESPONSE},
+    response_model=ScheduleRead,
+    responses={**BAD_REQUEST_RESPONSE, **UNAUTHORIZED_RESPONSE, **FORBIDDEN_RESPONSE, **VALIDATION_ERROR_RESPONSE},
 )
 def generate_schedule(
     payload: ScheduleGenerateRequest | None = None,
     current_user: UserRead = Depends(require_role("manager")),
     db: Session = Depends(get_db),
-) -> list[ScheduleRead]:
+) -> ScheduleRead:
     return schedule_service.generate_schedule(db, current_user, payload)
 
 
@@ -196,6 +222,28 @@ def get_latest_schedule(
     db: Session = Depends(get_db),
 ) -> ScheduleRead:
     return schedule_service.get_latest_schedule(db, current_user, schedule_status)
+
+
+@router.delete(
+    "/week",
+    status_code=status.HTTP_204_NO_CONTENT,
+    responses={**UNAUTHORIZED_RESPONSE, **FORBIDDEN_RESPONSE, **NOT_FOUND_RESPONSE, **VALIDATION_ERROR_RESPONSE},
+)
+def delete_schedule_week(
+    branch_id: int = Query(ge=1),
+    start_date: date = Query(),
+    end_date: date = Query(),
+    current_user: UserRead = Depends(require_role("manager")),
+    db: Session = Depends(get_db),
+) -> Response:
+    schedule_service.delete_schedule_for_branch_week(
+        db,
+        current_user,
+        branch_id=branch_id,
+        start_date=start_date,
+        end_date=end_date,
+    )
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
 @router.get(

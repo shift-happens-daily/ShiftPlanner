@@ -707,15 +707,18 @@ def _save_result(
     end_date: date,
     assignments: list[GeneratedAssignment],
 ) -> int:
-    existing_status = db.execute(
+    existing = db.execute(
         text(
             """
-            SELECT status
+            SELECT status, start_date, end_date
             FROM schedules
             WHERE company_id = :company_id
               AND branch_id = :branch_id
-              AND start_date = :start_date
-              AND end_date = :end_date
+              AND status IN ('draft', 'published')
+              AND start_date <= :end_date
+              AND end_date >= :start_date
+            ORDER BY start_date, end_date, id
+            LIMIT 1
             """
         ),
         {
@@ -724,10 +727,11 @@ def _save_result(
             "start_date": start_date,
             "end_date": end_date,
         },
-    ).scalar_one_or_none()
-    if existing_status is not None and existing_status != "draft":
+    ).mappings().first()
+    if existing is not None:
         raise ScheduleDataError(
-            "cannot regenerate over a published schedule; delete it first"
+            "schedule already exists for this branch and period "
+            f"({existing['status']}: {existing['start_date']} - {existing['end_date']})"
         )
 
     db.execute(
@@ -824,9 +828,10 @@ def _branch_matches(
 
 
 def _validate_week_period(start_date: date, end_date: date) -> None:
-    if start_date.weekday() != 0 or end_date != start_date + timedelta(days=6):
+    period_days = (end_date - start_date).days + 1
+    if start_date.weekday() != 0 or period_days not in {7, 14, 28}:
         raise ScheduleDataError(
-            "schedule generation requires one full Monday-Sunday week"
+            "schedule generation requires a Monday start date and a 7, 14, or 28 day period"
         )
 
 
