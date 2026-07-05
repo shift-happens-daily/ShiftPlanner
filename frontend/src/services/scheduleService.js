@@ -72,6 +72,42 @@ function pickPrimarySchedule(schedules) {
   return [...schedules].sort((a, b) => b.id - a.id)[0];
 }
 
+function withPeriod(schedule, period) {
+  if (!schedule) return schedule;
+  return {
+    ...schedule,
+    start_date: schedule.start_date || period?.start_date,
+    end_date: schedule.end_date || period?.end_date,
+  };
+}
+
+function normalizeGeneratedSchedules(data, period) {
+  const schedules = Array.isArray(data) ? data : [data].filter(Boolean);
+  return schedules.map((schedule) => withPeriod(schedule, period));
+}
+
+function combineGeneratedSchedules(schedules, period) {
+  if (schedules.length <= 1) {
+    return schedules[0] || null;
+  }
+
+  return {
+    id: null,
+    branch_id: null,
+    status: schedules[0]?.status || 'draft',
+    start_date: period?.start_date,
+    end_date: period?.end_date,
+    branch_schedules: schedules,
+    shifts: schedules.flatMap((schedule) =>
+      (schedule.shifts || []).map((shift) => ({ ...shift, branch_id: schedule.branch_id }))
+    ),
+    conflicts: schedules.flatMap((schedule) => schedule.conflicts || []),
+    unfilled_requirements: schedules.flatMap((schedule) =>
+      (schedule.unfilled_requirements || []).map((item) => ({ ...item, branch_id: schedule.branch_id }))
+    ),
+  };
+}
+
 /** Load draft/published schedules for the selected date range (one schedule per status). */
 export async function fetchScheduleVersions(period = null) {
   const loadByStatus = async (status) => {
@@ -97,14 +133,10 @@ export async function fetchScheduleVersions(period = null) {
   };
 }
 
-/** Generate one schedule for the full selected period. */
+/** Generate branch schedules for the full selected period. */
 export async function generateScheduleForPeriod(period) {
   const response = await api.post('/schedule/generate', period);
-  return {
-    ...response.data,
-    start_date: response.data?.start_date || period.start_date,
-    end_date: response.data?.end_date || period.end_date,
-  };
+  return combineGeneratedSchedules(normalizeGeneratedSchedules(response.data, period), period);
 }
 
 /** Solver-friendly default: next Mon–Sun week (matches recurring staffing/availability templates). */
@@ -199,7 +231,7 @@ export async function createBulkRequirements(payload) {
 
 export async function generateSchedule(payload) {
   const response = await api.post('/schedule/generate', payload);
-  return response.data;
+  return normalizeGeneratedSchedules(response.data, payload);
 }
 
 export async function getLatestSchedule(status) {

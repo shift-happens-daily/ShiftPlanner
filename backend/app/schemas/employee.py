@@ -4,11 +4,14 @@ from typing import Literal
 from pydantic import BaseModel, Field, model_validator
 
 
+AvailabilityStatus = Literal["available", "if_needed", "unavailable"]
+
+
 class AvailabilityBlock(BaseModel):
     weekday: int = Field(ge=0, le=6)
     start_time: time
     end_time: time
-    availability_status: Literal["available", "if_needed", "unavailable"] = "available"
+    availability_status: AvailabilityStatus = "available"
 
     @model_validator(mode="after")
     def validate_time_range(self) -> "AvailabilityBlock":

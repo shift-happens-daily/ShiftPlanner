@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends, File, UploadFile
 from sqlalchemy.orm import Session
 
-from app.api.dependencies import require_active_manager
+from app.api.dependencies import require_role
 from app.api.responses import BAD_REQUEST_RESPONSE, FORBIDDEN_RESPONSE, UNAUTHORIZED_RESPONSE
 from app.database import get_db
 from app.schemas.auth import UserRead
@@ -18,8 +18,8 @@ router = APIRouter()
 )
 async def import_requirements_xlsx(
     file: UploadFile = File(...),
-    current_user: UserRead = Depends(require_active_manager),
+    _: UserRead = Depends(require_role("manager")),
     db: Session = Depends(get_db),
 ) -> RequirementsImportResultRead:
     content = await file.read()
-    return import_service.import_requirements_xlsx(db, content, current_user)
+    return import_service.import_requirements_xlsx(db, content)
