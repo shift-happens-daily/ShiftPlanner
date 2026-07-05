@@ -54,6 +54,22 @@ CREATE TABLE positions (
     name VARCHAR(100) NOT NULL
 );
 
+CREATE OR REPLACE FUNCTION set_default_branch_id()
+RETURNS TRIGGER AS $$
+BEGIN
+    IF NEW.branch_id IS NULL THEN
+        SELECT id
+        INTO NEW.branch_id
+        FROM branches
+        WHERE company_id = NEW.company_id
+        ORDER BY id
+        LIMIT 1;
+    END IF;
+
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
 CREATE TABLE employees (
     id SERIAL PRIMARY KEY,
     employee_code VARCHAR(16) UNIQUE NOT NULL DEFAULT generate_alphanumeric_code(16),
@@ -62,16 +78,20 @@ CREATE TABLE employees (
     branch_id INTEGER REFERENCES branches(id) ON DELETE SET NULL,
     position_id INTEGER REFERENCES positions(id) ON DELETE SET NULL,
     max_hours_per_week INTEGER DEFAULT 40 CHECK (max_hours_per_week > 0),
+    min_hours_per_shift INTEGER DEFAULT 5 CHECK (min_hours_per_shift > 0),
+    max_hours_per_shift INTEGER DEFAULT 12 CHECK (max_hours_per_shift > 0),
     is_active BOOLEAN DEFAULT TRUE,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     UNIQUE (user_id, company_id),
-    CHECK (employee_code ~ '^[A-Za-z0-9]{16}$')
+    CHECK (employee_code ~ '^[A-Za-z0-9]{16}$'),
+    CHECK (max_hours_per_shift >= min_hours_per_shift)
 );
 
 CREATE TABLE employee_availability (
     id SERIAL PRIMARY KEY,
     employee_id INTEGER NOT NULL REFERENCES employees(id) ON DELETE CASCADE,
+    availability_date DATE,
     weekday INTEGER NOT NULL CHECK (weekday BETWEEN 0 AND 6),
     start_time TIME NOT NULL,
     end_time TIME NOT NULL,
@@ -82,8 +102,12 @@ CREATE TABLE employee_availability (
     CHECK (end_time > start_time),
     CHECK (EXTRACT(MINUTE FROM start_time)::INTEGER % 5 = 0),
     CHECK (EXTRACT(MINUTE FROM end_time)::INTEGER % 5 = 0),
-    UNIQUE (employee_id, weekday, start_time, end_time)
+    UNIQUE (employee_id, weekday, start_time, end_time),
+    UNIQUE (employee_id, availability_date, start_time, end_time)
 );
+
+CREATE INDEX idx_employee_availability_exact_date
+    ON employee_availability (employee_id, availability_date, start_time, end_time);
 
 CREATE TABLE employee_desired_days_off (
     id SERIAL PRIMARY KEY,
@@ -98,13 +122,17 @@ CREATE TABLE absences (
     absence_type VARCHAR(50) NOT NULL CHECK (absence_type IN ('vacation', 'sick_leave', 'other')),
     start_date DATE NOT NULL,
     end_date DATE NOT NULL,
-    comment TEXT
+    comment TEXT,
+    CHECK (end_date >= start_date)
 );
+
+CREATE INDEX idx_absences_employee_dates
+    ON absences (employee_id, start_date, end_date);
 
 CREATE TABLE shift_requirements (
     id SERIAL PRIMARY KEY,
     company_id INTEGER NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
-    branch_id INTEGER REFERENCES branches(id) ON DELETE CASCADE,
+    branch_id INTEGER NOT NULL REFERENCES branches(id) ON DELETE CASCADE,
     position_id INTEGER NOT NULL REFERENCES positions(id) ON DELETE CASCADE,
     shift_date DATE NOT NULL,
     start_time TIME NOT NULL,
@@ -117,15 +145,35 @@ CREATE TABLE shift_requirements (
     CHECK (EXTRACT(MINUTE FROM end_time)::INTEGER % 5 = 0)
 );
 
+CREATE TRIGGER trg_shift_requirements_default_branch
+BEFORE INSERT OR UPDATE ON shift_requirements
+FOR EACH ROW
+EXECUTE FUNCTION set_default_branch_id();
+
+CREATE INDEX idx_shift_requirements_branch_date
+    ON shift_requirements (company_id, branch_id, shift_date, position_id);
+
 CREATE TABLE schedules (
     id SERIAL PRIMARY KEY,
     company_id INTEGER NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
+    branch_id INTEGER NOT NULL REFERENCES branches(id) ON DELETE CASCADE,
     start_date DATE NOT NULL,
     end_date DATE NOT NULL,
     status VARCHAR(50) NOT NULL DEFAULT 'draft'
         CHECK (status IN ('draft', 'published', 'archived')),
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
+
+CREATE TRIGGER trg_schedules_default_branch
+BEFORE INSERT OR UPDATE ON schedules
+FOR EACH ROW
+EXECUTE FUNCTION set_default_branch_id();
+
+CREATE UNIQUE INDEX uq_schedules_company_branch_week
+    ON schedules (company_id, branch_id, start_date, end_date);
+
+CREATE INDEX idx_schedules_retention_end_date
+    ON schedules (end_date);
 
 CREATE TABLE shifts (
     id SERIAL PRIMARY KEY,

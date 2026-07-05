@@ -98,6 +98,9 @@ def generate_schedule(
 
     if end_date < start_date:
         raise ScheduleDataError("end_date must be on or after start_date")
+    _validate_week_period(start_date, end_date)
+    if branch_id is None:
+        raise ScheduleDataError("branch_id is required for schedule generation")
     if max_time_seconds <= 0:
         raise ScheduleDataError("max_time_seconds must be positive")
     if num_workers <= 0:
@@ -111,6 +114,31 @@ def generate_schedule(
         end_date=end_date,
     )
     _validate_loaded_data(data)
+
+    if not data.demand:
+        try:
+            schedule_id = _save_result(
+                db,
+                company_id=company_id,
+                branch_id=branch_id,
+                start_date=start_date,
+                end_date=end_date,
+                assignments=[],
+            )
+            if commit:
+                db.commit()
+        except Exception:
+            db.rollback()
+            raise
+
+        return ScheduleResult(
+            schedule_id=schedule_id,
+            solver_status="optimal",
+            assignments=(),
+            uncovered_slots=(),
+            total_required_slots=0,
+            total_uncovered_slots=0,
+        )
 
     (
         model,
@@ -206,6 +234,7 @@ def generate_schedule(
         schedule_id = _save_result(
             db,
             company_id=company_id,
+            branch_id=branch_id,
             start_date=start_date,
             end_date=end_date,
             assignments=assignments,
@@ -234,60 +263,34 @@ def _load_data(
     start_date: date,
     end_date: date,
 ) -> LoadedData:
-    if branch_id is not None:
-        branch_exists = db.execute(
-            text(
-                """
-                SELECT 1
-                FROM branches
-                WHERE id = :branch_id AND company_id = :company_id
-                """
-            ),
-            {"branch_id": branch_id, "company_id": company_id},
-        ).scalar_one_or_none()
-        if branch_exists is None:
-            raise ScheduleDataError("branch does not belong to the requested company")
+    branch_exists = db.execute(
+        text(
+            """
+            SELECT 1
+            FROM branches
+            WHERE id = :branch_id AND company_id = :company_id
+            """
+        ),
+        {"branch_id": branch_id, "company_id": company_id},
+    ).scalar_one_or_none()
+    if branch_exists is None:
+        raise ScheduleDataError("branch does not belong to the requested company")
 
-    if branch_id is None:
-        employee_branch_filter = ""
-        requirement_branch_filter = ""
-        employee_scope_params = {"company_id": company_id}
-        requirement_scope_params = {
-            "company_id": company_id,
-            "start_date": start_date,
-            "end_date": end_date,
-        }
-        absence_scope_params = {
-            "company_id": company_id,
-            "start_date": start_date,
-            "end_date": end_date,
-        }
-    else:
-        employee_branch_filter = """
-              AND (
-                  branch_id = :branch_id
-                  OR branch_id IS NULL
-              )
-        """
-        requirement_branch_filter = """
-                  AND (
-                      branch_id = :branch_id
-                      OR branch_id IS NULL
-                  )
-        """
-        employee_scope_params = {"company_id": company_id, "branch_id": branch_id}
-        requirement_scope_params = {
-            "company_id": company_id,
-            "branch_id": branch_id,
-            "start_date": start_date,
-            "end_date": end_date,
-        }
-        absence_scope_params = {
-            "company_id": company_id,
-            "branch_id": branch_id,
-            "start_date": start_date,
-            "end_date": end_date,
-        }
+    employee_branch_filter = "AND branch_id = :branch_id"
+    requirement_branch_filter = "AND branch_id = :branch_id"
+    employee_scope_params = {"company_id": company_id, "branch_id": branch_id}
+    requirement_scope_params = {
+        "company_id": company_id,
+        "branch_id": branch_id,
+        "start_date": start_date,
+        "end_date": end_date,
+    }
+    absence_scope_params = {
+        "company_id": company_id,
+        "branch_id": branch_id,
+        "start_date": start_date,
+        "end_date": end_date,
+    }
 
     employee_rows = db.execute(
         text(
@@ -296,7 +299,9 @@ def _load_data(
                 id,
                 branch_id,
                 position_id,
-                max_hours_per_week
+                max_hours_per_week,
+                min_hours_per_shift,
+                max_hours_per_shift
             FROM employees
             WHERE company_id = :company_id
               AND is_active = TRUE
@@ -310,9 +315,9 @@ def _load_data(
         EmployeeData(
             id=row["id"],
             position_id=row["position_id"],
-            weekly_target_slots=max((row["max_hours_per_week"] or 0) * SLOTS_PER_HOUR, 0),
-            min_daily_slots=0,
-            max_daily_slots=max((row["max_hours_per_week"] or 0) * SLOTS_PER_HOUR, 0),
+            weekly_target_slots=(row["max_hours_per_week"] or 40) * SLOTS_PER_HOUR,
+            min_daily_slots=(row["min_hours_per_shift"] or 5) * SLOTS_PER_HOUR,
+            max_daily_slots=(row["max_hours_per_shift"] or 12) * SLOTS_PER_HOUR,
             branch_id=row["branch_id"],
         )
         for row in employee_rows
@@ -365,7 +370,7 @@ def _load_data(
             f"""
             SELECT
                 availability.employee_id,
-                availability.weekday,
+                availability.availability_date,
                 availability.start_time,
                 availability.end_time,
                 availability.availability_status
@@ -374,22 +379,21 @@ def _load_data(
             WHERE employees.company_id = :company_id
               AND employees.is_active = TRUE
             {employee_branch_filter.replace("branch_id", "employees.branch_id")}
+              AND availability.availability_date BETWEEN :start_date AND :end_date
             """
         ),
-        employee_scope_params,
+        {**employee_scope_params, "start_date": start_date, "end_date": end_date},
     ).mappings()
     availability: dict[tuple[int, date, time], str] = {}
     for row in availability_rows:
-        for work_date in dates:
-            if work_date.weekday() != row["weekday"]:
+        work_date = row["availability_date"]
+        for slot_time in business_slots.get(work_date, []):
+            if not _slot_in_range(slot_time, row["start_time"], row["end_time"]):
                 continue
-            for slot_time in business_slots[work_date]:
-                if not _slot_in_range(slot_time, row["start_time"], row["end_time"]):
-                    continue
-                key = (row["employee_id"], work_date, slot_time)
-                current = availability.get(key)
-                if current is None or _availability_priority(row["availability_status"]) > _availability_priority(current):
-                    availability[key] = row["availability_status"]
+            key = (row["employee_id"], work_date, slot_time)
+            current = availability.get(key)
+            if current is None or _availability_priority(row["availability_status"]) > _availability_priority(current):
+                availability[key] = row["availability_status"]
 
     absence_rows = db.execute(
         text(
@@ -597,6 +601,8 @@ def _build_model(data: LoadedData):
                 f"target_over_e{employee.id}_{monday.isoformat()}",
             )
             model.add(sum(week_vars) + under - over == prorated_target)
+            if employee.weekly_target_slots > 0:
+                model.add(sum(week_vars) <= employee.weekly_target_slots)
             target_deviation_vars.extend((under, over))
 
     return (
@@ -696,15 +702,40 @@ def _save_result(
     db: Session,
     *,
     company_id: int,
+    branch_id: int,
     start_date: date,
     end_date: date,
     assignments: list[GeneratedAssignment],
 ) -> int:
+    existing_status = db.execute(
+        text(
+            """
+            SELECT status
+            FROM schedules
+            WHERE company_id = :company_id
+              AND branch_id = :branch_id
+              AND start_date = :start_date
+              AND end_date = :end_date
+            """
+        ),
+        {
+            "company_id": company_id,
+            "branch_id": branch_id,
+            "start_date": start_date,
+            "end_date": end_date,
+        },
+    ).scalar_one_or_none()
+    if existing_status is not None and existing_status != "draft":
+        raise ScheduleDataError(
+            "cannot regenerate over a published schedule; delete it first"
+        )
+
     db.execute(
         text(
             """
             DELETE FROM schedules
             WHERE company_id = :company_id
+              AND branch_id = :branch_id
               AND start_date = :start_date
               AND end_date = :end_date
               AND status = 'draft'
@@ -712,6 +743,7 @@ def _save_result(
         ),
         {
             "company_id": company_id,
+            "branch_id": branch_id,
             "start_date": start_date,
             "end_date": end_date,
         },
@@ -719,13 +751,14 @@ def _save_result(
     schedule_id = db.execute(
         text(
             """
-            INSERT INTO schedules (company_id, start_date, end_date, status)
-            VALUES (:company_id, :start_date, :end_date, 'draft')
+            INSERT INTO schedules (company_id, branch_id, start_date, end_date, status)
+            VALUES (:company_id, :branch_id, :start_date, :end_date, 'draft')
             RETURNING id
             """
         ),
         {
             "company_id": company_id,
+            "branch_id": branch_id,
             "start_date": start_date,
             "end_date": end_date,
         },
@@ -787,11 +820,14 @@ def _branch_matches(
     employee_branch_id: int | None,
     demand_branch_id: int | None,
 ) -> bool:
-    return (
-        employee_branch_id is None
-        or demand_branch_id is None
-        or employee_branch_id == demand_branch_id
-    )
+    return employee_branch_id == demand_branch_id
+
+
+def _validate_week_period(start_date: date, end_date: date) -> None:
+    if start_date.weekday() != 0 or end_date != start_date + timedelta(days=6):
+        raise ScheduleDataError(
+            "schedule generation requires one full Monday-Sunday week"
+        )
 
 
 def _availability_priority(status_value: str) -> int:

@@ -7,10 +7,8 @@ INVITE_CODE_PATTERN = re.compile(r"^[A-Z0-9]{16}$")
 PUBLIC_ID_PATTERN = re.compile(r"^[A-Z0-9]{16}$")
 
 
-class CompanyLinkUserRequest(BaseModel):
+class CompanyUserPublicIdRequest(BaseModel):
     user_public_id: str = Field(..., min_length=16, max_length=16)
-    branch_id: int | None = None
-    position_id: int | None = None
 
     @field_validator("user_public_id")
     @classmethod
@@ -19,6 +17,11 @@ class CompanyLinkUserRequest(BaseModel):
         if not PUBLIC_ID_PATTERN.fullmatch(normalized):
             raise ValueError("User public ID must be a 16-character alphanumeric code.")
         return normalized
+
+
+class CompanyLinkUserRequest(CompanyUserPublicIdRequest):
+    branch_id: int | None = None
+    position_id: int | None = None
 
 
 class LinkedEmployeePositionRead(BaseModel):
