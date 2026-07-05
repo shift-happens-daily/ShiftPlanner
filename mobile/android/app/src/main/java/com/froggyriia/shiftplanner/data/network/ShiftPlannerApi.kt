@@ -134,7 +134,7 @@ interface ShiftPlannerApi {
     // ── Schedule ──────────────────────────────────────────────────────────────
 
     @POST("schedule/generate")
-    suspend fun generateSchedule(@Body request: ScheduleGenerateRequestDto): ScheduleResponseDto
+    suspend fun generateSchedule(@Body request: ScheduleGenerateRequestDto): List<ScheduleResponseDto>
 
     @GET("schedule/latest")
     suspend fun getLatestSchedule(@Query("status") status: String? = null): Response<ScheduleResponseDto>
@@ -180,6 +180,44 @@ interface ShiftPlannerApi {
         @Path("requirementId") requirementId: Int,
         @Body request: ScheduleRequirementInScheduleUpdateDto
     ): ScheduleResponseDto
+
+    // ── Absences ──────────────────────────────────────────────────────────────
+
+    @GET("employees/me/absences")
+    suspend fun getMyAbsences(): List<AbsenceResponseDto>
+
+    @POST("employees/me/absences")
+    suspend fun createMyAbsence(@Body request: AbsenceCreateRequestDto): AbsenceResponseDto
+
+    @GET("employees/{id}/absences")
+    suspend fun getEmployeeAbsences(@Path("id") id: Int): List<AbsenceResponseDto>
+
+    @PATCH("employees/{id}/absences/{absenceId}")
+    suspend fun updateAbsence(
+        @Path("id") employeeId: Int,
+        @Path("absenceId") absenceId: Int,
+        @Body request: AbsenceCreateRequestDto
+    ): AbsenceResponseDto
+
+    @DELETE("employees/{id}/absences/{absenceId}")
+    suspend fun deleteAbsence(
+        @Path("id") employeeId: Int,
+        @Path("absenceId") absenceId: Int
+    ): Response<Unit>
+
+    // ── Shift exchange requests ───────────────────────────────────────────────
+
+    @POST("schedule/exchanges")
+    suspend fun createExchangeRequest(@Body request: ShiftExchangeCreateRequestDto): ShiftExchangeResponseDto
+
+    @GET("schedule/exchanges")
+    suspend fun getExchangeRequests(): List<ShiftExchangeResponseDto>
+
+    @POST("schedule/exchanges/{id}/approve")
+    suspend fun approveExchangeRequest(@Path("id") id: Int): ShiftExchangeResponseDto
+
+    @POST("schedule/exchanges/{id}/reject")
+    suspend fun rejectExchangeRequest(@Path("id") id: Int): ShiftExchangeResponseDto
 
     // ── Reports ───────────────────────────────────────────────────────────────
 

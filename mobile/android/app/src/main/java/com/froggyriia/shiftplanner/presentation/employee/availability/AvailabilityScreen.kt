@@ -17,6 +17,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.BottomAppBar
 import androidx.compose.material3.Button
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.MaterialTheme
@@ -101,6 +102,35 @@ fun AvailabilityScreen(
         Column(Modifier.padding(padding)) {
             // Legend
             AvailabilityLegend()
+
+            // Quick actions
+            Row(
+                Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 8.dp),
+                horizontalArrangement = Arrangement.spacedBy(0.dp)
+            ) {
+                TextButton(
+                    onClick = viewModel::copyPreviousWeek,
+                    enabled = !state.isSaving
+                ) {
+                    Text(
+                        "Restore saved",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                }
+                TextButton(
+                    onClick = viewModel::resetWeek,
+                    enabled = !state.isSaving
+                ) {
+                    Text(
+                        "Reset week",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.error
+                    )
+                }
+            }
 
             // Grid
             val hScroll = rememberScrollState()

@@ -1152,4 +1152,3 @@ private fun shareFile(context: Context, uriString: String, mimeType: String) {
         addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
     })
 }
-}

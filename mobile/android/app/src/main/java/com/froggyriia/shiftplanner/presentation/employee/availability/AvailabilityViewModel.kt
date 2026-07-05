@@ -29,6 +29,9 @@ class AvailabilityViewModel(
     private val _uiState = MutableStateFlow(AvailabilityUiState())
     val uiState: StateFlow<AvailabilityUiState> = _uiState.asStateFlow()
 
+    /** Last successfully loaded grid — used by copyPreviousWeek() */
+    private var lastSavedGrid: Map<Int, Map<Int, AvailabilitySlotState>> = emptyMap()
+
     init {
         loadAvailability()
     }
@@ -38,8 +41,10 @@ class AvailabilityViewModel(
             _uiState.value = _uiState.value.copy(isLoading = true, errorMessage = null)
             try {
                 val data = repository.fetchAvailability(employeeId)
+                val grid = blocksToGrid(data.weeklyAvailability)
+                lastSavedGrid = grid
                 _uiState.value = _uiState.value.copy(
-                    grid = blocksToGrid(data.weeklyAvailability),
+                    grid = grid,
                     isLoading = false,
                     hasChanges = false
                 )
@@ -47,6 +52,16 @@ class AvailabilityViewModel(
                 _uiState.value = _uiState.value.copy(isLoading = false, errorMessage = e.message)
             }
         }
+    }
+
+    /** Restore to last saved state (mirrors iOS "copy previous week" for repeating template). */
+    fun copyPreviousWeek() {
+        _uiState.value = _uiState.value.copy(grid = lastSavedGrid, hasChanges = true)
+    }
+
+    /** Clear all slots to UNAVAILABLE. */
+    fun resetWeek() {
+        _uiState.value = _uiState.value.copy(grid = emptyMap(), hasChanges = true)
     }
 
     fun toggleSlot(weekday: Int, slot: Int) {
@@ -81,6 +96,7 @@ class AvailabilityViewModel(
                         desiredDaysOff = emptyList()
                     )
                 )
+                lastSavedGrid = _uiState.value.grid
                 _uiState.value = _uiState.value.copy(
                     isSaving = false,
                     hasChanges = false,

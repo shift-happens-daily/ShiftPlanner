@@ -6,7 +6,7 @@ import com.froggyriia.shiftplanner.domain.model.AppScheduledShift
 import com.froggyriia.shiftplanner.domain.model.ScheduleShiftMutation
 
 interface ScheduleRepository {
-    suspend fun generateSchedule(startDate: String, endDate: String): AppSchedule
+    suspend fun generateSchedule(startDate: String, endDate: String): List<AppSchedule>
     suspend fun fetchSchedule(scheduleId: Int): AppSchedule
     suspend fun fetchLatestSchedule(status: String? = null): AppSchedule?
     suspend fun publishSchedule(scheduleId: Int): AppSchedule

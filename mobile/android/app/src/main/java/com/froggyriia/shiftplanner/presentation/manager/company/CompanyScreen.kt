@@ -11,8 +11,13 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
+import android.content.ClipData
+import android.content.ClipboardManager
+import android.content.Context
+import android.content.Intent
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Share
@@ -37,11 +42,15 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.froggyriia.shiftplanner.data.company.CompanyRepository
 import com.froggyriia.shiftplanner.domain.model.AppCompany
@@ -145,6 +154,9 @@ private fun CompanyDetailsContent(
     viewModel: CompanyDetailsViewModel
 ) {
     val state by viewModel.uiState.collectAsState()
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    var didCopy by remember { mutableStateOf(false) }
 
     Scaffold(
         topBar = {
@@ -183,23 +195,57 @@ private fun CompanyDetailsContent(
                     Card(modifier = Modifier.fillMaxWidth()) {
                         Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                             Text("Invite code", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            Text(
+                                company.inviteCode,
+                                style = MaterialTheme.typography.titleLarge,
+                                fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace
+                            )
                             Row(
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.SpaceBetween,
+                                horizontalArrangement = Arrangement.spacedBy(8.dp),
                                 modifier = Modifier.fillMaxWidth()
                             ) {
-                                Text(
-                                    company.inviteCode,
-                                    style = MaterialTheme.typography.titleMedium
-                                )
-                                Row {
-                                    if (state.isRegeneratingCode) {
-                                        CircularProgressIndicator(modifier = Modifier.height(24.dp))
-                                    } else {
-                                        IconButton(onClick = viewModel::regenerateInviteCode) {
-                                            Icon(Icons.Default.Share, contentDescription = "Regenerate code")
+                                // Copy button with "Copied!" feedback
+                                OutlinedButton(
+                                    onClick = {
+                                        val cm = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                                        cm.setPrimaryClip(ClipData.newPlainText("Invite code", company.inviteCode))
+                                        didCopy = true
+                                        scope.launch {
+                                            delay(2000)
+                                            didCopy = false
                                         }
-                                    }
+                                    },
+                                    modifier = Modifier.weight(1f)
+                                ) {
+                                    Icon(Icons.Default.ContentCopy, null, modifier = Modifier.padding(end = 4.dp))
+                                    Text(if (didCopy) "Copied!" else "Copy code")
+                                }
+                                // Share button
+                                Button(
+                                    onClick = {
+                                        val shareText = "Join ${company.name} in ShiftPlanner with invite code: ${company.inviteCode}"
+                                        val intent = Intent(Intent.ACTION_SEND).apply {
+                                            type = "text/plain"
+                                            putExtra(Intent.EXTRA_TEXT, shareText)
+                                            putExtra(Intent.EXTRA_SUBJECT, "ShiftPlanner invite")
+                                        }
+                                        context.startActivity(Intent.createChooser(intent, "Share invite").apply {
+                                            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                                        })
+                                    },
+                                    modifier = Modifier.weight(1f)
+                                ) {
+                                    Icon(Icons.Default.Share, null, modifier = Modifier.padding(end = 4.dp))
+                                    Text("Share")
+                                }
+                            }
+                            // Regenerate code
+                            if (state.isRegeneratingCode) {
+                                CircularProgressIndicator(modifier = Modifier.height(20.dp))
+                            } else {
+                                TextButton(onClick = viewModel::regenerateInviteCode) {
+                                    Text("Generate new code", style = MaterialTheme.typography.labelSmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant)
                                 }
                             }
 

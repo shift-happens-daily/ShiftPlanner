@@ -58,6 +58,7 @@ data class AppUnfilledRequirement(
 
 data class AppSchedule(
     val id: Int,
+    val branchId: Int?,
     val status: AppScheduleStatus,
     val shifts: List<AppScheduledShift>,
     val unfilledRequirements: List<AppUnfilledRequirement>

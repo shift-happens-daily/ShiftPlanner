@@ -35,11 +35,14 @@ data class ScheduleShiftUpdateRequestDto(
     @SerializedName("position_id")
     val positionId: Int,
     @SerializedName("employee_id")
-    val employeeId: Int?
+    val employeeId: Int?,
+    val action: String? = null
 )
 
 data class ScheduleResponseDto(
     val id: Int,
+    @SerializedName("branch_id")
+    val branchId: Int?,
     val status: String,
     val shifts: List<ScheduleShiftResponseDto>,
     @SerializedName("unfilled_requirements")
@@ -114,4 +117,48 @@ data class ScheduleRequirementInScheduleUpdateDto(
     val startTime: String,
     @SerializedName("end_time")
     val endTime: String
+)
+
+// ── Absences ──────────────────────────────────────────────────────────────────
+
+data class AbsenceCreateRequestDto(
+    @SerializedName("absence_type")
+    val absenceType: String,
+    @SerializedName("start_date")
+    val startDate: String,
+    @SerializedName("end_date")
+    val endDate: String,
+    val comment: String? = null
+)
+
+data class AbsenceResponseDto(
+    val id: Int,
+    @SerializedName("absence_type")
+    val absenceType: String,
+    @SerializedName("start_date")
+    val startDate: String,
+    @SerializedName("end_date")
+    val endDate: String,
+    val comment: String?,
+    val status: String,
+    @SerializedName("employee_id")
+    val employeeId: Int
+)
+
+// ── Shift exchange requests ───────────────────────────────────────────────────
+
+data class ShiftExchangeCreateRequestDto(
+    @SerializedName("shift_id")
+    val shiftId: Int,
+    val note: String? = null
+)
+
+data class ShiftExchangeResponseDto(
+    val id: Int,
+    @SerializedName("shift_id")
+    val shiftId: Int,
+    val note: String?,
+    val status: String,
+    @SerializedName("employee_id")
+    val employeeId: Int
 )

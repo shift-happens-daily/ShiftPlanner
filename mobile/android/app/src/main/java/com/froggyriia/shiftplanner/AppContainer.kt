@@ -15,6 +15,8 @@ import com.froggyriia.shiftplanner.data.requirements.ApiRequirementsRepository
 import com.froggyriia.shiftplanner.data.requirements.RequirementsRepository
 import com.froggyriia.shiftplanner.data.reports.ApiReportsRepository
 import com.froggyriia.shiftplanner.data.reports.ReportsRepository
+import com.froggyriia.shiftplanner.data.absence.AbsenceRepository
+import com.froggyriia.shiftplanner.data.absence.ApiAbsenceRepository
 import com.froggyriia.shiftplanner.data.schedule.ApiScheduleRepository
 import com.froggyriia.shiftplanner.data.schedule.ScheduleRepository
 
@@ -38,6 +40,8 @@ class AppContainer(
     val scheduleRepository: ScheduleRepository = ApiScheduleRepository(apiClient)
 
     val reportsRepository: ReportsRepository = ApiReportsRepository(apiClient)
+
+    val absenceRepository: AbsenceRepository = ApiAbsenceRepository(apiClient)
 
     /** Pass companyId after login to scope positions to the manager's company. */
     fun employeeManagementRepository(companyId: Int?): EmployeeManagementRepository =

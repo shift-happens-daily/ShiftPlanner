@@ -3,8 +3,10 @@ package com.froggyriia.shiftplanner.presentation
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
@@ -17,6 +19,8 @@ import androidx.compose.material.icons.filled.EventAvailable
 import androidx.compose.material.icons.filled.Group
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.Card
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -24,7 +28,6 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.OutlinedButton
-import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -48,6 +51,8 @@ import com.froggyriia.shiftplanner.data.reports.ReportsRepository
 import com.froggyriia.shiftplanner.domain.model.AppUser
 import com.froggyriia.shiftplanner.domain.model.MySelfReport
 import com.froggyriia.shiftplanner.domain.model.UserRole
+import com.froggyriia.shiftplanner.ui.theme.AppThemePreference
+import com.froggyriia.shiftplanner.ui.theme.ThemeStore
 import com.froggyriia.shiftplanner.presentation.auth.AuthScreen
 import com.froggyriia.shiftplanner.presentation.auth.AuthViewModel
 import com.froggyriia.shiftplanner.presentation.employee.availability.AvailabilityScreen
@@ -369,6 +374,7 @@ private fun ProfileScreen(
     onDeleteAccount: (() -> Unit)? = null
 ) {
     var myReport by remember { mutableStateOf<MySelfReport?>(null) }
+    val currentTheme by ThemeStore.theme.collectAsState()
 
     LaunchedEffect(reportsRepository) {
         if (reportsRepository != null) {
@@ -391,8 +397,11 @@ private fun ProfileScreen(
                 tint = MaterialTheme.colorScheme.primary
             )
             Text(user.name, style = MaterialTheme.typography.headlineSmall)
-            Text(user.email, style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text(
+                user.email,
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
 
             // Stats (employees only)
             myReport?.let { report ->
@@ -421,6 +430,56 @@ private fun ProfileScreen(
                 }
                 Spacer(Modifier.height(4.dp))
                 HorizontalDivider()
+            }
+
+            // Theme picker
+            Spacer(Modifier.height(4.dp))
+            HorizontalDivider()
+            Spacer(Modifier.height(4.dp))
+            Text(
+                "App Theme",
+                style = MaterialTheme.typography.titleSmall,
+                fontWeight = FontWeight.SemiBold
+            )
+            Text(
+                "Current: ${currentTheme.title}",
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.primary
+            )
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                AppThemePreference.entries.forEach { pref ->
+                    val selected = pref == currentTheme
+                    Card(
+                        onClick = { ThemeStore.setTheme(pref) },
+                        modifier = Modifier.weight(1f),
+                        colors = androidx.compose.material3.CardDefaults.cardColors(
+                            containerColor = if (selected)
+                                MaterialTheme.colorScheme.primaryContainer
+                            else
+                                MaterialTheme.colorScheme.surfaceVariant
+                        )
+                    ) {
+                        Box(
+                            Modifier
+                                .fillMaxWidth()
+                                .padding(vertical = 12.dp),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text(
+                                pref.title,
+                                style = MaterialTheme.typography.labelMedium,
+                                fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal,
+                                color = if (selected)
+                                    MaterialTheme.colorScheme.onPrimaryContainer
+                                else
+                                    MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    }
+                }
             }
 
             Spacer(Modifier.height(4.dp))

@@ -25,10 +25,10 @@ class ApiScheduleRepository(
     private val apiClient: ApiClient
 ) : ScheduleRepository {
 
-    override suspend fun generateSchedule(startDate: String, endDate: String): AppSchedule = wrap {
+    override suspend fun generateSchedule(startDate: String, endDate: String): List<AppSchedule> = wrap {
         apiClient.api.generateSchedule(
             ScheduleGenerateRequestDto(startDate = startDate, endDate = endDate)
-        ).toDomain()
+        ).map { it.toDomain() }
     }
 
     override suspend fun fetchSchedule(scheduleId: Int): AppSchedule = wrap {
@@ -100,6 +100,11 @@ class ApiScheduleRepository(
         shiftId: Int,
         mutation: ScheduleShiftMutation
     ): AppSchedule = wrap {
+        val resolvedEmployeeId = mutation.employeeId?.takeIf { it > 0 }
+        val action = when {
+            resolvedEmployeeId != null -> "reassign"
+            else -> "remove"
+        }
         apiClient.api.updateShift(
             scheduleId = scheduleId,
             shiftId = shiftId,
@@ -108,7 +113,8 @@ class ApiScheduleRepository(
                 startTime = minutesToTime(mutation.startMinutes),
                 endTime = minutesToTime(mutation.endMinutes),
                 positionId = mutation.positionId,
-                employeeId = mutation.employeeId?.takeIf { it > 0 }
+                employeeId = resolvedEmployeeId,
+                action = action
             )
         ).toDomain()
     }
@@ -146,6 +152,7 @@ class ApiScheduleRepository(
             ?: throw Exception("Unknown schedule status: $status")
         return AppSchedule(
             id = id,
+            branchId = branchId,
             status = scheduleStatus,
             shifts = shifts.map { it.toShift() },
             unfilledRequirements = unfilledRequirements.map { it.toUnfilled() }

@@ -48,6 +48,7 @@ data class UnfilledReqDraft(
 
 data class ScheduleUiState(
     val schedule: AppSchedule? = null,
+    val allSchedules: List<AppSchedule> = emptyList(),
     val positions: List<RequirementPositionOption> = emptyList(),
     val weekDates: List<String> = emptyList(),
     val weekLabel: String = "",
@@ -116,16 +117,25 @@ class ScheduleViewModel(
         viewModelScope.launch {
             _uiState.value = _uiState.value.copy(isGenerating = true, errorMessage = null)
             try {
-                val schedule = repository.generateSchedule(startDate, endDate)
+                val schedules = repository.generateSchedule(startDate, endDate)
                 _uiState.value = _uiState.value.copy(
-                    schedule = schedule,
+                    allSchedules = schedules,
+                    schedule = schedules.firstOrNull(),
                     isGenerating = false,
-                    statusMessage = "Schedule generated."
+                    statusMessage = if (schedules.size > 1)
+                        "Generated ${schedules.size} branch schedules."
+                    else
+                        "Schedule generated."
                 )
             } catch (e: Exception) {
                 _uiState.value = _uiState.value.copy(isGenerating = false, errorMessage = e.message)
             }
         }
+    }
+
+    /** Switch the active schedule when multiple branches are present. */
+    fun selectSchedule(schedule: AppSchedule) {
+        _uiState.value = _uiState.value.copy(schedule = schedule)
     }
 
     fun publishSchedule() {
