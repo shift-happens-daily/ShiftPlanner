@@ -5,6 +5,8 @@ const translations = {
     requestFailed: 'Не удалось выполнить запрос.',
     validationError: 'Проверьте введенные данные.',
     network: 'Бэкенд недоступен.',
+    serverError: 'Ошибка на сервере при генерации. Попросите бэкендера проверить логи: docker compose logs backend.',
+    noResponse: 'Сервер не ответил — возможно, упал при генерации. Проверьте логи бэкенда.',
     sessionExpired: 'Сессия истекла. Войдите снова.',
     forbidden: 'У вас нет прав для этого действия.',
     notFound: 'Запрошенные данные не найдены.',
@@ -33,6 +35,8 @@ const translations = {
     requestFailed: 'Request failed.',
     validationError: 'Please check the entered data.',
     network: 'Backend is unavailable.',
+    serverError: 'Server error during generation. Ask the backend developer to check: docker compose logs backend.',
+    noResponse: 'Server did not respond — it may have crashed during generation. Check backend logs.',
     sessionExpired: 'Session expired. Please log in again.',
     forbidden: 'You do not have permission for this action.',
     notFound: 'Requested data was not found.',
@@ -153,7 +157,22 @@ export function extractApiErrorMessage(error, fallbackMessage, language = getSto
     return messages.validationError;
   }
 
-  if (error.message === 'Network Error') {
+  if (error.response?.status === 409) {
+    const detail = error.response?.data?.detail;
+    if (typeof detail === 'string') {
+      return localizeBackendMessage(detail, language);
+    }
+  }
+
+  if (error.response?.status >= 500) {
+    return messages.serverError;
+  }
+
+  if (error.request && !error.response) {
+    return messages.noResponse;
+  }
+
+  if (error.message === 'Network Error' || error.code === 'ERR_NETWORK') {
     return messages.network;
   }
 

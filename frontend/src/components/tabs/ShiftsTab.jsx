@@ -27,6 +27,16 @@ import {
   getPositionLabel,
   normalizeAvailabilityStatus,
 } from '../../utils/employeeDisplay';
+import WorkingHoursPanel from '../requirements/WorkingHoursPanel';
+import RequirementTimeFields from '../requirements/RequirementTimeFields';
+import {
+  clampRequirementTimes,
+  dateKeyToWeekday,
+  formatWorkingHoursRange,
+  getWorkingHoursForWeekday,
+  getWorkingHoursForWeekdays,
+  validateRequirementTimes,
+} from '../../utils/workingHours';
 
 const WEEKDAYS = [
   { value: 0, ru: 'Пн', en: 'Mon' },
@@ -74,6 +84,7 @@ const BULK_REQUIREMENT_SCOPE = 'shifts-bulk-requirement';
 const IMPORT_SCOPE = 'shifts-import';
 const AVAILABILITY_SCOPE = 'shifts-availability';
 const ABSENCE_SCOPE = 'shifts-absence';
+const WORKING_HOURS_SCOPE = 'shifts-working-hours';
 
 function toDateKey(date) {
   if (!(date instanceof Date) || Number.isNaN(date.getTime())) return '';
@@ -397,6 +408,18 @@ const MOBILE_SHIFTS_STYLES = {
     fontSize: 11,
     margin: '2px 0 0',
   },
+  localBadge: {
+    display: 'inline-flex',
+    alignItems: 'center',
+    padding: '2px 8px',
+    borderRadius: 999,
+    background: '#eef3f6',
+    color: '#4f646f',
+    fontSize: 10,
+    fontWeight: 600,
+    textTransform: 'uppercase',
+    letterSpacing: '0.04em',
+  },
   panelHeader: {
     marginBottom: 8,
     gap: 8,
@@ -637,6 +660,7 @@ export default function ShiftsTab({ language, userRole, user }) {
   const [mode, setMode] = useState('single');
   const [positions, setPositions] = useState([]);
   const [branches, setBranches] = useState([]);
+  const [workingHoursRevision, setWorkingHoursRevision] = useState(0);
   const [requirements, setRequirements] = useState([]);
   const [singleRequirement, setSingleRequirement] = useState(defaultSingleRequirement);
   const [bulkRequirement, setBulkRequirement] = useState(defaultBulkRequirement);
@@ -792,6 +816,9 @@ export default function ShiftsTab({ language, userRole, user }) {
       prevWeek: 'Предыдущая неделя',
       nextWeek: 'Следующая неделя',
       locked: 'Прошедшие даты изменить нельзя',
+      outsideWorkingHours: 'Смена должна быть в пределах рабочих часов ({range}).',
+      bulkWorkingHoursConflict: 'У выбранных дней недели нет общего рабочего времени. Сократите набор дней или измените часы работы.',
+      workingHoursRange: 'Рабочие часы: {range}',
     },
     en: {
       stepOne: '1. Choose period',
@@ -866,6 +893,9 @@ export default function ShiftsTab({ language, userRole, user }) {
       prevWeek: 'Previous week',
       nextWeek: 'Next week',
       locked: 'Past dates cannot be edited',
+      outsideWorkingHours: 'Shift must stay within working hours ({range}).',
+      bulkWorkingHoursConflict: 'Selected weekdays have no overlapping working hours. Pick fewer days or adjust working hours.',
+      workingHoursRange: 'Working hours: {range}',
     },
   };
 
@@ -915,6 +945,51 @@ export default function ShiftsTab({ language, userRole, user }) {
       .filter(Boolean)
       .filter((requirement) => matchesRequirementFilters(requirement, appliedFilters))
   ), [appliedFilters, positions, requirements, positionTitleRevision]);
+
+  const singleWorkingHours = useMemo(() => {
+    if (!companyId || !singleRequirement.branch_id) return null;
+    return getWorkingHoursForWeekday(
+      companyId,
+      Number(singleRequirement.branch_id),
+      dateKeyToWeekday(singleRequirement.date),
+    );
+  }, [companyId, singleRequirement.branch_id, singleRequirement.date, workingHoursRevision]);
+
+  const bulkWorkingHours = useMemo(() => {
+    if (!companyId || !bulkRequirement.branch_id) return null;
+    return getWorkingHoursForWeekdays(
+      companyId,
+      Number(bulkRequirement.branch_id),
+      bulkRequirement.weekdays,
+    );
+  }, [bulkRequirement.branch_id, bulkRequirement.weekdays, companyId, workingHoursRevision]);
+
+  useEffect(() => {
+    if (!singleWorkingHours) return;
+
+    setSingleRequirement((prev) => {
+      const clamped = clampRequirementTimes(prev.start_time, prev.end_time, singleWorkingHours);
+      if (clamped.start_time === prev.start_time && clamped.end_time === prev.end_time) {
+        return prev;
+      }
+      return { ...prev, ...clamped };
+    });
+  }, [singleWorkingHours]);
+
+  useEffect(() => {
+    if (!bulkWorkingHours) return;
+
+    setBulkRequirement((prev) => ({
+      ...prev,
+      requirements: prev.requirements.map((item) => {
+        const clamped = clampRequirementTimes(item.start_time, item.end_time, bulkWorkingHours);
+        if (clamped.start_time === item.start_time && clamped.end_time === item.end_time) {
+          return item;
+        }
+        return { ...item, ...clamped };
+      }),
+    }));
+  }, [bulkWorkingHours]);
 
   useEffect(() => {
     if (!isManager || !companyId) {
@@ -1298,6 +1373,24 @@ export default function ShiftsTab({ language, userRole, user }) {
       return;
     }
 
+    if (singleWorkingHours) {
+      const validationError = validateRequirementTimes(
+        singleRequirement.start_time,
+        singleRequirement.end_time,
+        singleWorkingHours,
+        {
+          outsideWorkingHours: t.outsideWorkingHours.replace(
+            '{range}',
+            formatWorkingHoursRange(singleWorkingHours),
+          ),
+        },
+      );
+      if (validationError) {
+        setErrorMessage(validationError);
+        return;
+      }
+    }
+
     clearMessages();
     setIsSubmitting(true);
 
@@ -1364,6 +1457,28 @@ export default function ShiftsTab({ language, userRole, user }) {
 
     if (!bulkRequirement.requirements[0]?.position_id) {
       setErrorMessage(t.bulk);
+      return;
+    }
+
+    if (!bulkWorkingHours) {
+      setErrorMessage(t.bulkWorkingHoursConflict);
+      return;
+    }
+
+    const template = bulkRequirement.requirements[0];
+    const validationError = validateRequirementTimes(
+      template.start_time,
+      template.end_time,
+      bulkWorkingHours,
+      {
+        outsideWorkingHours: t.outsideWorkingHours.replace(
+          '{range}',
+          formatWorkingHoursRange(bulkWorkingHours),
+        ),
+      },
+    );
+    if (validationError) {
+      setErrorMessage(validationError);
       return;
     }
 
@@ -1641,6 +1756,23 @@ export default function ShiftsTab({ language, userRole, user }) {
                 </div>
               </section>
 
+              <WorkingHoursPanel
+                language={language}
+                companyId={companyId}
+                branchId={
+                  Number(singleRequirement.branch_id)
+                  || Number(bulkRequirement.branch_id)
+                  || Number(filterForm.branch_id)
+                  || null
+                }
+                revision={workingHoursRevision}
+                onChange={() => setWorkingHoursRevision((value) => value + 1)}
+                markUnsaved={markUnsaved}
+                scope={WORKING_HOURS_SCOPE}
+                styles={styles}
+                mobileStyles={mobileStyles}
+              />
+
               <section style={{ ...styles.panel, ...mobileStyles?.panel }}>
                 <h3 style={{ ...styles.panelTitle, ...mobileStyles?.panelTitle }}>{t.import}</h3>
                 <p style={{ ...styles.panelHint, ...mobileStyles?.panelHint }}>{t.fileHint}</p>
@@ -1777,36 +1909,31 @@ export default function ShiftsTab({ language, userRole, user }) {
                       />
                     </Field>
 
-                    <Field label={t.startTime} labelStyle={mobileStyles?.label}>
-                      <input
-                        type="time"
-                        value={formatTime(singleRequirement.start_time)}
-                        onChange={(event) => {
-                          setSingleRequirement((prev) => ({
-                            ...prev,
-                            start_time: `${event.target.value}:00`,
-                          }));
-                          markUnsaved(SINGLE_REQUIREMENT_SCOPE);
-                        }}
-                        style={{ ...styles.input, ...mobileStyles?.input }}
-                      />
-                    </Field>
-
-                    <Field label={t.endTime} labelStyle={mobileStyles?.label}>
-                      <input
-                        type="time"
-                        value={formatTime(singleRequirement.end_time)}
-                        onChange={(event) => {
-                          setSingleRequirement((prev) => ({
-                            ...prev,
-                            end_time: `${event.target.value}:00`,
-                          }));
-                          markUnsaved(SINGLE_REQUIREMENT_SCOPE);
-                        }}
-                        style={{ ...styles.input, ...mobileStyles?.input }}
-                      />
-                    </Field>
+                    <RequirementTimeFields
+                      startTime={singleRequirement.start_time}
+                      endTime={singleRequirement.end_time}
+                      workingHours={singleWorkingHours}
+                      startLabel={t.startTime}
+                      endLabel={t.endTime}
+                      Field={Field}
+                      labelStyle={mobileStyles?.label}
+                      inputStyle={{ ...styles.input, ...mobileStyles?.input }}
+                      onStartChange={(startTime, endTime) => {
+                        setSingleRequirement((prev) => ({ ...prev, start_time: startTime, end_time: endTime }));
+                        markUnsaved(SINGLE_REQUIREMENT_SCOPE);
+                      }}
+                      onEndChange={(endTime) => {
+                        setSingleRequirement((prev) => ({ ...prev, end_time: endTime }));
+                        markUnsaved(SINGLE_REQUIREMENT_SCOPE);
+                      }}
+                    />
                   </div>
+
+                  {singleWorkingHours && (
+                    <p style={{ ...styles.panelHint, ...mobileStyles?.panelHint, marginTop: 8 }}>
+                      {t.workingHoursRange.replace('{range}', formatWorkingHoursRange(singleWorkingHours))}
+                    </p>
+                  )}
 
                   <button
                     type="button"
@@ -1904,36 +2031,41 @@ export default function ShiftsTab({ language, userRole, user }) {
                       />
                     </Field>
 
-                    <Field label={t.startTime} labelStyle={mobileStyles?.label}>
-                      <input
-                        type="time"
-                        value={formatTime(bulkRequirement.requirements[0].start_time)}
-                        onChange={(event) => {
-                          setBulkRequirement((prev) => ({
-                            ...prev,
-                            requirements: [{ ...prev.requirements[0], start_time: `${event.target.value}:00` }],
-                          }));
-                          markUnsaved(BULK_REQUIREMENT_SCOPE);
-                        }}
-                        style={{ ...styles.input, ...mobileStyles?.input }}
-                      />
-                    </Field>
-
-                    <Field label={t.endTime} labelStyle={mobileStyles?.label}>
-                      <input
-                        type="time"
-                        value={formatTime(bulkRequirement.requirements[0].end_time)}
-                        onChange={(event) => {
-                          setBulkRequirement((prev) => ({
-                            ...prev,
-                            requirements: [{ ...prev.requirements[0], end_time: `${event.target.value}:00` }],
-                          }));
-                          markUnsaved(BULK_REQUIREMENT_SCOPE);
-                        }}
-                        style={{ ...styles.input, ...mobileStyles?.input }}
-                      />
-                    </Field>
+                    <RequirementTimeFields
+                      startTime={bulkRequirement.requirements[0].start_time}
+                      endTime={bulkRequirement.requirements[0].end_time}
+                      workingHours={bulkWorkingHours}
+                      startLabel={t.startTime}
+                      endLabel={t.endTime}
+                      Field={Field}
+                      labelStyle={mobileStyles?.label}
+                      inputStyle={{ ...styles.input, ...mobileStyles?.input }}
+                      onStartChange={(startTime, endTime) => {
+                        setBulkRequirement((prev) => ({
+                          ...prev,
+                          requirements: [{ ...prev.requirements[0], start_time: startTime, end_time: endTime }],
+                        }));
+                        markUnsaved(BULK_REQUIREMENT_SCOPE);
+                      }}
+                      onEndChange={(endTime) => {
+                        setBulkRequirement((prev) => ({
+                          ...prev,
+                          requirements: [{ ...prev.requirements[0], end_time: endTime }],
+                        }));
+                        markUnsaved(BULK_REQUIREMENT_SCOPE);
+                      }}
+                    />
                   </div>
+
+                  {bulkWorkingHours ? (
+                    <p style={{ ...styles.panelHint, ...mobileStyles?.panelHint, marginTop: 8 }}>
+                      {t.workingHoursRange.replace('{range}', formatWorkingHoursRange(bulkWorkingHours))}
+                    </p>
+                  ) : (
+                    <p style={{ ...styles.panelHint, ...mobileStyles?.panelHint, marginTop: 8, color: '#b42318' }}>
+                      {t.bulkWorkingHoursConflict}
+                    </p>
+                  )}
 
                   <div style={{ ...styles.dayPills, ...mobileStyles?.dayPills }}>
                     {WEEKDAYS.map((day) => {
@@ -1967,7 +2099,7 @@ export default function ShiftsTab({ language, userRole, user }) {
                     style={isSubmitting
                       ? { ...styles.primaryButtonDisabled, ...mobileStyles?.primaryButtonDisabled }
                       : { ...styles.primaryButton, ...mobileStyles?.primaryButton }}
-                    disabled={isSubmitting || positions.length === 0 || branches.length === 0}
+                    disabled={isSubmitting || positions.length === 0 || branches.length === 0 || !bulkWorkingHours}
                   >
                     {t.create}
                   </button>
