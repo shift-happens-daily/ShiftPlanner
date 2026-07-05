@@ -9,6 +9,7 @@ import {
 } from '../../services/employeeService';
 import { extractApiErrorMessage, localizeBackendMessage } from '../../services/error';
 import { importRequirementsXlsx } from '../../services/importService';
+import { listBranches } from '../../services/companyService';
 import { listPositions } from '../../services/positionService';
 import {
   createBulkRequirements,
@@ -202,6 +203,7 @@ function normalizeAvailabilityByDate(value) {
 function defaultSingleRequirement() {
   const today = formatLocalDate(new Date());
   return {
+    branch_id: '',
     position_id: '',
     date: today,
     min_staff: 1,
@@ -220,6 +222,7 @@ function defaultBulkRequirement() {
   const end = endOfCurrentMonth();
 
   return {
+    branch_id: '',
     start_date: today,
     end_date: end,
     weekdays: [0, 1, 2, 3, 4],
@@ -239,6 +242,7 @@ function currentMonthFilters() {
   return {
     start_date: today,
     end_date: endOfCurrentMonth(),
+    branch_id: '',
     position_id: '',
     date: '',
   };
@@ -259,6 +263,10 @@ function buildRequirementListParams(filters = {}) {
     params.position_id = Number(filters.position_id);
   }
 
+  if (filters.branch_id) {
+    params.branch_id = Number(filters.branch_id);
+  }
+
   return params;
 }
 
@@ -270,6 +278,10 @@ function matchesRequirementFilters(requirement, filters = {}) {
   }
 
   if (filters.position_id && String(requirement.position_id) !== String(filters.position_id)) {
+    return false;
+  }
+
+  if (filters.branch_id && String(requirement.branch_id) !== String(filters.branch_id)) {
     return false;
   }
 
@@ -293,6 +305,12 @@ function getRequirementId(requirement) {
   return requirement?.id || requirement?.requirement_id;
 }
 
+function resolveBranchName(branchId, branches = []) {
+  if (!branchId) return '';
+  const branch = branches.find((item) => String(item.id) === String(branchId));
+  return branch?.name || branch?.title || `#${branchId}`;
+}
+
 function normalizeRequirement(requirement, positions = []) {
   if (!requirement) return null;
 
@@ -309,6 +327,7 @@ function normalizeRequirement(requirement, positions = []) {
       position: requirement.position,
     }, getPositionLabel(position) || 'Position'),
     date: requirement.date,
+    branch_id: requirement.branch_id || requirement.branchId || null,
     start_time: requirement.start_time || requirement.startTime,
     end_time: requirement.end_time || requirement.endTime,
     min_staff: requirement.min_staff || requirement.minStaff || 1,
@@ -613,9 +632,11 @@ export default function ShiftsTab({ language, userRole, user }) {
   const { markUnsaved, markSaved } = useUnsavedChanges();
   const isManager = userRole === 'manager';
   const employeeId = user?.employeeId || user?.employee_id;
+  const companyId = user?.company?.id || user?.company_id || null;
 
   const [mode, setMode] = useState('single');
   const [positions, setPositions] = useState([]);
+  const [branches, setBranches] = useState([]);
   const [requirements, setRequirements] = useState([]);
   const [singleRequirement, setSingleRequirement] = useState(defaultSingleRequirement);
   const [bulkRequirement, setBulkRequirement] = useState(defaultBulkRequirement);
@@ -704,6 +725,10 @@ export default function ShiftsTab({ language, userRole, user }) {
       stepThree: '3. Проверьте список',
       filters: 'Фильтры',
       allPositions: 'Все профессии',
+      allBranches: 'Все филиалы',
+      branch: 'Филиал',
+      chooseBranch: 'Выберите филиал',
+      noBranches: 'Сначала создайте филиалы во вкладке «Компания».',
       filterDate: 'Конкретная дата',
       clearFilters: 'Сбросить',
       single: 'Одно требование',
@@ -758,7 +783,7 @@ export default function ShiftsTab({ language, userRole, user }) {
       selectFile: 'Выберите .xlsx файл',
       missingEmployeeProfile: 'Аккаунт сотрудника не привязан к профилю. Сначала присоединитесь к компании.',
       bulkHint: 'Создаст одинаковые требования на выбранные дни недели внутри периода.',
-      singleHint: 'Например: Barista, 15.06, 09:00–18:00, нужно 2 человека.',
+      singleHint: 'Например: филиал «Центр», Barista, 15.06, 09:00–18:00, нужно 2 человека.',
       localOnly: 'локально',
       deleteNotSupported: 'Удаление через API пока недоступно.',
       available: 'Доступен',
@@ -774,6 +799,10 @@ export default function ShiftsTab({ language, userRole, user }) {
       stepThree: '3. Check list',
       filters: 'Filters',
       allPositions: 'All positions',
+      allBranches: 'All branches',
+      branch: 'Branch',
+      chooseBranch: 'Choose branch',
+      noBranches: 'Create branches in the Company tab first.',
       filterDate: 'Specific date',
       clearFilters: 'Reset',
       single: 'Single requirement',
@@ -828,7 +857,7 @@ export default function ShiftsTab({ language, userRole, user }) {
       selectFile: 'Choose .xlsx file',
       missingEmployeeProfile: 'This employee account is not linked to a profile yet. Join a company first.',
       bulkHint: 'Creates the same requirements for selected weekdays within the period.',
-      singleHint: 'Example: Barista, Jun 15, 09:00–18:00, need 2 people.',
+      singleHint: 'Example: Downtown branch, Barista, Jun 15, 09:00–18:00, need 2 people.',
       localOnly: 'local',
       deleteNotSupported: 'Delete is not available via API yet.',
       available: 'Available',
@@ -886,6 +915,47 @@ export default function ShiftsTab({ language, userRole, user }) {
       .filter(Boolean)
       .filter((requirement) => matchesRequirementFilters(requirement, appliedFilters))
   ), [appliedFilters, positions, requirements, positionTitleRevision]);
+
+  useEffect(() => {
+    if (!isManager || !companyId) {
+      setBranches([]);
+      return undefined;
+    }
+
+    let cancelled = false;
+
+    async function loadBranchOptions() {
+      try {
+        const data = await listBranches(companyId);
+        if (cancelled) return;
+
+        const normalized = normalizeArray(data);
+        setBranches(normalized);
+
+        const defaultBranchId = String(normalized[0]?.id || '');
+        if (!defaultBranchId) return;
+
+        setSingleRequirement((prev) => ({
+          ...prev,
+          branch_id: prev.branch_id || defaultBranchId,
+        }));
+        setBulkRequirement((prev) => ({
+          ...prev,
+          branch_id: prev.branch_id || defaultBranchId,
+        }));
+      } catch {
+        if (!cancelled) {
+          setBranches([]);
+        }
+      }
+    }
+
+    void loadBranchOptions();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [companyId, isManager]);
 
   useEffect(() => {
     if (isManager) return;
@@ -1218,6 +1288,11 @@ export default function ShiftsTab({ language, userRole, user }) {
     };
   }, [endAvailabilityDrag]);
   const submitManagerRequirement = async () => {
+    if (!singleRequirement.branch_id) {
+      setErrorMessage(t.chooseBranch);
+      return;
+    }
+
     if (!singleRequirement.position_id || !singleRequirement.date) {
       setErrorMessage(t.single);
       return;
@@ -1229,6 +1304,7 @@ export default function ShiftsTab({ language, userRole, user }) {
     try {
       await createRequirement({
         ...singleRequirement,
+        branch_id: Number(singleRequirement.branch_id),
         position_id: Number(singleRequirement.position_id),
         min_staff: Number(singleRequirement.min_staff),
       });
@@ -1281,6 +1357,11 @@ export default function ShiftsTab({ language, userRole, user }) {
   };
 
   const submitBulkRequirements = async () => {
+    if (!bulkRequirement.branch_id) {
+      setErrorMessage(t.chooseBranch);
+      return;
+    }
+
     if (!bulkRequirement.requirements[0]?.position_id) {
       setErrorMessage(t.bulk);
       return;
@@ -1292,6 +1373,7 @@ export default function ShiftsTab({ language, userRole, user }) {
     try {
       await createBulkRequirements({
         ...bulkRequirement,
+        branch_id: Number(bulkRequirement.branch_id),
         requirements: bulkRequirement.requirements.map((item) => ({
           ...item,
           position_id: Number(item.position_id),
@@ -1494,6 +1576,20 @@ export default function ShiftsTab({ language, userRole, user }) {
                 <h3 style={{ ...styles.panelTitle, ...mobileStyles?.panelTitle }}>{t.filters}</h3>
 
                 <div style={{ ...styles.stack, ...mobileStyles?.stack }}>
+                  <label style={{ ...styles.label, ...mobileStyles?.label }}>{t.branch}</label>
+                  <select
+                    value={filterForm.branch_id}
+                    onChange={(event) => setFilterForm((prev) => ({ ...prev, branch_id: event.target.value }))}
+                    style={{ ...styles.input, ...mobileStyles?.input }}
+                  >
+                    <option value="">{t.allBranches}</option>
+                    {branches.map((branch) => (
+                      <option key={branch.id} value={branch.id}>
+                        {branch.name || branch.title || `#${branch.id}`}
+                      </option>
+                    ))}
+                  </select>
+
                   <label style={{ ...styles.label, ...mobileStyles?.label }}>{t.position}</label>
                   <select
                     value={filterForm.position_id}
@@ -1620,6 +1716,24 @@ export default function ShiftsTab({ language, userRole, user }) {
                   <p style={{ ...styles.panelHint, ...mobileStyles?.panelHint }}>{t.singleHint}</p>
 
                   <div style={{ ...styles.formGrid, gridTemplateColumns: r.gridCols('repeat(3, minmax(0, 1fr))'), ...mobileStyles?.formGrid }}>
+                    <Field label={t.branch} labelStyle={mobileStyles?.label}>
+                      <select
+                        value={singleRequirement.branch_id}
+                        onChange={(event) => {
+                          setSingleRequirement((prev) => ({ ...prev, branch_id: event.target.value }));
+                          markUnsaved(SINGLE_REQUIREMENT_SCOPE);
+                        }}
+                        style={{ ...styles.input, ...mobileStyles?.input }}
+                      >
+                        <option value="">{branches.length ? t.chooseBranch : t.noBranches}</option>
+                        {branches.map((branch) => (
+                          <option key={branch.id} value={branch.id}>
+                            {branch.name || branch.title || `#${branch.id}`}
+                          </option>
+                        ))}
+                      </select>
+                    </Field>
+
                     <Field label={t.position} labelStyle={mobileStyles?.label}>
                       <select
                         value={singleRequirement.position_id}
@@ -1700,7 +1814,7 @@ export default function ShiftsTab({ language, userRole, user }) {
                     style={isSubmitting
                       ? { ...styles.primaryButtonDisabled, ...mobileStyles?.primaryButtonDisabled }
                       : { ...styles.primaryButton, ...mobileStyles?.primaryButton }}
-                    disabled={isSubmitting || positions.length === 0}
+                    disabled={isSubmitting || positions.length === 0 || branches.length === 0}
                   >
                     {t.create}
                   </button>
@@ -1711,6 +1825,24 @@ export default function ShiftsTab({ language, userRole, user }) {
                   <p style={{ ...styles.panelHint, ...mobileStyles?.panelHint }}>{t.bulkHint}</p>
 
                   <div style={{ ...styles.formGrid, gridTemplateColumns: r.gridCols('repeat(3, minmax(0, 1fr))'), ...mobileStyles?.formGrid }}>
+                    <Field label={t.branch} labelStyle={mobileStyles?.label}>
+                      <select
+                        value={bulkRequirement.branch_id}
+                        onChange={(event) => {
+                          setBulkRequirement((prev) => ({ ...prev, branch_id: event.target.value }));
+                          markUnsaved(BULK_REQUIREMENT_SCOPE);
+                        }}
+                        style={{ ...styles.input, ...mobileStyles?.input }}
+                      >
+                        <option value="">{branches.length ? t.chooseBranch : t.noBranches}</option>
+                        {branches.map((branch) => (
+                          <option key={branch.id} value={branch.id}>
+                            {branch.name || branch.title || `#${branch.id}`}
+                          </option>
+                        ))}
+                      </select>
+                    </Field>
+
                     <Field label={t.startDate} labelStyle={mobileStyles?.label}>
                       <input
                         type="date"
@@ -1835,7 +1967,7 @@ export default function ShiftsTab({ language, userRole, user }) {
                     style={isSubmitting
                       ? { ...styles.primaryButtonDisabled, ...mobileStyles?.primaryButtonDisabled }
                       : { ...styles.primaryButton, ...mobileStyles?.primaryButton }}
-                    disabled={isSubmitting || positions.length === 0}
+                    disabled={isSubmitting || positions.length === 0 || branches.length === 0}
                   >
                     {t.create}
                   </button>
@@ -1851,9 +1983,24 @@ export default function ShiftsTab({ language, userRole, user }) {
                 {!r.isMobile && (
                   <div style={{
                     ...styles.requirementFilters,
-                    gridTemplateColumns: r.gridCols('repeat(4, minmax(0, 1fr)) auto auto'),
+                    gridTemplateColumns: r.gridCols('repeat(5, minmax(0, 1fr)) auto auto'),
                   }}
                   >
+                    <Field label={t.branch} labelStyle={mobileStyles?.label}>
+                      <select
+                        value={filterForm.branch_id}
+                        onChange={(event) => setFilterForm((prev) => ({ ...prev, branch_id: event.target.value }))}
+                        style={styles.input}
+                      >
+                        <option value="">{t.allBranches}</option>
+                        {branches.map((branch) => (
+                          <option key={branch.id} value={branch.id}>
+                            {branch.name || branch.title || `#${branch.id}`}
+                          </option>
+                        ))}
+                      </select>
+                    </Field>
+
                     <Field label={t.position} labelStyle={mobileStyles?.label}>
                       <select
                         value={filterForm.position_id}
@@ -1948,6 +2095,9 @@ export default function ShiftsTab({ language, userRole, user }) {
                           <div style={mobileStyles?.requirementMetaRow}>
                             <span style={{ ...styles.itemMeta, ...mobileStyles?.itemMeta }}>{requirement.date}</span>
                             <span style={{ ...styles.itemMeta, ...mobileStyles?.itemMeta }}>
+                              {resolveBranchName(requirement.branch_id, branches)}
+                            </span>
+                            <span style={{ ...styles.itemMeta, ...mobileStyles?.itemMeta }}>
                               {formatTime(requirement.start_time)} — {formatTime(requirement.end_time)}
                             </span>
                           </div>
@@ -1963,13 +2113,17 @@ export default function ShiftsTab({ language, userRole, user }) {
                       ) : (
                       <div key={getRequirementId(requirement)} style={{
                         ...styles.requirementItem,
-                        gridTemplateColumns: r.gridCols('1.2fr 1fr auto auto'),
+                        gridTemplateColumns: r.gridCols('1.2fr 0.9fr 1fr auto auto'),
                       }}>
                         <div>
                           <strong style={styles.itemTitle}>{requirement.position_title}</strong>
                           <div style={styles.itemMeta}>
                             {requirement.date}
                           </div>
+                        </div>
+
+                        <div style={styles.itemMeta}>
+                          {resolveBranchName(requirement.branch_id, branches)}
                         </div>
 
                         <div style={styles.itemMeta}>

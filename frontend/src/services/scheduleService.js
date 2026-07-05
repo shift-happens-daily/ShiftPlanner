@@ -12,7 +12,6 @@ export function formatLocalDate(value) {
 }
 
 const FOUR_WEEK_DAYS = 28;
-const MOCK_SCHEDULES_KEY = 'shiftplanner_mock_schedules';
 
 /** Four weeks (28 days) forward from the given start date. */
 export function getFourWeekPeriodRange(startDateStr) {
@@ -79,58 +78,6 @@ export function periodsOverlap(leftStart, leftEnd, rightStart, rightEnd) {
   return leftStart <= rightEnd && leftEnd >= rightStart;
 }
 
-function readMockSchedules() {
-  try {
-    return JSON.parse(localStorage.getItem(MOCK_SCHEDULES_KEY) || '[]');
-  } catch {
-    return [];
-  }
-}
-
-function writeMockSchedules(schedules) {
-  localStorage.setItem(MOCK_SCHEDULES_KEY, JSON.stringify(schedules));
-}
-
-function registerMockScheduleRecord(record) {
-  const filtered = readMockSchedules().filter(
-    (item) => !(
-      item.branch_id === record.branch_id
-      && item.start_date === record.start_date
-      && item.end_date === record.end_date
-    ),
-  );
-  filtered.push(record);
-  writeMockSchedules(filtered);
-}
-
-function removeMockScheduleRecord({ branch_id, start_date, end_date }) {
-  writeMockSchedules(
-    readMockSchedules().filter(
-      (item) => !(
-        item.branch_id === branch_id
-        && item.start_date === start_date
-        && item.end_date === end_date
-      ),
-    ),
-  );
-}
-
-function filterMockSchedules(params = {}) {
-  return readMockSchedules().filter((schedule) => {
-    if (params.branch_id && schedule.branch_id !== params.branch_id) return false;
-    if (params.status && schedule.status !== params.status) return false;
-    if (params.date_from && params.date_to) {
-      return periodsOverlap(
-        schedule.start_date,
-        schedule.end_date,
-        params.date_from,
-        params.date_to,
-      );
-    }
-    return true;
-  });
-}
-
 export function deriveSchedulePeriod(schedule, periodForm = {}) {
   if (schedule?.start_date && schedule?.end_date) {
     return {
@@ -189,37 +136,13 @@ function withPeriod(schedule, period) {
   };
 }
 
-function normalizeGeneratedSchedules(data, period) {
-  const schedules = Array.isArray(data) ? data : [data].filter(Boolean);
-  return schedules.map((schedule) => withPeriod(schedule, period));
-}
-
-function pickBranchSchedule(schedules, branchId, period) {
-  if (!Array.isArray(schedules) || schedules.length === 0) {
-    return null;
-  }
-  const branchSchedule = schedules.find((schedule) => schedule.branch_id === branchId);
-  return withPeriod(branchSchedule || schedules[0], period);
-}
-
-export async function listSchedulesWithFallback(params = {}) {
-  try {
-    const response = await api.get('/schedule', { params });
-    return Array.isArray(response.data) ? response.data : [response.data].filter(Boolean);
-  } catch (error) {
-    if ([404, 405, 422].includes(error?.response?.status)) {
-      return filterMockSchedules(params);
-    }
-    throw error;
-  }
-}
-
 export async function listSchedules(params = {}) {
-  return listSchedulesWithFallback(params);
+  const response = await api.get('/schedule', { params });
+  return Array.isArray(response.data) ? response.data : [response.data].filter(Boolean);
 }
 
 export async function findOverlappingSchedules({ branch_id, start_date, end_date }) {
-  const schedules = await listSchedulesWithFallback({
+  const schedules = await listSchedules({
     branch_id,
     date_from: start_date,
     date_to: end_date,
@@ -234,7 +157,7 @@ export async function findOverlappingSchedules({ branch_id, start_date, end_date
 }
 
 export async function fetchScheduleCoverage({ branch_id, date_from, date_to }) {
-  const schedules = await listSchedulesWithFallback({ branch_id, date_from, date_to });
+  const schedules = await listSchedules({ branch_id, date_from, date_to });
   const byDate = {};
 
   schedules.forEach((schedule) => {
@@ -252,17 +175,14 @@ export async function fetchScheduleCoverage({ branch_id, date_from, date_to }) {
 /** Load draft/published schedules for the selected branch and date range. */
 export async function fetchScheduleVersions(period = null, branchId = null) {
   const loadByStatus = async (status) => {
-    try {
-      const schedules = await listSchedulesWithFallback(
-        buildScheduleQueryParams(period, status, branchId),
-      );
-      return pickPrimarySchedule(schedules, branchId);
-    } catch (error) {
-      if (error?.response?.status === 404) {
-        return null;
-      }
-      throw error;
+    const schedules = await listSchedules(buildScheduleQueryParams(period, status, branchId));
+    const primary = pickPrimarySchedule(schedules, branchId);
+    if (!primary?.id) {
+      return null;
     }
+
+    const response = await api.get(`/schedule/${primary.id}`);
+    return withPeriod(response.data, period);
   };
 
   const [draft, published] = await Promise.all([
@@ -284,20 +204,7 @@ export async function generateScheduleForBranch(period, branchId) {
     branch_id: branchId,
   };
   const response = await api.post('/schedule/generate', payload);
-  const schedules = normalizeGeneratedSchedules(response.data, period);
-  const schedule = pickBranchSchedule(schedules, branchId, period);
-
-  if (schedule) {
-    registerMockScheduleRecord({
-      id: schedule.id || Date.now(),
-      branch_id: branchId,
-      start_date: period.start_date,
-      end_date: period.end_date,
-      status: schedule.status || 'draft',
-    });
-  }
-
-  return schedule;
+  return withPeriod(response.data, period);
 }
 
 /** Backward-compatible wrapper for older callers. */
@@ -307,8 +214,7 @@ export async function generateScheduleForPeriod(period, branchId = null) {
   }
 
   const response = await api.post('/schedule/generate', period);
-  const schedules = normalizeGeneratedSchedules(response.data, period);
-  return schedules[0] || null;
+  return withPeriod(response.data, period);
 }
 
 /** Solver-friendly default: next Mon–Sun week. */
@@ -366,16 +272,6 @@ export async function publishScheduleForPeriod(schedule) {
     end_date: response.data?.end_date ?? schedule.end_date,
   });
 
-  if (schedule.branch_id && published.start_date && published.end_date) {
-    registerMockScheduleRecord({
-      id: published.id,
-      branch_id: schedule.branch_id,
-      start_date: published.start_date,
-      end_date: published.end_date,
-      status: 'published',
-    });
-  }
-
   return published;
 }
 
@@ -385,14 +281,6 @@ export async function deleteScheduleForPeriod(schedule) {
   }
 
   await api.delete(`/schedule/${schedule.id}`);
-
-  if (schedule.branch_id && schedule.start_date && schedule.end_date) {
-    removeMockScheduleRecord({
-      branch_id: schedule.branch_id,
-      start_date: schedule.start_date,
-      end_date: schedule.end_date,
-    });
-  }
 }
 
 export async function deleteScheduleWeek({ branch_id, start_date, end_date }) {
@@ -405,36 +293,9 @@ export async function deleteScheduleWeek({ branch_id, start_date, end_date }) {
     throw new Error('Week deletion requires a Sunday end date.');
   }
 
-  try {
-    await api.delete('/schedule/week', {
-      params: { branch_id, start_date, end_date },
-    });
-  } catch (error) {
-    if (![404, 405].includes(error?.response?.status)) {
-      throw error;
-    }
-
-    const schedules = await listSchedulesWithFallback({
-      branch_id,
-      date_from: start_date,
-      date_to: end_date,
-    });
-    const exactWeek = schedules.find(
-      (schedule) => schedule.start_date === start_date && schedule.end_date === end_date,
-    );
-
-    if (exactWeek?.id) {
-      try {
-        await api.delete(`/schedule/${exactWeek.id}`);
-      } catch (deleteError) {
-        if (![404, 405].includes(deleteError?.response?.status)) {
-          throw deleteError;
-        }
-      }
-    }
-  }
-
-  removeMockScheduleRecord({ branch_id, start_date, end_date });
+  await api.delete('/schedule/week', {
+    params: { branch_id, start_date, end_date },
+  });
 }
 
 export async function listRequirements(params = {}) {
@@ -447,14 +308,47 @@ export async function createRequirement(payload) {
   return response.data;
 }
 
+function expandBulkRequirementDates(startDate, endDate, weekdays) {
+  return enumerateDates(startDate, endDate).filter((dateStr) => {
+    const date = new Date(`${dateStr}T12:00:00`);
+    const weekday = (date.getDay() + 6) % 7;
+    return weekdays.includes(weekday);
+  });
+}
+
 export async function createBulkRequirements(payload) {
+  const { branch_id, start_date, end_date, weekdays, requirements } = payload;
+
+  // Workaround until POST /schedule/requirements/bulk accepts branch_id.
+  if (branch_id) {
+    const dates = expandBulkRequirementDates(start_date, end_date, weekdays);
+    const created = [];
+
+    for (const date of dates) {
+      for (const template of requirements) {
+        // eslint-disable-next-line no-await-in-loop
+        const item = await createRequirement({
+          branch_id: Number(branch_id),
+          position_id: Number(template.position_id),
+          date,
+          min_staff: Number(template.min_staff),
+          start_time: template.start_time,
+          end_time: template.end_time,
+        });
+        created.push(item);
+      }
+    }
+
+    return { created_count: created.length, requirements: created };
+  }
+
   const response = await api.post('/schedule/requirements/bulk', payload);
   return response.data;
 }
 
 export async function generateSchedule(payload) {
   const response = await api.post('/schedule/generate', payload);
-  return normalizeGeneratedSchedules(response.data, payload);
+  return withPeriod(response.data, payload);
 }
 
 export async function getLatestSchedule(status) {
