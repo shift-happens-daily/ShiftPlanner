@@ -3,8 +3,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import {
   deleteEmployee,
-  enrichEmployeesWithWorkLimits,
-  getEmployeeWorkLimits,
   listEmployeeAbsences,
   listEmployees,
   replaceEmployeeBranches,
@@ -25,7 +23,9 @@ import { formatLocalDate } from '../../services/scheduleService';
 import { getEmployeePositionLabel, getPositionLabel } from '../../utils/employeeDisplay';
 import { usePositionTitleRevision } from '../../hooks/usePositionTitleRevision';
 import { useUnsavedChanges } from '../../context/useUnsavedChanges';
-import { DEFAULT_DAILY_HOURS, DEFAULT_WEEKLY_HOURS } from '../../utils/employeeWorkLimits';
+
+const DEFAULT_WEEKLY_HOURS = 40;
+const DEFAULT_DAILY_HOURS = 8;
 
 const POSITION_CREATE_SCOPE = 'employees-position-create';
 const POSITION_EDIT_SCOPE = 'employees-position-edit';
@@ -868,7 +868,7 @@ export default function EmployeesTab({ language, userRole, user }) {
 
         if (!isMounted) return;
 
-        const safeEmployees = enrichEmployeesWithWorkLimits(normalizeArray(employeesData));
+        const safeEmployees = normalizeArray(employeesData);
         const safePositions = normalizeArray(positionsData);
         const safeBranches = normalizeArray(branchesData || []);
 
@@ -914,15 +914,11 @@ export default function EmployeesTab({ language, userRole, user }) {
       setErrorMessage('');
 
       try {
-        const [absencesData, workLimitsData] = await Promise.all([
-          listEmployeeAbsences(selectedEmployeeId),
-          getEmployeeWorkLimits(selectedEmployeeId, selectedEmployee),
-        ]);
+        const absencesData = await listEmployeeAbsences(selectedEmployeeId);
 
         if (!isMounted) return;
 
         setEmployeeAbsences(normalizeArray(absencesData));
-        setSelectedEmployeeWorkLimits(workLimitsData);
       } catch (error) {
         if (isMounted) {
           setEmployeeAbsences([]);
@@ -940,7 +936,7 @@ export default function EmployeesTab({ language, userRole, user }) {
     return () => {
       isMounted = false;
     };
-  }, [language, selectedEmployeeId, selectedEmployee, t.empty, userRole]);
+  }, [language, selectedEmployeeId, t.empty, userRole]);
 
   if (userRole !== 'manager') {
     return (
@@ -972,7 +968,7 @@ export default function EmployeesTab({ language, userRole, user }) {
   };
 
   const reloadEmployees = async (preferEmployeeId) => {
-    const employeesData = enrichEmployeesWithWorkLimits(normalizeArray(await listEmployees()));
+    const employeesData = normalizeArray(await listEmployees());
     setEmployees(employeesData);
 
     if (preferEmployeeId) {

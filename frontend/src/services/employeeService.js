@@ -1,11 +1,4 @@
 import api from './api';
-import {
-  clampWorkLimits,
-  getDefaultWorkLimits,
-  getStoredWorkLimits,
-  resolveEmployeeWorkLimits,
-  setStoredWorkLimits,
-} from '../utils/employeeWorkLimits';
 
 const DEMO_SEED_EMPLOYEE_EMAIL = /^employee\d+@example\.com$/i;
 
@@ -113,45 +106,7 @@ export async function getMyEmployeeSchedule() {
   return response.data;
 }
 
-export function enrichEmployeeWithWorkLimits(employee) {
-  if (!employee) return employee;
-  const limits = resolveEmployeeWorkLimits(employee);
-  return { ...employee, ...limits };
-}
-
-export function enrichEmployeesWithWorkLimits(employees) {
-  return (employees || []).map(enrichEmployeeWithWorkLimits);
-}
-
-export async function getEmployeeWorkLimits(employeeId, employee = null) {
-  if (employee?.max_hours_per_week != null || employee?.max_hours_per_day != null) {
-    return resolveEmployeeWorkLimits(employee);
-  }
-
-  try {
-    const response = await api.get(`/employees/${employeeId}/work-limits`);
-    return clampWorkLimits(response.data);
-  } catch (error) {
-    const status = error?.response?.status;
-    if (status === 404 || status === 405 || status === 501) {
-      return getStoredWorkLimits(employeeId) || getDefaultWorkLimits();
-    }
-    throw error;
-  }
-}
-
 export async function updateEmployeeWorkLimits(employeeId, payload) {
-  const normalized = clampWorkLimits(payload);
-
-  try {
-    const response = await api.patch(`/employees/${employeeId}/work-limits`, normalized);
-    return clampWorkLimits(response.data);
-  } catch (error) {
-    const status = error?.response?.status;
-    if (status === 404 || status === 405 || status === 501) {
-      setStoredWorkLimits(employeeId, normalized);
-      return normalized;
-    }
-    throw error;
-  }
+  const response = await api.patch(`/employees/${employeeId}/work-limits`, payload);
+  return response.data;
 }
