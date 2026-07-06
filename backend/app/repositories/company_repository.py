@@ -5,7 +5,7 @@ from datetime import UTC, datetime
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.models import Branch, Company, CompanyManager, Employee, ShiftRequirement, User
+from app.models import Branch, Company, CompanyManager, Employee, EmployeeBranch, ShiftRequirement, User
 
 DEFAULT_WORKING_HOURS_BY_WEEKDAY = {
     str(weekday): {"start_slot": 0, "end_slot": 48}
@@ -292,8 +292,8 @@ def get_user_by_manager_membership(db: Session, membership: CompanyManager) -> U
 
 def branch_is_in_use(db: Session, branch_id: int) -> bool:
     employee_id = db.scalar(
-        select(Employee.id)
-        .where(Employee.branch_id == branch_id)
+        select(EmployeeBranch.employee_id)
+        .where(EmployeeBranch.branch_id == branch_id)
         .limit(1)
     )
     if employee_id is not None:

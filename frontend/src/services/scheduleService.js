@@ -121,10 +121,18 @@ function pickPrimarySchedule(schedules, branchId = null) {
     return null;
   }
   const filtered = branchId
-    ? schedules.filter((schedule) => schedule.branch_id === branchId)
+    ? schedules.filter((schedule) => Number(schedule.branch_id) === Number(branchId))
     : schedules;
   const source = filtered.length > 0 ? filtered : schedules;
   return [...source].sort((a, b) => b.id - a.id)[0];
+}
+
+async function listSchedulesForBranch(status, branchId, period = null) {
+  const scoped = await listSchedules(buildScheduleQueryParams(period, status, branchId));
+  if (scoped.length > 0 || !branchId) {
+    return scoped;
+  }
+  return listSchedules(buildScheduleQueryParams(null, status, branchId));
 }
 
 function withPeriod(schedule, period) {
@@ -175,14 +183,17 @@ export async function fetchScheduleCoverage({ branch_id, date_from, date_to }) {
 /** Load draft/published schedules for the selected branch and date range. */
 export async function fetchScheduleVersions(period = null, branchId = null) {
   const loadByStatus = async (status) => {
-    const schedules = await listSchedules(buildScheduleQueryParams(period, status, branchId));
+    const schedules = await listSchedulesForBranch(status, branchId, period);
     const primary = pickPrimarySchedule(schedules, branchId);
     if (!primary?.id) {
       return null;
     }
 
     const response = await api.get(`/schedule/${primary.id}`);
-    return withPeriod(response.data, period);
+    return withPeriod(response.data, period || {
+      start_date: response.data.start_date,
+      end_date: response.data.end_date,
+    });
   };
 
   const [draft, published] = await Promise.all([
@@ -203,8 +214,20 @@ export async function generateScheduleForBranch(period, branchId) {
     end_date: period.end_date,
     branch_id: branchId,
   };
-  const response = await api.post('/schedule/generate', payload);
+  const response = await api.post('/schedule/generate', payload, {
+    timeout: 120000,
+  });
   return withPeriod(response.data, period);
+}
+
+/** True when generate may have succeeded on the server despite a client/network failure. */
+export function isScheduleGenerateTransportError(error) {
+  if (!error) return false;
+  if (error.code === 'ECONNABORTED') return true;
+  if (error.request && !error.response) return true;
+  if (error.response?.status >= 500) return true;
+  if (error.message === 'Network Error' || error.code === 'ERR_NETWORK') return true;
+  return false;
 }
 
 /** Backward-compatible wrapper for older callers. */

@@ -10,6 +10,8 @@ import {
   generateScheduleForBranch,
   getWeekPeriodRange,
   isMonday,
+  isScheduleGenerateTransportError,
+  periodsOverlap,
   publishScheduleForPeriod,
   snapToMonday,
   assignRequirement,
@@ -299,6 +301,50 @@ function formatDisplayDate(value, language = 'ru') {
 function isDateWithinRange(dateKey, startDate, endDate) {
   if (!dateKey || !startDate || !endDate) return true;
   return dateKey >= startDate && dateKey <= endDate;
+}
+
+function buildCalendarMonthPeriod(anchorDateKey) {
+  const monthStart = startOfMonthDate(anchorDateKey);
+  const monthEnd = endOfMonthDate(anchorDateKey);
+  return {
+    start_date: formatLocalDate(monthStart),
+    end_date: formatLocalDate(monthEnd),
+  };
+}
+
+function scheduleCoversPeriod(schedule, period) {
+  if (!schedule?.start_date || !schedule?.end_date || !period?.start_date || !period?.end_date) {
+    return false;
+  }
+  return periodsOverlap(
+    schedule.start_date,
+    schedule.end_date,
+    period.start_date,
+    period.end_date,
+  );
+}
+
+function applyLoadedScheduleState({
+  versions,
+  period,
+  setScheduleVersions,
+  setActiveVersion,
+  setViewPeriod,
+  setCalendarSelectedDate,
+  setCalendarMonth,
+}) {
+  const loaded = versions.draft || versions.published;
+  if (!loaded?.id) {
+    return false;
+  }
+
+  const derivedPeriod = deriveSchedulePeriod(loaded, period);
+  setScheduleVersions(versions);
+  setActiveVersion(versions.draft ? 'draft' : 'published');
+  setViewPeriod(derivedPeriod);
+  setCalendarSelectedDate(derivedPeriod.start_date);
+  setCalendarMonth(derivedPeriod.start_date);
+  return true;
 }
 
 function buildGroupedScheduleCounts(displaySchedule, unfilledNotFoundRequirements) {
@@ -1183,6 +1229,7 @@ export default function ScheduleReview({ language }) {
       generating: 'Генерация...',
       loading: 'Загрузка...',
       generated: 'Черновик расписания создан.',
+      generatedRecovered: 'Расписание сохранено на сервере. Данные подгружены автоматически.',
       publishedDone: 'Расписание опубликовано.',
       weekDeleted: 'Неделя расписания удалена.',
       deleteWeekError: 'Не удалось удалить неделю расписания.',
@@ -1201,9 +1248,10 @@ export default function ScheduleReview({ language }) {
       hasScheduleMarker: 'Есть расписание',
       hasShiftsMarker: 'Есть смены',
       hasUnfilledMarker: 'Есть незаполненные смены',
-      legendCoverage: '● есть расписание',
-      legendShifts: '● смены в загруженной версии',
-      legendUnfilled: '● незаполненные смены',
+      legendCoverage: 'Черновик расписания',
+      legendCoveragePublished: 'Опубликованное расписание',
+      legendShifts: 'Назначенные смены',
+      legendUnfilled: 'Незаполненные смены',
       position: 'Должность',
       assignedBadge: 'Назначено',
       unfilledBadge: 'Не назначено',
@@ -1239,6 +1287,7 @@ export default function ScheduleReview({ language }) {
       generating: 'Generating...',
       loading: 'Loading...',
       generated: 'Draft schedule generated.',
+      generatedRecovered: 'Schedule was saved on the server. Data loaded automatically.',
       publishedDone: 'Schedule published.',
       weekDeleted: 'Schedule week deleted.',
       deleteWeekError: 'Failed to delete schedule week.',
@@ -1257,9 +1306,10 @@ export default function ScheduleReview({ language }) {
       hasScheduleMarker: 'Schedule exists',
       hasShiftsMarker: 'Shifts assigned',
       hasUnfilledMarker: 'Unfilled shifts',
-      legendCoverage: '● schedule exists',
-      legendShifts: '● shifts in loaded version',
-      legendUnfilled: '● unfilled shifts',
+      legendCoverage: 'Draft schedule',
+      legendCoveragePublished: 'Published schedule',
+      legendShifts: 'Assigned shifts',
+      legendUnfilled: 'Unfilled shifts',
       position: 'Position',
       assignedBadge: 'Assigned',
       unfilledBadge: 'Unassigned',
@@ -1412,6 +1462,20 @@ export default function ScheduleReview({ language }) {
     setError('');
     setSuccess('');
 
+    const applyGeneratedSchedule = (generated, versions = null) => {
+      const nextVersions = versions || { ...scheduleVersions, draft: generated };
+      applyLoadedScheduleState({
+        versions: nextVersions,
+        period,
+        setScheduleVersions,
+        setActiveVersion,
+        setViewPeriod,
+        setCalendarSelectedDate,
+        setCalendarMonth,
+      });
+      markUnsaved(SCHEDULE_DRAFT_SCOPE);
+    };
+
     try {
       const conflicts = await findOverlappingSchedules({
         branch_id: selectedBranchId,
@@ -1427,12 +1491,7 @@ export default function ScheduleReview({ language }) {
       const generated = await generateScheduleForBranch(period, selectedBranchId);
       const visibleShiftCount = countVisibleShifts(generated);
 
-      setViewPeriod(period);
-      setScheduleVersions((prev) => ({ ...prev, draft: generated }));
-      setActiveVersion('draft');
-      setCalendarSelectedDate(period.start_date);
-      setCalendarMonth(period.start_date);
-      markUnsaved(SCHEDULE_DRAFT_SCOPE);
+      applyGeneratedSchedule(generated);
       await reloadCoverage(selectedBranchId, period.start_date);
 
       if (visibleShiftCount > 0) {
@@ -1443,6 +1502,25 @@ export default function ScheduleReview({ language }) {
         setError(t.noScheduleHint);
       }
     } catch (e) {
+      if (isScheduleGenerateTransportError(e)) {
+        try {
+          const versions = await loadScheduleVersions(period, selectedBranchId);
+          const loaded = versions.draft || versions.published;
+          if (loaded?.id && scheduleCoversPeriod(loaded, period)) {
+            applyGeneratedSchedule(loaded, versions);
+            await reloadCoverage(selectedBranchId, period.start_date);
+            const visibleShiftCount = countVisibleShifts(loaded);
+            if (visibleShiftCount > 0 || hasStaffingRequirements(loaded)) {
+              setSuccess(t.generatedRecovered);
+            } else {
+              setError(t.noScheduleHint);
+            }
+            return;
+          }
+        } catch {
+          // Fall through to the original error message.
+        }
+      }
       setError(extractApiErrorMessage(e, t.noScheduleHint, language));
     } finally {
       setIsSubmitting(false);
@@ -1452,9 +1530,11 @@ export default function ScheduleReview({ language }) {
     language,
     markUnsaved,
     reloadCoverage,
+    scheduleVersions,
     selectedBranchId,
     t.conflictError,
     t.generated,
+    t.generatedRecovered,
     t.mondayRequired,
     t.noEmployeesAndRequirements,
     t.noScheduleHint,
@@ -1551,7 +1631,8 @@ export default function ScheduleReview({ language }) {
       }
 
       try {
-        const versions = await loadScheduleVersions(viewPeriod, selectedBranchId);
+        const monthPeriod = buildCalendarMonthPeriod(calendarMonth);
+        const versions = await loadScheduleVersions(monthPeriod, selectedBranchId);
 
         if (cancelled) return;
 
@@ -1560,7 +1641,7 @@ export default function ScheduleReview({ language }) {
 
         const loadedSchedule = versions.draft || versions.published;
         if (loadedSchedule) {
-          const derived = deriveSchedulePeriod(loadedSchedule, viewPeriod);
+          const derived = deriveSchedulePeriod(loadedSchedule, monthPeriod);
           setViewPeriod(derived);
         }
       } catch (error) {
@@ -1581,7 +1662,65 @@ export default function ScheduleReview({ language }) {
     return () => {
       cancelled = true;
     };
-  }, [hasCompany, isAuthLoading, language, selectedBranchId, t.noScheduleHint]);
+  }, [calendarMonth, hasCompany, isAuthLoading, language, selectedBranchId, t.noScheduleHint]);
+
+  useEffect(() => {
+    if (!selectedBranchId || !hasCompany || isAuthLoading || isLoading) {
+      return undefined;
+    }
+
+    const loadedSchedule = scheduleVersions.draft || scheduleVersions.published;
+    const monthPeriod = buildCalendarMonthPeriod(calendarMonth);
+    if (loadedSchedule?.id && scheduleCoversPeriod(loadedSchedule, monthPeriod)) {
+      return undefined;
+    }
+
+    const hasCoverageInMonth = Object.keys(coverageByDate).some((dateKey) => (
+      dateKey >= monthPeriod.start_date && dateKey <= monthPeriod.end_date
+    ));
+    if (!hasCoverageInMonth) {
+      return undefined;
+    }
+
+    let cancelled = false;
+
+    async function syncScheduleFromCoverage() {
+      try {
+        const versions = await loadScheduleVersions(monthPeriod, selectedBranchId);
+        if (cancelled) return;
+
+        const loaded = versions.draft || versions.published;
+        if (!loaded?.id) return;
+
+        applyLoadedScheduleState({
+          versions,
+          period: deriveSchedulePeriod(loaded, monthPeriod),
+          setScheduleVersions,
+          setActiveVersion,
+          setViewPeriod,
+          setCalendarSelectedDate,
+          setCalendarMonth,
+        });
+      } catch {
+        // Ignore background sync errors.
+      }
+    }
+
+    void syncScheduleFromCoverage();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    calendarMonth,
+    coverageByDate,
+    hasCompany,
+    isAuthLoading,
+    isLoading,
+    scheduleVersions.draft,
+    scheduleVersions.published,
+    selectedBranchId,
+  ]);
 
   useEffect(() => {
     if (!selectedBranchId) return undefined;

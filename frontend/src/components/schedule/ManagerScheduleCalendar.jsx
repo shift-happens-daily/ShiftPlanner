@@ -1,6 +1,38 @@
 import { useMemo } from 'react';
 import { formatLocalDate } from '../../services/scheduleService';
 
+const LEGEND_MARKERS = {
+  coverageDraft: '#002642',
+  coveragePublished: '#34c759',
+  shifts: '#667eea',
+  unfilled: '#ff9500',
+};
+
+function LegendItem({ color, label, size = 8 }) {
+  return (
+    <span style={{
+      display: 'inline-flex',
+      alignItems: 'center',
+      gap: 6,
+      color: '#4f646f',
+      fontSize: 12,
+      fontWeight: 600,
+    }}
+    >
+      <span style={{
+        width: size,
+        height: size,
+        borderRadius: '50%',
+        background: color,
+        flexShrink: 0,
+        display: 'block',
+      }}
+      />
+      {label}
+    </span>
+  );
+}
+
 const SHIFT_CHIP_COLORS = {
   shift: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
   unfilled: 'linear-gradient(135deg, #ffd6a5 0%, #ffb085 100%)',
@@ -473,7 +505,9 @@ export default function ManagerScheduleCalendar({
                             height: 7,
                             borderRadius: '50%',
                             display: 'block',
-                            background: coverage.status === 'published' ? '#34c759' : '#002642',
+                            background: coverage.status === 'published'
+                              ? LEGEND_MARKERS.coveragePublished
+                              : LEGEND_MARKERS.coverageDraft,
                           }}
                         />
                       )}
@@ -485,7 +519,7 @@ export default function ManagerScheduleCalendar({
                             height: 6,
                             borderRadius: '50%',
                             display: 'block',
-                            background: '#667eea',
+                            background: LEGEND_MARKERS.shifts,
                           }}
                         />
                       )}
@@ -497,7 +531,7 @@ export default function ManagerScheduleCalendar({
                             height: 6,
                             borderRadius: '50%',
                             display: 'block',
-                            background: '#ff9500',
+                            background: LEGEND_MARKERS.unfilled,
                           }}
                         />
                       )}
@@ -542,16 +576,15 @@ export default function ManagerScheduleCalendar({
 
         <div style={{
           display: 'flex',
-          gap: 12,
+          gap: 14,
           flexWrap: 'wrap',
-          color: '#4f646f',
-          fontSize: 12,
-          fontWeight: 600,
+          alignItems: 'center',
         }}
         >
-          <span>{texts.legendCoverage}</span>
-          <span>{texts.legendShifts}</span>
-          <span>{texts.legendUnfilled}</span>
+          <LegendItem color={LEGEND_MARKERS.coverageDraft} label={texts.legendCoverage} />
+          <LegendItem color={LEGEND_MARKERS.coveragePublished} label={texts.legendCoveragePublished} />
+          <LegendItem color={LEGEND_MARKERS.shifts} label={texts.legendShifts} />
+          <LegendItem color={LEGEND_MARKERS.unfilled} label={texts.legendUnfilled} />
         </div>
       </section>
 
