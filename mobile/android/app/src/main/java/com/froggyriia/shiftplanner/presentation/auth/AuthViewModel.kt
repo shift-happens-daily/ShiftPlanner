@@ -17,6 +17,14 @@ class AuthViewModel(
     private val _uiState = MutableStateFlow(AuthUiState())
     val uiState: StateFlow<AuthUiState> = _uiState.asStateFlow()
 
+    init {
+        viewModelScope.launch {
+            repository.getCurrentUser()?.let { user ->
+                _uiState.value = _uiState.value.copy(currentUser = user)
+            }
+        }
+    }
+
     fun onEmailChange(value: String) {
         _uiState.value = _uiState.value.copy(email = value)
     }

@@ -5,7 +5,7 @@ final class APIClient {
 
     private init() {}
 
-    let baseURL = URL(string: "http://10.91.61.1:8000")!
+    let baseURL = URL(string: "https://shiftplanner.online/api")!
 
     private let session = URLSession.shared
     private let accessTokenKey = "shiftplanner.accessToken"
