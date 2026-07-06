@@ -134,14 +134,14 @@ def get_schedules(
 
 @router.post(
     "/generate",
-    response_model=ScheduleRead,
+    response_model=list[ScheduleRead],
     responses={**BAD_REQUEST_RESPONSE, **UNAUTHORIZED_RESPONSE, **FORBIDDEN_RESPONSE, **VALIDATION_ERROR_RESPONSE},
 )
 def generate_schedule(
     payload: ScheduleGenerateRequest | None = None,
     current_user: UserRead = Depends(require_role("manager")),
     db: Session = Depends(get_db),
-) -> ScheduleRead:
+) -> list[ScheduleRead]:
     return schedule_service.generate_schedule(db, current_user, payload)
 
 

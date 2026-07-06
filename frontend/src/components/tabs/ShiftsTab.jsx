@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   createMyAbsence,
   deleteEmployeeAbsence,
+  getEmployeeAvailability,
   getMyAbsences,
   updateEmployeeAvailability,
 } from '../../services/employeeService';
@@ -163,6 +164,103 @@ function buildIntervalsForWeekday(weekday, availabilityStatus, slotStarts) {
   }
 
   return intervals;
+}
+
+function buildIntervalsForDate(dateKey, availabilityStatus, slotStarts) {
+  const sorted = [...slotStarts].sort((a, b) => a - b);
+  const intervals = [];
+  let startMinutes = null;
+  let previousMinutes = null;
+
+  sorted.forEach((minutes) => {
+    if (startMinutes === null) {
+      startMinutes = minutes;
+      previousMinutes = minutes;
+      return;
+    }
+
+    if (minutes === previousMinutes + SLOT_MINUTES) {
+      previousMinutes = minutes;
+      return;
+    }
+
+    intervals.push({
+      date: dateKey,
+      start_time: minutesToTimeString(startMinutes),
+      end_time: minutesToTimeString(previousMinutes + SLOT_MINUTES),
+      availability_status: availabilityStatus,
+    });
+
+    startMinutes = minutes;
+    previousMinutes = minutes;
+  });
+
+  if (startMinutes !== null) {
+    intervals.push({
+      date: dateKey,
+      start_time: minutesToTimeString(startMinutes),
+      end_time: minutesToTimeString(previousMinutes + SLOT_MINUTES),
+      availability_status: availabilityStatus,
+    });
+  }
+
+  return intervals;
+}
+
+function convertDatesToDailyIntervals(availabilityByDate, dates = []) {
+  const sourceDates = Array.isArray(dates) && dates.length > 0
+    ? dates
+    : Object.keys(availabilityByDate || {}).map((dateKey) => new Date(`${dateKey}T00:00:00`));
+
+  const dateEntries = sourceDates
+    .map((date) => {
+      const dateKey = toDateKey(date);
+      return dateKey ? [dateKey, availabilityByDate?.[dateKey] || {}] : null;
+    })
+    .filter(Boolean);
+
+  const intervals = [];
+  dateEntries.forEach(([dateKey, slotMap]) => {
+    const slotsByStatus = {};
+    Object.entries(slotMap || {}).forEach(([slot, status]) => {
+      const normalizedStatus = normalizeAvailabilityStatus(status);
+      if (normalizedStatus === 'available' || normalizedStatus === 'if_needed') {
+        if (!slotsByStatus[normalizedStatus]) slotsByStatus[normalizedStatus] = new Set();
+        slotsByStatus[normalizedStatus].add(slotToMinutes(slot));
+      }
+    });
+
+    Object.entries(slotsByStatus).forEach(([availabilityStatus, slotStarts]) => {
+      intervals.push(...buildIntervalsForDate(dateKey, availabilityStatus, [...slotStarts]));
+    });
+  });
+
+  return intervals;
+}
+
+function timeStringToMinutes(value) {
+  const [hours, minutes] = String(value || '').split(':').map(Number);
+  return (hours * 60) + (minutes || 0);
+}
+
+function dailyAvailabilityToByDate(dailyAvailability = []) {
+  const result = {};
+  dailyAvailability.forEach((block) => {
+    const dateKey = String(block.date || '').slice(0, 10);
+    if (!dateKey) return;
+
+    const startMinutes = timeStringToMinutes(block.start_time);
+    const endMinutes = timeStringToMinutes(block.end_time);
+    if (!result[dateKey]) result[dateKey] = {};
+
+    TIME_SLOTS.forEach((slot) => {
+      const slotMinutes = slotToMinutes(slot);
+      if (slotMinutes >= startMinutes && slotMinutes < endMinutes) {
+        result[dateKey][slot] = normalizeAvailabilityStatus(block.availability_status);
+      }
+    });
+  });
+  return result;
 }
 
 // Backend only stores a recurring weekly availability template, so when saving we
@@ -1122,6 +1220,7 @@ export default function ShiftsTab({ language, userRole, user }) {
     }
 
     const absencesData = await getMyAbsences();
+    const availabilityData = await getEmployeeAvailability(employeeId).catch(() => null);
 
     const storedByDate = (() => {
       try {
@@ -1131,7 +1230,10 @@ export default function ShiftsTab({ language, userRole, user }) {
         return {};
       }
     })();
-    setAvailabilityByDate(storedByDate);
+
+    const apiByDate = dailyAvailabilityToByDate(availabilityData?.daily_availability || []);
+    const hasStoredDates = Object.keys(storedByDate).length > 0;
+    setAvailabilityByDate(hasStoredDates ? storedByDate : apiByDate);
 
     setAbsences(normalizeArray(absencesData));
   }, [employeeId, availabilityStorageKey]);
@@ -1584,9 +1686,8 @@ export default function ShiftsTab({ language, userRole, user }) {
 
       await updateEmployeeAvailability(employeeId, {
         desired_days_off: [],
-        // The API still accepts a weekly shape; keep that sync limited to the
-        // visible week, while the UI stores selections by exact calendar date.
-        weekly_availability: convertDatesToWeeklyIntervals(availabilityByDate, weekDates),
+        weekly_availability: [],
+        daily_availability: convertDatesToDailyIntervals(availabilityByDate),
       });
       await loadEmployeeData();
       markSaved(AVAILABILITY_SCOPE);

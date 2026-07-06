@@ -231,21 +231,39 @@ def replace_availability(
     *,
     employee_id: int,
     blocks: list[dict],
+    daily_blocks: list[dict] | None = None,
     desired_days_off: list[int],
 ) -> Employee:
     db.execute(delete(EmployeeAvailability).where(EmployeeAvailability.employee_id == employee_id))
     db.execute(delete(EmployeeDesiredDayOff).where(EmployeeDesiredDayOff.employee_id == employee_id))
 
-    for block in blocks:
-        db.add(
-            EmployeeAvailability(
-                employee_id=employee_id,
-                weekday=block["weekday"],
-                start_time=block["start_time"],
-                end_time=block["end_time"],
-                availability_status=block.get("availability_status", "available"),
+    if daily_blocks:
+        for block in daily_blocks:
+            block_date = block["date"]
+            if not isinstance(block_date, date):
+                block_date = date.fromisoformat(str(block_date))
+            db.add(
+                EmployeeAvailability(
+                    employee_id=employee_id,
+                    availability_date=block_date,
+                    weekday=block_date.weekday(),
+                    start_time=block["start_time"],
+                    end_time=block["end_time"],
+                    availability_status=block.get("availability_status", "available"),
+                )
             )
-        )
+    else:
+        for block in blocks:
+            db.add(
+                EmployeeAvailability(
+                    employee_id=employee_id,
+                    availability_date=None,
+                    weekday=block["weekday"],
+                    start_time=block["start_time"],
+                    end_time=block["end_time"],
+                    availability_status=block.get("availability_status", "available"),
+                )
+            )
 
     for weekday in desired_days_off:
         db.add(EmployeeDesiredDayOff(employee_id=employee_id, weekday=weekday))

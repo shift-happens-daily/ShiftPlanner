@@ -7,12 +7,13 @@ import {
   fetchScheduleVersions,
   findOverlappingSchedules,
   formatLocalDate,
-  generateScheduleForBranch,
+  generateScheduleWeeks,
   getWeekPeriodRange,
   isMonday,
   isScheduleGenerateTransportError,
   periodsOverlap,
   publishScheduleForPeriod,
+  resolveScheduleIdForDate,
   snapToMonday,
   assignRequirement,
 } from '../../services/scheduleService';
@@ -1488,7 +1489,7 @@ export default function ScheduleReview({ language }) {
         return;
       }
 
-      const generated = await generateScheduleForBranch(period, selectedBranchId);
+      const generated = await generateScheduleWeeks(mondayStart, weeks, selectedBranchId);
       const visibleShiftCount = countVisibleShifts(generated);
 
       applyGeneratedSchedule(generated);
@@ -1817,12 +1818,18 @@ export default function ScheduleReview({ language }) {
     const employeeId = assignEmployeeIds[requirementId];
     if (!schedule?.id || !requirementId || !employeeId) return;
 
+    const requirement = unfilledRequirements.find(
+      (item) => Number(item.requirement_id) === Number(requirementId),
+    );
+    const requirementDate = String(requirement?.date || '').slice(0, 10);
+    const scheduleId = resolveScheduleIdForDate(schedule, requirementDate) || schedule.id;
+
     setIsSubmitting(true);
     setError('');
     setSuccess('');
 
     try {
-      await assignRequirement(schedule.id, requirementId, {
+      await assignRequirement(scheduleId, requirementId, {
         employee_id: Number(employeeId),
       });
       await reloadScheduleVersions('draft');

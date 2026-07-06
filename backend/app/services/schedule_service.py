@@ -263,7 +263,7 @@ def generate_schedule(
     db: Session,
     current_user: UserRead,
     payload: ScheduleGenerateRequest | None = None,
-) -> ScheduleRead:
+) -> list[ScheduleRead]:
     if current_user.company_id is None:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
@@ -275,42 +275,56 @@ def generate_schedule(
     if start_date is None or end_date is None:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail="branch_id, start_date and end_date are required for schedule generation.",
+            detail="start_date and end_date are required for weekly schedule generation.",
         )
-    _validate_generation_period_http(start_date, end_date)
+    _validate_week_period_http(start_date, end_date)
 
-    branch = company_repository.get_branch_by_id(db, payload.branch_id)
-    if branch is None or branch.company_id != current_user.company_id:
+    if payload and payload.branch_id is not None:
+        branch = company_repository.get_branch_by_id(db, payload.branch_id)
+        if branch is None or branch.company_id != current_user.company_id:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Branch does not belong to the authenticated user's company.",
+            )
+        branches = [branch]
+    else:
+        branches = company_repository.list_branches_for_company(db, current_user.company_id)
+    if not branches:
         raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Branch does not belong to the authenticated user's company.",
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Manager's company does not have a branch.",
         )
 
-    conflict = schedule_repository.find_active_schedule_conflict(
-        db,
-        company_id=current_user.company_id,
-        branch_id=branch.id,
-        start_date=start_date,
-        end_date=end_date,
-    )
-    if conflict is not None:
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail=(
-                "Schedule already exists for this branch and period "
-                f"({conflict['status']}: {conflict['start_date']} - {conflict['end_date']})."
-            ),
-        )
-
-    try:
-        result = schedule_solver.generate_schedule(
+    for branch in branches:
+        conflict = schedule_repository.find_active_schedule_conflict(
             db,
             company_id=current_user.company_id,
             branch_id=branch.id,
             start_date=start_date,
             end_date=end_date,
-            commit=False,
         )
+        if conflict is not None:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=(
+                    "Schedule already exists for this branch and period "
+                    f"({conflict['status']}: {conflict['start_date']} - {conflict['end_date']})."
+                ),
+            )
+
+    try:
+        results = []
+        for branch in branches:
+            results.append(
+                schedule_solver.generate_schedule(
+                    db,
+                    company_id=current_user.company_id,
+                    branch_id=branch.id,
+                    start_date=start_date,
+                    end_date=end_date,
+                    commit=False,
+                )
+            )
         db.commit()
     except schedule_solver.ScheduleDataError as exc:
         db.rollback()
@@ -327,8 +341,11 @@ def generate_schedule(
         db.rollback()
         raise
 
-    schedule = schedule_repository.get_schedule(db, result.schedule_id)
-    return _build_schedule_read(db, result.schedule_id, schedule.status)
+    schedule_reads: list[ScheduleRead] = []
+    for result in results:
+        schedule = schedule_repository.get_schedule(db, result.schedule_id)
+        schedule_reads.append(_build_schedule_read(db, result.schedule_id, schedule.status))
+    return schedule_reads
 
 
 def list_schedules(
@@ -930,18 +947,12 @@ def _validate_week_period_http(start_date: date, end_date: date) -> None:
     if start_date.weekday() != 0 or end_date != start_date + timedelta(days=6):
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail="Schedule deletion requires one full Monday-Sunday week.",
+            detail="Schedule requires one full Monday-Sunday week.",
         )
 
 
 def _validate_generation_period_http(start_date: date, end_date: date) -> None:
-    allowed_lengths = {7, 14, 28}
-    period_days = (end_date - start_date).days + 1
-    if start_date.weekday() != 0 or period_days not in allowed_lengths:
-        raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail="Schedule generation requires a Monday start date and a 7, 14, or 28 day period.",
-        )
+    _validate_week_period_http(start_date, end_date)
 
 
 def _get_schedule_branch_id(db: Session, schedule_id: int) -> int | None:
@@ -1109,15 +1120,22 @@ def _get_employee_availability_status_for_date(
                 SELECT start_time, end_time, availability_status
                 FROM employee_availability
                 WHERE employee_id = :employee_id
-                  AND availability_date = :availability_date
+                  AND (
+                    availability_date = :availability_date
+                    OR (
+                      availability_date IS NULL
+                      AND weekday = :weekday
+                    )
+                  )
                   AND start_time < :end_time
                   AND end_time > :start_time
-                ORDER BY start_time, end_time, id
+                ORDER BY availability_date NULLS LAST, start_time, end_time, id
                 """
             ),
             {
                 "employee_id": employee_id,
                 "availability_date": shift_date,
+                "weekday": shift_date.weekday(),
                 "start_time": start_time,
                 "end_time": end_time,
             },

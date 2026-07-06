@@ -127,6 +127,84 @@ function pickPrimarySchedule(schedules, branchId = null) {
   return [...source].sort((a, b) => b.id - a.id)[0];
 }
 
+export function pickScheduleForBranch(schedules, branchId) {
+  if (!Array.isArray(schedules) || branchId == null) {
+    return null;
+  }
+  return schedules.find((schedule) => Number(schedule.branch_id) === Number(branchId)) || null;
+}
+
+export function mergeWeeklySchedules(schedules, branchId, period = null) {
+  if (!Array.isArray(schedules) || schedules.length === 0) {
+    return null;
+  }
+
+  const relevant = schedules
+    .filter((schedule) => Number(schedule.branch_id) === Number(branchId))
+    .filter((schedule) => {
+      if (!period?.start_date || !period?.end_date) {
+        return true;
+      }
+      return periodsOverlap(
+        schedule.start_date,
+        schedule.end_date,
+        period.start_date,
+        period.end_date,
+      );
+    })
+    .sort((left, right) => String(left.start_date).localeCompare(String(right.start_date)));
+
+  if (relevant.length === 0) {
+    return null;
+  }
+
+  const shifts = relevant.flatMap((schedule) => schedule.shifts || []);
+  const unfilledRequirements = relevant.flatMap((schedule) => schedule.unfilled_requirements || []);
+  const conflicts = relevant.flatMap((schedule) => schedule.conflicts || []);
+  const weeklySchedules = relevant.map((schedule) => ({
+    id: schedule.id,
+    branch_id: schedule.branch_id,
+    start_date: schedule.start_date,
+    end_date: schedule.end_date,
+    status: schedule.status,
+  }));
+  const allPublished = relevant.every((schedule) => schedule.status === 'published');
+  const hasDraft = relevant.some((schedule) => schedule.status === 'draft');
+
+  return {
+    id: relevant[0].id,
+    branch_id: Number(branchId),
+    status: allPublished ? 'published' : (hasDraft ? 'draft' : relevant[0].status),
+    start_date: period?.start_date || relevant[0].start_date,
+    end_date: period?.end_date || relevant[relevant.length - 1].end_date,
+    shifts,
+    unfilled_requirements: unfilledRequirements,
+    conflicts,
+    weekly_schedules: weeklySchedules,
+  };
+}
+
+export function resolveScheduleIdForDate(schedule, dateKey) {
+  if (!schedule || !dateKey) {
+    return schedule?.id || null;
+  }
+
+  const weeklySchedules = schedule.weekly_schedules || [];
+  const match = weeklySchedules.find(
+    (item) => dateKey >= item.start_date && dateKey <= item.end_date,
+  );
+  if (match?.id) {
+    return match.id;
+  }
+
+  if (schedule.start_date && schedule.end_date
+    && dateKey >= schedule.start_date && dateKey <= schedule.end_date) {
+    return schedule.id;
+  }
+
+  return schedule.id || null;
+}
+
 async function listSchedulesForBranch(status, branchId, period = null) {
   const scoped = await listSchedules(buildScheduleQueryParams(period, status, branchId));
   if (scoped.length > 0 || !branchId) {
@@ -184,16 +262,21 @@ export async function fetchScheduleCoverage({ branch_id, date_from, date_to }) {
 export async function fetchScheduleVersions(period = null, branchId = null) {
   const loadByStatus = async (status) => {
     const schedules = await listSchedulesForBranch(status, branchId, period);
-    const primary = pickPrimarySchedule(schedules, branchId);
-    if (!primary?.id) {
+    if (schedules.length === 0) {
       return null;
     }
 
-    const response = await api.get(`/schedule/${primary.id}`);
-    return withPeriod(response.data, period || {
-      start_date: response.data.start_date,
-      end_date: response.data.end_date,
-    });
+    const fullSchedules = await Promise.all(
+      schedules.map(async (item) => {
+        const response = await api.get(`/schedule/${item.id}`);
+        return withPeriod(response.data, {
+          start_date: item.start_date,
+          end_date: item.end_date,
+        });
+      }),
+    );
+
+    return mergeWeeklySchedules(fullSchedules, branchId, period);
   };
 
   const [draft, published] = await Promise.all([
@@ -207,17 +290,58 @@ export async function fetchScheduleVersions(period = null, branchId = null) {
   };
 }
 
-/** Generate schedule for a single branch and selected period. */
-export async function generateScheduleForBranch(period, branchId) {
+/** Generate one Monday-Sunday week (optionally for a single branch). */
+export async function generateScheduleWeek(period, branchId = null) {
   const payload = {
     start_date: period.start_date,
     end_date: period.end_date,
-    branch_id: branchId,
   };
+  if (branchId) {
+    payload.branch_id = branchId;
+  }
   const response = await api.post('/schedule/generate', payload, {
     timeout: 120000,
   });
-  return withPeriod(response.data, period);
+  return Array.isArray(response.data) ? response.data : [response.data].filter(Boolean);
+}
+
+/** Generate 1/2/4 weeks for the selected branch (variant B: one API call per week). */
+export async function generateScheduleWeeks(mondayStart, weeks, branchId) {
+  const normalizedMonday = snapToMonday(mondayStart);
+  const fullPeriod = getWeekPeriodRange(normalizedMonday, weeks);
+  const generatedWeeks = [];
+
+  for (let weekIndex = 0; weekIndex < weeks; weekIndex += 1) {
+    const weekStartDate = new Date(`${normalizedMonday}T12:00:00`);
+    weekStartDate.setDate(weekStartDate.getDate() + weekIndex * 7);
+    const weekPeriod = getWeekPeriodRange(formatLocalDate(weekStartDate), 1);
+    const weekResults = await generateScheduleWeek(weekPeriod, branchId);
+    const branchSchedule = pickScheduleForBranch(weekResults, branchId);
+    if (branchSchedule) {
+      generatedWeeks.push(withPeriod(branchSchedule, weekPeriod));
+    }
+  }
+
+  const merged = mergeWeeklySchedules(generatedWeeks, branchId, fullPeriod);
+  if (!merged && generatedWeeks.length > 0) {
+    return withPeriod(generatedWeeks[0], fullPeriod);
+  }
+  return merged;
+}
+
+/** Backward-compatible alias: generate for branch across one or more weeks. */
+export async function generateScheduleForBranch(period, branchId, weeks = null) {
+  if (!branchId) {
+    const response = await api.post('/schedule/generate', period, { timeout: 120000 });
+    const schedules = Array.isArray(response.data) ? response.data : [response.data].filter(Boolean);
+    return mergeWeeklySchedules(schedules, branchId, period) || withPeriod(schedules[0], period);
+  }
+
+  const mondayStart = snapToMonday(period.start_date);
+  const inferredWeeks = weeks || Math.max(1, Math.round(
+    (new Date(`${period.end_date}T12:00:00`) - new Date(`${period.start_date}T12:00:00`)) / (7 * 86400000) + 0.001,
+  ));
+  return generateScheduleWeeks(mondayStart, inferredWeeks, branchId);
 }
 
 /** True when generate may have succeeded on the server despite a client/network failure. */
@@ -280,22 +404,43 @@ export function mergePublishedSchedule(previous, published) {
     shifts: published.shifts?.length ? published.shifts : (previous?.shifts || []),
     unfilled_requirements: published.unfilled_requirements ?? previous?.unfilled_requirements ?? [],
     conflicts: published.conflicts ?? previous?.conflicts ?? [],
+    weekly_schedules: published.weekly_schedules?.length
+      ? published.weekly_schedules
+      : (previous?.weekly_schedules || []),
   };
 }
 
 export async function publishScheduleForPeriod(schedule) {
-  if (!schedule?.id) {
+  const weeklySchedules = (schedule?.weekly_schedules || [])
+    .filter((item) => item.status !== 'published');
+
+  const targets = weeklySchedules.length > 0
+    ? weeklySchedules
+    : (schedule?.id ? [{ id: schedule.id, status: schedule.status }] : []);
+
+  if (targets.length === 0) {
     throw new Error('No schedule id to publish.');
   }
 
-  const response = await api.post(`/schedule/${schedule.id}/publish`);
-  const published = mergePublishedSchedule(schedule, {
-    ...response.data,
-    start_date: response.data?.start_date ?? schedule.start_date,
-    end_date: response.data?.end_date ?? schedule.end_date,
-  });
+  let published = schedule;
+  for (const target of targets) {
+    const response = await api.post(`/schedule/${target.id}/publish`);
+    published = mergePublishedSchedule(published, {
+      ...response.data,
+      start_date: response.data?.start_date ?? published?.start_date,
+      end_date: response.data?.end_date ?? published?.end_date,
+      weekly_schedules: (published?.weekly_schedules || []).map((item) => (
+        item.id === target.id
+          ? { ...item, status: 'published' }
+          : item
+      )),
+    });
+  }
 
-  return published;
+  return {
+    ...published,
+    status: 'published',
+  };
 }
 
 export async function deleteScheduleForPeriod(schedule) {

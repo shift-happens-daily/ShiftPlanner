@@ -276,8 +276,14 @@ def _load_data(
     if branch_exists is None:
         raise ScheduleDataError("branch does not belong to the requested company")
 
-    employee_branch_filter = "AND branch_id = :branch_id"
-    employee_table_branch_filter = "AND employees.branch_id = :branch_id"
+    employee_branch_join = """
+            INNER JOIN employee_branches AS eb
+                ON eb.employee_id = employees.id
+               AND eb.branch_id = :branch_id
+            INNER JOIN employee_positions AS ep
+                ON ep.employee_id = employees.id
+               AND ep.is_primary IS TRUE
+    """
     requirement_branch_filter = "AND branch_id = :branch_id"
     employee_scope_params = {"company_id": company_id, "branch_id": branch_id}
     requirement_scope_params = {
@@ -297,17 +303,17 @@ def _load_data(
         text(
             f"""
             SELECT
-                id,
-                branch_id,
-                position_id,
-                max_hours_per_week,
-                min_hours_per_shift,
-                max_hours_per_shift
+                employees.id,
+                eb.branch_id,
+                ep.position_id,
+                employees.max_hours_per_week,
+                employees.min_hours_per_shift,
+                employees.max_hours_per_shift
             FROM employees
-            WHERE company_id = :company_id
-              AND is_active = TRUE
-            {employee_branch_filter}
-            ORDER BY id
+            {employee_branch_join}
+            WHERE employees.company_id = :company_id
+              AND employees.is_active = TRUE
+            ORDER BY employees.id
             """
         ),
         employee_scope_params,
@@ -372,29 +378,37 @@ def _load_data(
             SELECT
                 availability.employee_id,
                 availability.availability_date,
+                availability.weekday,
                 availability.start_time,
                 availability.end_time,
                 availability.availability_status
             FROM employee_availability AS availability
             JOIN employees ON employees.id = availability.employee_id
+            {employee_branch_join}
             WHERE employees.company_id = :company_id
               AND employees.is_active = TRUE
-            {employee_table_branch_filter}
-              AND availability.availability_date BETWEEN :start_date AND :end_date
+              AND (
+                availability.availability_date BETWEEN :start_date AND :end_date
+                OR availability.availability_date IS NULL
+              )
             """
         ),
         {**employee_scope_params, "start_date": start_date, "end_date": end_date},
     ).mappings()
     availability: dict[tuple[int, date, time], str] = {}
     for row in availability_rows:
-        work_date = row["availability_date"]
-        for slot_time in business_slots.get(work_date, []):
-            if not _slot_in_range(slot_time, row["start_time"], row["end_time"]):
-                continue
-            key = (row["employee_id"], work_date, slot_time)
-            current = availability.get(key)
-            if current is None or _availability_priority(row["availability_status"]) > _availability_priority(current):
-                availability[key] = row["availability_status"]
+        if row["availability_date"] is not None:
+            target_dates = [row["availability_date"]]
+        else:
+            target_dates = [work_date for work_date in dates if work_date.weekday() == row["weekday"]]
+        for work_date in target_dates:
+            for slot_time in business_slots.get(work_date, []):
+                if not _slot_in_range(slot_time, row["start_time"], row["end_time"]):
+                    continue
+                key = (row["employee_id"], work_date, slot_time)
+                current = availability.get(key)
+                if current is None or _availability_priority(row["availability_status"]) > _availability_priority(current):
+                    availability[key] = row["availability_status"]
 
     absence_rows = db.execute(
         text(
@@ -402,9 +416,9 @@ def _load_data(
             SELECT absences.employee_id, absences.start_date, absences.end_date
             FROM absences
             JOIN employees ON employees.id = absences.employee_id
+            {employee_branch_join}
             WHERE employees.company_id = :company_id
               AND employees.is_active = TRUE
-            {employee_table_branch_filter}
               AND absences.start_date <= :end_date
               AND absences.end_date >= :start_date
             """
@@ -538,7 +552,10 @@ def _build_model(data: LoadedData):
                 f"works_day_e{employee.id}_{work_date.isoformat()}"
             )
             daily_total = sum(present_daily_vars)
-            model.add(daily_total >= employee.min_daily_slots * works_day)
+            # Cannot require more slots than exist for this employee/day (e.g. a 3.5h
+            # requirement when min_hours_per_shift defaults to 5h).
+            effective_min_daily = min(employee.min_daily_slots, len(present_daily_vars))
+            model.add(daily_total >= effective_min_daily * works_day)
             model.add(daily_total <= employee.max_daily_slots * works_day)
             model.add(daily_total >= works_day)
 

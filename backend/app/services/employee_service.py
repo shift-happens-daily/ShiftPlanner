@@ -332,6 +332,7 @@ def upsert_availability(db: Session, employee_id: int, payload: AvailabilityUpse
         db,
         employee_id=employee_id,
         blocks=[block.model_dump() for block in payload.weekly_availability],
+        daily_blocks=[block.model_dump() for block in payload.daily_availability] or None,
         desired_days_off=payload.desired_days_off,
     )
     return _build_availability_read(updated_employee)
@@ -477,17 +478,23 @@ def _build_employee_branches_read(employee) -> list[EmployeeBranchAssignmentRead
 
 
 def _build_availability_read(employee) -> AvailabilityRead:
+    weekly_blocks = []
+    daily_blocks = []
+    for block in employee.availability_blocks:
+        payload = {
+            "start_time": block.start_time,
+            "end_time": block.end_time,
+            "availability_status": block.availability_status,
+        }
+        if block.availability_date is not None:
+            daily_blocks.append({"date": block.availability_date, **payload})
+        else:
+            weekly_blocks.append({"weekday": block.weekday, **payload})
+
     return AvailabilityRead(
         employee_id=employee.id,
-        weekly_availability=[
-            {
-                "weekday": block.weekday,
-                "start_time": block.start_time,
-                "end_time": block.end_time,
-                "availability_status": block.availability_status,
-            }
-            for block in sorted(employee.availability_blocks, key=lambda item: (item.weekday, item.start_time))
-        ],
+        weekly_availability=sorted(weekly_blocks, key=lambda item: (item["weekday"], item["start_time"])),
+        daily_availability=sorted(daily_blocks, key=lambda item: (item["date"], item["start_time"])),
         desired_days_off=sorted(day.weekday for day in employee.desired_days_off),
     )
 
