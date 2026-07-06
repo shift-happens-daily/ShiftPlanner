@@ -84,6 +84,7 @@ def test_requirement_schema_syncs_legacy_and_current_staff_fields() -> None:
 def test_period_and_shift_payload_validators_reject_invalid_ranges() -> None:
     with pytest.raises(ValidationError):
         ScheduleRequirementBulkCreate(
+            branch_id=1,
             start_date=date(2026, 7, 7),
             end_date=date(2026, 7, 1),
             weekdays=[0],

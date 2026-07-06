@@ -6,6 +6,9 @@ VALUES
 INSERT INTO companies (name, address, invite_code, manager_user_id)
 VALUES ('Coffee Bar Barnaul', 'Barnaul, Lenin Street', 'A7K9P2X4M8Q1L5R3', 1);
 
+INSERT INTO company_managers (company_id, user_id, manager_role, membership_status)
+VALUES (1, 1, 'owner', 'active');
+
 INSERT INTO branches (company_id, name, address)
 VALUES (1, 'Main Branch', 'Barnaul, Lenin Street');
 

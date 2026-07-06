@@ -1,7 +1,8 @@
 import re
 from datetime import datetime
+from typing import Literal
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, RootModel, field_validator, model_validator
 
 INVITE_CODE_PATTERN = re.compile(r"^[A-Z0-9]{16}$")
 PUBLIC_ID_PATTERN = re.compile(r"^[A-Z0-9]{16}$")
@@ -69,6 +70,26 @@ class EmployeeRequestAcceptRequest(BaseModel):
     position_id: int | None = Field(default=None, ge=1)
 
 
+class CompanyJoinManagerRequest(BaseModel):
+    invite_code: str
+
+    @field_validator("invite_code", mode="before")
+    @classmethod
+    def validate_invite_code(cls, value: str) -> str:
+        return normalize_invite_code(value)
+
+
+class ManagerRequestRead(BaseModel):
+    id: int
+    company_id: int
+    user_id: int
+    public_id: str
+    full_name: str
+    email: str
+    manager_role: Literal["owner", "manager"]
+    membership_status: Literal["pending", "active", "declined"]
+
+
 def normalize_invite_code(value: str) -> str:
     if not isinstance(value, str):
         raise ValueError("Invite code must be a string.")
@@ -115,11 +136,39 @@ class BranchUpdate(BaseModel):
     address: str | None = None
 
 
+class WorkingHoursRange(BaseModel):
+    start_slot: int = Field(ge=0, le=47)
+    end_slot: int = Field(ge=1, le=48)
+
+    @model_validator(mode="after")
+    def validate_range(self) -> "WorkingHoursRange":
+        if self.end_slot <= self.start_slot:
+            raise ValueError("end_slot must be greater than start_slot.")
+        return self
+
+
+class BranchWorkingHoursRead(RootModel[dict[str, WorkingHoursRange]]):
+    root: dict[str, WorkingHoursRange] = Field(default_factory=dict)
+
+    @field_validator("root")
+    @classmethod
+    def validate_weekday_keys(cls, value: dict[str, WorkingHoursRange]) -> dict[str, WorkingHoursRange]:
+        invalid = [key for key in value if key not in {"0", "1", "2", "3", "4", "5", "6"}]
+        if invalid:
+            raise ValueError("Working hours keys must be strings from '0' to '6'.")
+        return value
+
+
+class BranchWorkingHoursUpdate(BranchWorkingHoursRead):
+    pass
+
+
 class BranchResponse(BaseModel):
     id: int
     name: str
     address: str | None = None
     company_id: int
+    working_hours_by_weekday: dict[str, WorkingHoursRange] = Field(default_factory=dict)
 
 
 class PositionOptionRead(BaseModel):

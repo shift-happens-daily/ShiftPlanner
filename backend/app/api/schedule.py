@@ -101,10 +101,10 @@ def get_requirements(
 )
 def create_bulk_requirements(
     payload: ScheduleRequirementBulkCreate,
-    _: UserRead = Depends(require_role("manager")),
+    current_user: UserRead = Depends(require_role("manager")),
     db: Session = Depends(get_db),
 ) -> ScheduleRequirementBulkRead:
-    return schedule_service.create_bulk_requirements(db, payload)
+    return schedule_service.create_bulk_requirements(db, payload, current_user)
 
 
 @router.get(

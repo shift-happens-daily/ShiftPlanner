@@ -45,8 +45,28 @@ CREATE TABLE branches (
     id SERIAL PRIMARY KEY,
     company_id INTEGER NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
     name VARCHAR(255) NOT NULL,
-    address TEXT
+    address TEXT,
+    working_hours_by_weekday JSONB NOT NULL DEFAULT '{"0":{"start_slot":0,"end_slot":48},"1":{"start_slot":0,"end_slot":48},"2":{"start_slot":0,"end_slot":48},"3":{"start_slot":0,"end_slot":48},"4":{"start_slot":0,"end_slot":48},"5":{"start_slot":0,"end_slot":48},"6":{"start_slot":0,"end_slot":48}}'::jsonb
 );
+
+CREATE TABLE company_managers (
+    id SERIAL PRIMARY KEY,
+    company_id INTEGER NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
+    user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    manager_role VARCHAR(50) NOT NULL DEFAULT 'manager'
+        CHECK (manager_role IN ('owner', 'manager')),
+    membership_status VARCHAR(50) NOT NULL DEFAULT 'pending'
+        CHECK (membership_status IN ('pending', 'active', 'declined')),
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE (company_id, user_id)
+);
+
+CREATE INDEX idx_company_managers_user_status
+    ON company_managers (user_id, membership_status);
+
+CREATE INDEX idx_company_managers_company_status
+    ON company_managers (company_id, membership_status);
 
 CREATE TABLE positions (
     id SERIAL PRIMARY KEY,

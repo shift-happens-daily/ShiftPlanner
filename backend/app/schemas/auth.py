@@ -19,6 +19,7 @@ class UserRead(BaseModel):
     employee_id: int | None = None
     company_id: int | None = None
     employee_status: str | None = None
+    manager_status: Literal["pending", "active"] | None = None
 
 
 class LoginResponse(BaseModel):

@@ -277,6 +277,7 @@ def _load_data(
         raise ScheduleDataError("branch does not belong to the requested company")
 
     employee_branch_filter = "AND branch_id = :branch_id"
+    employee_table_branch_filter = "AND employees.branch_id = :branch_id"
     requirement_branch_filter = "AND branch_id = :branch_id"
     employee_scope_params = {"company_id": company_id, "branch_id": branch_id}
     requirement_scope_params = {
@@ -378,7 +379,7 @@ def _load_data(
             JOIN employees ON employees.id = availability.employee_id
             WHERE employees.company_id = :company_id
               AND employees.is_active = TRUE
-            {employee_branch_filter.replace("branch_id", "employees.branch_id")}
+            {employee_table_branch_filter}
               AND availability.availability_date BETWEEN :start_date AND :end_date
             """
         ),
@@ -403,7 +404,7 @@ def _load_data(
             JOIN employees ON employees.id = absences.employee_id
             WHERE employees.company_id = :company_id
               AND employees.is_active = TRUE
-            {employee_branch_filter.replace("branch_id", "employees.branch_id")}
+            {employee_table_branch_filter}
               AND absences.start_date <= :end_date
               AND absences.end_date >= :start_date
             """

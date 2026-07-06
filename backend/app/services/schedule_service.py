@@ -1,5 +1,6 @@
 from datetime import date
 from datetime import datetime
+from datetime import time
 from datetime import timedelta
 
 from fastapi import HTTPException, status
@@ -106,6 +107,13 @@ def create_requirement(db: Session, payload: ScheduleRequirementCreate, current_
             detail="Position does not belong to the authenticated user's company.",
         )
 
+    _ensure_requirement_within_branch_working_hours(
+        branch,
+        shift_date=payload.date,
+        start_time=payload.start_time,
+        end_time=payload.end_time,
+    )
+
     requirement = schedule_repository.create_requirement(
         db,
         company_id=current_user.company_id,
@@ -175,6 +183,13 @@ def update_requirement(
             detail="end_time must be later than start_time.",
         )
 
+    _ensure_requirement_within_branch_working_hours(
+        branch,
+        shift_date=shift_date,
+        start_time=start_time,
+        end_time=end_time,
+    )
+
     updated_requirement = schedule_repository.update_requirement(
         db,
         requirement,
@@ -188,8 +203,25 @@ def update_requirement(
     return _build_requirement_read(db, updated_requirement)
 
 
-def create_bulk_requirements(db: Session, payload: ScheduleRequirementBulkCreate) -> ScheduleRequirementBulkRead:
-    positions = {item.id: item for item in position_repository.list_positions(db)}
+def create_bulk_requirements(
+    db: Session,
+    payload: ScheduleRequirementBulkCreate,
+    current_user: UserRead,
+) -> ScheduleRequirementBulkRead:
+    if current_user.company_id is None:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Manager is not linked to a company.",
+        )
+
+    branch = company_repository.get_branch_by_id(db, payload.branch_id)
+    if branch is None or branch.company_id != current_user.company_id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Branch does not belong to the authenticated user's company.",
+        )
+
+    positions = {item.id: item for item in position_repository.list_positions_by_company(db, current_user.company_id)}
     items: list[dict] = []
     current_date = payload.start_date
     while current_date <= payload.end_date:
@@ -201,10 +233,16 @@ def create_bulk_requirements(db: Session, payload: ScheduleRequirementBulkCreate
                         status_code=status.HTTP_400_BAD_REQUEST,
                         detail=f"Position {template.position_id} was not found.",
                     )
+                _ensure_requirement_within_branch_working_hours(
+                    branch,
+                    shift_date=current_date,
+                    start_time=template.start_time,
+                    end_time=template.end_time,
+                )
                 items.append(
                     {
-                        "company_id": position.company_id,
-                        "branch_id": _get_default_branch_id_for_company(db, position.company_id),
+                        "company_id": current_user.company_id,
+                        "branch_id": branch.id,
                         "position_id": template.position_id,
                         "shift_date": current_date,
                         "start_time": template.start_time,
@@ -1016,6 +1054,44 @@ def _ensure_time_range(start_time, end_time) -> None:
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail="start_time and end_time must be aligned to 5-minute steps.",
         )
+
+
+def _ensure_requirement_within_branch_working_hours(
+    branch,
+    *,
+    shift_date: date,
+    start_time: time,
+    end_time: time,
+) -> None:
+    working_hours = branch.working_hours_by_weekday or {}
+    weekday_hours = working_hours.get(str(shift_date.weekday()))
+    if weekday_hours is None:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Branch is closed on this weekday.",
+        )
+
+    start_slot = _time_to_half_hour_slot(start_time)
+    end_slot = _time_to_half_hour_slot(end_time)
+    if start_slot is None or end_slot is None:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Requirement times must be aligned to 30-minute slots.",
+        )
+
+    working_start = weekday_hours.get("start_slot")
+    working_end = weekday_hours.get("end_slot")
+    if working_start is None or working_end is None or start_slot < working_start or end_slot > working_end:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Requirement time must be within branch working hours for this date.",
+        )
+
+
+def _time_to_half_hour_slot(value: time) -> int | None:
+    if value.second != 0 or value.microsecond != 0 or value.minute not in {0, 30}:
+        return None
+    return value.hour * 2 + value.minute // 30
 
 
 def _get_employee_availability_status_for_date(

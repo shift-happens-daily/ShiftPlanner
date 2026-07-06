@@ -66,6 +66,7 @@ class ScheduleRequirementTemplateCreate(BaseModel):
 
 
 class ScheduleRequirementBulkCreate(BaseModel):
+    branch_id: int = Field(ge=1)
     start_date: date
     end_date: date
     weekdays: list[int] = Field(min_length=1)

@@ -15,15 +15,20 @@ from app.schemas.company import (
     BranchCreate,
     BranchResponse,
     BranchUpdate,
+    BranchWorkingHoursRead,
+    BranchWorkingHoursUpdate,
     CompanyCreate,
     CompanyJoinRequest,
+    CompanyJoinManagerRequest,
     CompanyLinkUserRequest,
     CompanyRead,
     CompanySummaryRead,
     CompanyUpdate,
+    CompanyUserPublicIdRequest,
     EmployeeRequestAcceptRequest,
     EmployeeRequestRead,
     LinkedEmployeeRead,
+    ManagerRequestRead,
 )
 from app.services import company_service
 
@@ -52,6 +57,18 @@ def regenerate_my_company_invite_code(
     db: Session = Depends(get_db),
 ) -> CompanyRead:
     return company_service.regenerate_my_company_invite_code(db, current_user)
+
+
+@router.post(
+    "/me/manager-invite-code/regenerate",
+    responses={**UNAUTHORIZED_RESPONSE, **FORBIDDEN_RESPONSE},
+)
+def regenerate_my_company_manager_invite_code(
+    current_user: UserRead = Depends(require_active_manager),
+    db: Session = Depends(get_db),
+) -> dict[str, str]:
+    company = company_service.regenerate_my_company_invite_code(db, current_user)
+    return {"manager_invite_code": company.invite_code}
 
 
 @router.get(
@@ -99,6 +116,70 @@ def join_company(
     db: Session = Depends(get_db),
 ) -> CurrentUserResponse:
     return company_service.join_company_by_invite(db, payload, current_user)
+
+
+@router.post(
+    "/join-as-manager",
+    response_model=CurrentUserResponse,
+    responses={**BAD_REQUEST_RESPONSE, **UNAUTHORIZED_RESPONSE, **FORBIDDEN_RESPONSE, **NOT_FOUND_RESPONSE},
+)
+def join_company_as_manager(
+    payload: CompanyJoinManagerRequest,
+    current_user: UserRead = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> CurrentUserResponse:
+    return company_service.join_company_as_manager(db, payload, current_user)
+
+
+@router.get(
+    "/me/manager-requests",
+    response_model=list[ManagerRequestRead],
+    responses={**UNAUTHORIZED_RESPONSE, **FORBIDDEN_RESPONSE},
+)
+def list_manager_requests(
+    current_user: UserRead = Depends(require_active_manager),
+    db: Session = Depends(get_db),
+) -> list[ManagerRequestRead]:
+    return company_service.list_manager_requests(db, current_user)
+
+
+@router.post(
+    "/me/manager-requests/{request_id}/accept",
+    response_model=ManagerRequestRead,
+    responses={**BAD_REQUEST_RESPONSE, **UNAUTHORIZED_RESPONSE, **FORBIDDEN_RESPONSE, **NOT_FOUND_RESPONSE},
+)
+def accept_manager_request(
+    request_id: int,
+    current_user: UserRead = Depends(require_active_manager),
+    db: Session = Depends(get_db),
+) -> ManagerRequestRead:
+    return company_service.accept_manager_request(db, request_id, current_user)
+
+
+@router.post(
+    "/me/manager-requests/{request_id}/decline",
+    response_model=ManagerRequestRead,
+    responses={**BAD_REQUEST_RESPONSE, **UNAUTHORIZED_RESPONSE, **FORBIDDEN_RESPONSE, **NOT_FOUND_RESPONSE},
+)
+def decline_manager_request(
+    request_id: int,
+    current_user: UserRead = Depends(require_active_manager),
+    db: Session = Depends(get_db),
+) -> ManagerRequestRead:
+    return company_service.decline_manager_request(db, request_id, current_user)
+
+
+@router.post(
+    "/me/managers/by-public-id",
+    response_model=ManagerRequestRead,
+    responses={**BAD_REQUEST_RESPONSE, **UNAUTHORIZED_RESPONSE, **FORBIDDEN_RESPONSE, **NOT_FOUND_RESPONSE},
+)
+def add_manager_by_public_id(
+    payload: CompanyUserPublicIdRequest,
+    current_user: UserRead = Depends(require_active_manager),
+    db: Session = Depends(get_db),
+) -> ManagerRequestRead:
+    return company_service.add_manager_by_public_id(db, payload, current_user)
 
 
 @router.get(
@@ -222,6 +303,35 @@ def delete_company_branch(
 ) -> Response:
     company_service.delete_company_branch(db, branch_id, current_user)
     return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+@router.get(
+    "/{company_id}/branches/{branch_id}/working-hours",
+    response_model=BranchWorkingHoursRead,
+    responses={**UNAUTHORIZED_RESPONSE, **FORBIDDEN_RESPONSE, **NOT_FOUND_RESPONSE},
+)
+def get_branch_working_hours(
+    company_id: int,
+    branch_id: int,
+    current_user: UserRead = Depends(require_active_manager),
+    db: Session = Depends(get_db),
+) -> BranchWorkingHoursRead:
+    return company_service.get_branch_working_hours(db, company_id, branch_id, current_user)
+
+
+@router.patch(
+    "/{company_id}/branches/{branch_id}/working-hours",
+    response_model=BranchWorkingHoursRead,
+    responses={**UNAUTHORIZED_RESPONSE, **FORBIDDEN_RESPONSE, **NOT_FOUND_RESPONSE, **VALIDATION_ERROR_RESPONSE},
+)
+def update_branch_working_hours(
+    company_id: int,
+    branch_id: int,
+    payload: BranchWorkingHoursUpdate,
+    current_user: UserRead = Depends(require_active_manager),
+    db: Session = Depends(get_db),
+) -> BranchWorkingHoursRead:
+    return company_service.update_branch_working_hours(db, company_id, branch_id, payload, current_user)
 
 
 @router.delete(
