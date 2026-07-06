@@ -14,6 +14,19 @@ export async function deleteBranch(branchId) {
   await api.delete(`/companies/branches/${branchId}`);
 }
 
+export async function getBranchWorkingHours(companyId, branchId) {
+  const { data } = await api.get(`/companies/${companyId}/branches/${branchId}/working-hours`);
+  return data;
+}
+
+export async function updateBranchWorkingHours(companyId, branchId, payload) {
+  const { data } = await api.patch(
+    `/companies/${companyId}/branches/${branchId}/working-hours`,
+    payload,
+  );
+  return data;
+}
+
 export async function listCompanies() {
   const response = await api.get('/companies/');
   return response.data;

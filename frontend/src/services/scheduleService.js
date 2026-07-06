@@ -308,40 +308,7 @@ export async function createRequirement(payload) {
   return response.data;
 }
 
-function expandBulkRequirementDates(startDate, endDate, weekdays) {
-  return enumerateDates(startDate, endDate).filter((dateStr) => {
-    const date = new Date(`${dateStr}T12:00:00`);
-    const weekday = (date.getDay() + 6) % 7;
-    return weekdays.includes(weekday);
-  });
-}
-
 export async function createBulkRequirements(payload) {
-  const { branch_id, start_date, end_date, weekdays, requirements } = payload;
-
-  // Workaround until POST /schedule/requirements/bulk accepts branch_id.
-  if (branch_id) {
-    const dates = expandBulkRequirementDates(start_date, end_date, weekdays);
-    const created = [];
-
-    for (const date of dates) {
-      for (const template of requirements) {
-        // eslint-disable-next-line no-await-in-loop
-        const item = await createRequirement({
-          branch_id: Number(branch_id),
-          position_id: Number(template.position_id),
-          date,
-          min_staff: Number(template.min_staff),
-          start_time: template.start_time,
-          end_time: template.end_time,
-        });
-        created.push(item);
-      }
-    }
-
-    return { created_count: created.length, requirements: created };
-  }
-
   const response = await api.post('/schedule/requirements/bulk', payload);
   return response.data;
 }

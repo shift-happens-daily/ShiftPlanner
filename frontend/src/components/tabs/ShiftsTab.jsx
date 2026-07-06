@@ -32,9 +32,11 @@ import RequirementTimeFields from '../requirements/RequirementTimeFields';
 import {
   clampRequirementTimes,
   dateKeyToWeekday,
+  fetchWorkingHoursStore,
   formatWorkingHoursRange,
   getWorkingHoursForWeekday,
   getWorkingHoursForWeekdays,
+  setWorkingHoursStoreFromApi,
   validateRequirementTimes,
 } from '../../utils/workingHours';
 
@@ -407,18 +409,6 @@ const MOBILE_SHIFTS_STYLES = {
   panelHint: {
     fontSize: 11,
     margin: '2px 0 0',
-  },
-  localBadge: {
-    display: 'inline-flex',
-    alignItems: 'center',
-    padding: '2px 8px',
-    borderRadius: 999,
-    background: '#eef3f6',
-    color: '#4f646f',
-    fontSize: 10,
-    fontWeight: 600,
-    textTransform: 'uppercase',
-    letterSpacing: '0.04em',
   },
   panelHeader: {
     marginBottom: 8,
@@ -808,8 +798,6 @@ export default function ShiftsTab({ language, userRole, user }) {
       missingEmployeeProfile: 'Аккаунт сотрудника не привязан к профилю. Сначала присоединитесь к компании.',
       bulkHint: 'Создаст одинаковые требования на выбранные дни недели внутри периода.',
       singleHint: 'Например: филиал «Центр», Barista, 15.06, 09:00–18:00, нужно 2 человека.',
-      localOnly: 'локально',
-      deleteNotSupported: 'Удаление через API пока недоступно.',
       available: 'Доступен',
       if_needed: 'Может быть',
       unavailable: 'Недоступен',
@@ -885,8 +873,6 @@ export default function ShiftsTab({ language, userRole, user }) {
       missingEmployeeProfile: 'This employee account is not linked to a profile yet. Join a company first.',
       bulkHint: 'Creates the same requirements for selected weekdays within the period.',
       singleHint: 'Example: Downtown branch, Barista, Jun 15, 09:00–18:00, need 2 people.',
-      localOnly: 'local',
-      deleteNotSupported: 'Delete is not available via API yet.',
       available: 'Available',
       if_needed: 'If needed',
       unavailable: 'Unavailable',
@@ -964,6 +950,42 @@ export default function ShiftsTab({ language, userRole, user }) {
     );
   }, [bulkRequirement.branch_id, bulkRequirement.weekdays, companyId, workingHoursRevision]);
 
+  const activeWorkingHoursBranchId =
+    Number(singleRequirement.branch_id)
+    || Number(bulkRequirement.branch_id)
+    || Number(filterForm.branch_id)
+    || null;
+
+  const activeBranchWorkingHours = useMemo(() => {
+    if (!activeWorkingHoursBranchId) return null;
+    const branch = branches.find((item) => Number(item.id) === activeWorkingHoursBranchId);
+    return branch?.working_hours_by_weekday || null;
+  }, [activeWorkingHoursBranchId, branches]);
+
+  useEffect(() => {
+    if (!companyId || !activeWorkingHoursBranchId) return undefined;
+
+    if (activeBranchWorkingHours) {
+      setWorkingHoursStoreFromApi(companyId, activeWorkingHoursBranchId, activeBranchWorkingHours);
+      setWorkingHoursRevision((value) => value + 1);
+      return undefined;
+    }
+
+    let cancelled = false;
+
+    void fetchWorkingHoursStore(companyId, activeWorkingHoursBranchId)
+      .then(() => {
+        if (!cancelled) {
+          setWorkingHoursRevision((value) => value + 1);
+        }
+      })
+      .catch(() => {});
+
+    return () => {
+      cancelled = true;
+    };
+  }, [activeBranchWorkingHours, activeWorkingHoursBranchId, companyId]);
+
   useEffect(() => {
     if (!singleWorkingHours) return;
 
@@ -1006,6 +1028,11 @@ export default function ShiftsTab({ language, userRole, user }) {
 
         const normalized = normalizeArray(data);
         setBranches(normalized);
+        normalized.forEach((branch) => {
+          if (branch?.working_hours_by_weekday) {
+            setWorkingHoursStoreFromApi(companyId, branch.id, branch.working_hours_by_weekday);
+          }
+        });
 
         const defaultBranchId = String(normalized[0]?.id || '');
         if (!defaultBranchId) return;
@@ -1438,12 +1465,7 @@ export default function ShiftsTab({ language, userRole, user }) {
       await loadManagerData(appliedFilters, { silent: true });
       setSuccessMessage(t.requirementDeleted);
     } catch (error) {
-      const message = String(error?.message || '');
-      if (message.includes('404') || message.includes('405') || message.toLowerCase().includes('not found')) {
-        setErrorMessage(t.deleteNotSupported);
-      } else {
-        setErrorMessage(message || t.deleteRequirement);
-      }
+      setErrorMessage(normalizeError(error, t.deleteRequirement, language));
     } finally {
       setIsSubmitting(false);
     }
@@ -1759,15 +1781,13 @@ export default function ShiftsTab({ language, userRole, user }) {
               <WorkingHoursPanel
                 language={language}
                 companyId={companyId}
-                branchId={
-                  Number(singleRequirement.branch_id)
-                  || Number(bulkRequirement.branch_id)
-                  || Number(filterForm.branch_id)
-                  || null
-                }
+                branchId={activeWorkingHoursBranchId}
+                branchWorkingHours={activeBranchWorkingHours}
                 revision={workingHoursRevision}
                 onChange={() => setWorkingHoursRevision((value) => value + 1)}
+                onError={(message) => setErrorMessage(message)}
                 markUnsaved={markUnsaved}
+                markSaved={markSaved}
                 scope={WORKING_HOURS_SCOPE}
                 styles={styles}
                 mobileStyles={mobileStyles}

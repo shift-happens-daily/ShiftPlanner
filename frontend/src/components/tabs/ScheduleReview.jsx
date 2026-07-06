@@ -323,60 +323,6 @@ function buildGroupedScheduleCounts(displaySchedule, unfilledNotFoundRequirement
   return byDate;
 }
 
-function renderMobileShiftCard(entry, t, mobileStyles) {
-  const isUnfilled = entry.kind === 'unfilled';
-  const timeLabel = `${String(entry.startTime || '').slice(0, 5)} - ${String(entry.endTime || '').slice(0, 5)}`;
-
-  return (
-    <div
-      key={entry.key}
-      style={{
-        padding: '14px 16px',
-        borderRadius: 14,
-        background: isUnfilled
-          ? 'linear-gradient(135deg, #ffd6a5 0%, #ffb085 100%)'
-          : 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
-        color: isUnfilled ? '#5a1a1a' : '#fff',
-        border: isUnfilled ? '2px dashed #8d1d1d' : '1px solid rgba(255,255,255,0.12)',
-        boxShadow: isUnfilled
-          ? '0 2px 8px rgba(141, 29, 29, 0.12)'
-          : '0 2px 8px rgba(102,126,234,0.25)',
-        ...scheduleShiftBlockStyle,
-        ...mobileStyles?.shiftCard,
-      }}
-    >
-      <div style={{
-        ...scheduleShiftBlockLineStyle,
-        fontWeight: 800,
-        fontSize: 15,
-        marginBottom: 4,
-        ...mobileStyles?.shiftPosition,
-      }}
-      >
-        {entry.position}
-      </div>
-      <div style={{
-        ...scheduleShiftBlockLineStyle,
-        fontSize: 14,
-        marginBottom: 4,
-        ...mobileStyles?.shiftEmployee,
-      }}
-      >
-        {isUnfilled ? t.notFound : entry.employee}
-      </div>
-      <div style={{
-        ...scheduleShiftBlockLineStyle,
-        fontSize: 13,
-        opacity: 0.92,
-        ...mobileStyles?.shiftTime,
-      }}
-      >
-        {timeLabel}
-      </div>
-    </div>
-  );
-}
-
 function formatTimeForApi(value) {
   const raw = String(value || '').trim();
   if (!raw) return raw;
@@ -823,7 +769,7 @@ function DayScheduleTable({
   );
 }
 
-function buildDayScheduleEntries(dateKey, displaySchedule, unfilledNotFoundRequirements) {
+function buildDayScheduleEntries(dateKey, displaySchedule, unfilledNotFoundRequirements, branchLabel = '') {
   const shiftEntries = normalizeArray(displaySchedule?.shifts)
     .filter((shift) => formatDate(shift.date) === dateKey)
     .map((shift) => ({
@@ -832,6 +778,7 @@ function buildDayScheduleEntries(dateKey, displaySchedule, unfilledNotFoundRequi
       sortTime: parseTimeToHours(shift.start_time),
       position: getShiftPositionTitle(shift),
       employee: shift.employee_name || '—',
+      branch: branchLabel,
       startTime: shift.start_time,
       endTime: shift.end_time,
     }));
@@ -846,6 +793,8 @@ function buildDayScheduleEntries(dateKey, displaySchedule, unfilledNotFoundRequi
         position_id: item.position_id,
         position_title: item.position_title || item.position,
       }, item.position_title || '—'),
+      branch: branchLabel,
+      missingStaff: Number(item.missing_staff) || 1,
       startTime: item.start_time,
       endTime: item.end_time,
     }));
@@ -853,10 +802,10 @@ function buildDayScheduleEntries(dateKey, displaySchedule, unfilledNotFoundRequi
   return [...shiftEntries, ...unfilledEntries].sort((a, b) => a.sortTime - b.sortTime);
 }
 
-function buildMobileScheduleSections(visibleDates, displaySchedule, unfilledNotFoundRequirements) {
+function buildMobileScheduleSections(visibleDates, displaySchedule, unfilledNotFoundRequirements, branchLabel = '') {
   return visibleDates.map((dateKey) => ({
     dateKey,
-    entries: buildDayScheduleEntries(dateKey, displaySchedule, unfilledNotFoundRequirements),
+    entries: buildDayScheduleEntries(dateKey, displaySchedule, unfilledNotFoundRequirements, branchLabel),
   }));
 }
 
@@ -1255,6 +1204,11 @@ export default function ScheduleReview({ language }) {
       legendCoverage: '● есть расписание',
       legendShifts: '● смены в загруженной версии',
       legendUnfilled: '● незаполненные смены',
+      position: 'Должность',
+      assignedBadge: 'Назначено',
+      unfilledBadge: 'Не назначено',
+      missingStaff: 'Не хватает: {count}',
+      moreShifts: '+{count}',
     },
     en: {
       title: 'Schedule',
@@ -1306,6 +1260,11 @@ export default function ScheduleReview({ language }) {
       legendCoverage: '● schedule exists',
       legendShifts: '● shifts in loaded version',
       legendUnfilled: '● unfilled shifts',
+      position: 'Position',
+      assignedBadge: 'Assigned',
+      unfilledBadge: 'Unassigned',
+      missingStaff: 'Missing: {count}',
+      moreShifts: '+{count}',
     },
   };
 
@@ -1347,14 +1306,53 @@ export default function ScheduleReview({ language }) {
   const scheduleStartDate = viewPeriod.start_date;
   const scheduleEndDate = viewPeriod.end_date;
 
+  const selectedBranchLabel = useMemo(() => {
+    const branch = branches.find((item) => Number(item.id) === Number(selectedBranchId));
+    return branch?.name || '';
+  }, [branches, selectedBranchId]);
+
   const groupedScheduleByDate = useMemo(
     () => buildGroupedScheduleCounts(displaySchedule, unfilledNotFoundRequirements),
     [displaySchedule, unfilledNotFoundRequirements, positionTitleRevision],
   );
 
+  const calendarEntriesByDate = useMemo(() => {
+    const dateKeys = new Set([
+      ...normalizeArray(displaySchedule?.shifts).map((shift) => formatDate(shift.date)),
+      ...unfilledNotFoundRequirements.map((item) => formatDate(item.date)),
+    ]);
+
+    const byDate = {};
+    dateKeys.forEach((dateKey) => {
+      byDate[dateKey] = buildDayScheduleEntries(
+        dateKey,
+        displaySchedule,
+        unfilledNotFoundRequirements,
+        selectedBranchLabel,
+      );
+    });
+    return byDate;
+  }, [
+    displaySchedule,
+    unfilledNotFoundRequirements,
+    positionTitleRevision,
+    selectedBranchLabel,
+  ]);
+
   const calendarSelectedDayEntries = useMemo(
-    () => buildDayScheduleEntries(calendarSelectedDate, displaySchedule, unfilledNotFoundRequirements),
-    [calendarSelectedDate, displaySchedule, unfilledNotFoundRequirements, positionTitleRevision],
+    () => buildDayScheduleEntries(
+      calendarSelectedDate,
+      displaySchedule,
+      unfilledNotFoundRequirements,
+      selectedBranchLabel,
+    ),
+    [
+      calendarSelectedDate,
+      displaySchedule,
+      unfilledNotFoundRequirements,
+      positionTitleRevision,
+      selectedBranchLabel,
+    ],
   );
 
   const schedules = useMemo(
@@ -1723,20 +1721,24 @@ export default function ScheduleReview({ language }) {
   const actionButtonStyle = isMobile ? { flex: '1 1 calc(50% - 6px)', minWidth: '140px' } : {};
   const pageStyle = {
     width: '100%',
-    height: isMobile ? 'auto' : 'calc(100dvh - 96px)',
+    height: '100%',
+    minHeight: 0,
     boxSizing: 'border-box',
     padding: isMobile ? 10 : '16px 24px 18px',
-    overflow: isMobile ? 'auto' : 'hidden',
+    overflowX: 'hidden',
+    overflowY: 'auto',
+    WebkitOverflowScrolling: 'touch',
     background: '#f4faff',
     ...mobileStyles?.page,
   };
   const shellStyle = {
     width: isMobile ? '100%' : '125%',
-    height: isMobile ? 'auto' : '125%',
+    height: 'auto',
     minHeight: 0,
     margin: '0 auto',
     boxSizing: 'border-box',
     padding: 0,
+    paddingBottom: isMobile ? 16 : 24,
     borderRadius: 0,
     background: 'transparent',
     border: 'none',
@@ -1744,7 +1746,7 @@ export default function ScheduleReview({ language }) {
     display: 'flex',
     flexDirection: 'column',
     gap: '14px',
-    overflow: isMobile ? 'visible' : 'hidden',
+    overflow: 'visible',
     transform: isMobile ? 'none' : 'scale(0.8)',
     transformOrigin: 'top left',
     ...mobileStyles?.shell,
@@ -2179,11 +2181,11 @@ export default function ScheduleReview({ language }) {
             selectedDate={calendarSelectedDate}
             onSelectedDateChange={setCalendarSelectedDate}
             groupedScheduleByDate={groupedScheduleByDate}
+            entriesByDate={calendarEntriesByDate}
             coverageByDate={coverageByDate}
             scheduleStartDate={scheduleStartDate}
             scheduleEndDate={scheduleEndDate}
             selectedDayEntries={calendarSelectedDayEntries}
-            renderShiftCard={(entry) => renderMobileShiftCard(entry, t, mobileStyles)}
           />
         ) : (
           <div style={{ ...panelStyle, padding: '48px 24px', textAlign: 'center' }}>

@@ -1,10 +1,19 @@
+import {
+  getBranchWorkingHours,
+  updateBranchWorkingHours,
+} from '../services/companyService';
+
 export const SLOT_MINUTES = 30;
 export const MIN_SLOT = 0;
 export const MAX_SLOT = 44;
 export const DEFAULT_START_SLOT = 16; // 08:00
 export const DEFAULT_END_SLOT = 36; // 18:00
 
-export const WORKING_HOURS_STORAGE_PREFIX = 'shiftplanner_working_hours_v1';
+const cache = new Map();
+
+function cacheKey(companyId, branchId) {
+  return `${companyId}_${branchId}`;
+}
 
 export function slotToMinutes(slot) {
   return slot * SLOT_MINUTES;
@@ -54,46 +63,78 @@ export function defaultDayWorkingHours() {
   });
 }
 
-function storageKey(companyId, branchId) {
-  return `${WORKING_HOURS_STORAGE_PREFIX}_${companyId}_${branchId}`;
+export function parseWorkingHoursPayload(data) {
+  if (!data || typeof data !== 'object') {
+    return {};
+  }
+
+  const source = data.root && typeof data.root === 'object' ? data.root : data;
+
+  return Object.entries(source).reduce((result, [weekday, hours]) => {
+    if (hours && typeof hours === 'object') {
+      result[String(weekday)] = normalizeDayWorkingHours(hours);
+    }
+    return result;
+  }, {});
 }
 
-export function readWorkingHoursStore(companyId, branchId) {
+export function toApiWorkingHoursPayload(store) {
+  return Object.entries(store || {}).reduce((result, [weekday, hours]) => {
+    const normalized = normalizeDayWorkingHours(hours);
+    result[String(weekday)] = {
+      start_slot: normalized.startSlot,
+      end_slot: normalized.endSlot,
+    };
+    return result;
+  }, {});
+}
+
+export function setWorkingHoursStoreFromApi(companyId, branchId, payload) {
+  if (!companyId || !branchId) return {};
+  const store = parseWorkingHoursPayload(payload);
+  cache.set(cacheKey(companyId, branchId), store);
+  return store;
+}
+
+export function getCachedWorkingHoursStore(companyId, branchId) {
+  if (!companyId || !branchId) return {};
+  return cache.get(cacheKey(companyId, branchId)) || {};
+}
+
+export async function fetchWorkingHoursStore(companyId, branchId) {
   if (!companyId || !branchId) {
     return {};
   }
 
-  try {
-    const raw = localStorage.getItem(storageKey(companyId, branchId));
-    if (!raw) return {};
-    const parsed = JSON.parse(raw);
-    if (!parsed || typeof parsed !== 'object') return {};
-
-    return Object.entries(parsed).reduce((result, [weekday, hours]) => {
-      result[weekday] = normalizeDayWorkingHours(hours);
-      return result;
-    }, {});
-  } catch {
-    return {};
-  }
-}
-
-export function writeWorkingHoursStore(companyId, branchId, store) {
-  if (!companyId || !branchId) return;
-  localStorage.setItem(storageKey(companyId, branchId), JSON.stringify(store));
+  const data = await getBranchWorkingHours(companyId, branchId);
+  return setWorkingHoursStoreFromApi(companyId, branchId, data);
 }
 
 export function getWorkingHoursForWeekday(companyId, branchId, weekday) {
-  const store = readWorkingHoursStore(companyId, branchId);
+  const store = getCachedWorkingHoursStore(companyId, branchId);
   const saved = store[String(weekday)];
   return saved ? normalizeDayWorkingHours(saved) : defaultDayWorkingHours();
 }
 
-export function updateWorkingHoursForWeekday(companyId, branchId, weekday, startSlot, endSlot) {
-  const store = readWorkingHoursStore(companyId, branchId);
-  store[String(weekday)] = normalizeDayWorkingHours({ startSlot, endSlot });
-  writeWorkingHoursStore(companyId, branchId, store);
-  return store[String(weekday)];
+export async function updateWorkingHoursForWeekday(companyId, branchId, weekday, startSlot, endSlot) {
+  const key = cacheKey(companyId, branchId);
+  let store = cache.get(key);
+  if (!store || Object.keys(store).length === 0) {
+    store = await fetchWorkingHoursStore(companyId, branchId);
+  }
+
+  const nextStore = {
+    ...store,
+    [String(weekday)]: normalizeDayWorkingHours({ startSlot, endSlot }),
+  };
+
+  const saved = await updateBranchWorkingHours(
+    companyId,
+    branchId,
+    toApiWorkingHoursPayload(nextStore),
+  );
+  const parsed = setWorkingHoursStoreFromApi(companyId, branchId, saved);
+  return parsed[String(weekday)];
 }
 
 export function getWorkingHoursForWeekdays(companyId, branchId, weekdays = []) {
@@ -169,45 +210,4 @@ export function validateRequirementTimes(startTime, endTime, workingHours, messa
 export function formatWorkingHoursRange(workingHours) {
   const range = normalizeDayWorkingHours(workingHours);
   return `${slotToDisplayTime(range.startSlot)}–${slotToDisplayTime(range.endSlot)}`;
-}
-
-export function inferWorkingHoursStore(requirements = [], branchId = null) {
-  const store = {};
-
-  requirements.forEach((requirement) => {
-    if (branchId && String(requirement.branch_id) !== String(branchId)) {
-      return;
-    }
-
-    const weekday = dateKeyToWeekday(requirement.date);
-    const startSlot = timeToSlot(requirement.start_time || requirement.startTime);
-    const endSlot = timeToSlot(requirement.end_time || requirement.endTime);
-    const key = String(weekday);
-    const current = store[key];
-
-    if (!current) {
-      store[key] = { startSlot, endSlot };
-      return;
-    }
-
-    store[key] = {
-      startSlot: Math.min(current.startSlot, startSlot),
-      endSlot: Math.max(current.endSlot, endSlot),
-    };
-  });
-
-  return Object.entries(store).reduce((result, [weekday, hours]) => {
-    result[weekday] = normalizeDayWorkingHours(hours);
-    return result;
-  }, {});
-}
-
-export function mergeWorkingHoursStore(existingStore, inferredStore) {
-  const merged = { ...existingStore };
-  Object.entries(inferredStore || {}).forEach(([weekday, hours]) => {
-    if (!merged[weekday]) {
-      merged[weekday] = normalizeDayWorkingHours(hours);
-    }
-  });
-  return merged;
 }

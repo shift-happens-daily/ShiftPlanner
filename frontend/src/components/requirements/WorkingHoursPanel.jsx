@@ -3,9 +3,11 @@ import {
   MAX_SLOT,
   MIN_SLOT,
   buildSlotOptions,
+  fetchWorkingHoursStore,
   formatWorkingHoursRange,
   getWorkingHoursForWeekday,
   normalizeDayWorkingHours,
+  setWorkingHoursStoreFromApi,
   updateWorkingHoursForWeekday,
 } from '../../utils/workingHours';
 
@@ -23,9 +25,12 @@ export default function WorkingHoursPanel({
   language,
   companyId,
   branchId,
+  branchWorkingHours,
   revision = 0,
   onChange,
+  onError,
   markUnsaved,
+  markSaved,
   scope,
   styles,
   mobileStyles,
@@ -33,23 +38,25 @@ export default function WorkingHoursPanel({
   const texts = {
     ru: {
       title: 'Часы работы',
-      hint: 'Используются для новых требований. Пока сохраняются только в браузере.',
+      hint: 'Используются для ограничения времени новых требований.',
       chooseBranch: 'Выберите филиал, чтобы настроить часы работы.',
       weekday: 'День недели',
       from: 'С',
       to: 'До',
-      apply: 'Применить',
-      localOnly: 'локально',
+      apply: 'Сохранить',
+      loadError: 'Не удалось загрузить часы работы.',
+      saveError: 'Не удалось сохранить часы работы.',
     },
     en: {
       title: 'Working hours',
-      hint: 'Used for new requirements. Stored in this browser only for now.',
+      hint: 'Used to constrain times for new requirements.',
       chooseBranch: 'Select a branch to configure working hours.',
       weekday: 'Weekday',
       from: 'From',
       to: 'To',
-      apply: 'Apply',
-      localOnly: 'local',
+      apply: 'Save',
+      loadError: 'Failed to load working hours.',
+      saveError: 'Failed to save working hours.',
     },
   };
 
@@ -58,6 +65,36 @@ export default function WorkingHoursPanel({
   const [selectedWeekday, setSelectedWeekday] = useState(0);
   const [startSlot, setStartSlot] = useState(16);
   const [endSlot, setEndSlot] = useState(36);
+  const [isLoading, setIsLoading] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
+
+  useEffect(() => {
+    if (!companyId || !branchId) return undefined;
+
+    if (branchWorkingHours) {
+      setWorkingHoursStoreFromApi(companyId, branchId, branchWorkingHours);
+      return undefined;
+    }
+
+    let cancelled = false;
+    setIsLoading(true);
+
+    void fetchWorkingHoursStore(companyId, branchId)
+      .catch(() => {
+        if (!cancelled) {
+          onError?.(t.loadError);
+        }
+      })
+      .finally(() => {
+        if (!cancelled) {
+          setIsLoading(false);
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [branchId, branchWorkingHours, companyId, onError, t.loadError]);
 
   const currentHours = useMemo(() => {
     if (!companyId || !branchId) {
@@ -76,13 +113,27 @@ export default function WorkingHoursPanel({
     return buildSlotOptions(minimumEndSlot, MAX_SLOT);
   }, [startSlot]);
 
-  const handleApply = () => {
-    if (!companyId || !branchId) return;
+  const handleApply = async () => {
+    if (!companyId || !branchId || isSaving) return;
 
     const normalizedEnd = Math.max(endSlot, startSlot + 1);
-    updateWorkingHoursForWeekday(companyId, branchId, selectedWeekday, startSlot, normalizedEnd);
-    markUnsaved?.(scope);
-    onChange?.();
+    setIsSaving(true);
+
+    try {
+      await updateWorkingHoursForWeekday(
+        companyId,
+        branchId,
+        selectedWeekday,
+        startSlot,
+        normalizedEnd,
+      );
+      markSaved?.(scope);
+      onChange?.();
+    } catch {
+      onError?.(t.saveError);
+    } finally {
+      setIsSaving(false);
+    }
   };
 
   if (!branchId) {
@@ -96,10 +147,7 @@ export default function WorkingHoursPanel({
 
   return (
     <section style={{ ...styles.panel, ...mobileStyles?.panel }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-        <h3 style={{ ...styles.panelTitle, ...mobileStyles?.panelTitle, margin: 0 }}>{t.title}</h3>
-        <span style={{ ...styles.localBadge, ...mobileStyles?.localBadge }}>{t.localOnly}</span>
-      </div>
+      <h3 style={{ ...styles.panelTitle, ...mobileStyles?.panelTitle }}>{t.title}</h3>
       <p style={{ ...styles.panelHint, ...mobileStyles?.panelHint }}>{t.hint}</p>
 
       <div style={{ ...styles.stack, ...mobileStyles?.stack }}>
@@ -138,6 +186,7 @@ export default function WorkingHoursPanel({
             markUnsaved?.(scope);
           }}
           style={{ ...styles.input, ...mobileStyles?.input }}
+          disabled={isLoading || isSaving}
         >
           {slotOptions.slice(0, -1).map((option) => (
             <option key={option.slot} value={option.slot}>{option.label}</option>
@@ -152,6 +201,7 @@ export default function WorkingHoursPanel({
             markUnsaved?.(scope);
           }}
           style={{ ...styles.input, ...mobileStyles?.input }}
+          disabled={isLoading || isSaving}
         >
           {endSlotOptions.map((option) => (
             <option key={option.slot} value={option.slot}>{option.label}</option>
@@ -162,8 +212,9 @@ export default function WorkingHoursPanel({
           type="button"
           onClick={handleApply}
           style={{ ...styles.secondaryButton, ...mobileStyles?.secondaryButton }}
+          disabled={isLoading || isSaving}
         >
-          {t.apply}
+          {isSaving ? '...' : t.apply}
         </button>
       </div>
     </section>
