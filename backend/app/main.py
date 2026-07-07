@@ -12,7 +12,7 @@ from sqlalchemy.exc import SQLAlchemyError
 
 from app.database import SessionLocal
 from app.api import auth, companies, employees, imports, positions, reports, schedule
-from app.services.schema_service import ensure_email_verification_schema
+from app.services.schema_service import ensure_runtime_schema
 
 load_dotenv(Path(__file__).resolve().parents[1] / ".env")
 
@@ -69,9 +69,9 @@ app.include_router(reports.router, prefix="/reports", tags=["Reports"])
 
 
 @app.on_event("startup")
-def ensure_runtime_schema() -> None:
+def ensure_runtime_schema_on_startup() -> None:
     with SessionLocal() as session:
-        ensure_email_verification_schema(session)
+        ensure_runtime_schema(session)
 
 
 @app.get("/health")

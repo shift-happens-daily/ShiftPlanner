@@ -114,15 +114,6 @@ ShiftPlanner/
 ├── LICENSE
 └── README.md
 ```
-## Team
-
-| Name | Role |
-|------|------|
-| Karina Krotova | Team Lead / Product Manager / Database |
-| Ksenia Minaeva | Fullstack |
-| Albina Fadeeva | Scheduling Algorithm |
-| Fidan Akhmedova | Frontend |
-| Victoriya Gorbacheva | Mobile Development |
 
 ## 🚀 Quick Start
 
@@ -192,6 +183,16 @@ ShiftPlanner is publicly available and can be accessed using the links below.
 | 📱 **Mobile Application** | In progress |
 
 You can explore the application directly in your browser without setting up a local development environment.
+
+## Team
+
+| Name | Role | GitHub Account Link|
+|------|------|------|
+| Karina Krotova | Team Lead / Product Manager / Database |https://github.com/karmihkr|
+| Ksenia Minaeva | Fullstack |https://github.com/ks0Vibe|
+| Albina Fadeeva | Scheduling Algorithm | https://github.com/Albiiina |
+| Fidan Akhmedova | Frontend | https://github.com/fifidadan | 
+| Victoriya Gorbacheva | Mobile Development | https://github.com/froggyriia |
 
 ## 📄 License
 
