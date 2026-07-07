@@ -102,6 +102,18 @@ SMTP_PASSWORD=mail-ru-app-password
 
 `SMTP_PASSWORD` must be an app password for `shiftplanner@mail.ru`, not the regular mailbox password.
 
+If the server blocks outbound SMTP ports, use an HTTPS email API instead:
+
+```env
+PUBLIC_API_BASE_URL=https://shiftplanner.online/api
+EMAIL_VERIFICATION_REQUIRED=true
+EMAIL_PROVIDER=resend
+EMAIL_FROM=ShiftPlanner <no-reply@shiftplanner.online>
+RESEND_API_KEY=re_...
+```
+
+For production delivery through Resend, verify the sending domain in Resend and use an address from that domain, for example `no-reply@shiftplanner.online`.
+
 ## Run PostgreSQL
 
 From repository root:
