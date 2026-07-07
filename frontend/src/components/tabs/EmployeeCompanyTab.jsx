@@ -380,7 +380,7 @@ export default function EmployeeCompanyTab({ language, user }) {
             </div>
 
             <div className="ed-info-grid">
-              <div className="ed-info-tile">
+              <div className="ed-info-tile ed-info-tile--branches">
                 <span className="ed-info-label">{userBranches.length > 1 ? t.branches : t.branch}</span>
                 {userBranches.length === 0 ? (
                   <p className="ed-info-value">{t.noBranchesAssigned}</p>

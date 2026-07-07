@@ -1835,7 +1835,9 @@ export default function EmployeesTab({ language, userRole, user }) {
                     <div style={{ ...styles.branchPills, ...mobileStyles?.branchPills }}>
                       {selectedEmployeeBranches.map((branch) => (
                         <span key={branch.id} style={{ ...styles.branchPill, ...mobileStyles?.branchPill }}>
-                          <span>{branch.name || branch.title || `#${branch.id}`}</span>
+                          <span style={{ flex: 1, minWidth: 0, overflowWrap: 'anywhere' }}>
+                            {branch.name || branch.title || `#${branch.id}`}
+                          </span>
                           <button
                             type="button"
                             onClick={() => handleRemoveEmployeeBranch(branch.id)}
@@ -2805,35 +2807,44 @@ const styles = {
 
   branchPills: {
     display: 'flex',
-    flexWrap: 'wrap',
+    flexDirection: 'column',
     gap: '8px',
   },
 
   branchPill: {
-    display: 'inline-flex',
+    display: 'flex',
     alignItems: 'center',
+    justifyContent: 'space-between',
     gap: '8px',
+    width: '100%',
     minHeight: '34px',
-    padding: '0 8px 0 13px',
+    padding: '8px 12px',
     border: '1px solid #dee7e7',
-    borderRadius: '999px',
+    borderRadius: '10px',
     background: '#ffffff',
     color: '#002642',
     fontWeight: '700',
     fontSize: '13px',
+    boxSizing: 'border-box',
+    overflowWrap: 'anywhere',
+    lineHeight: 1.4,
   },
 
   branchPillReadonly: {
-    display: 'inline-flex',
+    display: 'flex',
     alignItems: 'center',
+    width: '100%',
     minHeight: '34px',
-    padding: '0 13px',
+    padding: '8px 12px',
     border: '1px solid #dee7e7',
-    borderRadius: '999px',
+    borderRadius: '10px',
     background: '#ffffff',
     color: '#002642',
     fontWeight: '700',
     fontSize: '13px',
+    overflowWrap: 'anywhere',
+    lineHeight: 1.4,
+    boxSizing: 'border-box',
   },
 
   cardBranchField: {

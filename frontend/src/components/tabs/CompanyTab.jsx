@@ -1461,9 +1461,9 @@ const styles = {
 
   branchList: {
     minHeight: 0,
-    display: 'grid',
+    display: 'flex',
+    flexDirection: 'column',
     gap: '8px',
-    gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))',
     overflowY: 'auto',
   },
 
@@ -1772,22 +1772,26 @@ const styles = {
 
   assignedBranchList: {
     display: 'flex',
-    flexWrap: 'wrap',
+    flexDirection: 'column',
     gap: '8px',
     marginTop: '2px',
   },
 
   assignedBranchPill: {
-    display: 'inline-flex',
+    display: 'flex',
     alignItems: 'center',
-    minHeight: '30px',
-    padding: '0 12px',
-    borderRadius: '999px',
+    width: '100%',
+    minHeight: '34px',
+    padding: '8px 12px',
+    borderRadius: '10px',
     background: '#ffffff',
     border: '1px solid #dee7e7',
     color: '#002642',
     fontSize: '13px',
     fontWeight: '700',
+    overflowWrap: 'anywhere',
+    lineHeight: 1.4,
+    boxSizing: 'border-box',
   },
 
   pendingPanel: {

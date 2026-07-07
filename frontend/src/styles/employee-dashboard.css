@@ -518,21 +518,29 @@
   word-break: break-word;
 }
 
+.ed-info-tile--branches {
+  grid-column: 1 / -1;
+}
+
 .ed-branch-pills {
   display: flex;
-  flex-wrap: wrap;
+  flex-direction: column;
   gap: 6px;
 }
 
 .ed-branch-pill {
-  display: inline-flex;
+  display: flex;
   align-items: center;
-  padding: 4px 10px;
-  border-radius: 999px;
+  width: 100%;
+  padding: 8px 12px;
+  border-radius: 10px;
   background: rgba(30, 58, 95, 0.08);
   color: var(--ed-primary);
-  font-size: 0.75rem;
+  font-size: 0.8125rem;
   font-weight: 600;
+  line-height: 1.4;
+  word-break: break-word;
+  box-sizing: border-box;
 }
 
 .ed-side-card {
