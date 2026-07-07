@@ -1,5 +1,6 @@
 package com.froggyriia.shiftplanner.data.network
 
+import com.froggyriia.shiftplanner.BuildConfig
 import com.google.gson.Gson
 import kotlinx.coroutines.runBlocking
 import okhttp3.OkHttpClient
@@ -94,6 +95,6 @@ class ApiClient(
     }
 
     companion object {
-        const val DEFAULT_BASE_URL = "http://10.0.2.2:8000/"
+        val DEFAULT_BASE_URL: String get() = BuildConfig.BASE_URL
     }
 }
