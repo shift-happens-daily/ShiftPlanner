@@ -1,12 +1,15 @@
-from fastapi import APIRouter, Depends, Response, status
+from fastapi import APIRouter, Depends, Query, Response, status
+from fastapi.responses import HTMLResponse
 from fastapi.security import OAuth2PasswordRequestForm
 from sqlalchemy.orm import Session
 
 from app.api.dependencies import get_current_user, oauth2_scheme
-from app.api.responses import UNAUTHORIZED_RESPONSE, VALIDATION_ERROR_RESPONSE
+from app.api.responses import BAD_REQUEST_RESPONSE, FORBIDDEN_RESPONSE, UNAUTHORIZED_RESPONSE, VALIDATION_ERROR_RESPONSE
 from app.database import get_db
 from app.schemas.auth import (
     CurrentUserResponse,
+    EmailVerificationResendRequest,
+    EmailVerificationResponse,
     LoginRequest,
     LoginResponse,
     LogoutResponse,
@@ -21,7 +24,7 @@ router = APIRouter()
 @router.post(
     "/login",
     response_model=LoginResponse,
-    responses={**UNAUTHORIZED_RESPONSE, **VALIDATION_ERROR_RESPONSE},
+    responses={**UNAUTHORIZED_RESPONSE, **FORBIDDEN_RESPONSE, **VALIDATION_ERROR_RESPONSE},
 )
 def login(payload: LoginRequest, db: Session = Depends(get_db)) -> LoginResponse:
     return auth_service.login(db, payload)
@@ -30,7 +33,7 @@ def login(payload: LoginRequest, db: Session = Depends(get_db)) -> LoginResponse
 @router.post(
     "/token",
     response_model=LoginResponse,
-    responses={**UNAUTHORIZED_RESPONSE, **VALIDATION_ERROR_RESPONSE},
+    responses={**UNAUTHORIZED_RESPONSE, **FORBIDDEN_RESPONSE, **VALIDATION_ERROR_RESPONSE},
 )
 def login_for_swagger(
     form_data: OAuth2PasswordRequestForm = Depends(),
@@ -51,6 +54,45 @@ def login_for_swagger(
 )
 def register(payload: RegisterRequest, db: Session = Depends(get_db)) -> RegisterResponse:
     return auth_service.register(db, payload)
+
+
+@router.get(
+    "/verify-email",
+    response_class=HTMLResponse,
+    responses={**BAD_REQUEST_RESPONSE, **VALIDATION_ERROR_RESPONSE},
+)
+def verify_email(token: str = Query(..., min_length=1), db: Session = Depends(get_db)) -> HTMLResponse:
+    auth_service.verify_email(db, token)
+    return HTMLResponse(
+        """
+        <!doctype html>
+        <html lang="en">
+          <head>
+            <meta charset="utf-8">
+            <meta name="viewport" content="width=device-width, initial-scale=1">
+            <title>Email confirmed</title>
+          </head>
+          <body style="margin:0;min-height:100vh;display:flex;align-items:center;justify-content:center;background:#f4faff;color:#002642;font-family:Arial,sans-serif;">
+            <main style="max-width:420px;padding:28px;text-align:center;">
+              <h1 style="margin:0 0 12px;font-size:28px;">Email confirmed</h1>
+              <p style="margin:0;font-size:16px;line-height:1.5;">You can now return to ShiftPlanner and log in.</p>
+            </main>
+          </body>
+        </html>
+        """
+    )
+
+
+@router.post(
+    "/resend-verification",
+    response_model=EmailVerificationResponse,
+    responses={**VALIDATION_ERROR_RESPONSE},
+)
+def resend_verification_email(
+    payload: EmailVerificationResendRequest,
+    db: Session = Depends(get_db),
+) -> EmailVerificationResponse:
+    return auth_service.resend_verification_email(db, payload)
 
 
 @router.get(

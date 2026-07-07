@@ -11,6 +11,7 @@ const translations = {
     employeeProfileMissing: 'Аккаунт сотрудника не привязан к профилю сотрудника.',
     inviteCodeNotFound: 'Компания с таким инвайт-кодом не найдена.',
     invalidCredentials: 'Неверный email или пароль.',
+    emailNotVerified: 'Подтвердите email по ссылке из письма, затем войдите.',
     userExists: 'Пользователь с таким email уже существует.',
     branchMismatch: 'Выбранный филиал не относится к компании.',
     positionMismatch: 'Выбранная позиция не относится к компании.',
@@ -39,6 +40,7 @@ const translations = {
     employeeProfileMissing: 'This employee account is not linked to an employee profile.',
     inviteCodeNotFound: 'Company with this invite code was not found.',
     invalidCredentials: 'Invalid email or password.',
+    emailNotVerified: 'Confirm your email from the message we sent, then log in.',
     userExists: 'A user with this email already exists.',
     branchMismatch: 'The selected branch does not belong to this company.',
     positionMismatch: 'The selected position does not belong to this company.',
@@ -61,6 +63,7 @@ const translations = {
 
 const directDetailMap = {
   'Invalid email or password.': 'invalidCredentials',
+  'Email is not verified.': 'emailNotVerified',
   'A user with this email already exists.': 'userExists',
   'Token is not active.': 'invalidToken',
   'Could not validate credentials.': 'invalidToken',

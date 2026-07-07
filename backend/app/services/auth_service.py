@@ -1,4 +1,5 @@
 import secrets
+from datetime import datetime, timedelta, timezone
 
 from fastapi import HTTPException, status
 from jose import JWTError
@@ -10,7 +11,9 @@ from app.schemas.auth import (
     CurrentUserBranchRead,
     CurrentUserCompanyRead,
     CurrentUserPositionRead,
+    EmailVerificationResponse,
     CurrentUserResponse,
+    EmailVerificationResendRequest,
     LoginRequest,
     LoginResponse,
     LogoutResponse,
@@ -18,9 +21,12 @@ from app.schemas.auth import (
     RegisterResponse,
     UserRead,
 )
+from app.services import email_service
 from app.services.security import create_access_token, get_password_hash, verify_password
 
 _active_tokens: set[str] = set()
+EMAIL_VERIFICATION_TOKEN_BYTES = 32
+EMAIL_VERIFICATION_EXPIRE_HOURS = 24
 
 
 def login(db: Session, payload: LoginRequest) -> LoginResponse:
@@ -30,6 +36,12 @@ def login(db: Session, payload: LoginRequest) -> LoginResponse:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid email or password.",
+        )
+
+    if not user.email_verified:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Email is not verified.",
         )
 
     access_token = create_access_token(subject=str(user.id), role=user.role)
@@ -44,6 +56,7 @@ def login(db: Session, payload: LoginRequest) -> LoginResponse:
 
 def register(db: Session, payload: RegisterRequest) -> RegisterResponse:
     existing_user = user_repository.get_user_by_email(db, payload.email)
+    verification_required = email_service.is_email_verification_required()
 
     if existing_user is not None:
         if (
@@ -56,7 +69,10 @@ def register(db: Session, payload: RegisterRequest) -> RegisterResponse:
                 user=existing_user,
                 full_name=payload.full_name,
                 password_hash=get_password_hash(payload.password),
+                email_verified=not verification_required,
             )
+            if verification_required:
+                _send_or_raise_verification_email(db, user)
             return _build_register_response(db, user)
 
         raise HTTPException(
@@ -71,12 +87,55 @@ def register(db: Session, payload: RegisterRequest) -> RegisterResponse:
         password_hash=get_password_hash(payload.password),
         role=payload.role,
         is_registration_complete=True,
+        email_verified=not verification_required,
     )
+
+    if verification_required:
+        _prepare_verification_token(db, user)
 
     db.commit()
     db.refresh(user)
 
+    if verification_required:
+        _deliver_verification_email(user)
+
     return _build_register_response(db, user)
+
+
+def verify_email(db: Session, token: str) -> EmailVerificationResponse:
+    user = user_repository.get_user_by_email_verification_token(db, token)
+    if user is None:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid email verification link.",
+        )
+
+    expires_at = user.email_verification_expires_at
+    if expires_at is None or _as_aware_utc(expires_at) < datetime.now(timezone.utc):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Email verification link has expired.",
+        )
+
+    user_repository.mark_email_verified(db, user)
+    return EmailVerificationResponse(detail="Email verified successfully.")
+
+
+def resend_verification_email(db: Session, payload: EmailVerificationResendRequest) -> EmailVerificationResponse:
+    user = user_repository.get_user_by_email(db, payload.email)
+    generic_response = EmailVerificationResponse(
+        detail="If this email needs verification, a new confirmation email has been sent."
+    )
+
+    if user is None or user.email_verified or not user.is_registration_complete:
+        return generic_response
+
+    if not email_service.is_email_verification_required():
+        user_repository.mark_email_verified(db, user)
+        return generic_response
+
+    _send_or_raise_verification_email(db, user)
+    return generic_response
 
 
 def logout(token: str) -> LogoutResponse:
@@ -191,6 +250,7 @@ def _build_user_read(db: Session, user) -> UserRead:
 def _build_register_response(db: Session, user) -> RegisterResponse:
     employee = employee_repository.get_employee_by_user_id(db, user.id)
     company_id = employee.company_id if employee and employee.is_active else None
+    verification_required = not user.email_verified
 
     return RegisterResponse(
         id=user.id,
@@ -201,6 +261,12 @@ def _build_register_response(db: Session, user) -> RegisterResponse:
         employee_id=employee.id if employee else None,
         company_id=company_id,
         employee_status=("active" if employee.is_active else "pending") if employee else None,
+        email_verification_required=verification_required,
+        detail=(
+            "Registration successful. Check your email to confirm your account."
+            if verification_required
+            else None
+        ),
     )
 
 
@@ -292,3 +358,49 @@ def create_payload_from_token(token: str) -> dict:
     from app.services.security import decode_access_token
 
     return decode_access_token(token)
+
+
+def _generate_email_verification_token() -> str:
+    return secrets.token_urlsafe(EMAIL_VERIFICATION_TOKEN_BYTES)
+
+
+def _verification_expires_at() -> datetime:
+    return datetime.now(timezone.utc) + timedelta(hours=EMAIL_VERIFICATION_EXPIRE_HOURS)
+
+
+def _prepare_verification_token(db: Session, user) -> str:
+    token = _generate_email_verification_token()
+    user_repository.set_email_verification_token(
+        db,
+        user=user,
+        token=token,
+        expires_at=_verification_expires_at(),
+    )
+    return token
+
+
+def _send_or_raise_verification_email(db: Session, user) -> None:
+    _prepare_verification_token(db, user)
+    db.commit()
+    db.refresh(user)
+    _deliver_verification_email(user)
+
+
+def _deliver_verification_email(user) -> None:
+    try:
+        email_service.send_verification_email(
+            to_email=user.email,
+            full_name=user.full_name,
+            token=user.email_verification_token,
+        )
+    except Exception as exc:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Could not send verification email.",
+        ) from exc
+
+
+def _as_aware_utc(value: datetime) -> datetime:
+    if value.tzinfo is None:
+        return value.replace(tzinfo=timezone.utc)
+    return value.astimezone(timezone.utc)
