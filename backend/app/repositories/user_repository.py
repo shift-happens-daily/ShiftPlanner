@@ -81,8 +81,7 @@ def update_registration(
     user.is_registration_complete = True
     user.email_verified = email_verified
     db.add(user)
-    db.commit()
-    db.refresh(user)
+    db.flush()
     return user
 
 

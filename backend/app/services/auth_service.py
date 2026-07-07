@@ -73,6 +73,9 @@ def register(db: Session, payload: RegisterRequest) -> RegisterResponse:
             )
             if verification_required:
                 _send_or_raise_verification_email(db, user)
+            else:
+                db.commit()
+                db.refresh(user)
             return _build_register_response(db, user)
 
         raise HTTPException(
@@ -93,11 +96,11 @@ def register(db: Session, payload: RegisterRequest) -> RegisterResponse:
     if verification_required:
         _prepare_verification_token(db, user)
 
-    db.commit()
-    db.refresh(user)
-
     if verification_required:
         _deliver_verification_email(user)
+
+    db.commit()
+    db.refresh(user)
 
     return _build_register_response(db, user)
 
@@ -381,9 +384,9 @@ def _prepare_verification_token(db: Session, user) -> str:
 
 def _send_or_raise_verification_email(db: Session, user) -> None:
     _prepare_verification_token(db, user)
+    _deliver_verification_email(user)
     db.commit()
     db.refresh(user)
-    _deliver_verification_email(user)
 
 
 def _deliver_verification_email(user) -> None:
