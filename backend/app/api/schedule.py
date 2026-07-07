@@ -1,7 +1,7 @@
 from datetime import date, time
 from typing import Literal
 
-from fastapi import APIRouter, Depends, Query, Response, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
 from sqlalchemy.orm import Session
 
 from app.api.dependencies import ensure_employee_user, get_current_user, require_role
@@ -151,11 +151,23 @@ def generate_schedule(
     responses={**BAD_REQUEST_RESPONSE, **UNAUTHORIZED_RESPONSE, **FORBIDDEN_RESPONSE},
 )
 def get_my_schedule(
+    date_from: date | None = Query(default=None),
+    date_to: date | None = Query(default=None),
     current_user: UserRead = Depends(require_role("employee")),
     db: Session = Depends(get_db),
 ) -> list[ShiftRead]:
     ensure_employee_user(current_user)
-    return schedule_service.list_my_schedule(db, current_user)
+    if date_from is not None and date_to is not None and date_to < date_from:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="date_to must be later than or equal to date_from.",
+        )
+    return schedule_service.list_my_schedule(
+        db,
+        current_user,
+        start_date=date_from,
+        end_date=date_to,
+    )
 
 
 @router.post(

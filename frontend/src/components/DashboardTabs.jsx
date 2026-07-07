@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useAuth } from '../context/useAuth';
 import { useIsMobile } from '../hooks/useMediaQuery';
+import EmployeeDashboardTab from './tabs/EmployeeDashboardTab';
 import CompanyTab from './tabs/CompanyTab';
 import EmployeesTab from './tabs/EmployeesTab';
 import ProfileTab from './tabs/ProfileTab';
@@ -15,6 +16,14 @@ import { useUnsavedChanges } from '../context/useUnsavedChanges';
 const APP_ICON_SRC = '/v2-Photoroom.png';
 
 const TAB_ICONS = {
+  dashboard: (
+    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <rect x="3" y="3" width="8" height="8" rx="2" stroke="currentColor" strokeWidth="2" />
+      <rect x="13" y="3" width="8" height="5" rx="2" stroke="currentColor" strokeWidth="2" />
+      <rect x="13" y="10" width="8" height="11" rx="2" stroke="currentColor" strokeWidth="2" />
+      <rect x="3" y="13" width="8" height="8" rx="2" stroke="currentColor" strokeWidth="2" />
+    </svg>
+  ),
   schedule: (
     <svg width="22" height="22" viewBox="0 0 24 24" fill="none" aria-hidden="true">
       <rect x="3" y="5" width="18" height="16" rx="3" stroke="currentColor" strokeWidth="2" />
@@ -58,9 +67,12 @@ export default function DashboardTabs({ userRole, language, title, rightSlot }) 
     resetUnsavedChanges,
   } = useUnsavedChanges();
   const activeTabStorageKey = `shiftplanner_active_tab_${userRole || 'default'}`;
-  const [activeTab, setActiveTab] = useState(() => (
-    localStorage.getItem(activeTabStorageKey) || 'schedule'
-  ));
+  const defaultEmployeeTab = 'dashboard';
+  const [activeTab, setActiveTab] = useState(() => {
+    const stored = localStorage.getItem(activeTabStorageKey);
+    if (stored) return stored;
+    return userRole === 'employee' ? defaultEmployeeTab : 'schedule';
+  });
 
   const { user } = useAuth();
   const isEmployeePending = userRole === 'employee' && user?.employeeStatus === 'pending';
@@ -93,6 +105,7 @@ export default function DashboardTabs({ userRole, language, title, rightSlot }) 
 
   const tabLabels = {
     ru: {
+      dashboard: 'Dashboard',
       profile: 'Профиль',
       company: 'Компания',
       employees: 'Сотрудники',
@@ -105,6 +118,7 @@ export default function DashboardTabs({ userRole, language, title, rightSlot }) 
       noPosition: 'Без позиции',
     },
     en: {
+      dashboard: 'Dashboard',
       profile: 'Profile',
       company: 'Company',
       employees: 'Employees',
@@ -130,6 +144,7 @@ export default function DashboardTabs({ userRole, language, title, rightSlot }) 
         { id: 'reports', label: t.reports },
       ]
       : [
+        { id: 'dashboard', label: t.dashboard },
         { id: 'schedule', label: t.schedule },
         { id: 'company', label: t.company },
         { id: 'shifts', label: t.shifts },
@@ -138,7 +153,9 @@ export default function DashboardTabs({ userRole, language, title, rightSlot }) 
   ), [t, userRole]);
 
   const isValidTab = (tabId) => tabId === 'profile' || tabs.some((tab) => tab.id === tabId);
-  const safeActiveTab = isValidTab(activeTab) ? activeTab : 'schedule';
+  const safeActiveTab = isValidTab(activeTab)
+    ? activeTab
+    : (userRole === 'employee' ? defaultEmployeeTab : 'schedule');
 
   useEffect(() => {
     if (!isValidTab(activeTab)) {
@@ -180,6 +197,7 @@ export default function DashboardTabs({ userRole, language, title, rightSlot }) 
     language,
     userRole,
     user,
+    onNavigateTab: handleTabClick,
   };
 
   const renderContent = () => {
@@ -188,6 +206,8 @@ export default function DashboardTabs({ userRole, language, title, rightSlot }) 
     }
 
     switch (safeActiveTab) {
+      case 'dashboard':
+        return userRole === 'employee' ? <EmployeeDashboardTab {...sharedProps} /> : <ProfileTab {...sharedProps} />;
       case 'profile':
         return <ProfileTab {...sharedProps} />;
       case 'company':
@@ -311,6 +331,7 @@ export default function DashboardTabs({ userRole, language, title, rightSlot }) 
       <main style={{
         ...styles.content,
         ...(isMobile ? styles.contentMobile : {}),
+        ...(userRole === 'employee' && safeActiveTab === 'dashboard' ? styles.contentScrollHost : {}),
       }}
       >
         {isDirty && (
@@ -580,6 +601,12 @@ const styles = {
     overflowX: 'hidden',
     WebkitOverflowScrolling: 'touch',
     paddingBottom: 'calc(72px + env(safe-area-inset-bottom, 0px))',
+  },
+
+  contentScrollHost: {
+    display: 'flex',
+    flexDirection: 'column',
+    overflow: 'hidden',
   },
 
   bottomNav: {

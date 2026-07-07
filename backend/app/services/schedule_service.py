@@ -782,14 +782,38 @@ def delete_schedule_for_branch_week(
     db.commit()
 
 
-def list_my_schedule(db: Session, current_user: UserRead) -> list[ShiftRead]:
+def list_my_schedule(
+    db: Session,
+    current_user: UserRead,
+    *,
+    start_date: date | None = None,
+    end_date: date | None = None,
+) -> list[ShiftRead]:
     if current_user.employee_id is None:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="This employee account is not linked to an employee profile.",
         )
-    rows = schedule_repository.list_published_shift_rows_for_employee(db, current_user.employee_id)
-    return [_build_shift_read(row) for row in rows]
+    rows = schedule_repository.list_published_shift_rows_for_employee_period(
+        db,
+        current_user.employee_id,
+        start_date=start_date,
+        end_date=end_date,
+    )
+    employee_name = current_user.full_name or ""
+    return [
+        ShiftRead(
+            id=row["shift_id"],
+            employee_id=current_user.employee_id,
+            employee_name=employee_name,
+            position_id=row["position_id"],
+            position=row["position_name"],
+            date=row["shift_date"],
+            start_time=row["start_time"],
+            end_time=row["end_time"],
+        )
+        for row in rows
+    ]
 
 
 def create_exchange_request(db: Session, payload: ShiftExchangeRequestCreate, current_user: UserRead) -> ShiftExchangeRequestRead:
