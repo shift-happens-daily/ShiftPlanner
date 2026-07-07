@@ -606,6 +606,90 @@ const MOBILE_SHIFTS_STYLES = {
   },
 };
 
+function toBackendDate(date) {
+  if (!date) return '';
+
+  if (date.includes('-')) return date;
+
+  const [day, month, year] = date.split('/');
+  return `${year}-${month}-${day}`;
+}
+
+function formatDisplayDateInput(value) {
+  const digits = String(value).replace(/\D/g, '').slice(0, 8);
+
+  let day = digits.slice(0, 2);
+  let month = digits.slice(2, 4);
+  const year = digits.slice(4);
+
+  if (day.length === 1 && Number(day) > 3) {
+    day = `0${day}`;
+  }
+
+  if (day.length === 2 && Number(day) > 31) {
+    day = '31';
+  }
+
+  if (month.length === 1 && Number(month) > 1) {
+    month = `0${month}`;
+  }
+
+  if (month.length === 2 && Number(month) > 12) {
+    month = '12';
+  }
+
+  if (digits.length <= 2) return day;
+  if (digits.length <= 4) return `${day}/${month}`;
+
+  return `${day}/${month}/${year}`;
+}
+
+
+function displayDateToDate(value) {
+  if (!/^(0[1-9]|[12][0-9]|3[01])\/(0[1-9]|1[0-2])\/\d{4}$/.test(value)) return null;
+
+  const [day, month, year] = value.split('/').map(Number);
+  const date = new Date(year, month - 1, day);
+
+  if (
+    date.getFullYear() !== year ||
+    date.getMonth() !== month - 1 ||
+    date.getDate() !== day
+  ) return null;
+
+  return date;
+}
+
+function isDisplayDateValid(value) {
+  const match = value.match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
+  if (!match) return false;
+
+  const [, dayStr, monthStr, yearStr] = match;
+
+  const day = Number(dayStr);
+  const month = Number(monthStr);
+  const year = Number(yearStr);
+
+  if (month < 1 || month > 12) return false;
+  if (day < 1 || day > 31) return false;
+
+  const date = new Date(year, month - 1, day);
+
+  return (
+    date.getFullYear() === year &&
+    date.getMonth() === month - 1 &&
+    date.getDate() === day
+  );
+}
+
+function isDisplayDateNotPast(value) {
+  const date = displayDateToDate(value);
+  if (!date) return false;
+
+  date.setHours(0, 0, 0, 0);
+  return date.getTime() >= startOfToday().getTime();
+}
+
 export default function ShiftsTab({ language, userRole, user }) {
   const positionTitleRevision = usePositionTitleRevision();
   const r = useTabResponsive(1480);
@@ -678,11 +762,10 @@ export default function ShiftsTab({ language, userRole, user }) {
   };
 
   const [absenceForm, setAbsenceForm] = useState(() => {
-    const today = formatLocalDate(new Date());
     return {
       absence_type: 'vacation',
-      start_date: today,
-      end_date: today,
+      start_date: '',
+      end_date: '',
       comment: '',
     };
   });
@@ -767,6 +850,10 @@ export default function ShiftsTab({ language, userRole, user }) {
       prevWeek: 'Предыдущая неделя',
       nextWeek: 'Следующая неделя',
       locked: 'Прошедшие даты изменить нельзя',
+
+      invalidDateFormat: 'Введите дату в формате dd/mm/yyyy',
+      absencePastDate: 'Нельзя поставить отсутствие раньше сегодняшнего дня',
+      absenceEndBeforeStart: 'Конец периода не может быть раньше начала',
     },
     en: {
       stepOne: '1. Choose period',
@@ -837,6 +924,10 @@ export default function ShiftsTab({ language, userRole, user }) {
       prevWeek: 'Previous week',
       nextWeek: 'Next week',
       locked: 'Past dates cannot be edited',
+
+      invalidDateFormat: 'Enter the date in dd/mm/yyyy format',
+      absencePastDate: 'Absence cannot be earlier than today',
+      absenceEndBeforeStart: 'End date cannot be earlier than start date',
     },
   };
 
@@ -1136,7 +1227,7 @@ export default function ShiftsTab({ language, userRole, user }) {
         <div style={styles.gridCorner} />
         {TIME_SLOTS.map((time, slotIndex) => (
           <div key={time} style={styles.timeHeaderCell}>
-            {slotIndex % 2 === 0 ? time : time.slice(3)}
+            {time.endsWith(':00') ? time : ''}
           </div>
         ))}
       </div>
@@ -1389,14 +1480,33 @@ export default function ShiftsTab({ language, userRole, user }) {
       setErrorMessage(t.addAbsence);
       return;
     }
+    if (!isDisplayDateValid(absenceForm.start_date) || !isDisplayDateValid(absenceForm.end_date)) {
+      setErrorMessage(t.invalidDateFormat);
+      return;
+    }
+    
+    if (!isDisplayDateNotPast(absenceForm.start_date) || !isDisplayDateNotPast(absenceForm.end_date)) {
+      setErrorMessage(t.absencePastDate);
+      return;
+    }
 
+    const start = displayDateToDate(absenceForm.start_date);
+    const end = displayDateToDate(absenceForm.end_date);
+
+    if (end.getTime() < start.getTime()) {
+      setErrorMessage(t.absenceEndBeforeStart);
+      return;
+    }
     clearMessages();
     setIsSubmitting(true);
 
     try {
-      await createMyAbsence(absenceForm);
-      const today = formatLocalDate(new Date());
-      setAbsenceForm({ absence_type: 'vacation', start_date: today, end_date: today, comment: '' });
+      await createMyAbsence({
+        ...absenceForm,
+        start_date: toBackendDate(absenceForm.start_date),
+        end_date: toBackendDate(absenceForm.end_date),
+    });
+      setAbsenceForm({absence_type: 'vacation', start_date: '', end_date: '', comment: '',});
       await loadEmployeeData();
       markSaved(ABSENCE_SCOPE);
       setSuccessMessage(t.absenceAdded);
@@ -1520,8 +1630,11 @@ export default function ShiftsTab({ language, userRole, user }) {
                   <input
                     type="date"
                     value={filterForm.start_date}
-                    onChange={(event) => setFilterForm((prev) => ({ ...prev, start_date: event.target.value }))}
-                    style={{ ...styles.dateInput, ...mobileStyles?.dateInput }}
+                    onChange={(event) => {
+                      setFilterForm((prev) => ({ ...prev, start_date: event.target.value }));
+                      markUnsaved(ABSENCE_SCOPE);
+                    }}
+                   style={{ ...styles.dateInput, ...mobileStyles?.dateInput }}
                     disabled={Boolean(filterForm.date)}
                   />
 
@@ -1529,8 +1642,10 @@ export default function ShiftsTab({ language, userRole, user }) {
                   <input
                     type="date"
                     value={filterForm.end_date}
-                    onChange={(event) => setFilterForm((prev) => ({ ...prev, end_date: event.target.value }))}
-                    style={{ ...styles.dateInput, ...mobileStyles?.dateInput }}
+                    onChange={(event) => {
+                      setFilterForm((prev) => ({ ...prev, end_date: event.target.value }));
+                      markUnsaved(ABSENCE_SCOPE);
+                    }}                    style={{ ...styles.dateInput, ...mobileStyles?.dateInput }}
                     disabled={Boolean(filterForm.date)}
                   />
 
@@ -1885,8 +2000,10 @@ export default function ShiftsTab({ language, userRole, user }) {
                       <input
                         type="date"
                         value={filterForm.start_date}
-                        onChange={(event) => setFilterForm((prev) => ({ ...prev, start_date: event.target.value }))}
-                        style={{
+                        onChange={(event) => {
+                          setFilterForm((prev) => ({ ...prev, start_date: event.target.value }))
+                          markUnsaved(ABSENCE_SCOPE);
+                        }}                        style={{
                           ...styles.dateInput,
                           ...(r.isMobile ? { height: 32, fontSize: 12, padding: '0 10px', borderRadius: 8 } : {}),
                         }}
@@ -1898,7 +2015,10 @@ export default function ShiftsTab({ language, userRole, user }) {
                       <input
                         type="date"
                         value={filterForm.end_date}
-                        onChange={(event) => setFilterForm((prev) => ({ ...prev, end_date: event.target.value }))}
+                        onChange={(event) => {
+                          setFilterForm((prev) => ({ ...prev, end_date: event.target.value }))
+                          markUnsaved(ABSENCE_SCOPE);
+                        }}
                         style={{
                           ...styles.dateInput,
                           ...(r.isMobile ? { height: 32, fontSize: 12, padding: '0 10px', borderRadius: 8 } : {}),
@@ -2166,8 +2286,20 @@ export default function ShiftsTab({ language, userRole, user }) {
                           ...styles.brushBtn,
                           background: option.color,
                           color: option.textColor,
-                          border: brushMode === option.id ? '2px solid #002642' : '1px solid rgba(79, 100, 111, 0.18)',
-                          boxShadow: brushMode === option.id ? '0 3px 10px rgba(0, 38, 66, 0.14)' : 'none',
+
+                          transform: brushMode === option.id
+                            ? 'scale(1.08)'
+                            : 'scale(1)',
+
+                          boxShadow: brushMode === option.id
+                            ? '0 8px 22px rgba(0,38,66,.22)'
+                            : '0 3px 10px rgba(0,38,66,.08)',
+
+                          outline: brushMode === option.id
+                            ? '2px solid #002642'
+                            : 'none',
+
+                          zIndex: brushMode === option.id ? 2 : 1,
                         }}
                         aria-pressed={brushMode === option.id}
                         title={t[option.id]}
@@ -2231,175 +2363,119 @@ export default function ShiftsTab({ language, userRole, user }) {
               )}
             </section>
 
-            <section style={{ ...styles.panel, ...(r.isMobile ? r.employeePanel : {}), ...mobileStyles?.panel }}>
-              <h3 style={{ ...styles.panelTitle, ...mobileStyles?.panelTitle }}>{t.absences}</h3>
+            <div
+  style={{
+    ...styles.absenceCardsGrid,
+    gridTemplateColumns: r.gridCols('1fr 1fr'),
+  }}
+>
+  <section style={{ ...styles.panel, ...(r.isMobile ? r.employeePanel : {}), ...mobileStyles?.panel }}>
+    <h3 style={{ ...styles.panelTitle, ...mobileStyles?.panelTitle }}>{t.addAbsence}</h3>
 
-              {r.isMobile ? (
-                <div style={{ ...styles.mobileFormStack, ...mobileStyles?.mobileFormStack }}>
-                  <Field label={t.absenceType} labelStyle={mobileStyles?.label}>
-                    <select
-                      value={absenceForm.absence_type}
-                      onChange={(event) => {
-                        setAbsenceForm((prev) => ({ ...prev, absence_type: event.target.value }));
-                        markUnsaved(ABSENCE_SCOPE);
-                      }}
-                      style={{ ...styles.input, ...mobileStyles?.input }}
-                    >
-                      <option value="vacation">{t.vacation}</option>
-                      <option value="sick_leave">{t.sick_leave}</option>
-                      <option value="other">{t.other}</option>
-                    </select>
-                  </Field>
+    <div style={styles.absenceCreateForm}>
+      <Field label={t.absenceType} labelStyle={mobileStyles?.label}>
+        <select
+          value={absenceForm.absence_type}
+          onChange={(event) => {
+            setAbsenceForm((prev) => ({ ...prev, absence_type: event.target.value }));
+            markUnsaved(ABSENCE_SCOPE);
+          }}
+          style={{ ...styles.input, ...mobileStyles?.input }}
+        >
+          <option value="vacation">{t.vacation}</option>
+          <option value="sick_leave">{t.sick_leave}</option>
+          <option value="other">{t.other}</option>
+        </select>
+      </Field>
 
-                  <Field label={t.startDate} labelStyle={mobileStyles?.label}>
-                    <input
-                      type="date"
-                      value={absenceForm.start_date}
-                      onChange={(event) => {
-                        setAbsenceForm((prev) => ({ ...prev, start_date: event.target.value }));
-                        markUnsaved(ABSENCE_SCOPE);
-                      }}
-                      style={{ ...styles.dateInput, ...mobileStyles?.dateInput }}
-                    />
-                  </Field>
+      <div style={styles.absenceDatesRow}>
+        <Field label={t.startDate} labelStyle={mobileStyles?.label}>
+          <input
+            type="text"
+            placeholder="dd/mm/yyyy"
+            value={absenceForm.start_date}
+            onChange={(event) => {
+              setAbsenceForm((prev) => ({ ...prev, start_date: formatDisplayDateInput(event.target.value) }));
+              markUnsaved(ABSENCE_SCOPE);
+            }}
+            style={{ ...styles.dateInput, ...mobileStyles?.dateInput }}
+          />
+        </Field>
 
-                  <Field label={t.endDate} labelStyle={mobileStyles?.label}>
-                    <input
-                      type="date"
-                      value={absenceForm.end_date}
-                      onChange={(event) => {
-                        setAbsenceForm((prev) => ({ ...prev, end_date: event.target.value }));
-                        markUnsaved(ABSENCE_SCOPE);
-                      }}
-                      style={{ ...styles.dateInput, ...mobileStyles?.dateInput }}
-                    />
-                  </Field>
+        <Field label={t.endDate} labelStyle={mobileStyles?.label}>
+          <input
+            type="text"
+            placeholder="dd/mm/yyyy"
+            value={absenceForm.end_date}
+            onChange={(event) => {
+              setAbsenceForm((prev) => ({ ...prev, end_date: formatDisplayDateInput(event.target.value) }));
+              markUnsaved(ABSENCE_SCOPE);
+            }}
+            style={{ ...styles.dateInput, ...mobileStyles?.dateInput }}
+          />
+        </Field>
+      </div>
 
-                  <Field label={t.comment} labelStyle={mobileStyles?.label}>
-                    <input
-                      value={absenceForm.comment}
-                      onChange={(event) => {
-                        setAbsenceForm((prev) => ({ ...prev, comment: event.target.value }));
-                        markUnsaved(ABSENCE_SCOPE);
-                      }}
-                      placeholder={t.comment}
-                      style={{ ...styles.input, ...mobileStyles?.input }}
-                    />
-                  </Field>
+      <Field label={t.comment} labelStyle={mobileStyles?.label}>
+        <input
+          value={absenceForm.comment}
+          onChange={(event) => {
+            setAbsenceForm((prev) => ({ ...prev, comment: event.target.value }));
+            markUnsaved(ABSENCE_SCOPE);
+          }}
+          placeholder={t.other}
+          style={{ ...styles.input, ...mobileStyles?.input }}
+        />
+      </Field>
 
-                  <button
-                    type="button"
-                    onClick={submitAbsence}
-                    style={{
-                      ...(isSubmitting ? styles.primaryButtonDisabled : styles.primaryButton),
-                      ...r.primaryButton,
-                      ...mobileStyles?.primaryButton,
-                    }}
-                    disabled={isSubmitting}
-                  >
-                    {t.addAbsence}
-                  </button>
-                </div>
-              ) : (
-              <div style={{
-                ...styles.absenceForm,
-                gridTemplateColumns: r.gridCols('1.1fr 1fr 1fr 1.4fr auto'),
-              }}
-              >
-                <select
-                  value={absenceForm.absence_type}
-                  onChange={(event) => {
-                    setAbsenceForm((prev) => ({ ...prev, absence_type: event.target.value }));
-                    markUnsaved(ABSENCE_SCOPE);
-                  }}
-                  style={styles.input}
-                >
-                  <option value="vacation">{t.vacation}</option>
-                  <option value="sick_leave">{t.sick_leave}</option>
-                  <option value="other">{t.other}</option>
-                </select>
+      <button
+        type="button"
+        onClick={submitAbsence}
+        style={{
+          ...(isSubmitting ? styles.primaryButtonDisabled : styles.primaryButton),
+          ...styles.absenceSubmitButton,
+        }}
+        disabled={isSubmitting}
+      >
+        {t.addAbsence}
+      </button>
+    </div>
+  </section>
 
-                <input
-                  type="date"
-                  value={absenceForm.start_date}
-                  onChange={(event) => {
-                    setAbsenceForm((prev) => ({ ...prev, start_date: event.target.value }));
-                    markUnsaved(ABSENCE_SCOPE);
-                  }}
-                  style={styles.dateInput}
-                />
+  <section style={{ ...styles.panel, ...(r.isMobile ? r.employeePanel : {}), ...mobileStyles?.panel }}>
+    <h3 style={{ ...styles.panelTitle, ...mobileStyles?.panelTitle }}>{t.absences}</h3>
 
-                <input
-                  type="date"
-                  value={absenceForm.end_date}
-                  onChange={(event) => {
-                    setAbsenceForm((prev) => ({ ...prev, end_date: event.target.value }));
-                    markUnsaved(ABSENCE_SCOPE);
-                  }}
-                  style={styles.dateInput}
-                />
-
-                <input
-                  value={absenceForm.comment}
-                  onChange={(event) => {
-                    setAbsenceForm((prev) => ({ ...prev, comment: event.target.value }));
-                    markUnsaved(ABSENCE_SCOPE);
-                  }}
-                  placeholder={t.other}
-                  style={styles.input}
-                />
-
-                <button
-                  type="button"
-                  onClick={submitAbsence}
-                  style={{
-                    ...(isSubmitting ? styles.primaryButtonDisabled : styles.primaryButton),
-                    ...r.primaryButton,
-                  }}
-                  disabled={isSubmitting}
-                >
-                  {t.addAbsence}
-                </button>
+    {absences.length === 0 ? (
+      <p style={styles.emptyText}>{t.empty}</p>
+    ) : (
+      <div style={styles.absenceHistoryList}>
+        {absences.map((absence) => (
+          <div key={absence.id} style={styles.absenceHistoryItem}>
+            <div>
+              <strong style={styles.itemTitle}>
+                {t[absence.absence_type] || absence.absence_type}
+              </strong>
+              <div style={styles.itemMeta}>
+                {absence.start_date} — {absence.end_date}
               </div>
+              {absence.comment && (
+                <div style={styles.itemMeta}>{absence.comment}</div>
               )}
+            </div>
 
-              {absences.length === 0 ? (
-                <p style={styles.emptyText}>{t.empty}</p>
-              ) : (
-                <div style={styles.list}>
-                  {absences.map((absence) => (
-                    <div
-                      key={absence.id}
-                      style={r.isMobile ? {
-                        ...styles.mobileAbsenceCard,
-                        ...mobileStyles?.mobileAbsenceCard,
-                      } : { ...styles.listItem, ...r.listItem }}
-                    >
-                      <div>
-                        <strong style={{ ...styles.itemTitle, ...mobileStyles?.itemTitle }}>
-                          {t[absence.absence_type] || absence.absence_type}
-                        </strong>
-                        <div style={{ ...styles.itemMeta, ...mobileStyles?.itemMeta }}>
-                          {absence.start_date} — {absence.end_date}
-                        </div>
-                        {absence.comment && (
-                          <div style={{ ...styles.itemMeta, ...mobileStyles?.itemMeta }}>{absence.comment}</div>
-                        )}
-                      </div>
-                      <button
-                        type="button"
-                        onClick={() => removeAbsence(absence.id)}
-                        style={r.isMobile
-                          ? { ...styles.deleteButton, ...r.fullWidth, ...mobileStyles?.deleteButton }
-                          : styles.deleteButton}
-                      >
-                        {t.delete}
-                      </button>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </section>
+            <button
+              type="button"
+              onClick={() => removeAbsence(absence.id)}
+              style={styles.deleteButton}
+            >
+              {t.delete}
+            </button>
+          </div>
+        ))}
+      </div>
+    )}
+  </section>
+</div>
 
             {/*
                     <div style={styles.list}>
@@ -3237,7 +3313,7 @@ const styles = {
   availabilityGridWrapper: {
     display: 'block',
     marginBottom: 0,
-    overflowX: 'auto',
+    overflowX: 'hidden',
     overflowY: 'visible',
     padding: 10,
     userSelect: 'none',
@@ -3252,14 +3328,14 @@ const styles = {
     display: 'flex',
     flexDirection: 'column',
     gap: 0,
-    minWidth: 1320,
+    width: '100%',
     borderTop: '1px solid #dbe6f0',
     borderLeft: '1px solid #dbe6f0',
   },
 
   availabilityTimeHeader: {
     display: 'grid',
-    gridTemplateColumns: '104px repeat(34, 36px)',
+    gridTemplateColumns: '100px repeat(34, minmax(32px, 1fr))',
     gap: 0,
     alignItems: 'stretch',
     padding: 0,
@@ -3267,19 +3343,19 @@ const styles = {
   },
 
   gridCorner: {
-    height: 42,
+    height: 34,
     borderRight: '1px solid #dbe6f0',
     borderBottom: '1px solid #dbe6f0',
     background: 'transparent',
   },
 
   timeHeaderCell: {
-    height: 42,
+    height: 34,
     background: '#dee7e7',
     borderRight: '1px solid #dbe6f0',
     borderBottom: '1px solid #dbe6f0',
     color: '#002642',
-    fontSize: 9,
+    fontSize: 8,
     fontWeight: '800',
     display: 'flex',
     alignItems: 'center',
@@ -3290,14 +3366,14 @@ const styles = {
 
   dateGridRow: {
     display: 'grid',
-    gridTemplateColumns: '104px repeat(34, 36px)',
+    gridTemplateColumns: '100px repeat(34, minmax(32px, 1fr))',
     gap: 0,
     alignItems: 'stretch',
-    minHeight: 42,
+    minHeight: 34,
   },
 
   dateHeaderCell: {
-    height: 42,
+    height: 34,
     background: '#f4faff',
     borderRight: '1px solid #dbe6f0',
     borderBottom: '1px solid #dbe6f0',
@@ -3309,40 +3385,44 @@ const styles = {
   },
 
   dateHeaderWeekday: {
-    fontSize: 10,
+    fontSize: 9,
     fontWeight: 800,
     opacity: 0.85,
   },
 
   dateHeaderDate: {
-    fontSize: 12,
+    fontSize: 10,
     fontWeight: 900,
   },
 
   gridCell: {
     width: '100%',
-    height: 42,
-    minHeight: 42,
+    height: 34,
+    minHeight: 34,
     padding: 0,
     boxSizing: 'border-box',
     background: '#eef3f6',
-    border: 0,
+    border: '1px solid #e2e8f0',
+    borderRadius: 4,
     borderRight: '1px solid #dbe6f0',
     borderBottom: '1px solid #dbe6f0',
     cursor: 'pointer',
     userSelect: 'none',
     WebkitUserSelect: 'none',
     touchAction: 'none',
+    fontSize: 0,
+    lineHeight: 1,
   },
 
   gridCellAvailable: {
     width: '100%',
-    height: 42,
-    minHeight: 42,
+    height: 34,
+    minHeight: 34,
     padding: 0,
     boxSizing: 'border-box',
     background: '#4CAF50',
-    border: 0,
+    border: '1px solid #86efac',
+    borderRadius: 4,
     borderRight: '1px solid #dbe6f0',
     borderBottom: '1px solid #dbe6f0',
     cursor: 'pointer',
@@ -3350,16 +3430,19 @@ const styles = {
     userSelect: 'none',
     WebkitUserSelect: 'none',
     touchAction: 'none',
+    fontSize: 0,
+    lineHeight: 1,
   },
 
   gridCellMaybe: {
     width: '100%',
-    height: 42,
-    minHeight: 42,
+    height: 34,
+    minHeight: 34,
     padding: 0,
     boxSizing: 'border-box',
     background: '#FFC107',
-    border: 0,
+    border: '1px solid #facc15',
+    borderRadius: 4,
     borderRight: '1px solid #dbe6f0',
     borderBottom: '1px solid #dbe6f0',
     cursor: 'pointer',
@@ -3367,34 +3450,38 @@ const styles = {
     userSelect: 'none',
     WebkitUserSelect: 'none',
     touchAction: 'none',
+    fontSize: 0,
+    lineHeight: 1,
   },
 
   brushPicker: {
     display: 'flex',
-    gap: '6px',
-    background: '#eceff4',
-    padding: '4px',
-    borderRadius: '8px',
+    gap: '12px',
+    background: 'transparent',
+    padding: 0,
+    borderRadius: 0,
   },
 
   brushBtn: {
-    minWidth: '86px',
-    minHeight: '28px',
-    borderRadius: '6px',
+    minWidth: '120px',
+    height: '40px',
+    border: 'none',
+    borderRadius: '12px',
     cursor: 'pointer',
-    padding: '3px 8px',
-    fontSize: '11px',
-    fontWeight: '850',
-    transition: 'transform 0.1s ease',
+    padding: '0 18px',
+    fontSize: '14px',
+    fontWeight: '700',
+    transition: 'all .18s ease',
   },
   gridCellLocked: {
     width: '100%',
-    height: 42,
-    minHeight: 42,
+    height: 34,
+    minHeight: 34,
     padding: 0,
     boxSizing: 'border-box',
     background: 'repeating-linear-gradient(45deg, #eef3f6, #eef3f6 6px, #e2e8ec 6px, #e2e8ec 12px)',
-    border: 0,
+    border: '1px solid #dbe6f0',
+    borderRadius: 4,
     borderRight: '1px solid #dbe6f0',
     borderBottom: '1px solid #dbe6f0',
     cursor: 'not-allowed',
@@ -3402,6 +3489,8 @@ const styles = {
     userSelect: 'none',
     WebkitUserSelect: 'none',
     touchAction: 'none',
+    fontSize: 0,
+    lineHeight: 1,
   },
 
   desiredDaysOffSection: {
@@ -3589,6 +3678,50 @@ const styles = {
     cursor: 'pointer',
     lineHeight: 1,
   },
+  absenceCardsGrid: {
+    display: 'grid',
+    gridTemplateColumns: '1fr 1fr',
+    gap: 14,
+    alignItems: 'stretch',
+  },
+
+  absenceCreateForm: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: 12,
+  },
+
+  absenceDatesRow: {
+    display: 'grid',
+    gridTemplateColumns: '1fr 1fr',
+    gap: 12,
+  },
+
+  absenceSubmitButton: {
+    alignSelf: 'flex-end',
+    minWidth: 180,
+    marginTop: 6,
+  },
+
+  absenceHistoryList: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: 10,
+    maxHeight: 340,
+    overflowY: 'auto',
+  },
+
+  absenceHistoryItem: {
+    padding: '14px 16px',
+    borderRadius: 12,
+    border: '1px solid #e2e8f0',
+    background: '#fff',
+    display: 'flex',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    gap: 14,
+  },
+  
 };
 
 const AVAILABILITY_STYLE_MAP = {
