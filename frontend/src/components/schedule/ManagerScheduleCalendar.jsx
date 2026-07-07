@@ -1,12 +1,44 @@
 import { useMemo } from 'react';
 import { formatLocalDate } from '../../services/scheduleService';
 
-const LEGEND_MARKERS = {
-  coverageDraft: '#002642',
-  coveragePublished: '#34c759',
-  shifts: '#667eea',
+const LEGEND_COLORS = {
+  draft: '#667eea',
+  published: '#34c759',
   unfilled: '#ff9500',
 };
+
+function getShiftVisuals(scheduleStatus, isUnfilled) {
+  if (isUnfilled) {
+    return {
+      background: 'linear-gradient(135deg, #ffd6a5 0%, #ffb085 100%)',
+      color: '#5a1a1a',
+      border: isUnfilled ? '1px dashed rgba(141, 29, 29, 0.35)' : 'none',
+      boxShadow: '0 2px 8px rgba(141, 29, 29, 0.12)',
+      badgeBackground: 'rgba(141, 29, 29, 0.12)',
+      badgeColor: '#8d1d1d',
+    };
+  }
+
+  if (scheduleStatus === 'published') {
+    return {
+      background: 'linear-gradient(135deg, #34c759 0%, #248a3d 100%)',
+      color: '#ffffff',
+      border: '1px solid rgba(255,255,255,0.12)',
+      boxShadow: '0 2px 8px rgba(52, 199, 89, 0.28)',
+      badgeBackground: 'rgba(255,255,255,0.18)',
+      badgeColor: '#ffffff',
+    };
+  }
+
+  return {
+    background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+    color: '#ffffff',
+    border: '1px solid rgba(255,255,255,0.12)',
+    boxShadow: '0 2px 8px rgba(102,126,234,0.25)',
+    badgeBackground: 'rgba(255,255,255,0.18)',
+    badgeColor: '#ffffff',
+  };
+}
 
 function LegendItem({ color, label, size = 8 }) {
   return (
@@ -33,10 +65,6 @@ function LegendItem({ color, label, size = 8 }) {
   );
 }
 
-const SHIFT_CHIP_COLORS = {
-  shift: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
-  unfilled: 'linear-gradient(135deg, #ffd6a5 0%, #ffb085 100%)',
-};
 
 function parseDateKey(value) {
   if (!value) return null;
@@ -105,9 +133,10 @@ function isDateWithinRange(dateKey, startDate, endDate) {
   return dateKey >= startDate && dateKey <= endDate;
 }
 
-function ShiftDetailCard({ entry, texts, compact = false, mobileStyles }) {
+function ShiftDetailCard({ entry, texts, scheduleStatus = 'draft', compact = false, mobileStyles }) {
   const isUnfilled = entry.kind === 'unfilled';
   const timeLabel = `${formatTimeLabel(entry.startTime)} – ${formatTimeLabel(entry.endTime)}`;
+  const visuals = getShiftVisuals(scheduleStatus, isUnfilled);
 
   if (compact) {
     return (
@@ -124,9 +153,9 @@ function ShiftDetailCard({ entry, texts, compact = false, mobileStyles }) {
           overflow: 'hidden',
           textOverflow: 'ellipsis',
           whiteSpace: 'nowrap',
-          color: isUnfilled ? '#5a1a1a' : '#ffffff',
-          background: isUnfilled ? SHIFT_CHIP_COLORS.unfilled : SHIFT_CHIP_COLORS.shift,
-          border: isUnfilled ? '1px dashed rgba(141, 29, 29, 0.35)' : 'none',
+          color: visuals.color,
+          background: visuals.background,
+          border: isUnfilled ? visuals.border : 'none',
           ...mobileStyles?.shiftChip,
         }}
       >
@@ -140,12 +169,10 @@ function ShiftDetailCard({ entry, texts, compact = false, mobileStyles }) {
       style={{
         padding: '14px 16px',
         borderRadius: 14,
-        background: isUnfilled ? SHIFT_CHIP_COLORS.unfilled : SHIFT_CHIP_COLORS.shift,
-        color: isUnfilled ? '#5a1a1a' : '#ffffff',
-        border: isUnfilled ? '2px dashed #8d1d1d' : '1px solid rgba(255,255,255,0.12)',
-        boxShadow: isUnfilled
-          ? '0 2px 8px rgba(141, 29, 29, 0.12)'
-          : '0 2px 8px rgba(102,126,234,0.25)',
+        background: visuals.background,
+        color: visuals.color,
+        border: isUnfilled ? '2px dashed #8d1d1d' : visuals.border,
+        boxShadow: visuals.boxShadow,
         display: 'flex',
         flexDirection: 'column',
         gap: 8,
@@ -176,8 +203,8 @@ function ShiftDetailCard({ entry, texts, compact = false, mobileStyles }) {
           fontWeight: 800,
           textTransform: 'uppercase',
           letterSpacing: '0.04em',
-          background: isUnfilled ? 'rgba(141, 29, 29, 0.12)' : 'rgba(255,255,255,0.18)',
-          color: isUnfilled ? '#8d1d1d' : '#ffffff',
+          background: visuals.badgeBackground,
+          color: visuals.badgeColor,
         }}
         >
           {isUnfilled ? texts.unfilledBadge : texts.assignedBadge}
@@ -233,7 +260,7 @@ export default function ManagerScheduleCalendar({
   onSelectedDateChange,
   groupedScheduleByDate,
   entriesByDate = {},
-  coverageByDate,
+  scheduleStatus = 'draft',
   scheduleStartDate,
   scheduleEndDate,
   selectedDayEntries,
@@ -272,6 +299,11 @@ export default function ManagerScheduleCalendar({
   };
 
   const maxCellPreview = mobileStyles ? 2 : 3;
+
+  const hasUnfilledInView = useMemo(
+    () => Object.values(groupedScheduleByDate).some((day) => day.unfilled > 0),
+    [groupedScheduleByDate],
+  );
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: mobileStyles?.sectionGap || 12 }}>
@@ -420,10 +452,7 @@ export default function ManagerScheduleCalendar({
           {calendarGrid.days.map((calendarDay) => {
             const dayCounts = groupedScheduleByDate[calendarDay.date] || { shifts: 0, unfilled: 0 };
             const dayEntries = entriesByDate[calendarDay.date] || [];
-            const coverage = coverageByDate[calendarDay.date];
-            const hasShifts = dayCounts.shifts > 0;
             const hasUnfilled = dayCounts.unfilled > 0;
-            const hasCoverage = Boolean(coverage?.hasSchedule);
             const isSelected = calendarDay.date === selectedDate;
             const isTodayDate = isSameDateKey(calendarDay.date, formatLocalDate(new Date()));
             const inLoadedRange = isDateWithinRange(
@@ -454,7 +483,6 @@ export default function ManagerScheduleCalendar({
                   gap: 4,
                   opacity: calendarDay.isCurrentMonth ? 1 : 0.55,
                   textAlign: 'left',
-                  ...(hasCoverage ? { boxShadow: 'inset 0 0 0 1px rgba(0, 38, 66, 0.18)' } : {}),
                   ...(inLoadedRange ? { background: calendarDay.isCurrentMonth ? '#f8fcff' : '#f3f8fb' } : {}),
                   ...(isSelected ? {
                     background: '#eaf6ff',
@@ -487,56 +515,6 @@ export default function ManagerScheduleCalendar({
                   >
                     {calendarDay.day}
                   </span>
-
-                  {(hasCoverage || hasShifts || hasUnfilled) && previewEntries.length === 0 ? (
-                    <span style={{
-                      display: 'flex',
-                      gap: 3,
-                      flexWrap: 'wrap',
-                      justifyContent: 'flex-end',
-                      ...mobileStyles?.monthDots,
-                    }}
-                    >
-                      {hasCoverage && (
-                        <span
-                          title={texts.hasScheduleMarker}
-                          style={{
-                            width: 7,
-                            height: 7,
-                            borderRadius: '50%',
-                            display: 'block',
-                            background: coverage.status === 'published'
-                              ? LEGEND_MARKERS.coveragePublished
-                              : LEGEND_MARKERS.coverageDraft,
-                          }}
-                        />
-                      )}
-                      {hasShifts && (
-                        <span
-                          title={texts.hasShiftsMarker}
-                          style={{
-                            width: 6,
-                            height: 6,
-                            borderRadius: '50%',
-                            display: 'block',
-                            background: LEGEND_MARKERS.shifts,
-                          }}
-                        />
-                      )}
-                      {hasUnfilled && (
-                        <span
-                          title={texts.hasUnfilledMarker}
-                          style={{
-                            width: 6,
-                            height: 6,
-                            borderRadius: '50%',
-                            display: 'block',
-                            background: LEGEND_MARKERS.unfilled,
-                          }}
-                        />
-                      )}
-                    </span>
-                  ) : null}
                 </div>
 
                 <div style={{
@@ -553,6 +531,7 @@ export default function ManagerScheduleCalendar({
                       key={entry.key}
                       entry={entry}
                       texts={texts}
+                      scheduleStatus={scheduleStatus}
                       compact
                       mobileStyles={mobileStyles}
                     />
@@ -581,10 +560,13 @@ export default function ManagerScheduleCalendar({
           alignItems: 'center',
         }}
         >
-          <LegendItem color={LEGEND_MARKERS.coverageDraft} label={texts.legendCoverage} />
-          <LegendItem color={LEGEND_MARKERS.coveragePublished} label={texts.legendCoveragePublished} />
-          <LegendItem color={LEGEND_MARKERS.shifts} label={texts.legendShifts} />
-          <LegendItem color={LEGEND_MARKERS.unfilled} label={texts.legendUnfilled} />
+          <LegendItem
+            color={scheduleStatus === 'published' ? LEGEND_COLORS.published : LEGEND_COLORS.draft}
+            label={scheduleStatus === 'published' ? texts.legendPublishedShifts : texts.legendDraftShifts}
+          />
+          {hasUnfilledInView ? (
+            <LegendItem color={LEGEND_COLORS.unfilled} label={texts.legendUnfilled} />
+          ) : null}
         </div>
       </section>
 
@@ -668,6 +650,7 @@ export default function ManagerScheduleCalendar({
                 key={entry.key}
                 entry={entry}
                 texts={texts}
+                scheduleStatus={scheduleStatus}
                 mobileStyles={mobileStyles}
               />
             ))}

@@ -1246,12 +1246,8 @@ export default function ScheduleReview({ language }) {
       loadedPeriod: 'Загруженный период',
       prevMonth: 'Предыдущий месяц',
       nextMonth: 'Следующий месяц',
-      hasScheduleMarker: 'Есть расписание',
-      hasShiftsMarker: 'Есть смены',
-      hasUnfilledMarker: 'Есть незаполненные смены',
-      legendCoverage: 'Черновик расписания',
-      legendCoveragePublished: 'Опубликованное расписание',
-      legendShifts: 'Назначенные смены',
+      legendDraftShifts: 'Смены (черновик)',
+      legendPublishedShifts: 'Опубликованные смены',
       legendUnfilled: 'Незаполненные смены',
       position: 'Должность',
       assignedBadge: 'Назначено',
@@ -1304,12 +1300,8 @@ export default function ScheduleReview({ language }) {
       loadedPeriod: 'Loaded period',
       prevMonth: 'Previous month',
       nextMonth: 'Next month',
-      hasScheduleMarker: 'Schedule exists',
-      hasShiftsMarker: 'Shifts assigned',
-      hasUnfilledMarker: 'Unfilled shifts',
-      legendCoverage: 'Draft schedule',
-      legendCoveragePublished: 'Published schedule',
-      legendShifts: 'Assigned shifts',
+      legendDraftShifts: 'Draft shifts',
+      legendPublishedShifts: 'Published shifts',
       legendUnfilled: 'Unfilled shifts',
       position: 'Position',
       assignedBadge: 'Assigned',
@@ -2328,7 +2320,7 @@ export default function ScheduleReview({ language }) {
             onSelectedDateChange={setCalendarSelectedDate}
             groupedScheduleByDate={groupedScheduleByDate}
             entriesByDate={calendarEntriesByDate}
-            coverageByDate={coverageByDate}
+            scheduleStatus={scheduleStatus}
             scheduleStartDate={scheduleStartDate}
             scheduleEndDate={scheduleEndDate}
             selectedDayEntries={calendarSelectedDayEntries}
