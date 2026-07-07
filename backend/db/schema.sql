@@ -151,10 +151,16 @@ CREATE TABLE employee_availability (
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     CHECK (end_time > start_time),
     CHECK (EXTRACT(MINUTE FROM start_time)::INTEGER % 5 = 0),
-    CHECK (EXTRACT(MINUTE FROM end_time)::INTEGER % 5 = 0),
-    UNIQUE (employee_id, weekday, start_time, end_time),
-    UNIQUE (employee_id, availability_date, start_time, end_time)
+    CHECK (EXTRACT(MINUTE FROM end_time)::INTEGER % 5 = 0)
 );
+
+CREATE UNIQUE INDEX employee_availability_weekly_template_unique
+    ON employee_availability (employee_id, weekday, start_time, end_time)
+    WHERE availability_date IS NULL;
+
+CREATE UNIQUE INDEX employee_availability_daily_unique
+    ON employee_availability (employee_id, availability_date, start_time, end_time)
+    WHERE availability_date IS NOT NULL;
 
 CREATE INDEX idx_employee_availability_exact_date
     ON employee_availability (employee_id, availability_date, start_time, end_time);
