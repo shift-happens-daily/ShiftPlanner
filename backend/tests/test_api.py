@@ -253,6 +253,35 @@ def test_register_requires_email_verification_when_enabled(client: TestClient, m
             assert cursor.fetchone() == (True, None, None)
 
 
+def test_register_email_delivery_failure_does_not_persist_user(
+    client: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def fail_send_verification_email(*, to_email: str, full_name: str, token: str) -> None:
+        raise OSError("SMTP is unavailable")
+
+    monkeypatch.setenv("EMAIL_VERIFICATION_REQUIRED", "true")
+    monkeypatch.setattr(auth_service.email_service, "send_verification_email", fail_send_verification_email)
+
+    registered = client.post(
+        "/auth/register",
+        json={
+            "full_name": "SMTP Failure",
+            "email": "smtp-failure@example.com",
+            "password": "manager123",
+            "role": "manager",
+        },
+    )
+
+    assert registered.status_code == 503
+    assert registered.json()["detail"] == "Could not send verification email."
+
+    with psycopg.connect(PSYCOPG_DSN) as connection:
+        with connection.cursor() as cursor:
+            cursor.execute("SELECT COUNT(*) FROM users WHERE email = 'smtp-failure@example.com'")
+            assert cursor.fetchone()[0] == 0
+
+
 def test_user_can_delete_own_account(client: TestClient) -> None:
     employee_headers = login_json(client, "ivan@example.com", "employee123")
 
