@@ -1,4 +1,4 @@
-from datetime import date
+﻿from datetime import date
 
 from sqlalchemy import delete, select
 from sqlalchemy.orm import Session, joinedload, selectinload
@@ -88,6 +88,8 @@ def create_employee(
     employee = Employee(
         user_id=user_id,
         company_id=company_id,
+        legacy_branch_id=branch_id,
+        legacy_position_id=position_id,
         is_active=is_active,
     )
 
@@ -116,6 +118,8 @@ def update_employee_membership(
     is_active: bool | None = None,
 ) -> Employee:
     employee.company_id = company_id
+    employee.legacy_branch_id = primary_branch_id if branch_ids is not None else branch_id
+    employee.legacy_position_id = position_id
     if is_active is not None:
         employee.is_active = is_active
 
@@ -145,12 +149,28 @@ def update_employee_status(
     return get_employee_by_id(db, employee.id)
 
 
+def update_employee_work_limits(
+    db: Session,
+    *,
+    employee: Employee,
+    max_hours_per_week: int,
+    max_hours_per_day: int,
+) -> Employee:
+    employee.max_hours_per_week = max_hours_per_week
+    employee.max_hours_per_day = max_hours_per_day
+    db.add(employee)
+    db.commit()
+    db.expire_all()
+    return get_employee_by_id(db, employee.id)
+
+
 def update_employee_position(
     db: Session,
     *,
     employee: Employee,
     position_id: int | None,
 ) -> Employee:
+    employee.legacy_position_id = position_id
     db.add(employee)
     db.flush()
     _replace_employee_position(db, employee.id, position_id)
@@ -165,6 +185,7 @@ def update_employee_branch(
     employee: Employee,
     branch_id: int | None,
 ) -> Employee:
+    employee.legacy_branch_id = branch_id
     db.add(employee)
     db.flush()
     _replace_employee_branch(db, employee.id, branch_id)
@@ -180,6 +201,7 @@ def update_employee_branches(
     branch_ids: list[int],
     primary_branch_id: int,
 ) -> Employee:
+    employee.legacy_branch_id = primary_branch_id
     db.add(employee)
     db.flush()
     replace_employee_branches(
@@ -216,21 +238,39 @@ def replace_availability(
     *,
     employee_id: int,
     blocks: list[dict],
+    daily_blocks: list[dict] | None = None,
     desired_days_off: list[int],
 ) -> Employee:
     db.execute(delete(EmployeeAvailability).where(EmployeeAvailability.employee_id == employee_id))
     db.execute(delete(EmployeeDesiredDayOff).where(EmployeeDesiredDayOff.employee_id == employee_id))
 
-    for block in blocks:
-        db.add(
-            EmployeeAvailability(
-                employee_id=employee_id,
-                weekday=block["weekday"],
-                start_time=block["start_time"],
-                end_time=block["end_time"],
-                availability_status=block.get("availability_status", "available"),
+    if daily_blocks:
+        for block in daily_blocks:
+            block_date = block["date"]
+            if not isinstance(block_date, date):
+                block_date = date.fromisoformat(str(block_date))
+            db.add(
+                EmployeeAvailability(
+                    employee_id=employee_id,
+                    availability_date=block_date,
+                    weekday=block_date.weekday(),
+                    start_time=block["start_time"],
+                    end_time=block["end_time"],
+                    availability_status=block.get("availability_status", "available"),
+                )
             )
-        )
+    else:
+        for block in blocks:
+            db.add(
+                EmployeeAvailability(
+                    employee_id=employee_id,
+                    availability_date=None,
+                    weekday=block["weekday"],
+                    start_time=block["start_time"],
+                    end_time=block["end_time"],
+                    availability_status=block.get("availability_status", "available"),
+                )
+            )
 
     for weekday in desired_days_off:
         db.add(EmployeeDesiredDayOff(employee_id=employee_id, weekday=weekday))
@@ -272,6 +312,9 @@ def replace_employee_branches(
     branch_ids: list[int],
     primary_branch_id: int | None,
 ) -> None:
+    employee = db.get(Employee, employee_id)
+    if employee is not None:
+        employee.legacy_branch_id = primary_branch_id
     db.execute(delete(EmployeeBranch).where(EmployeeBranch.employee_id == employee_id))
     for branch_id in branch_ids:
         db.add(
@@ -284,6 +327,9 @@ def replace_employee_branches(
 
 
 def _replace_employee_position(db: Session, employee_id: int, position_id: int | None) -> None:
+    employee = db.get(Employee, employee_id)
+    if employee is not None:
+        employee.legacy_position_id = position_id
     db.execute(delete(EmployeePosition).where(EmployeePosition.employee_id == employee_id))
     if position_id is not None:
         db.add(EmployeePosition(employee_id=employee_id, position_id=position_id, is_primary=True))

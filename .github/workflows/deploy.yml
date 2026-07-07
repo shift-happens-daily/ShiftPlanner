@@ -64,6 +64,8 @@ jobs:
 
       - name: Install PostgreSQL client
         run: |
+          sudo rm -f /etc/apt/sources.list.d/azure-cli.sources
+          sudo rm -f /etc/apt/sources.list.d/microsoft-prod.sources
           sudo apt-get update
           sudo apt-get install --yes postgresql-client
 

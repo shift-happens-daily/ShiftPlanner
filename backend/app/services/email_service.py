@@ -52,7 +52,7 @@ class IPv4SMTP(smtplib.SMTP):
 
 
 def is_email_verification_required() -> bool:
-    return _env_flag("EMAIL_VERIFICATION_REQUIRED", False) or is_email_delivery_configured()
+    return _env_flag("EMAIL_VERIFICATION_REQUIRED", False)
 
 
 def is_email_delivery_configured() -> bool:

@@ -105,3 +105,8 @@ export async function getMyEmployeeSchedule() {
   const response = await api.get('/employees/me/schedule');
   return response.data;
 }
+
+export async function updateEmployeeWorkLimits(employeeId, payload) {
+  const response = await api.patch(`/employees/${employeeId}/work-limits`, payload);
+  return response.data;
+}

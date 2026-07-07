@@ -8,11 +8,6 @@ from app.schemas.position import PositionCreate, PositionRead
 
 def list_positions(db: Session, current_user: UserRead) -> list[PositionRead]:
     if current_user.company_id is None:
-        if current_user.role == "manager":
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="Manager is not linked to a company.",
-            )
         return []
 
     return [
@@ -25,20 +20,26 @@ def list_positions(db: Session, current_user: UserRead) -> list[PositionRead]:
     ]
 
 
-def create_position(db: Session, payload: PositionCreate, current_user: UserRead) -> PositionRead:
-    if current_user.company_id is None:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Manager is not linked to a company.",
-        )
+def create_position(db: Session, payload: PositionCreate) -> PositionRead:
+    company_id = getattr(payload, "company_id", None)
 
-    company_id = current_user.company_id
+    if company_id is None:
+        company = company_repository.get_default_company(db)
+        company_id = company.id
+    else:
+        company = company_repository.get_company_by_id(db, company_id)
+
+        if company is None:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Company not found.",
+            )
 
     position = position_repository.create_position(
-        db,
-        payload.title,
-        company_id,
-    )
+    db,
+    payload.title,
+    company_id,
+)
 
     return PositionRead(
         id=position.id,

@@ -4,11 +4,13 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   createMyAbsence,
   deleteEmployeeAbsence,
+  getEmployeeAvailability,
   getMyAbsences,
   updateEmployeeAvailability,
 } from '../../services/employeeService';
 import { extractApiErrorMessage, localizeBackendMessage } from '../../services/error';
 import { importRequirementsXlsx } from '../../services/importService';
+import { listBranches } from '../../services/companyService';
 import { listPositions } from '../../services/positionService';
 import {
   createBulkRequirements,
@@ -26,6 +28,18 @@ import {
   getPositionLabel,
   normalizeAvailabilityStatus,
 } from '../../utils/employeeDisplay';
+import WorkingHoursPanel from '../requirements/WorkingHoursPanel';
+import RequirementTimeFields from '../requirements/RequirementTimeFields';
+import {
+  clampRequirementTimes,
+  dateKeyToWeekday,
+  fetchWorkingHoursStore,
+  formatWorkingHoursRange,
+  getWorkingHoursForWeekday,
+  getWorkingHoursForWeekdays,
+  setWorkingHoursStoreFromApi,
+  validateRequirementTimes,
+} from '../../utils/workingHours';
 
 const WEEKDAYS = [
   { value: 0, ru: 'Пн', en: 'Mon' },
@@ -73,6 +87,7 @@ const BULK_REQUIREMENT_SCOPE = 'shifts-bulk-requirement';
 const IMPORT_SCOPE = 'shifts-import';
 const AVAILABILITY_SCOPE = 'shifts-availability';
 const ABSENCE_SCOPE = 'shifts-absence';
+const WORKING_HOURS_SCOPE = 'shifts-working-hours';
 
 function toDateKey(date) {
   if (!(date instanceof Date) || Number.isNaN(date.getTime())) return '';
@@ -151,6 +166,103 @@ function buildIntervalsForWeekday(weekday, availabilityStatus, slotStarts) {
   return intervals;
 }
 
+function buildIntervalsForDate(dateKey, availabilityStatus, slotStarts) {
+  const sorted = [...slotStarts].sort((a, b) => a - b);
+  const intervals = [];
+  let startMinutes = null;
+  let previousMinutes = null;
+
+  sorted.forEach((minutes) => {
+    if (startMinutes === null) {
+      startMinutes = minutes;
+      previousMinutes = minutes;
+      return;
+    }
+
+    if (minutes === previousMinutes + SLOT_MINUTES) {
+      previousMinutes = minutes;
+      return;
+    }
+
+    intervals.push({
+      date: dateKey,
+      start_time: minutesToTimeString(startMinutes),
+      end_time: minutesToTimeString(previousMinutes + SLOT_MINUTES),
+      availability_status: availabilityStatus,
+    });
+
+    startMinutes = minutes;
+    previousMinutes = minutes;
+  });
+
+  if (startMinutes !== null) {
+    intervals.push({
+      date: dateKey,
+      start_time: minutesToTimeString(startMinutes),
+      end_time: minutesToTimeString(previousMinutes + SLOT_MINUTES),
+      availability_status: availabilityStatus,
+    });
+  }
+
+  return intervals;
+}
+
+function convertDatesToDailyIntervals(availabilityByDate, dates = []) {
+  const sourceDates = Array.isArray(dates) && dates.length > 0
+    ? dates
+    : Object.keys(availabilityByDate || {}).map((dateKey) => new Date(`${dateKey}T00:00:00`));
+
+  const dateEntries = sourceDates
+    .map((date) => {
+      const dateKey = toDateKey(date);
+      return dateKey ? [dateKey, availabilityByDate?.[dateKey] || {}] : null;
+    })
+    .filter(Boolean);
+
+  const intervals = [];
+  dateEntries.forEach(([dateKey, slotMap]) => {
+    const slotsByStatus = {};
+    Object.entries(slotMap || {}).forEach(([slot, status]) => {
+      const normalizedStatus = normalizeAvailabilityStatus(status);
+      if (normalizedStatus === 'available' || normalizedStatus === 'if_needed') {
+        if (!slotsByStatus[normalizedStatus]) slotsByStatus[normalizedStatus] = new Set();
+        slotsByStatus[normalizedStatus].add(slotToMinutes(slot));
+      }
+    });
+
+    Object.entries(slotsByStatus).forEach(([availabilityStatus, slotStarts]) => {
+      intervals.push(...buildIntervalsForDate(dateKey, availabilityStatus, [...slotStarts]));
+    });
+  });
+
+  return intervals;
+}
+
+function timeStringToMinutes(value) {
+  const [hours, minutes] = String(value || '').split(':').map(Number);
+  return (hours * 60) + (minutes || 0);
+}
+
+function dailyAvailabilityToByDate(dailyAvailability = []) {
+  const result = {};
+  dailyAvailability.forEach((block) => {
+    const dateKey = String(block.date || '').slice(0, 10);
+    if (!dateKey) return;
+
+    const startMinutes = timeStringToMinutes(block.start_time);
+    const endMinutes = timeStringToMinutes(block.end_time);
+    if (!result[dateKey]) result[dateKey] = {};
+
+    TIME_SLOTS.forEach((slot) => {
+      const slotMinutes = slotToMinutes(slot);
+      if (slotMinutes >= startMinutes && slotMinutes < endMinutes) {
+        result[dateKey][slot] = normalizeAvailabilityStatus(block.availability_status);
+      }
+    });
+  });
+  return result;
+}
+
 // Backend only stores a recurring weekly availability template, so when saving we
 // aggregate the visible week selections back into weekly intervals (Monday = 0).
 function convertDatesToWeeklyIntervals(availabilityByDate, dates = []) {
@@ -202,6 +314,7 @@ function normalizeAvailabilityByDate(value) {
 function defaultSingleRequirement() {
   const today = formatLocalDate(new Date());
   return {
+    branch_id: '',
     position_id: '',
     date: today,
     min_staff: 1,
@@ -220,6 +333,7 @@ function defaultBulkRequirement() {
   const end = endOfCurrentMonth();
 
   return {
+    branch_id: '',
     start_date: today,
     end_date: end,
     weekdays: [0, 1, 2, 3, 4],
@@ -239,6 +353,7 @@ function currentMonthFilters() {
   return {
     start_date: today,
     end_date: endOfCurrentMonth(),
+    branch_id: '',
     position_id: '',
     date: '',
   };
@@ -259,6 +374,10 @@ function buildRequirementListParams(filters = {}) {
     params.position_id = Number(filters.position_id);
   }
 
+  if (filters.branch_id) {
+    params.branch_id = Number(filters.branch_id);
+  }
+
   return params;
 }
 
@@ -270,6 +389,10 @@ function matchesRequirementFilters(requirement, filters = {}) {
   }
 
   if (filters.position_id && String(requirement.position_id) !== String(filters.position_id)) {
+    return false;
+  }
+
+  if (filters.branch_id && String(requirement.branch_id) !== String(filters.branch_id)) {
     return false;
   }
 
@@ -293,6 +416,12 @@ function getRequirementId(requirement) {
   return requirement?.id || requirement?.requirement_id;
 }
 
+function resolveBranchName(branchId, branches = []) {
+  if (!branchId) return '';
+  const branch = branches.find((item) => String(item.id) === String(branchId));
+  return branch?.name || branch?.title || `#${branchId}`;
+}
+
 function normalizeRequirement(requirement, positions = []) {
   if (!requirement) return null;
 
@@ -309,6 +438,7 @@ function normalizeRequirement(requirement, positions = []) {
       position: requirement.position,
     }, getPositionLabel(position) || 'Position'),
     date: requirement.date,
+    branch_id: requirement.branch_id || requirement.branchId || null,
     start_time: requirement.start_time || requirement.startTime,
     end_time: requirement.end_time || requirement.endTime,
     min_staff: requirement.min_staff || requirement.minStaff || 1,
@@ -606,6 +736,90 @@ const MOBILE_SHIFTS_STYLES = {
   },
 };
 
+function toBackendDate(date) {
+  if (!date) return '';
+
+  if (date.includes('-')) return date;
+
+  const [day, month, year] = date.split('/');
+  return `${year}-${month}-${day}`;
+}
+
+function formatDisplayDateInput(value) {
+  const digits = String(value).replace(/\D/g, '').slice(0, 8);
+
+  let day = digits.slice(0, 2);
+  let month = digits.slice(2, 4);
+  const year = digits.slice(4);
+
+  if (day.length === 1 && Number(day) > 3) {
+    day = `0${day}`;
+  }
+
+  if (day.length === 2 && Number(day) > 31) {
+    day = '31';
+  }
+
+  if (month.length === 1 && Number(month) > 1) {
+    month = `0${month}`;
+  }
+
+  if (month.length === 2 && Number(month) > 12) {
+    month = '12';
+  }
+
+  if (digits.length <= 2) return day;
+  if (digits.length <= 4) return `${day}/${month}`;
+
+  return `${day}/${month}/${year}`;
+}
+
+
+function displayDateToDate(value) {
+  if (!/^(0[1-9]|[12][0-9]|3[01])\/(0[1-9]|1[0-2])\/\d{4}$/.test(value)) return null;
+
+  const [day, month, year] = value.split('/').map(Number);
+  const date = new Date(year, month - 1, day);
+
+  if (
+    date.getFullYear() !== year ||
+    date.getMonth() !== month - 1 ||
+    date.getDate() !== day
+  ) return null;
+
+  return date;
+}
+
+function isDisplayDateValid(value) {
+  const match = value.match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
+  if (!match) return false;
+
+  const [, dayStr, monthStr, yearStr] = match;
+
+  const day = Number(dayStr);
+  const month = Number(monthStr);
+  const year = Number(yearStr);
+
+  if (month < 1 || month > 12) return false;
+  if (day < 1 || day > 31) return false;
+
+  const date = new Date(year, month - 1, day);
+
+  return (
+    date.getFullYear() === year &&
+    date.getMonth() === month - 1 &&
+    date.getDate() === day
+  );
+}
+
+function isDisplayDateNotPast(value) {
+  const date = displayDateToDate(value);
+  if (!date) return false;
+
+  date.setHours(0, 0, 0, 0);
+  return date.getTime() >= startOfToday().getTime();
+}
+
 export default function ShiftsTab({ language, userRole, user }) {
   const positionTitleRevision = usePositionTitleRevision();
   const r = useTabResponsive(1480);
@@ -613,9 +827,12 @@ export default function ShiftsTab({ language, userRole, user }) {
   const { markUnsaved, markSaved } = useUnsavedChanges();
   const isManager = userRole === 'manager';
   const employeeId = user?.employeeId || user?.employee_id;
+  const companyId = user?.company?.id || user?.company_id || null;
 
   const [mode, setMode] = useState('single');
   const [positions, setPositions] = useState([]);
+  const [branches, setBranches] = useState([]);
+  const [workingHoursRevision, setWorkingHoursRevision] = useState(0);
   const [requirements, setRequirements] = useState([]);
   const [singleRequirement, setSingleRequirement] = useState(defaultSingleRequirement);
   const [bulkRequirement, setBulkRequirement] = useState(defaultBulkRequirement);
@@ -678,11 +895,10 @@ export default function ShiftsTab({ language, userRole, user }) {
   };
 
   const [absenceForm, setAbsenceForm] = useState(() => {
-    const today = formatLocalDate(new Date());
     return {
       absence_type: 'vacation',
-      start_date: today,
-      end_date: today,
+      start_date: '',
+      end_date: '',
       comment: '',
     };
   });
@@ -704,6 +920,10 @@ export default function ShiftsTab({ language, userRole, user }) {
       stepThree: '3. Проверьте список',
       filters: 'Фильтры',
       allPositions: 'Все профессии',
+      allBranches: 'Все филиалы',
+      branch: 'Филиал',
+      chooseBranch: 'Выберите филиал',
+      noBranches: 'Сначала создайте филиалы во вкладке «Компания».',
       filterDate: 'Конкретная дата',
       clearFilters: 'Сбросить',
       single: 'Одно требование',
@@ -758,15 +978,21 @@ export default function ShiftsTab({ language, userRole, user }) {
       selectFile: 'Выберите .xlsx файл',
       missingEmployeeProfile: 'Аккаунт сотрудника не привязан к профилю. Сначала присоединитесь к компании.',
       bulkHint: 'Создаст одинаковые требования на выбранные дни недели внутри периода.',
-      singleHint: 'Например: Barista, 15.06, 09:00–18:00, нужно 2 человека.',
-      localOnly: 'локально',
-      deleteNotSupported: 'Удаление через API пока недоступно.',
+      singleHint: 'Например: филиал «Центр», Barista, 15.06, 09:00–18:00, нужно 2 человека.',
       available: 'Доступен',
       if_needed: 'Может быть',
       unavailable: 'Недоступен',
       prevWeek: 'Предыдущая неделя',
       nextWeek: 'Следующая неделя',
       locked: 'Прошедшие даты изменить нельзя',
+
+      invalidDateFormat: 'Введите дату в формате dd/mm/yyyy',
+      absencePastDate: 'Нельзя поставить отсутствие раньше сегодняшнего дня',
+      absenceEndBeforeStart: 'Конец периода не может быть раньше начала',
+      outsideWorkingHours: 'Смена должна быть в пределах рабочих часов ({range}).',
+      bulkWorkingHoursConflict: 'У выбранных дней недели нет общего рабочего времени. Сократите набор дней или измените часы работы.',
+      workingHoursRange: 'Рабочие часы: {range}',
+
     },
     en: {
       stepOne: '1. Choose period',
@@ -774,6 +1000,10 @@ export default function ShiftsTab({ language, userRole, user }) {
       stepThree: '3. Check list',
       filters: 'Filters',
       allPositions: 'All positions',
+      allBranches: 'All branches',
+      branch: 'Branch',
+      chooseBranch: 'Choose branch',
+      noBranches: 'Create branches in the Company tab first.',
       filterDate: 'Specific date',
       clearFilters: 'Reset',
       single: 'Single requirement',
@@ -828,15 +1058,19 @@ export default function ShiftsTab({ language, userRole, user }) {
       selectFile: 'Choose .xlsx file',
       missingEmployeeProfile: 'This employee account is not linked to a profile yet. Join a company first.',
       bulkHint: 'Creates the same requirements for selected weekdays within the period.',
-      singleHint: 'Example: Barista, Jun 15, 09:00–18:00, need 2 people.',
-      localOnly: 'local',
-      deleteNotSupported: 'Delete is not available via API yet.',
+      singleHint: 'Example: Downtown branch, Barista, Jun 15, 09:00–18:00, need 2 people.',
       available: 'Available',
       if_needed: 'If needed',
       unavailable: 'Unavailable',
       prevWeek: 'Previous week',
       nextWeek: 'Next week',
       locked: 'Past dates cannot be edited',
+      invalidDateFormat: 'Enter the date in dd/mm/yyyy format',
+      absencePastDate: 'Absence cannot be earlier than today',
+      absenceEndBeforeStart: 'End date cannot be earlier than start date',
+      outsideWorkingHours: 'Shift must stay within working hours ({range}).',
+      bulkWorkingHoursConflict: 'Selected weekdays have no overlapping working hours. Pick fewer days or adjust working hours.',
+      workingHoursRange: 'Working hours: {range}',
     },
   };
 
@@ -886,6 +1120,133 @@ export default function ShiftsTab({ language, userRole, user }) {
       .filter(Boolean)
       .filter((requirement) => matchesRequirementFilters(requirement, appliedFilters))
   ), [appliedFilters, positions, requirements, positionTitleRevision]);
+
+  const singleWorkingHours = useMemo(() => {
+    if (!companyId || !singleRequirement.branch_id) return null;
+    return getWorkingHoursForWeekday(
+      companyId,
+      Number(singleRequirement.branch_id),
+      dateKeyToWeekday(singleRequirement.date),
+    );
+  }, [companyId, singleRequirement.branch_id, singleRequirement.date, workingHoursRevision]);
+
+  const bulkWorkingHours = useMemo(() => {
+    if (!companyId || !bulkRequirement.branch_id) return null;
+    return getWorkingHoursForWeekdays(
+      companyId,
+      Number(bulkRequirement.branch_id),
+      bulkRequirement.weekdays,
+    );
+  }, [bulkRequirement.branch_id, bulkRequirement.weekdays, companyId, workingHoursRevision]);
+
+  const activeWorkingHoursBranchId =
+    Number(singleRequirement.branch_id)
+    || Number(bulkRequirement.branch_id)
+    || Number(filterForm.branch_id)
+    || null;
+
+  const activeBranchWorkingHours = useMemo(() => {
+    if (!activeWorkingHoursBranchId) return null;
+    const branch = branches.find((item) => Number(item.id) === activeWorkingHoursBranchId);
+    return branch?.working_hours_by_weekday || null;
+  }, [activeWorkingHoursBranchId, branches]);
+
+  useEffect(() => {
+    if (!companyId || !activeWorkingHoursBranchId) return undefined;
+
+    if (activeBranchWorkingHours) {
+      setWorkingHoursStoreFromApi(companyId, activeWorkingHoursBranchId, activeBranchWorkingHours);
+      setWorkingHoursRevision((value) => value + 1);
+      return undefined;
+    }
+
+    let cancelled = false;
+
+    void fetchWorkingHoursStore(companyId, activeWorkingHoursBranchId)
+      .then(() => {
+        if (!cancelled) {
+          setWorkingHoursRevision((value) => value + 1);
+        }
+      })
+      .catch(() => {});
+
+    return () => {
+      cancelled = true;
+    };
+  }, [activeBranchWorkingHours, activeWorkingHoursBranchId, companyId]);
+
+  useEffect(() => {
+    if (!singleWorkingHours) return;
+
+    setSingleRequirement((prev) => {
+      const clamped = clampRequirementTimes(prev.start_time, prev.end_time, singleWorkingHours);
+      if (clamped.start_time === prev.start_time && clamped.end_time === prev.end_time) {
+        return prev;
+      }
+      return { ...prev, ...clamped };
+    });
+  }, [singleWorkingHours]);
+
+  useEffect(() => {
+    if (!bulkWorkingHours) return;
+
+    setBulkRequirement((prev) => ({
+      ...prev,
+      requirements: prev.requirements.map((item) => {
+        const clamped = clampRequirementTimes(item.start_time, item.end_time, bulkWorkingHours);
+        if (clamped.start_time === item.start_time && clamped.end_time === item.end_time) {
+          return item;
+        }
+        return { ...item, ...clamped };
+      }),
+    }));
+  }, [bulkWorkingHours]);
+
+  useEffect(() => {
+    if (!isManager || !companyId) {
+      setBranches([]);
+      return undefined;
+    }
+
+    let cancelled = false;
+
+    async function loadBranchOptions() {
+      try {
+        const data = await listBranches(companyId);
+        if (cancelled) return;
+
+        const normalized = normalizeArray(data);
+        setBranches(normalized);
+        normalized.forEach((branch) => {
+          if (branch?.working_hours_by_weekday) {
+            setWorkingHoursStoreFromApi(companyId, branch.id, branch.working_hours_by_weekday);
+          }
+        });
+
+        const defaultBranchId = String(normalized[0]?.id || '');
+        if (!defaultBranchId) return;
+
+        setSingleRequirement((prev) => ({
+          ...prev,
+          branch_id: prev.branch_id || defaultBranchId,
+        }));
+        setBulkRequirement((prev) => ({
+          ...prev,
+          branch_id: prev.branch_id || defaultBranchId,
+        }));
+      } catch {
+        if (!cancelled) {
+          setBranches([]);
+        }
+      }
+    }
+
+    void loadBranchOptions();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [companyId, isManager]);
 
   useEffect(() => {
     if (isManager) return;
@@ -950,6 +1311,7 @@ export default function ShiftsTab({ language, userRole, user }) {
     }
 
     const absencesData = await getMyAbsences();
+    const availabilityData = await getEmployeeAvailability(employeeId).catch(() => null);
 
     const storedByDate = (() => {
       try {
@@ -959,7 +1321,10 @@ export default function ShiftsTab({ language, userRole, user }) {
         return {};
       }
     })();
-    setAvailabilityByDate(storedByDate);
+
+    const apiByDate = dailyAvailabilityToByDate(availabilityData?.daily_availability || []);
+    const hasStoredDates = Object.keys(storedByDate).length > 0;
+    setAvailabilityByDate(hasStoredDates ? storedByDate : apiByDate);
 
     setAbsences(normalizeArray(absencesData));
   }, [employeeId, availabilityStorageKey]);
@@ -1136,7 +1501,7 @@ export default function ShiftsTab({ language, userRole, user }) {
         <div style={styles.gridCorner} />
         {TIME_SLOTS.map((time, slotIndex) => (
           <div key={time} style={styles.timeHeaderCell}>
-            {slotIndex % 2 === 0 ? time : time.slice(3)}
+            {time.endsWith(':00') ? time : ''}
           </div>
         ))}
       </div>
@@ -1218,9 +1583,32 @@ export default function ShiftsTab({ language, userRole, user }) {
     };
   }, [endAvailabilityDrag]);
   const submitManagerRequirement = async () => {
+    if (!singleRequirement.branch_id) {
+      setErrorMessage(t.chooseBranch);
+      return;
+    }
+
     if (!singleRequirement.position_id || !singleRequirement.date) {
       setErrorMessage(t.single);
       return;
+    }
+
+    if (singleWorkingHours) {
+      const validationError = validateRequirementTimes(
+        singleRequirement.start_time,
+        singleRequirement.end_time,
+        singleWorkingHours,
+        {
+          outsideWorkingHours: t.outsideWorkingHours.replace(
+            '{range}',
+            formatWorkingHoursRange(singleWorkingHours),
+          ),
+        },
+      );
+      if (validationError) {
+        setErrorMessage(validationError);
+        return;
+      }
     }
 
     clearMessages();
@@ -1229,6 +1617,7 @@ export default function ShiftsTab({ language, userRole, user }) {
     try {
       await createRequirement({
         ...singleRequirement,
+        branch_id: Number(singleRequirement.branch_id),
         position_id: Number(singleRequirement.position_id),
         min_staff: Number(singleRequirement.min_staff),
       });
@@ -1269,20 +1658,42 @@ export default function ShiftsTab({ language, userRole, user }) {
       await loadManagerData(appliedFilters, { silent: true });
       setSuccessMessage(t.requirementDeleted);
     } catch (error) {
-      const message = String(error?.message || '');
-      if (message.includes('404') || message.includes('405') || message.toLowerCase().includes('not found')) {
-        setErrorMessage(t.deleteNotSupported);
-      } else {
-        setErrorMessage(message || t.deleteRequirement);
-      }
+      setErrorMessage(normalizeError(error, t.deleteRequirement, language));
     } finally {
       setIsSubmitting(false);
     }
   };
 
   const submitBulkRequirements = async () => {
+    if (!bulkRequirement.branch_id) {
+      setErrorMessage(t.chooseBranch);
+      return;
+    }
+
     if (!bulkRequirement.requirements[0]?.position_id) {
       setErrorMessage(t.bulk);
+      return;
+    }
+
+    if (!bulkWorkingHours) {
+      setErrorMessage(t.bulkWorkingHoursConflict);
+      return;
+    }
+
+    const template = bulkRequirement.requirements[0];
+    const validationError = validateRequirementTimes(
+      template.start_time,
+      template.end_time,
+      bulkWorkingHours,
+      {
+        outsideWorkingHours: t.outsideWorkingHours.replace(
+          '{range}',
+          formatWorkingHoursRange(bulkWorkingHours),
+        ),
+      },
+    );
+    if (validationError) {
+      setErrorMessage(validationError);
       return;
     }
 
@@ -1292,6 +1703,7 @@ export default function ShiftsTab({ language, userRole, user }) {
     try {
       await createBulkRequirements({
         ...bulkRequirement,
+        branch_id: Number(bulkRequirement.branch_id),
         requirements: bulkRequirement.requirements.map((item) => ({
           ...item,
           position_id: Number(item.position_id),
@@ -1365,9 +1777,8 @@ export default function ShiftsTab({ language, userRole, user }) {
 
       await updateEmployeeAvailability(employeeId, {
         desired_days_off: [],
-        // The API still accepts a weekly shape; keep that sync limited to the
-        // visible week, while the UI stores selections by exact calendar date.
-        weekly_availability: convertDatesToWeeklyIntervals(availabilityByDate, weekDates),
+        weekly_availability: [],
+        daily_availability: convertDatesToDailyIntervals(availabilityByDate),
       });
       await loadEmployeeData();
       markSaved(AVAILABILITY_SCOPE);
@@ -1389,14 +1800,33 @@ export default function ShiftsTab({ language, userRole, user }) {
       setErrorMessage(t.addAbsence);
       return;
     }
+    if (!isDisplayDateValid(absenceForm.start_date) || !isDisplayDateValid(absenceForm.end_date)) {
+      setErrorMessage(t.invalidDateFormat);
+      return;
+    }
+    
+    if (!isDisplayDateNotPast(absenceForm.start_date) || !isDisplayDateNotPast(absenceForm.end_date)) {
+      setErrorMessage(t.absencePastDate);
+      return;
+    }
 
+    const start = displayDateToDate(absenceForm.start_date);
+    const end = displayDateToDate(absenceForm.end_date);
+
+    if (end.getTime() < start.getTime()) {
+      setErrorMessage(t.absenceEndBeforeStart);
+      return;
+    }
     clearMessages();
     setIsSubmitting(true);
 
     try {
-      await createMyAbsence(absenceForm);
-      const today = formatLocalDate(new Date());
-      setAbsenceForm({ absence_type: 'vacation', start_date: today, end_date: today, comment: '' });
+      await createMyAbsence({
+        ...absenceForm,
+        start_date: toBackendDate(absenceForm.start_date),
+        end_date: toBackendDate(absenceForm.end_date),
+    });
+      setAbsenceForm({absence_type: 'vacation', start_date: '', end_date: '', comment: '',});
       await loadEmployeeData();
       markSaved(ABSENCE_SCOPE);
       setSuccessMessage(t.absenceAdded);
@@ -1494,6 +1924,20 @@ export default function ShiftsTab({ language, userRole, user }) {
                 <h3 style={{ ...styles.panelTitle, ...mobileStyles?.panelTitle }}>{t.filters}</h3>
 
                 <div style={{ ...styles.stack, ...mobileStyles?.stack }}>
+                  <label style={{ ...styles.label, ...mobileStyles?.label }}>{t.branch}</label>
+                  <select
+                    value={filterForm.branch_id}
+                    onChange={(event) => setFilterForm((prev) => ({ ...prev, branch_id: event.target.value }))}
+                    style={{ ...styles.input, ...mobileStyles?.input }}
+                  >
+                    <option value="">{t.allBranches}</option>
+                    {branches.map((branch) => (
+                      <option key={branch.id} value={branch.id}>
+                        {branch.name || branch.title || `#${branch.id}`}
+                      </option>
+                    ))}
+                  </select>
+
                   <label style={{ ...styles.label, ...mobileStyles?.label }}>{t.position}</label>
                   <select
                     value={filterForm.position_id}
@@ -1520,8 +1964,11 @@ export default function ShiftsTab({ language, userRole, user }) {
                   <input
                     type="date"
                     value={filterForm.start_date}
-                    onChange={(event) => setFilterForm((prev) => ({ ...prev, start_date: event.target.value }))}
-                    style={{ ...styles.dateInput, ...mobileStyles?.dateInput }}
+                    onChange={(event) => {
+                      setFilterForm((prev) => ({ ...prev, start_date: event.target.value }));
+                      markUnsaved(ABSENCE_SCOPE);
+                    }}
+                   style={{ ...styles.dateInput, ...mobileStyles?.dateInput }}
                     disabled={Boolean(filterForm.date)}
                   />
 
@@ -1529,8 +1976,10 @@ export default function ShiftsTab({ language, userRole, user }) {
                   <input
                     type="date"
                     value={filterForm.end_date}
-                    onChange={(event) => setFilterForm((prev) => ({ ...prev, end_date: event.target.value }))}
-                    style={{ ...styles.dateInput, ...mobileStyles?.dateInput }}
+                    onChange={(event) => {
+                      setFilterForm((prev) => ({ ...prev, end_date: event.target.value }));
+                      markUnsaved(ABSENCE_SCOPE);
+                    }}                    style={{ ...styles.dateInput, ...mobileStyles?.dateInput }}
                     disabled={Boolean(filterForm.date)}
                   />
 
@@ -1544,6 +1993,21 @@ export default function ShiftsTab({ language, userRole, user }) {
                   </div>
                 </div>
               </section>
+
+              <WorkingHoursPanel
+                language={language}
+                companyId={companyId}
+                branchId={activeWorkingHoursBranchId}
+                branchWorkingHours={activeBranchWorkingHours}
+                revision={workingHoursRevision}
+                onChange={() => setWorkingHoursRevision((value) => value + 1)}
+                onError={(message) => setErrorMessage(message)}
+                markUnsaved={markUnsaved}
+                markSaved={markSaved}
+                scope={WORKING_HOURS_SCOPE}
+                styles={styles}
+                mobileStyles={mobileStyles}
+              />
 
               <section style={{ ...styles.panel, ...mobileStyles?.panel }}>
                 <h3 style={{ ...styles.panelTitle, ...mobileStyles?.panelTitle }}>{t.import}</h3>
@@ -1620,6 +2084,24 @@ export default function ShiftsTab({ language, userRole, user }) {
                   <p style={{ ...styles.panelHint, ...mobileStyles?.panelHint }}>{t.singleHint}</p>
 
                   <div style={{ ...styles.formGrid, gridTemplateColumns: r.gridCols('repeat(3, minmax(0, 1fr))'), ...mobileStyles?.formGrid }}>
+                    <Field label={t.branch} labelStyle={mobileStyles?.label}>
+                      <select
+                        value={singleRequirement.branch_id}
+                        onChange={(event) => {
+                          setSingleRequirement((prev) => ({ ...prev, branch_id: event.target.value }));
+                          markUnsaved(SINGLE_REQUIREMENT_SCOPE);
+                        }}
+                        style={{ ...styles.input, ...mobileStyles?.input }}
+                      >
+                        <option value="">{branches.length ? t.chooseBranch : t.noBranches}</option>
+                        {branches.map((branch) => (
+                          <option key={branch.id} value={branch.id}>
+                            {branch.name || branch.title || `#${branch.id}`}
+                          </option>
+                        ))}
+                      </select>
+                    </Field>
+
                     <Field label={t.position} labelStyle={mobileStyles?.label}>
                       <select
                         value={singleRequirement.position_id}
@@ -1663,36 +2145,31 @@ export default function ShiftsTab({ language, userRole, user }) {
                       />
                     </Field>
 
-                    <Field label={t.startTime} labelStyle={mobileStyles?.label}>
-                      <input
-                        type="time"
-                        value={formatTime(singleRequirement.start_time)}
-                        onChange={(event) => {
-                          setSingleRequirement((prev) => ({
-                            ...prev,
-                            start_time: `${event.target.value}:00`,
-                          }));
-                          markUnsaved(SINGLE_REQUIREMENT_SCOPE);
-                        }}
-                        style={{ ...styles.input, ...mobileStyles?.input }}
-                      />
-                    </Field>
-
-                    <Field label={t.endTime} labelStyle={mobileStyles?.label}>
-                      <input
-                        type="time"
-                        value={formatTime(singleRequirement.end_time)}
-                        onChange={(event) => {
-                          setSingleRequirement((prev) => ({
-                            ...prev,
-                            end_time: `${event.target.value}:00`,
-                          }));
-                          markUnsaved(SINGLE_REQUIREMENT_SCOPE);
-                        }}
-                        style={{ ...styles.input, ...mobileStyles?.input }}
-                      />
-                    </Field>
+                    <RequirementTimeFields
+                      startTime={singleRequirement.start_time}
+                      endTime={singleRequirement.end_time}
+                      workingHours={singleWorkingHours}
+                      startLabel={t.startTime}
+                      endLabel={t.endTime}
+                      Field={Field}
+                      labelStyle={mobileStyles?.label}
+                      inputStyle={{ ...styles.input, ...mobileStyles?.input }}
+                      onStartChange={(startTime, endTime) => {
+                        setSingleRequirement((prev) => ({ ...prev, start_time: startTime, end_time: endTime }));
+                        markUnsaved(SINGLE_REQUIREMENT_SCOPE);
+                      }}
+                      onEndChange={(endTime) => {
+                        setSingleRequirement((prev) => ({ ...prev, end_time: endTime }));
+                        markUnsaved(SINGLE_REQUIREMENT_SCOPE);
+                      }}
+                    />
                   </div>
+
+                  {singleWorkingHours && (
+                    <p style={{ ...styles.panelHint, ...mobileStyles?.panelHint, marginTop: 8 }}>
+                      {t.workingHoursRange.replace('{range}', formatWorkingHoursRange(singleWorkingHours))}
+                    </p>
+                  )}
 
                   <button
                     type="button"
@@ -1700,7 +2177,7 @@ export default function ShiftsTab({ language, userRole, user }) {
                     style={isSubmitting
                       ? { ...styles.primaryButtonDisabled, ...mobileStyles?.primaryButtonDisabled }
                       : { ...styles.primaryButton, ...mobileStyles?.primaryButton }}
-                    disabled={isSubmitting || positions.length === 0}
+                    disabled={isSubmitting || positions.length === 0 || branches.length === 0}
                   >
                     {t.create}
                   </button>
@@ -1711,6 +2188,24 @@ export default function ShiftsTab({ language, userRole, user }) {
                   <p style={{ ...styles.panelHint, ...mobileStyles?.panelHint }}>{t.bulkHint}</p>
 
                   <div style={{ ...styles.formGrid, gridTemplateColumns: r.gridCols('repeat(3, minmax(0, 1fr))'), ...mobileStyles?.formGrid }}>
+                    <Field label={t.branch} labelStyle={mobileStyles?.label}>
+                      <select
+                        value={bulkRequirement.branch_id}
+                        onChange={(event) => {
+                          setBulkRequirement((prev) => ({ ...prev, branch_id: event.target.value }));
+                          markUnsaved(BULK_REQUIREMENT_SCOPE);
+                        }}
+                        style={{ ...styles.input, ...mobileStyles?.input }}
+                      >
+                        <option value="">{branches.length ? t.chooseBranch : t.noBranches}</option>
+                        {branches.map((branch) => (
+                          <option key={branch.id} value={branch.id}>
+                            {branch.name || branch.title || `#${branch.id}`}
+                          </option>
+                        ))}
+                      </select>
+                    </Field>
+
                     <Field label={t.startDate} labelStyle={mobileStyles?.label}>
                       <input
                         type="date"
@@ -1772,36 +2267,41 @@ export default function ShiftsTab({ language, userRole, user }) {
                       />
                     </Field>
 
-                    <Field label={t.startTime} labelStyle={mobileStyles?.label}>
-                      <input
-                        type="time"
-                        value={formatTime(bulkRequirement.requirements[0].start_time)}
-                        onChange={(event) => {
-                          setBulkRequirement((prev) => ({
-                            ...prev,
-                            requirements: [{ ...prev.requirements[0], start_time: `${event.target.value}:00` }],
-                          }));
-                          markUnsaved(BULK_REQUIREMENT_SCOPE);
-                        }}
-                        style={{ ...styles.input, ...mobileStyles?.input }}
-                      />
-                    </Field>
-
-                    <Field label={t.endTime} labelStyle={mobileStyles?.label}>
-                      <input
-                        type="time"
-                        value={formatTime(bulkRequirement.requirements[0].end_time)}
-                        onChange={(event) => {
-                          setBulkRequirement((prev) => ({
-                            ...prev,
-                            requirements: [{ ...prev.requirements[0], end_time: `${event.target.value}:00` }],
-                          }));
-                          markUnsaved(BULK_REQUIREMENT_SCOPE);
-                        }}
-                        style={{ ...styles.input, ...mobileStyles?.input }}
-                      />
-                    </Field>
+                    <RequirementTimeFields
+                      startTime={bulkRequirement.requirements[0].start_time}
+                      endTime={bulkRequirement.requirements[0].end_time}
+                      workingHours={bulkWorkingHours}
+                      startLabel={t.startTime}
+                      endLabel={t.endTime}
+                      Field={Field}
+                      labelStyle={mobileStyles?.label}
+                      inputStyle={{ ...styles.input, ...mobileStyles?.input }}
+                      onStartChange={(startTime, endTime) => {
+                        setBulkRequirement((prev) => ({
+                          ...prev,
+                          requirements: [{ ...prev.requirements[0], start_time: startTime, end_time: endTime }],
+                        }));
+                        markUnsaved(BULK_REQUIREMENT_SCOPE);
+                      }}
+                      onEndChange={(endTime) => {
+                        setBulkRequirement((prev) => ({
+                          ...prev,
+                          requirements: [{ ...prev.requirements[0], end_time: endTime }],
+                        }));
+                        markUnsaved(BULK_REQUIREMENT_SCOPE);
+                      }}
+                    />
                   </div>
+
+                  {bulkWorkingHours ? (
+                    <p style={{ ...styles.panelHint, ...mobileStyles?.panelHint, marginTop: 8 }}>
+                      {t.workingHoursRange.replace('{range}', formatWorkingHoursRange(bulkWorkingHours))}
+                    </p>
+                  ) : (
+                    <p style={{ ...styles.panelHint, ...mobileStyles?.panelHint, marginTop: 8, color: '#b42318' }}>
+                      {t.bulkWorkingHoursConflict}
+                    </p>
+                  )}
 
                   <div style={{ ...styles.dayPills, ...mobileStyles?.dayPills }}>
                     {WEEKDAYS.map((day) => {
@@ -1835,7 +2335,7 @@ export default function ShiftsTab({ language, userRole, user }) {
                     style={isSubmitting
                       ? { ...styles.primaryButtonDisabled, ...mobileStyles?.primaryButtonDisabled }
                       : { ...styles.primaryButton, ...mobileStyles?.primaryButton }}
-                    disabled={isSubmitting || positions.length === 0}
+                    disabled={isSubmitting || positions.length === 0 || branches.length === 0 || !bulkWorkingHours}
                   >
                     {t.create}
                   </button>
@@ -1851,9 +2351,24 @@ export default function ShiftsTab({ language, userRole, user }) {
                 {!r.isMobile && (
                   <div style={{
                     ...styles.requirementFilters,
-                    gridTemplateColumns: r.gridCols('repeat(4, minmax(0, 1fr)) auto auto'),
+                    gridTemplateColumns: r.gridCols('repeat(5, minmax(0, 1fr)) auto auto'),
                   }}
                   >
+                    <Field label={t.branch} labelStyle={mobileStyles?.label}>
+                      <select
+                        value={filterForm.branch_id}
+                        onChange={(event) => setFilterForm((prev) => ({ ...prev, branch_id: event.target.value }))}
+                        style={styles.input}
+                      >
+                        <option value="">{t.allBranches}</option>
+                        {branches.map((branch) => (
+                          <option key={branch.id} value={branch.id}>
+                            {branch.name || branch.title || `#${branch.id}`}
+                          </option>
+                        ))}
+                      </select>
+                    </Field>
+
                     <Field label={t.position} labelStyle={mobileStyles?.label}>
                       <select
                         value={filterForm.position_id}
@@ -1885,8 +2400,10 @@ export default function ShiftsTab({ language, userRole, user }) {
                       <input
                         type="date"
                         value={filterForm.start_date}
-                        onChange={(event) => setFilterForm((prev) => ({ ...prev, start_date: event.target.value }))}
-                        style={{
+                        onChange={(event) => {
+                          setFilterForm((prev) => ({ ...prev, start_date: event.target.value }))
+                          markUnsaved(ABSENCE_SCOPE);
+                        }}                        style={{
                           ...styles.dateInput,
                           ...(r.isMobile ? { height: 32, fontSize: 12, padding: '0 10px', borderRadius: 8 } : {}),
                         }}
@@ -1898,7 +2415,10 @@ export default function ShiftsTab({ language, userRole, user }) {
                       <input
                         type="date"
                         value={filterForm.end_date}
-                        onChange={(event) => setFilterForm((prev) => ({ ...prev, end_date: event.target.value }))}
+                        onChange={(event) => {
+                          setFilterForm((prev) => ({ ...prev, end_date: event.target.value }))
+                          markUnsaved(ABSENCE_SCOPE);
+                        }}
                         style={{
                           ...styles.dateInput,
                           ...(r.isMobile ? { height: 32, fontSize: 12, padding: '0 10px', borderRadius: 8 } : {}),
@@ -1948,6 +2468,9 @@ export default function ShiftsTab({ language, userRole, user }) {
                           <div style={mobileStyles?.requirementMetaRow}>
                             <span style={{ ...styles.itemMeta, ...mobileStyles?.itemMeta }}>{requirement.date}</span>
                             <span style={{ ...styles.itemMeta, ...mobileStyles?.itemMeta }}>
+                              {resolveBranchName(requirement.branch_id, branches)}
+                            </span>
+                            <span style={{ ...styles.itemMeta, ...mobileStyles?.itemMeta }}>
                               {formatTime(requirement.start_time)} — {formatTime(requirement.end_time)}
                             </span>
                           </div>
@@ -1963,13 +2486,17 @@ export default function ShiftsTab({ language, userRole, user }) {
                       ) : (
                       <div key={getRequirementId(requirement)} style={{
                         ...styles.requirementItem,
-                        gridTemplateColumns: r.gridCols('1.2fr 1fr auto auto'),
+                        gridTemplateColumns: r.gridCols('1.2fr 0.9fr 1fr auto auto'),
                       }}>
                         <div>
                           <strong style={styles.itemTitle}>{requirement.position_title}</strong>
                           <div style={styles.itemMeta}>
                             {requirement.date}
                           </div>
+                        </div>
+
+                        <div style={styles.itemMeta}>
+                          {resolveBranchName(requirement.branch_id, branches)}
                         </div>
 
                         <div style={styles.itemMeta}>
@@ -2166,8 +2693,20 @@ export default function ShiftsTab({ language, userRole, user }) {
                           ...styles.brushBtn,
                           background: option.color,
                           color: option.textColor,
-                          border: brushMode === option.id ? '2px solid #002642' : '1px solid rgba(79, 100, 111, 0.18)',
-                          boxShadow: brushMode === option.id ? '0 3px 10px rgba(0, 38, 66, 0.14)' : 'none',
+
+                          transform: brushMode === option.id
+                            ? 'scale(1.08)'
+                            : 'scale(1)',
+
+                          boxShadow: brushMode === option.id
+                            ? '0 8px 22px rgba(0,38,66,.22)'
+                            : '0 3px 10px rgba(0,38,66,.08)',
+
+                          outline: brushMode === option.id
+                            ? '2px solid #002642'
+                            : 'none',
+
+                          zIndex: brushMode === option.id ? 2 : 1,
                         }}
                         aria-pressed={brushMode === option.id}
                         title={t[option.id]}
@@ -2231,175 +2770,119 @@ export default function ShiftsTab({ language, userRole, user }) {
               )}
             </section>
 
-            <section style={{ ...styles.panel, ...(r.isMobile ? r.employeePanel : {}), ...mobileStyles?.panel }}>
-              <h3 style={{ ...styles.panelTitle, ...mobileStyles?.panelTitle }}>{t.absences}</h3>
+            <div
+  style={{
+    ...styles.absenceCardsGrid,
+    gridTemplateColumns: r.gridCols('1fr 1fr'),
+  }}
+>
+  <section style={{ ...styles.panel, ...(r.isMobile ? r.employeePanel : {}), ...mobileStyles?.panel }}>
+    <h3 style={{ ...styles.panelTitle, ...mobileStyles?.panelTitle }}>{t.addAbsence}</h3>
 
-              {r.isMobile ? (
-                <div style={{ ...styles.mobileFormStack, ...mobileStyles?.mobileFormStack }}>
-                  <Field label={t.absenceType} labelStyle={mobileStyles?.label}>
-                    <select
-                      value={absenceForm.absence_type}
-                      onChange={(event) => {
-                        setAbsenceForm((prev) => ({ ...prev, absence_type: event.target.value }));
-                        markUnsaved(ABSENCE_SCOPE);
-                      }}
-                      style={{ ...styles.input, ...mobileStyles?.input }}
-                    >
-                      <option value="vacation">{t.vacation}</option>
-                      <option value="sick_leave">{t.sick_leave}</option>
-                      <option value="other">{t.other}</option>
-                    </select>
-                  </Field>
+    <div style={styles.absenceCreateForm}>
+      <Field label={t.absenceType} labelStyle={mobileStyles?.label}>
+        <select
+          value={absenceForm.absence_type}
+          onChange={(event) => {
+            setAbsenceForm((prev) => ({ ...prev, absence_type: event.target.value }));
+            markUnsaved(ABSENCE_SCOPE);
+          }}
+          style={{ ...styles.input, ...mobileStyles?.input }}
+        >
+          <option value="vacation">{t.vacation}</option>
+          <option value="sick_leave">{t.sick_leave}</option>
+          <option value="other">{t.other}</option>
+        </select>
+      </Field>
 
-                  <Field label={t.startDate} labelStyle={mobileStyles?.label}>
-                    <input
-                      type="date"
-                      value={absenceForm.start_date}
-                      onChange={(event) => {
-                        setAbsenceForm((prev) => ({ ...prev, start_date: event.target.value }));
-                        markUnsaved(ABSENCE_SCOPE);
-                      }}
-                      style={{ ...styles.dateInput, ...mobileStyles?.dateInput }}
-                    />
-                  </Field>
+      <div style={styles.absenceDatesRow}>
+        <Field label={t.startDate} labelStyle={mobileStyles?.label}>
+          <input
+            type="text"
+            placeholder="dd/mm/yyyy"
+            value={absenceForm.start_date}
+            onChange={(event) => {
+              setAbsenceForm((prev) => ({ ...prev, start_date: formatDisplayDateInput(event.target.value) }));
+              markUnsaved(ABSENCE_SCOPE);
+            }}
+            style={{ ...styles.dateInput, ...mobileStyles?.dateInput }}
+          />
+        </Field>
 
-                  <Field label={t.endDate} labelStyle={mobileStyles?.label}>
-                    <input
-                      type="date"
-                      value={absenceForm.end_date}
-                      onChange={(event) => {
-                        setAbsenceForm((prev) => ({ ...prev, end_date: event.target.value }));
-                        markUnsaved(ABSENCE_SCOPE);
-                      }}
-                      style={{ ...styles.dateInput, ...mobileStyles?.dateInput }}
-                    />
-                  </Field>
+        <Field label={t.endDate} labelStyle={mobileStyles?.label}>
+          <input
+            type="text"
+            placeholder="dd/mm/yyyy"
+            value={absenceForm.end_date}
+            onChange={(event) => {
+              setAbsenceForm((prev) => ({ ...prev, end_date: formatDisplayDateInput(event.target.value) }));
+              markUnsaved(ABSENCE_SCOPE);
+            }}
+            style={{ ...styles.dateInput, ...mobileStyles?.dateInput }}
+          />
+        </Field>
+      </div>
 
-                  <Field label={t.comment} labelStyle={mobileStyles?.label}>
-                    <input
-                      value={absenceForm.comment}
-                      onChange={(event) => {
-                        setAbsenceForm((prev) => ({ ...prev, comment: event.target.value }));
-                        markUnsaved(ABSENCE_SCOPE);
-                      }}
-                      placeholder={t.comment}
-                      style={{ ...styles.input, ...mobileStyles?.input }}
-                    />
-                  </Field>
+      <Field label={t.comment} labelStyle={mobileStyles?.label}>
+        <input
+          value={absenceForm.comment}
+          onChange={(event) => {
+            setAbsenceForm((prev) => ({ ...prev, comment: event.target.value }));
+            markUnsaved(ABSENCE_SCOPE);
+          }}
+          placeholder={t.other}
+          style={{ ...styles.input, ...mobileStyles?.input }}
+        />
+      </Field>
 
-                  <button
-                    type="button"
-                    onClick={submitAbsence}
-                    style={{
-                      ...(isSubmitting ? styles.primaryButtonDisabled : styles.primaryButton),
-                      ...r.primaryButton,
-                      ...mobileStyles?.primaryButton,
-                    }}
-                    disabled={isSubmitting}
-                  >
-                    {t.addAbsence}
-                  </button>
-                </div>
-              ) : (
-              <div style={{
-                ...styles.absenceForm,
-                gridTemplateColumns: r.gridCols('1.1fr 1fr 1fr 1.4fr auto'),
-              }}
-              >
-                <select
-                  value={absenceForm.absence_type}
-                  onChange={(event) => {
-                    setAbsenceForm((prev) => ({ ...prev, absence_type: event.target.value }));
-                    markUnsaved(ABSENCE_SCOPE);
-                  }}
-                  style={styles.input}
-                >
-                  <option value="vacation">{t.vacation}</option>
-                  <option value="sick_leave">{t.sick_leave}</option>
-                  <option value="other">{t.other}</option>
-                </select>
+      <button
+        type="button"
+        onClick={submitAbsence}
+        style={{
+          ...(isSubmitting ? styles.primaryButtonDisabled : styles.primaryButton),
+          ...styles.absenceSubmitButton,
+        }}
+        disabled={isSubmitting}
+      >
+        {t.addAbsence}
+      </button>
+    </div>
+  </section>
 
-                <input
-                  type="date"
-                  value={absenceForm.start_date}
-                  onChange={(event) => {
-                    setAbsenceForm((prev) => ({ ...prev, start_date: event.target.value }));
-                    markUnsaved(ABSENCE_SCOPE);
-                  }}
-                  style={styles.dateInput}
-                />
+  <section style={{ ...styles.panel, ...(r.isMobile ? r.employeePanel : {}), ...mobileStyles?.panel }}>
+    <h3 style={{ ...styles.panelTitle, ...mobileStyles?.panelTitle }}>{t.absences}</h3>
 
-                <input
-                  type="date"
-                  value={absenceForm.end_date}
-                  onChange={(event) => {
-                    setAbsenceForm((prev) => ({ ...prev, end_date: event.target.value }));
-                    markUnsaved(ABSENCE_SCOPE);
-                  }}
-                  style={styles.dateInput}
-                />
-
-                <input
-                  value={absenceForm.comment}
-                  onChange={(event) => {
-                    setAbsenceForm((prev) => ({ ...prev, comment: event.target.value }));
-                    markUnsaved(ABSENCE_SCOPE);
-                  }}
-                  placeholder={t.other}
-                  style={styles.input}
-                />
-
-                <button
-                  type="button"
-                  onClick={submitAbsence}
-                  style={{
-                    ...(isSubmitting ? styles.primaryButtonDisabled : styles.primaryButton),
-                    ...r.primaryButton,
-                  }}
-                  disabled={isSubmitting}
-                >
-                  {t.addAbsence}
-                </button>
+    {absences.length === 0 ? (
+      <p style={styles.emptyText}>{t.empty}</p>
+    ) : (
+      <div style={styles.absenceHistoryList}>
+        {absences.map((absence) => (
+          <div key={absence.id} style={styles.absenceHistoryItem}>
+            <div>
+              <strong style={styles.itemTitle}>
+                {t[absence.absence_type] || absence.absence_type}
+              </strong>
+              <div style={styles.itemMeta}>
+                {absence.start_date} — {absence.end_date}
               </div>
+              {absence.comment && (
+                <div style={styles.itemMeta}>{absence.comment}</div>
               )}
+            </div>
 
-              {absences.length === 0 ? (
-                <p style={styles.emptyText}>{t.empty}</p>
-              ) : (
-                <div style={styles.list}>
-                  {absences.map((absence) => (
-                    <div
-                      key={absence.id}
-                      style={r.isMobile ? {
-                        ...styles.mobileAbsenceCard,
-                        ...mobileStyles?.mobileAbsenceCard,
-                      } : { ...styles.listItem, ...r.listItem }}
-                    >
-                      <div>
-                        <strong style={{ ...styles.itemTitle, ...mobileStyles?.itemTitle }}>
-                          {t[absence.absence_type] || absence.absence_type}
-                        </strong>
-                        <div style={{ ...styles.itemMeta, ...mobileStyles?.itemMeta }}>
-                          {absence.start_date} — {absence.end_date}
-                        </div>
-                        {absence.comment && (
-                          <div style={{ ...styles.itemMeta, ...mobileStyles?.itemMeta }}>{absence.comment}</div>
-                        )}
-                      </div>
-                      <button
-                        type="button"
-                        onClick={() => removeAbsence(absence.id)}
-                        style={r.isMobile
-                          ? { ...styles.deleteButton, ...r.fullWidth, ...mobileStyles?.deleteButton }
-                          : styles.deleteButton}
-                      >
-                        {t.delete}
-                      </button>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </section>
+            <button
+              type="button"
+              onClick={() => removeAbsence(absence.id)}
+              style={styles.deleteButton}
+            >
+              {t.delete}
+            </button>
+          </div>
+        ))}
+      </div>
+    )}
+  </section>
+</div>
 
             {/*
                     <div style={styles.list}>
@@ -3237,7 +3720,7 @@ const styles = {
   availabilityGridWrapper: {
     display: 'block',
     marginBottom: 0,
-    overflowX: 'auto',
+    overflowX: 'hidden',
     overflowY: 'visible',
     padding: 10,
     userSelect: 'none',
@@ -3252,14 +3735,14 @@ const styles = {
     display: 'flex',
     flexDirection: 'column',
     gap: 0,
-    minWidth: 1320,
+    width: '100%',
     borderTop: '1px solid #dbe6f0',
     borderLeft: '1px solid #dbe6f0',
   },
 
   availabilityTimeHeader: {
     display: 'grid',
-    gridTemplateColumns: '104px repeat(34, 36px)',
+    gridTemplateColumns: '100px repeat(34, minmax(32px, 1fr))',
     gap: 0,
     alignItems: 'stretch',
     padding: 0,
@@ -3267,19 +3750,19 @@ const styles = {
   },
 
   gridCorner: {
-    height: 42,
+    height: 34,
     borderRight: '1px solid #dbe6f0',
     borderBottom: '1px solid #dbe6f0',
     background: 'transparent',
   },
 
   timeHeaderCell: {
-    height: 42,
+    height: 34,
     background: '#dee7e7',
     borderRight: '1px solid #dbe6f0',
     borderBottom: '1px solid #dbe6f0',
     color: '#002642',
-    fontSize: 9,
+    fontSize: 8,
     fontWeight: '800',
     display: 'flex',
     alignItems: 'center',
@@ -3290,14 +3773,14 @@ const styles = {
 
   dateGridRow: {
     display: 'grid',
-    gridTemplateColumns: '104px repeat(34, 36px)',
+    gridTemplateColumns: '100px repeat(34, minmax(32px, 1fr))',
     gap: 0,
     alignItems: 'stretch',
-    minHeight: 42,
+    minHeight: 34,
   },
 
   dateHeaderCell: {
-    height: 42,
+    height: 34,
     background: '#f4faff',
     borderRight: '1px solid #dbe6f0',
     borderBottom: '1px solid #dbe6f0',
@@ -3309,40 +3792,44 @@ const styles = {
   },
 
   dateHeaderWeekday: {
-    fontSize: 10,
+    fontSize: 9,
     fontWeight: 800,
     opacity: 0.85,
   },
 
   dateHeaderDate: {
-    fontSize: 12,
+    fontSize: 10,
     fontWeight: 900,
   },
 
   gridCell: {
     width: '100%',
-    height: 42,
-    minHeight: 42,
+    height: 34,
+    minHeight: 34,
     padding: 0,
     boxSizing: 'border-box',
     background: '#eef3f6',
-    border: 0,
+    border: '1px solid #e2e8f0',
+    borderRadius: 4,
     borderRight: '1px solid #dbe6f0',
     borderBottom: '1px solid #dbe6f0',
     cursor: 'pointer',
     userSelect: 'none',
     WebkitUserSelect: 'none',
     touchAction: 'none',
+    fontSize: 0,
+    lineHeight: 1,
   },
 
   gridCellAvailable: {
     width: '100%',
-    height: 42,
-    minHeight: 42,
+    height: 34,
+    minHeight: 34,
     padding: 0,
     boxSizing: 'border-box',
     background: '#4CAF50',
-    border: 0,
+    border: '1px solid #86efac',
+    borderRadius: 4,
     borderRight: '1px solid #dbe6f0',
     borderBottom: '1px solid #dbe6f0',
     cursor: 'pointer',
@@ -3350,16 +3837,19 @@ const styles = {
     userSelect: 'none',
     WebkitUserSelect: 'none',
     touchAction: 'none',
+    fontSize: 0,
+    lineHeight: 1,
   },
 
   gridCellMaybe: {
     width: '100%',
-    height: 42,
-    minHeight: 42,
+    height: 34,
+    minHeight: 34,
     padding: 0,
     boxSizing: 'border-box',
     background: '#FFC107',
-    border: 0,
+    border: '1px solid #facc15',
+    borderRadius: 4,
     borderRight: '1px solid #dbe6f0',
     borderBottom: '1px solid #dbe6f0',
     cursor: 'pointer',
@@ -3367,34 +3857,38 @@ const styles = {
     userSelect: 'none',
     WebkitUserSelect: 'none',
     touchAction: 'none',
+    fontSize: 0,
+    lineHeight: 1,
   },
 
   brushPicker: {
     display: 'flex',
-    gap: '6px',
-    background: '#eceff4',
-    padding: '4px',
-    borderRadius: '8px',
+    gap: '12px',
+    background: 'transparent',
+    padding: 0,
+    borderRadius: 0,
   },
 
   brushBtn: {
-    minWidth: '86px',
-    minHeight: '28px',
-    borderRadius: '6px',
+    minWidth: '120px',
+    height: '40px',
+    border: 'none',
+    borderRadius: '12px',
     cursor: 'pointer',
-    padding: '3px 8px',
-    fontSize: '11px',
-    fontWeight: '850',
-    transition: 'transform 0.1s ease',
+    padding: '0 18px',
+    fontSize: '14px',
+    fontWeight: '700',
+    transition: 'all .18s ease',
   },
   gridCellLocked: {
     width: '100%',
-    height: 42,
-    minHeight: 42,
+    height: 34,
+    minHeight: 34,
     padding: 0,
     boxSizing: 'border-box',
     background: 'repeating-linear-gradient(45deg, #eef3f6, #eef3f6 6px, #e2e8ec 6px, #e2e8ec 12px)',
-    border: 0,
+    border: '1px solid #dbe6f0',
+    borderRadius: 4,
     borderRight: '1px solid #dbe6f0',
     borderBottom: '1px solid #dbe6f0',
     cursor: 'not-allowed',
@@ -3402,6 +3896,8 @@ const styles = {
     userSelect: 'none',
     WebkitUserSelect: 'none',
     touchAction: 'none',
+    fontSize: 0,
+    lineHeight: 1,
   },
 
   desiredDaysOffSection: {
@@ -3589,6 +4085,50 @@ const styles = {
     cursor: 'pointer',
     lineHeight: 1,
   },
+  absenceCardsGrid: {
+    display: 'grid',
+    gridTemplateColumns: '1fr 1fr',
+    gap: 14,
+    alignItems: 'stretch',
+  },
+
+  absenceCreateForm: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: 12,
+  },
+
+  absenceDatesRow: {
+    display: 'grid',
+    gridTemplateColumns: '1fr 1fr',
+    gap: 12,
+  },
+
+  absenceSubmitButton: {
+    alignSelf: 'flex-end',
+    minWidth: 180,
+    marginTop: 6,
+  },
+
+  absenceHistoryList: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: 10,
+    maxHeight: 340,
+    overflowY: 'auto',
+  },
+
+  absenceHistoryItem: {
+    padding: '14px 16px',
+    borderRadius: 12,
+    border: '1px solid #e2e8f0',
+    background: '#fff',
+    display: 'flex',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    gap: 14,
+  },
+  
 };
 
 const AVAILABILITY_STYLE_MAP = {

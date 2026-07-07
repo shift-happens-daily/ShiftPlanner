@@ -3,13 +3,21 @@ from __future__ import annotations
 from datetime import datetime
 from typing import TYPE_CHECKING
 
-from sqlalchemy import DateTime, ForeignKey, String, Text, func
+from sqlalchemy import DateTime, ForeignKey, String, Text, UniqueConstraint, func
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.models.base import Base
 
 if TYPE_CHECKING:
-    from app.models.user import Employee, User
+    from app.models.user import Employee, EmployeeBranch, EmployeePosition, User
+
+
+def default_working_hours_by_weekday() -> dict[str, dict[str, int]]:
+    return {
+        str(weekday): {"start_slot": 0, "end_slot": 48}
+        for weekday in range(7)
+    }
 
 
 class Company(Base):
@@ -24,19 +32,15 @@ class Company(Base):
         server_default=func.current_timestamp(),
     )
     invite_code_expires_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
-    manager_invite_code: Mapped[str | None] = mapped_column(String(16), unique=True, nullable=True)
-    manager_invite_code_generated_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
-    manager_invite_code_expires_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+
+    manager_user_id: Mapped[int | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL"),
+        nullable=True,
+    )
 
     created_at: Mapped[datetime] = mapped_column(
         DateTime,
         server_default=func.current_timestamp(),
-    )
-
-    manager_links: Mapped[list["CompanyManager"]] = relationship(
-        back_populates="company",
-        cascade="all, delete-orphan",
-        passive_deletes=True,
     )
 
     branches: Mapped[list["Branch"]] = relationship(
@@ -51,30 +55,11 @@ class Company(Base):
         passive_deletes=True,
     )
 
-    @property
-    def manager_user_id(self) -> int | None:
-        if not self.manager_links:
-            return None
-        active_links = [link for link in self.manager_links if link.membership_status == "active"]
-        if not active_links:
-            return None
-        owner = next((link for link in active_links if link.manager_role == "owner"), None)
-        return (owner or sorted(active_links, key=lambda item: item.id)[0]).user_id
-
-
-class CompanyManager(Base):
-    __tablename__ = "company_managers"
-
-    id: Mapped[int] = mapped_column(primary_key=True)
-    company_id: Mapped[int] = mapped_column(ForeignKey("companies.id", ondelete="CASCADE"))
-    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"))
-    manager_role: Mapped[str] = mapped_column(String(50), default="manager", server_default="manager")
-    membership_status: Mapped[str] = mapped_column(String(50), default="active", server_default="active")
-    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.current_timestamp())
-    updated_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.current_timestamp())
-
-    company: Mapped[Company] = relationship(back_populates="manager_links")
-    user: Mapped["User"] = relationship()
+    manager_memberships: Mapped[list["CompanyManager"]] = relationship(
+        back_populates="company",
+        cascade="all, delete-orphan",
+        passive_deletes=True,
+    )
 
 
 class Branch(Base):
@@ -86,6 +71,11 @@ class Branch(Base):
     )
     name: Mapped[str] = mapped_column(String(255))
     address: Mapped[str | None] = mapped_column(Text)
+    working_hours_by_weekday: Mapped[dict] = mapped_column(
+        JSONB,
+        default=default_working_hours_by_weekday,
+        server_default='{"0":{"start_slot":0,"end_slot":48},"1":{"start_slot":0,"end_slot":48},"2":{"start_slot":0,"end_slot":48},"3":{"start_slot":0,"end_slot":48},"4":{"start_slot":0,"end_slot":48},"5":{"start_slot":0,"end_slot":48},"6":{"start_slot":0,"end_slot":48}}',
+    )
 
     company: Mapped[Company] = relationship(back_populates="branches")
     employee_links: Mapped[list["EmployeeBranch"]] = relationship(
@@ -114,3 +104,20 @@ class Position(Base):
     @property
     def employees(self) -> list["Employee"]:
         return [link.employee for link in self.employee_links]
+
+
+class CompanyManager(Base):
+    __tablename__ = "company_managers"
+    __table_args__ = (
+        UniqueConstraint("company_id", "user_id", name="uq_company_managers_company_user"),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    company_id: Mapped[int] = mapped_column(ForeignKey("companies.id", ondelete="CASCADE"))
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"))
+    manager_role: Mapped[str] = mapped_column(String(50), default="manager", server_default="manager")
+    membership_status: Mapped[str] = mapped_column(String(50), default="active", server_default="active")
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.current_timestamp())
+    updated_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.current_timestamp())
+
+    company: Mapped[Company] = relationship(back_populates="manager_memberships")

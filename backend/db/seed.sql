@@ -3,8 +3,8 @@ VALUES
 ('Maria Manager', 'manager@example.com', '$2b$12$oo5ryRPAlz/TOfenPoE3JuFYJsdljzAhv.FLXcvx6vrvCPcCA1kTm', 'manager'),
 ('Ivan Barista', 'ivan@example.com', '$2b$12$uSYcqEdeSEBbX1C4vnns9.33t2QvChgi0eQ5RxJBGg8jCHGqu3w8a', 'employee');
 
-INSERT INTO companies (name, address, invite_code)
-VALUES ('Coffee Bar Barnaul', 'Barnaul, Lenin Street', 'A7K9P2X4M8Q1L5R3');
+INSERT INTO companies (name, address, invite_code, manager_user_id)
+VALUES ('Coffee Bar Barnaul', 'Barnaul, Lenin Street', 'A7K9P2X4M8Q1L5R3', 1);
 
 INSERT INTO company_managers (company_id, user_id, manager_role, membership_status)
 VALUES (1, 1, 'owner', 'active');

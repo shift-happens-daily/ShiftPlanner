@@ -669,6 +669,64 @@ def test_employees_list_includes_position_and_role(client: TestClient) -> None:
     assert employee["position"] == {"id": 1, "name": "Barista"}
     assert employee["position_id"] == 1
     assert employee["position_title"] == "Barista"
+    assert employee["max_hours_per_week"] == 40
+    assert employee["max_hours_per_day"] == 8
+
+
+def test_manager_can_read_and_update_employee_work_limits(client: TestClient) -> None:
+    manager_headers = login_json(client, "manager@example.com", "manager123")
+    employee_headers = login_json(client, "ivan@example.com", "employee123")
+
+    initial = client.get("/employees/1/work-limits", headers=manager_headers)
+    assert initial.status_code == 200, initial.text
+    assert initial.json() == {"max_hours_per_week": 40, "max_hours_per_day": 8}
+
+    employee_response = client.get("/employees/1/work-limits", headers=employee_headers)
+    assert employee_response.status_code == 403
+    assert client.get("/employees/1/work-limits").status_code == 401
+
+    updated = client.patch(
+        "/employees/1/work-limits",
+        headers=manager_headers,
+        json={"max_hours_per_week": 36, "max_hours_per_day": 6},
+    )
+    assert updated.status_code == 200, updated.text
+    assert updated.json() == {"max_hours_per_week": 36, "max_hours_per_day": 6}
+
+    listed = client.get("/employees/", headers=manager_headers)
+    assert listed.status_code == 200, listed.text
+    employee = next(item for item in listed.json() if item["id"] == 1)
+    assert employee["max_hours_per_week"] == 36
+    assert employee["max_hours_per_day"] == 6
+
+    invalid = client.patch(
+        "/employees/1/work-limits",
+        headers=manager_headers,
+        json={"max_hours_per_week": 36, "max_hours_per_day": 25},
+    )
+    assert invalid.status_code == 422
+
+
+def test_employee_work_limits_are_company_scoped(client: TestClient) -> None:
+    seed_second_company_scope_data()
+    manager_headers = login_json(client, "manager@example.com", "manager123")
+
+    with psycopg.connect(PSYCOPG_DSN) as connection:
+        with connection.cursor() as cursor:
+            cursor.execute("SELECT id FROM companies WHERE invite_code = %s", (SECOND_COMPANY_INVITE_CODE,))
+            other_company_id = cursor.fetchone()[0]
+            cursor.execute("SELECT id FROM employees WHERE company_id = %s ORDER BY id LIMIT 1", (other_company_id,))
+            other_employee_id = cursor.fetchone()[0]
+
+    read_response = client.get(f"/employees/{other_employee_id}/work-limits", headers=manager_headers)
+    assert read_response.status_code == 403
+
+    update_response = client.patch(
+        f"/employees/{other_employee_id}/work-limits",
+        headers=manager_headers,
+        json={"max_hours_per_week": 30, "max_hours_per_day": 5},
+    )
+    assert update_response.status_code == 403
 
 
 def test_employee_position_data_does_not_change_role_permissions(client: TestClient) -> None:

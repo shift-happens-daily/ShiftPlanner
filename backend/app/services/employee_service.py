@@ -1,4 +1,4 @@
-from datetime import date, datetime
+﻿from datetime import date, datetime
 
 from fastapi import HTTPException, status
 from sqlalchemy.orm import Session
@@ -22,9 +22,13 @@ from app.schemas.employee import (
     EmployeePositionUpdate,
     EmployeeRead,
     EmployeeWorkloadRead,
+    EmployeeWorkLimits,
 )
 from app.schemas.auth import UserRead
 from app.services import auth_service
+
+DEFAULT_MAX_HOURS_PER_WEEK = 40
+DEFAULT_MAX_HOURS_PER_DAY = 8
 
 
 def list_employees(db: Session, current_user: UserRead) -> list[EmployeeRead]:
@@ -45,6 +49,27 @@ def list_employees(db: Session, current_user: UserRead) -> list[EmployeeRead]:
 def get_employee(db: Session, employee_id: int, current_user: UserRead) -> EmployeeRead:
     employee = _get_visible_employee_or_404(db, employee_id, current_user)
     return _build_employee_read(employee)
+
+
+def get_work_limits(db: Session, employee_id: int, current_user: UserRead) -> EmployeeWorkLimits:
+    employee = _get_company_employee_for_manager_or_404(db, employee_id, current_user)
+    return _build_work_limits_read(employee)
+
+
+def update_work_limits(
+    db: Session,
+    employee_id: int,
+    payload: EmployeeWorkLimits,
+    current_user: UserRead,
+) -> EmployeeWorkLimits:
+    employee = _get_company_employee_for_manager_or_404(db, employee_id, current_user)
+    updated_employee = employee_repository.update_employee_work_limits(
+        db,
+        employee=employee,
+        max_hours_per_week=payload.max_hours_per_week,
+        max_hours_per_day=payload.max_hours_per_day,
+    )
+    return _build_work_limits_read(updated_employee)
 
 
 def create_employee(db: Session, payload: EmployeeCreate, current_user: UserRead) -> EmployeeRead:
@@ -307,6 +332,7 @@ def upsert_availability(db: Session, employee_id: int, payload: AvailabilityUpse
         db,
         employee_id=employee_id,
         blocks=[block.model_dump() for block in payload.weekly_availability],
+        daily_blocks=[block.model_dump() for block in payload.daily_availability] or None,
         desired_days_off=payload.desired_days_off,
     )
     return _build_availability_read(updated_employee)
@@ -419,11 +445,24 @@ def _build_employee_read(employee) -> EmployeeRead:
         branch_id=employee.branch_id,
         position_id=employee.position_id,
         position_title=employee.position.name if employee.position is not None else "",
+        max_hours_per_week=_work_limit_or_default(employee.max_hours_per_week, DEFAULT_MAX_HOURS_PER_WEEK),
+        max_hours_per_day=_work_limit_or_default(employee.max_hours_per_day, DEFAULT_MAX_HOURS_PER_DAY),
         branch=branch,
         branches=_build_employee_branches_read(employee),
         position=position,
         availability=_build_availability_read(employee),
     )
+
+
+def _build_work_limits_read(employee) -> EmployeeWorkLimits:
+    return EmployeeWorkLimits(
+        max_hours_per_week=_work_limit_or_default(employee.max_hours_per_week, DEFAULT_MAX_HOURS_PER_WEEK),
+        max_hours_per_day=_work_limit_or_default(employee.max_hours_per_day, DEFAULT_MAX_HOURS_PER_DAY),
+    )
+
+
+def _work_limit_or_default(value: int | None, default: int) -> int:
+    return value if value is not None else default
 
 
 def _build_employee_branches_read(employee) -> list[EmployeeBranchAssignmentRead]:
@@ -439,17 +478,23 @@ def _build_employee_branches_read(employee) -> list[EmployeeBranchAssignmentRead
 
 
 def _build_availability_read(employee) -> AvailabilityRead:
+    weekly_blocks = []
+    daily_blocks = []
+    for block in employee.availability_blocks:
+        payload = {
+            "start_time": block.start_time,
+            "end_time": block.end_time,
+            "availability_status": block.availability_status,
+        }
+        if block.availability_date is not None:
+            daily_blocks.append({"date": block.availability_date, **payload})
+        else:
+            weekly_blocks.append({"weekday": block.weekday, **payload})
+
     return AvailabilityRead(
         employee_id=employee.id,
-        weekly_availability=[
-            {
-                "weekday": block.weekday,
-                "start_time": block.start_time,
-                "end_time": block.end_time,
-                "availability_status": block.availability_status,
-            }
-            for block in sorted(employee.availability_blocks, key=lambda item: (item.weekday, item.start_time))
-        ],
+        weekly_availability=sorted(weekly_blocks, key=lambda item: (item["weekday"], item["start_time"])),
+        daily_availability=sorted(daily_blocks, key=lambda item: (item["date"], item["start_time"])),
         desired_days_off=sorted(day.weekday for day in employee.desired_days_off),
     )
 
@@ -494,6 +539,24 @@ def _get_visible_employee_or_404(db: Session, employee_id: int, current_user: Us
         status_code=status.HTTP_403_FORBIDDEN,
         detail="You do not have access to this employee resource.",
     )
+
+
+def _get_company_employee_for_manager_or_404(db: Session, employee_id: int, current_user: UserRead):
+    if current_user.company_id is None:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Manager is not linked to a company.",
+        )
+
+    employee = employee_repository.get_employee_by_id(db, employee_id)
+    if employee is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Employee was not found.")
+    if employee.company_id != current_user.company_id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Employee does not belong to the authenticated user's company.",
+        )
+    return employee
 
 
 def _validate_branch_assignment(

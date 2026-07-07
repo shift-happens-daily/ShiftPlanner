@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends, Response, status
 from sqlalchemy.orm import Session
 
-from app.api.dependencies import get_current_user, require_active_manager, require_role
+from app.api.dependencies import get_current_user, require_active_manager, require_manager, require_role
 from app.api.responses import (
     BAD_REQUEST_RESPONSE,
     FORBIDDEN_RESPONSE,
@@ -15,8 +15,11 @@ from app.schemas.company import (
     BranchCreate,
     BranchResponse,
     BranchUpdate,
+    BranchWorkingHoursRead,
+    BranchWorkingHoursUpdate,
     CompanyCreate,
     CompanyJoinRequest,
+    CompanyJoinManagerRequest,
     CompanyLinkUserRequest,
     CompanyRead,
     CompanySummaryRead,
@@ -25,7 +28,6 @@ from app.schemas.company import (
     EmployeeRequestAcceptRequest,
     EmployeeRequestRead,
     LinkedEmployeeRead,
-    ManagerInviteCodeRead,
     ManagerRequestRead,
 )
 from app.services import company_service
@@ -36,7 +38,7 @@ router = APIRouter()
 def link_user_to_my_company(
     payload: CompanyLinkUserRequest,
     db: Session = Depends(get_db),
-    current_user: UserRead = Depends(require_active_manager),
+    current_user: UserRead = Depends(require_role("manager")),
 ):
     return company_service.link_user_to_manager_company(
         db=db,
@@ -51,7 +53,7 @@ def link_user_to_my_company(
     responses={**UNAUTHORIZED_RESPONSE, **FORBIDDEN_RESPONSE},
 )
 def regenerate_my_company_invite_code(
-    current_user: UserRead = Depends(require_active_manager),
+    current_user: UserRead = Depends(require_role("manager")),
     db: Session = Depends(get_db),
 ) -> CompanyRead:
     return company_service.regenerate_my_company_invite_code(db, current_user)
@@ -59,14 +61,14 @@ def regenerate_my_company_invite_code(
 
 @router.post(
     "/me/manager-invite-code/regenerate",
-    response_model=ManagerInviteCodeRead,
     responses={**UNAUTHORIZED_RESPONSE, **FORBIDDEN_RESPONSE},
 )
 def regenerate_my_company_manager_invite_code(
     current_user: UserRead = Depends(require_active_manager),
     db: Session = Depends(get_db),
-) -> ManagerInviteCodeRead:
-    return company_service.regenerate_my_company_manager_invite_code(db, current_user)
+) -> dict[str, str]:
+    company = company_service.regenerate_my_company_invite_code(db, current_user)
+    return {"manager_invite_code": company.invite_code}
 
 
 @router.get(
@@ -122,49 +124,11 @@ def join_company(
     responses={**BAD_REQUEST_RESPONSE, **UNAUTHORIZED_RESPONSE, **FORBIDDEN_RESPONSE, **NOT_FOUND_RESPONSE},
 )
 def join_company_as_manager(
-    payload: CompanyJoinRequest,
+    payload: CompanyJoinManagerRequest,
     current_user: UserRead = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> CurrentUserResponse:
-    return company_service.join_company_as_manager_by_invite(db, payload, current_user)
-
-
-@router.get(
-    "/me",
-    response_model=CompanyRead,
-    responses={**UNAUTHORIZED_RESPONSE, **FORBIDDEN_RESPONSE},
-)
-def get_my_company(
-    current_user: UserRead = Depends(require_active_manager),
-    db: Session = Depends(get_db),
-) -> CompanyRead:
-    return company_service.get_my_company(db, current_user)
-
-
-@router.patch(
-    "/me",
-    response_model=CompanyRead,
-    responses={**UNAUTHORIZED_RESPONSE, **FORBIDDEN_RESPONSE, **VALIDATION_ERROR_RESPONSE},
-)
-def update_my_company(
-    payload: CompanyUpdate,
-    current_user: UserRead = Depends(require_active_manager),
-    db: Session = Depends(get_db),
-) -> CompanyRead:
-    return company_service.update_my_company(db, payload, current_user)
-
-
-@router.post(
-    "/me/managers/by-public-id",
-    response_model=ManagerRequestRead,
-    responses={**BAD_REQUEST_RESPONSE, **UNAUTHORIZED_RESPONSE, **FORBIDDEN_RESPONSE, **NOT_FOUND_RESPONSE},
-)
-def add_manager_by_public_id(
-    payload: CompanyUserPublicIdRequest,
-    current_user: UserRead = Depends(require_active_manager),
-    db: Session = Depends(get_db),
-) -> ManagerRequestRead:
-    return company_service.add_manager_by_public_id(db, payload, current_user)
+    return company_service.join_company_as_manager(db, payload, current_user)
 
 
 @router.get(
@@ -203,6 +167,19 @@ def decline_manager_request(
     db: Session = Depends(get_db),
 ) -> ManagerRequestRead:
     return company_service.decline_manager_request(db, request_id, current_user)
+
+
+@router.post(
+    "/me/managers/by-public-id",
+    response_model=ManagerRequestRead,
+    responses={**BAD_REQUEST_RESPONSE, **UNAUTHORIZED_RESPONSE, **FORBIDDEN_RESPONSE, **NOT_FOUND_RESPONSE},
+)
+def add_manager_by_public_id(
+    payload: CompanyUserPublicIdRequest,
+    current_user: UserRead = Depends(require_active_manager),
+    db: Session = Depends(get_db),
+) -> ManagerRequestRead:
+    return company_service.add_manager_by_public_id(db, payload, current_user)
 
 
 @router.get(
@@ -250,12 +227,37 @@ def decline_employee_request(
 
 
 @router.get(
+    "/me",
+    response_model=CompanyRead,
+    responses={**UNAUTHORIZED_RESPONSE, **FORBIDDEN_RESPONSE},
+)
+def get_my_company(
+    current_user: UserRead = Depends(require_role("manager")),
+    db: Session = Depends(get_db),
+) -> CompanyRead:
+    return company_service.get_my_company(db, current_user)
+
+
+@router.patch(
+    "/me",
+    response_model=CompanyRead,
+    responses={**UNAUTHORIZED_RESPONSE, **FORBIDDEN_RESPONSE, **VALIDATION_ERROR_RESPONSE},
+)
+def update_my_company(
+    payload: CompanyUpdate,
+    current_user: UserRead = Depends(require_role("manager")),
+    db: Session = Depends(get_db),
+) -> CompanyRead:
+    return company_service.update_my_company(db, payload, current_user)
+
+
+@router.get(
     "/branches",
     response_model=list[BranchResponse],
     responses={**UNAUTHORIZED_RESPONSE, **FORBIDDEN_RESPONSE},
 )
 def list_my_company_branches(
-    current_user: UserRead = Depends(require_active_manager),
+    current_user: UserRead = Depends(require_role("manager")),
     db: Session = Depends(get_db),
 ) -> list[BranchResponse]:
     return company_service.list_manager_company_branches(db, current_user)
@@ -269,7 +271,7 @@ def list_my_company_branches(
 )
 def create_my_company_branch(
     payload: BranchCreate,
-    current_user: UserRead = Depends(require_active_manager),
+    current_user: UserRead = Depends(require_role("manager")),
     db: Session = Depends(get_db),
 ) -> BranchResponse:
     return company_service.create_manager_company_branch(db, payload, current_user)
@@ -283,7 +285,7 @@ def create_my_company_branch(
 def update_company_branch(
     branch_id: int,
     payload: BranchUpdate,
-    current_user: UserRead = Depends(require_active_manager),
+    current_user: UserRead = Depends(require_role("manager")),
     db: Session = Depends(get_db),
 ) -> BranchResponse:
     return company_service.update_company_branch(db, branch_id, payload, current_user)
@@ -296,11 +298,40 @@ def update_company_branch(
 )
 def delete_company_branch(
     branch_id: int,
-    current_user: UserRead = Depends(require_active_manager),
+    current_user: UserRead = Depends(require_role("manager")),
     db: Session = Depends(get_db),
 ) -> Response:
     company_service.delete_company_branch(db, branch_id, current_user)
     return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+@router.get(
+    "/{company_id}/branches/{branch_id}/working-hours",
+    response_model=BranchWorkingHoursRead,
+    responses={**UNAUTHORIZED_RESPONSE, **FORBIDDEN_RESPONSE, **NOT_FOUND_RESPONSE},
+)
+def get_branch_working_hours(
+    company_id: int,
+    branch_id: int,
+    current_user: UserRead = Depends(require_active_manager),
+    db: Session = Depends(get_db),
+) -> BranchWorkingHoursRead:
+    return company_service.get_branch_working_hours(db, company_id, branch_id, current_user)
+
+
+@router.patch(
+    "/{company_id}/branches/{branch_id}/working-hours",
+    response_model=BranchWorkingHoursRead,
+    responses={**UNAUTHORIZED_RESPONSE, **FORBIDDEN_RESPONSE, **NOT_FOUND_RESPONSE, **VALIDATION_ERROR_RESPONSE},
+)
+def update_branch_working_hours(
+    company_id: int,
+    branch_id: int,
+    payload: BranchWorkingHoursUpdate,
+    current_user: UserRead = Depends(require_active_manager),
+    db: Session = Depends(get_db),
+) -> BranchWorkingHoursRead:
+    return company_service.update_branch_working_hours(db, company_id, branch_id, payload, current_user)
 
 
 @router.delete(
@@ -310,7 +341,7 @@ def delete_company_branch(
 )
 def delete_company(
     company_id: int,
-    _: UserRead = Depends(require_active_manager),
+    _: UserRead = Depends(require_manager),
     db: Session = Depends(get_db),
 ) -> None:
     company_service.delete_company(db, company_id)
@@ -323,7 +354,7 @@ def delete_company(
 )
 def list_company_branches(
     company_id: int,
-    current_user: UserRead = Depends(require_active_manager),
+    current_user: UserRead = Depends(require_manager),
     db: Session = Depends(get_db),
 ) -> list[BranchResponse]:
     return company_service.list_manager_company_branches(db, current_user, company_id)
@@ -338,7 +369,7 @@ def list_company_branches(
 def create_company_branch(
     company_id: int,
     payload: BranchCreate,
-    current_user: UserRead = Depends(require_active_manager),
+    current_user: UserRead = Depends(require_manager),
     db: Session = Depends(get_db),
 ) -> BranchResponse:
     return company_service.create_manager_company_branch(db, payload, current_user, company_id)

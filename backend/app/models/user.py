@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 from datetime import date, datetime, time
 
 from sqlalchemy import Boolean, Date, DateTime, ForeignKey, Integer, String, Text, Time, func
@@ -59,12 +59,19 @@ class Employee(Base):
     id: Mapped[int] = mapped_column(primary_key=True)
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"))
     company_id: Mapped[int] = mapped_column(ForeignKey("companies.id", ondelete="CASCADE"))
+    legacy_branch_id: Mapped[int | None] = mapped_column("branch_id", ForeignKey("branches.id", ondelete="SET NULL"))
+    legacy_position_id: Mapped[int | None] = mapped_column("position_id", ForeignKey("positions.id", ondelete="SET NULL"))
     max_hours_per_week: Mapped[int] = mapped_column(Integer, default=40, server_default="40")
+    max_hours_per_day: Mapped[int] = mapped_column(Integer, default=8, server_default="8")
+    min_hours_per_shift: Mapped[int] = mapped_column(Integer, default=5, server_default="5")
+    max_hours_per_shift: Mapped[int] = mapped_column(Integer, default=12, server_default="12")
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, server_default="true")
 
     user: Mapped[User] = relationship(back_populates="employee")
 
     company: Mapped["Company"] = relationship()
+    legacy_branch: Mapped["Branch | None"] = relationship(foreign_keys=[legacy_branch_id])
+    legacy_position: Mapped["Position | None"] = relationship(foreign_keys=[legacy_position_id])
     branch_links: Mapped[list["EmployeeBranch"]] = relationship(
         back_populates="employee",
         cascade="all, delete-orphan",
@@ -139,6 +146,7 @@ class EmployeeAvailability(Base):
 
     id: Mapped[int] = mapped_column(primary_key=True)
     employee_id: Mapped[int] = mapped_column(ForeignKey("employees.id", ondelete="CASCADE"))
+    availability_date: Mapped[date | None] = mapped_column(Date, nullable=True)
     weekday: Mapped[int] = mapped_column(Integer)
     start_time: Mapped[time] = mapped_column(Time)
     end_time: Mapped[time] = mapped_column(Time)
