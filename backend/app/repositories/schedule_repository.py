@@ -100,6 +100,7 @@ def create_schedule(
     db: Session,
     *,
     company_id: int,
+    branch_id: int | None = None,
     start_date: date,
     end_date: date,
     generated_shifts: list[dict],
@@ -108,6 +109,7 @@ def create_schedule(
         db.scalars(
             select(Schedule).where(
                 Schedule.company_id == company_id,
+                Schedule.branch_id == branch_id,
                 Schedule.start_date == start_date,
                 Schedule.end_date == end_date,
                 Schedule.status == "draft",
@@ -118,7 +120,7 @@ def create_schedule(
         db.delete(existing_draft)
     db.flush()
 
-    schedule = Schedule(company_id=company_id, start_date=start_date, end_date=end_date, status="draft")
+    schedule = Schedule(company_id=company_id, branch_id=branch_id, start_date=start_date, end_date=end_date, status="draft")
     db.add(schedule)
     db.flush()
 
@@ -142,6 +144,11 @@ def create_schedule(
 
 def get_schedule(db: Session, schedule_id: int) -> Schedule | None:
     return db.get(Schedule, schedule_id)
+
+
+def delete_schedule(db: Session, schedule: Schedule) -> None:
+    db.delete(schedule)
+    db.commit()
 
 
 def get_latest_schedule(
@@ -489,7 +496,7 @@ def list_candidate_employee_rows(
     db: Session,
     *,
     company_id: int,
-    position_id: int,
+    position_id: int | None = None,
     branch_id: int | None = None,
 ) -> list[dict]:
     primary_position = (
@@ -526,11 +533,12 @@ def list_candidate_employee_rows(
         .outerjoin(Branch, Branch.id == primary_branch)
         .where(
             Employee.company_id == company_id,
-            primary_position == position_id,
             Employee.is_active.is_(True),
         )
         .order_by(User.full_name, Employee.id)
     )
+    if position_id is not None:
+        query = query.where(primary_position == position_id)
     if branch_id is not None:
         query = query.where(primary_branch == branch_id)
     return list(db.execute(query).mappings())

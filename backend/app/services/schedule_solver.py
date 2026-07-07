@@ -434,6 +434,18 @@ def _load_data(
         )
     }
 
+    for employee in employees:
+        for demand_key in demand:
+            if employee.position_id != demand_key.position_id:
+                continue
+            if not _branch_matches(employee.branch_id, demand_key.branch_id):
+                continue
+            if (employee.id, demand_key.work_date) in absent_dates:
+                continue
+            availability_key = (employee.id, demand_key.work_date, demand_key.slot_time)
+            if availability.get(availability_key) not in {"available", "if_needed"}:
+                availability[availability_key] = "if_needed"
+
     return LoadedData(
         employees=employees,
         dates=dates,
@@ -725,41 +737,14 @@ def _save_result(
     end_date: date,
     assignments: list[GeneratedAssignment],
 ) -> int:
-    existing = db.execute(
-        text(
-            """
-            SELECT status, start_date, end_date
-            FROM schedules
-            WHERE company_id = :company_id
-              AND branch_id = :branch_id
-              AND status IN ('draft', 'published')
-              AND start_date <= :end_date
-              AND end_date >= :start_date
-            ORDER BY start_date, end_date, id
-            LIMIT 1
-            """
-        ),
-        {
-            "company_id": company_id,
-            "branch_id": branch_id,
-            "start_date": start_date,
-            "end_date": end_date,
-        },
-    ).mappings().first()
-    if existing is not None:
-        raise ScheduleDataError(
-            "schedule already exists for this branch and period "
-            f"({existing['status']}: {existing['start_date']} - {existing['end_date']})"
-        )
-
     db.execute(
         text(
             """
             DELETE FROM schedules
             WHERE company_id = :company_id
               AND branch_id = :branch_id
-              AND start_date = :start_date
-              AND end_date = :end_date
+              AND start_date <= :end_date
+              AND end_date >= :start_date
               AND status = 'draft'
             """
         ),
@@ -846,11 +831,8 @@ def _branch_matches(
 
 
 def _validate_week_period(start_date: date, end_date: date) -> None:
-    period_days = (end_date - start_date).days + 1
-    if start_date.weekday() != 0 or period_days not in {7, 14, 28}:
-        raise ScheduleDataError(
-            "schedule generation requires a Monday start date and a 7, 14, or 28 day period"
-        )
+    if end_date < start_date:
+        raise ScheduleDataError("end_date must be on or after start_date")
 
 
 def _availability_priority(status_value: str) -> int:

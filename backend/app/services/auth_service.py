@@ -202,10 +202,10 @@ def get_current_user_profile(db: Session, current_user: UserRead) -> CurrentUser
 
 
 def delete_current_employee_account(db: Session, current_user: UserRead, token: str) -> None:
-    if current_user.role != "employee":
+    if current_user.role not in {"employee", "manager"}:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="Only employee accounts can be deleted through this endpoint.",
+            detail="Only employee and manager accounts can be deleted through this endpoint.",
         )
 
     user = user_repository.get_user_by_id(db, current_user.id)

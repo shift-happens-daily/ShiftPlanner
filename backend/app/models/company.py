@@ -116,7 +116,7 @@ class CompanyManager(Base):
     company_id: Mapped[int] = mapped_column(ForeignKey("companies.id", ondelete="CASCADE"))
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"))
     manager_role: Mapped[str] = mapped_column(String(50), default="manager", server_default="manager")
-    membership_status: Mapped[str] = mapped_column(String(50), default="pending", server_default="pending")
+    membership_status: Mapped[str] = mapped_column(String(50), default="active", server_default="active")
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.current_timestamp())
     updated_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.current_timestamp())
 

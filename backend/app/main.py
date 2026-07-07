@@ -1,4 +1,5 @@
 import os
+from pathlib import Path
 from urllib.parse import urlparse
 
 from dotenv import load_dotenv
@@ -13,7 +14,7 @@ from app.database import SessionLocal
 from app.api import auth, companies, employees, imports, positions, reports, schedule
 from app.services.schema_service import ensure_email_verification_schema
 
-load_dotenv()
+load_dotenv(Path(__file__).resolve().parents[1] / ".env")
 
 frontend_origins = [
     origin.strip()

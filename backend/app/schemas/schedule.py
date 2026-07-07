@@ -66,7 +66,7 @@ class ScheduleRequirementTemplateCreate(BaseModel):
 
 
 class ScheduleRequirementBulkCreate(BaseModel):
-    branch_id: int = Field(ge=1)
+    branch_id: int | None = Field(default=None, ge=1)
     start_date: date
     end_date: date
     weekdays: list[int] = Field(min_length=1)
@@ -96,10 +96,6 @@ class ScheduleGenerateRequest(BaseModel):
     def validate_period(self) -> "ScheduleGenerateRequest":
         if self.start_date and self.end_date and self.end_date < self.start_date:
             raise ValueError("end_date must be later than or equal to start_date.")
-        if self.start_date and self.end_date:
-            period_days = (self.end_date - self.start_date).days + 1
-            if self.start_date.weekday() != 0 or period_days != 7:
-                raise ValueError("Schedule generation requires one full Monday-Sunday week.")
         return self
 
 
@@ -205,7 +201,7 @@ class AvailableEmployeeRead(BaseModel):
     full_name: str
     position: AvailableEmployeePositionRead
     branch: AvailableEmployeeBranchRead | None = None
-    availability_status: Literal["available", "if_needed"]
+    availability_status: Literal["available", "if_needed", "unavailable"]
     assigned_hours: float = 0.0
 
 

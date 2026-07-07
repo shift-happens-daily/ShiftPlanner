@@ -134,14 +134,14 @@ def get_schedules(
 
 @router.post(
     "/generate",
-    response_model=list[ScheduleRead],
+    response_model=ScheduleRead,
     responses={**BAD_REQUEST_RESPONSE, **UNAUTHORIZED_RESPONSE, **FORBIDDEN_RESPONSE, **VALIDATION_ERROR_RESPONSE},
 )
 def generate_schedule(
     payload: ScheduleGenerateRequest | None = None,
     current_user: UserRead = Depends(require_role("manager")),
     db: Session = Depends(get_db),
-) -> list[ScheduleRead]:
+) -> ScheduleRead:
     return schedule_service.generate_schedule(db, current_user, payload)
 
 
@@ -261,14 +261,28 @@ def delete_schedule_week(
 @router.get(
     "/{schedule_id}",
     response_model=ScheduleRead,
-    responses={**UNAUTHORIZED_RESPONSE, **NOT_FOUND_RESPONSE, **VALIDATION_ERROR_RESPONSE},
+    responses={**UNAUTHORIZED_RESPONSE, **FORBIDDEN_RESPONSE, **NOT_FOUND_RESPONSE, **VALIDATION_ERROR_RESPONSE},
 )
 def get_schedule(
     schedule_id: int,
-    _: UserRead = Depends(get_current_user),
+    current_user: UserRead = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> ScheduleRead:
-    return schedule_service.get_schedule(db, schedule_id)
+    return schedule_service.get_schedule(db, schedule_id, current_user)
+
+
+@router.delete(
+    "/{schedule_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    responses={**UNAUTHORIZED_RESPONSE, **FORBIDDEN_RESPONSE, **NOT_FOUND_RESPONSE},
+)
+def delete_schedule(
+    schedule_id: int,
+    current_user: UserRead = Depends(require_role("manager")),
+    db: Session = Depends(get_db),
+) -> Response:
+    schedule_service.delete_schedule(db, schedule_id, current_user)
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
 @router.post(
@@ -311,6 +325,7 @@ def get_available_employees(
     position_id: int = Query(ge=1),
     branch_id: int | None = Query(default=None, ge=1),
     include_unavailable: bool = Query(default=False),
+    include_other_positions: bool = Query(default=False),
     current_user: UserRead = Depends(require_role("manager")),
     db: Session = Depends(get_db),
 ) -> list[AvailableEmployeeRead]:
@@ -324,6 +339,7 @@ def get_available_employees(
         position_id=position_id,
         branch_id=branch_id,
         include_unavailable=include_unavailable,
+        include_other_positions=include_other_positions,
     )
 
 
@@ -421,7 +437,7 @@ def publish_schedule(
 @router.delete("/requirements/{requirement_id}", status_code=204)
 def delete_requirement(
     requirement_id: int,
-    _current_user: User = Depends(require_manager),
+    current_user: UserRead = Depends(require_role("manager")),
     db: Session = Depends(get_db),
 ):
-    schedule_service.delete_requirement(db, requirement_id)
+    schedule_service.delete_requirement(db, requirement_id, current_user)

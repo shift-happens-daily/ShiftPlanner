@@ -58,7 +58,7 @@ CREATE TABLE company_managers (
     user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     manager_role VARCHAR(50) NOT NULL DEFAULT 'manager'
         CHECK (manager_role IN ('owner', 'manager')),
-    membership_status VARCHAR(50) NOT NULL DEFAULT 'pending'
+    membership_status VARCHAR(50) NOT NULL DEFAULT 'active'
         CHECK (membership_status IN ('pending', 'active', 'declined')),
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
@@ -225,8 +225,9 @@ BEFORE INSERT OR UPDATE ON schedules
 FOR EACH ROW
 EXECUTE FUNCTION set_default_branch_id();
 
-CREATE UNIQUE INDEX uq_schedules_company_branch_week
-    ON schedules (company_id, branch_id, start_date, end_date);
+CREATE UNIQUE INDEX uq_schedules_company_branch_draft_period
+    ON schedules (company_id, branch_id, start_date, end_date)
+    WHERE status = 'draft';
 
 CREATE INDEX idx_schedules_retention_end_date
     ON schedules (end_date);

@@ -19,7 +19,15 @@ VALUES
 
 INSERT INTO employees (user_id, company_id, branch_id, position_id, max_hours_per_week)
 VALUES
-(2, 1, NULL, NULL, 40);
+(2, 1, 1, 1, 40);
+
+INSERT INTO employee_branches (employee_id, branch_id, is_primary)
+VALUES
+(1, 1, TRUE);
+
+INSERT INTO employee_positions (employee_id, position_id, is_primary)
+VALUES
+(1, 1, TRUE);
 
 INSERT INTO employee_availability (employee_id, weekday, start_time, end_time, availability_status)
 VALUES

@@ -214,7 +214,11 @@ def create_bulk_requirements(
             detail="Manager is not linked to a company.",
         )
 
-    branch = company_repository.get_branch_by_id(db, payload.branch_id)
+    branch = (
+        company_repository.get_branch_by_id(db, payload.branch_id)
+        if payload.branch_id is not None
+        else company_repository.get_default_branch_for_company(db, current_user.company_id)
+    )
     if branch is None or branch.company_id != current_user.company_id:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
@@ -229,6 +233,12 @@ def create_bulk_requirements(
             for template in payload.requirements:
                 position = positions.get(template.position_id)
                 if position is None:
+                    foreign_position = position_repository.get_position_by_id(db, template.position_id)
+                    if foreign_position is not None:
+                        raise HTTPException(
+                            status_code=status.HTTP_403_FORBIDDEN,
+                            detail="Position does not belong to the authenticated user's company.",
+                        )
                     raise HTTPException(
                         status_code=status.HTTP_400_BAD_REQUEST,
                         detail=f"Position {template.position_id} was not found.",
@@ -263,7 +273,7 @@ def generate_schedule(
     db: Session,
     current_user: UserRead,
     payload: ScheduleGenerateRequest | None = None,
-) -> list[ScheduleRead]:
+) -> ScheduleRead:
     if current_user.company_id is None:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
@@ -275,9 +285,9 @@ def generate_schedule(
     if start_date is None or end_date is None:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail="start_date and end_date are required for weekly schedule generation.",
+            detail="start_date and end_date are required for schedule generation.",
         )
-    _validate_week_period_http(start_date, end_date)
+    _validate_generation_period_http(start_date, end_date)
 
     if payload and payload.branch_id is not None:
         branch = company_repository.get_branch_by_id(db, payload.branch_id)
@@ -294,23 +304,6 @@ def generate_schedule(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Manager's company does not have a branch.",
         )
-
-    for branch in branches:
-        conflict = schedule_repository.find_active_schedule_conflict(
-            db,
-            company_id=current_user.company_id,
-            branch_id=branch.id,
-            start_date=start_date,
-            end_date=end_date,
-        )
-        if conflict is not None:
-            raise HTTPException(
-                status_code=status.HTTP_409_CONFLICT,
-                detail=(
-                    "Schedule already exists for this branch and period "
-                    f"({conflict['status']}: {conflict['start_date']} - {conflict['end_date']})."
-                ),
-            )
 
     try:
         results = []
@@ -341,11 +334,11 @@ def generate_schedule(
         db.rollback()
         raise
 
-    schedule_reads: list[ScheduleRead] = []
-    for result in results:
-        schedule = schedule_repository.get_schedule(db, result.schedule_id)
-        schedule_reads.append(_build_schedule_read(db, result.schedule_id, schedule.status))
-    return schedule_reads
+    if not results:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Schedule was not generated.")
+    result = results[0]
+    schedule = schedule_repository.get_schedule(db, result.schedule_id)
+    return _build_schedule_read(db, result.schedule_id, schedule.status)
 
 
 def list_schedules(
@@ -388,11 +381,31 @@ def list_schedules(
     return [ScheduleListItemRead(**row) for row in rows]
 
 
-def get_schedule(db: Session, schedule_id: int) -> ScheduleRead:
+def get_schedule(db: Session, schedule_id: int, current_user: UserRead) -> ScheduleRead:
     schedule = schedule_repository.get_schedule(db, schedule_id)
     if schedule is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Schedule was not found.")
+    if current_user.company_id is None:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="User is not linked to a company.",
+        )
+    if schedule.company_id != current_user.company_id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Schedule does not belong to the authenticated user's company.",
+        )
+    if current_user.role == "employee" and schedule.status != "published":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Employees can only read published schedules.",
+        )
     return _build_schedule_read(db, schedule.id, schedule.status)
+
+
+def delete_schedule(db: Session, schedule_id: int, current_user: UserRead) -> None:
+    schedule = _get_manager_schedule(db, schedule_id, current_user)
+    schedule_repository.delete_schedule(db, schedule)
 
 
 def get_latest_schedule(
@@ -435,6 +448,8 @@ def create_manual_shift(
             shift_date=payload.date,
             start_time=payload.start_time,
             end_time=payload.end_time,
+            enforce_position=False,
+            enforce_availability=False,
         )
 
     schedule_repository.create_shift(
@@ -491,6 +506,8 @@ def update_shift(
                 start_time=start_time,
                 end_time=end_time,
                 exclude_shift_id=shift_id,
+                enforce_position=False,
+                enforce_availability=False,
             )
         schedule_repository.update_shift(
             db,
@@ -567,6 +584,8 @@ def assign_requirement(
         shift_date=requirement.shift_date,
         start_time=requirement.start_time,
         end_time=requirement.end_time,
+        enforce_position=False,
+        enforce_availability=False,
     )
     schedule_repository.create_shift(
         db,
@@ -592,6 +611,7 @@ def list_available_employees(
     position_id: int,
     branch_id: int | None = None,
     include_unavailable: bool = False,
+    include_other_positions: bool = False,
 ) -> list[AvailableEmployeeRead]:
     schedule = _get_manager_schedule(db, schedule_id, current_user)
     _ensure_time_range(start_time, end_time)
@@ -614,7 +634,7 @@ def list_available_employees(
     rows = schedule_repository.list_candidate_employee_rows(
         db,
         company_id=current_user.company_id,
-        position_id=position_id,
+        position_id=None if include_other_positions else position_id,
         branch_id=effective_branch_id,
     )
     available: list[AvailableEmployeeRead] = []
@@ -727,12 +747,7 @@ def publish_schedule(db: Session, schedule_id: int, current_user: UserRead) -> S
         )
     if schedule.status != "draft":
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Only draft schedules can be published.")
-    db.execute(
-        text("UPDATE schedules SET status = 'published' WHERE id = :schedule_id"),
-        {"schedule_id": schedule.id},
-    )
-    db.commit()
-    db.refresh(schedule)
+    schedule_repository.publish_schedule(db, schedule)
     return _build_schedule_read(db, schedule.id, schedule.status)
 
 
@@ -968,15 +983,19 @@ def _ensure_shift_date_in_schedule(schedule, shift_date: date) -> None:
 
 
 def _validate_week_period_http(start_date: date, end_date: date) -> None:
-    if start_date.weekday() != 0 or end_date != start_date + timedelta(days=6):
+    if end_date < start_date:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail="Schedule requires one full Monday-Sunday week.",
+            detail="end_date must be later than or equal to start_date.",
         )
 
 
 def _validate_generation_period_http(start_date: date, end_date: date) -> None:
-    _validate_week_period_http(start_date, end_date)
+    if end_date < start_date:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="end_date must be later than or equal to start_date.",
+        )
 
 
 def _get_schedule_branch_id(db: Session, schedule_id: int) -> int | None:
@@ -1017,6 +1036,8 @@ def _validate_employee_assignment(
     start_time,
     end_time,
     exclude_shift_id: int | None = None,
+    enforce_position: bool = True,
+    enforce_availability: bool = True,
 ) -> None:
     schedule = schedule_repository.get_schedule(db, schedule_id)
     _ensure_draft_schedule(schedule)
@@ -1041,7 +1062,7 @@ def _validate_employee_assignment(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Employee does not belong to this schedule's branch.",
         )
-    if employee.position_id != position_id:
+    if enforce_position and employee.position_id != position_id:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Employee does not match the required position for this shift.",
@@ -1051,18 +1072,19 @@ def _validate_employee_assignment(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Employee is absent on this date.",
         )
-    availability_status = _get_employee_availability_status_for_date(
-        db,
-        employee_id=employee_id,
-        shift_date=shift_date,
-        start_time=start_time,
-        end_time=end_time,
-    )
-    if availability_status not in {"available", "if_needed"}:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Employee is not available for this exact date and time.",
+    if enforce_availability:
+        availability_status = _get_employee_availability_status_for_date(
+            db,
+            employee_id=employee_id,
+            shift_date=shift_date,
+            start_time=start_time,
+            end_time=end_time,
         )
+        if availability_status not in {"available", "if_needed"}:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Employee is not available for this exact date and time.",
+            )
     if schedule_repository.has_overlapping_assignment(
         db,
         schedule_id=schedule_id,
@@ -1210,10 +1232,20 @@ def _build_requirement_read(db: Session, requirement) -> ScheduleRequirementRead
         end_time=requirement.end_time,
     )
 
-def delete_requirement(db: Session, requirement_id: int) -> None:
+def delete_requirement(db: Session, requirement_id: int, current_user: UserRead) -> None:
+    if current_user.company_id is None:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Manager is not linked to a company.",
+        )
     requirement = schedule_repository.get_requirement_by_id(db, requirement_id)
 
     if not requirement:
         raise HTTPException(status_code=404, detail="Requirement not found")
+    if requirement.company_id != current_user.company_id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Requirement does not belong to the authenticated user's company.",
+        )
 
     schedule_repository.delete_requirement(db, requirement)
