@@ -1,5 +1,6 @@
 import os
 import smtplib
+import socket
 import ssl
 from email.message import EmailMessage
 from html import escape
@@ -16,6 +17,34 @@ def _env_flag(name: str, default: bool = False) -> bool:
     if value is None:
         return default
     return value.strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _create_ipv4_connection(host: str, port: int, timeout: int) -> socket.socket:
+    errors = []
+    for family, socktype, proto, _, address in socket.getaddrinfo(host, port, socket.AF_INET, socket.SOCK_STREAM):
+        sock = socket.socket(family, socktype, proto)
+        sock.settimeout(timeout)
+        try:
+            sock.connect(address)
+            return sock
+        except OSError as exc:
+            errors.append(exc)
+            sock.close()
+
+    if errors:
+        raise errors[-1]
+    raise OSError(f"No IPv4 address found for {host}:{port}")
+
+
+class IPv4SMTPSSL(smtplib.SMTP_SSL):
+    def _get_socket(self, host: str, port: int, timeout: int) -> socket.socket:
+        raw_socket = _create_ipv4_connection(host, port, timeout)
+        return self.context.wrap_socket(raw_socket, server_hostname=host)
+
+
+class IPv4SMTP(smtplib.SMTP):
+    def _get_socket(self, host: str, port: int, timeout: int) -> socket.socket:
+        return _create_ipv4_connection(host, port, timeout)
 
 
 def is_email_verification_required() -> bool:
@@ -44,6 +73,7 @@ def send_verification_email(*, to_email: str, full_name: str, token: str) -> Non
     host = os.getenv("SMTP_HOST", DEFAULT_SMTP_HOST)
     port = int(os.getenv("SMTP_PORT", str(DEFAULT_SMTP_PORT)))
     use_ssl = _env_flag("SMTP_USE_SSL", True)
+    force_ipv4 = _env_flag("SMTP_FORCE_IPV4", True)
 
     verification_url = build_verification_url(token)
     safe_name = escape(full_name or "there")
@@ -87,12 +117,14 @@ def send_verification_email(*, to_email: str, full_name: str, token: str) -> Non
 
     if use_ssl:
         context = ssl.create_default_context()
-        with smtplib.SMTP_SSL(host, port, context=context, timeout=20) as smtp:
+        smtp_class = IPv4SMTPSSL if force_ipv4 else smtplib.SMTP_SSL
+        with smtp_class(host, port, context=context, timeout=20) as smtp:
             smtp.login(username, password)
             smtp.send_message(message)
         return
 
-    with smtplib.SMTP(host, port, timeout=20) as smtp:
+    smtp_class = IPv4SMTP if force_ipv4 else smtplib.SMTP
+    with smtp_class(host, port, timeout=20) as smtp:
         smtp.starttls(context=ssl.create_default_context())
         smtp.login(username, password)
         smtp.send_message(message)

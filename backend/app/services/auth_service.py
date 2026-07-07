@@ -1,4 +1,5 @@
 import secrets
+import logging
 from datetime import datetime, timedelta, timezone
 
 from fastapi import HTTPException, status
@@ -25,6 +26,7 @@ from app.services import email_service
 from app.services.security import create_access_token, get_password_hash, verify_password
 
 _active_tokens: set[str] = set()
+logger = logging.getLogger(__name__)
 EMAIL_VERIFICATION_TOKEN_BYTES = 32
 EMAIL_VERIFICATION_EXPIRE_HOURS = 24
 
@@ -397,6 +399,7 @@ def _deliver_verification_email(user) -> None:
             token=user.email_verification_token,
         )
     except Exception as exc:
+        logger.exception("Could not send verification email to %s", user.email)
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="Could not send verification email.",
