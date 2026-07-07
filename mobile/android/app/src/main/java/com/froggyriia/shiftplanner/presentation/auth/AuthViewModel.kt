@@ -17,6 +17,10 @@ class AuthViewModel(
     private val _uiState = MutableStateFlow(AuthUiState())
     val uiState: StateFlow<AuthUiState> = _uiState.asStateFlow()
 
+    init {
+        restoreSession()
+    }
+
     fun onEmailChange(value: String) {
         _uiState.value = _uiState.value.copy(email = value)
     }
@@ -113,6 +117,28 @@ class AuthViewModel(
         viewModelScope.launch {
             repository.logout()
             _uiState.value = AuthUiState()
+        }
+    }
+
+    fun updateUser(user: AppUser) {
+        _uiState.value = _uiState.value.copy(currentUser = user)
+    }
+
+    fun deleteAccount() {
+        viewModelScope.launch {
+            runCatching { repository.deleteAccount() }
+            _uiState.value = AuthUiState()
+        }
+    }
+
+    private fun restoreSession() {
+        viewModelScope.launch {
+            _uiState.value = _uiState.value.copy(isLoading = true)
+            val user = repository.getCurrentUser()
+            _uiState.value = _uiState.value.copy(
+                currentUser = user,
+                isLoading = false
+            )
         }
     }
 }

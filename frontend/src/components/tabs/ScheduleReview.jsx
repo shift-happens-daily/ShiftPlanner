@@ -1,15 +1,24 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+﻿import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   defaultSchedulePeriod,
-  deleteScheduleForPeriod,
+  deleteScheduleWeek,
   deriveSchedulePeriod,
+  fetchScheduleCoverage,
   fetchScheduleVersions,
+  findOverlappingSchedules,
   formatLocalDate,
-  generateScheduleForPeriod,
-  getFourWeekPeriodRange,
+  generateScheduleWeeks,
+  getWeekPeriodRange,
+  isMonday,
+  isScheduleGenerateTransportError,
+  periodsOverlap,
   publishScheduleForPeriod,
+  resolveScheduleIdForDate,
+  snapToMonday,
   assignRequirement,
 } from '../../services/scheduleService';
+import { listBranches } from '../../services/companyService';
+import ManagerScheduleCalendar from '../schedule/ManagerScheduleCalendar';
 import { filterRealEmployees, listEmployees } from '../../services/employeeService';
 import { useAuth } from '../../context/useAuth';
 import { extractApiErrorMessage } from '../../services/error';
@@ -295,6 +304,50 @@ function isDateWithinRange(dateKey, startDate, endDate) {
   return dateKey >= startDate && dateKey <= endDate;
 }
 
+function buildCalendarMonthPeriod(anchorDateKey) {
+  const monthStart = startOfMonthDate(anchorDateKey);
+  const monthEnd = endOfMonthDate(anchorDateKey);
+  return {
+    start_date: formatLocalDate(monthStart),
+    end_date: formatLocalDate(monthEnd),
+  };
+}
+
+function scheduleCoversPeriod(schedule, period) {
+  if (!schedule?.start_date || !schedule?.end_date || !period?.start_date || !period?.end_date) {
+    return false;
+  }
+  return periodsOverlap(
+    schedule.start_date,
+    schedule.end_date,
+    period.start_date,
+    period.end_date,
+  );
+}
+
+function applyLoadedScheduleState({
+  versions,
+  period,
+  setScheduleVersions,
+  setActiveVersion,
+  setViewPeriod,
+  setCalendarSelectedDate,
+  setCalendarMonth,
+}) {
+  const loaded = versions.draft || versions.published;
+  if (!loaded?.id) {
+    return false;
+  }
+
+  const derivedPeriod = deriveSchedulePeriod(loaded, period);
+  setScheduleVersions(versions);
+  setActiveVersion(versions.draft ? 'draft' : 'published');
+  setViewPeriod(derivedPeriod);
+  setCalendarSelectedDate(derivedPeriod.start_date);
+  setCalendarMonth(derivedPeriod.start_date);
+  return true;
+}
+
 function buildGroupedScheduleCounts(displaySchedule, unfilledNotFoundRequirements) {
   const byDate = {};
 
@@ -317,60 +370,6 @@ function buildGroupedScheduleCounts(displaySchedule, unfilledNotFoundRequirement
   return byDate;
 }
 
-function renderMobileShiftCard(entry, t, mobileStyles) {
-  const isUnfilled = entry.kind === 'unfilled';
-  const timeLabel = `${String(entry.startTime || '').slice(0, 5)} - ${String(entry.endTime || '').slice(0, 5)}`;
-
-  return (
-    <div
-      key={entry.key}
-      style={{
-        padding: '14px 16px',
-        borderRadius: 14,
-        background: isUnfilled
-          ? 'linear-gradient(135deg, #ffd6a5 0%, #ffb085 100%)'
-          : 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
-        color: isUnfilled ? '#5a1a1a' : '#fff',
-        border: isUnfilled ? '2px dashed #8d1d1d' : '1px solid rgba(255,255,255,0.12)',
-        boxShadow: isUnfilled
-          ? '0 2px 8px rgba(141, 29, 29, 0.12)'
-          : '0 2px 8px rgba(102,126,234,0.25)',
-        ...scheduleShiftBlockStyle,
-        ...mobileStyles?.shiftCard,
-      }}
-    >
-      <div style={{
-        ...scheduleShiftBlockLineStyle,
-        fontWeight: 800,
-        fontSize: 15,
-        marginBottom: 4,
-        ...mobileStyles?.shiftPosition,
-      }}
-      >
-        {entry.position}
-      </div>
-      <div style={{
-        ...scheduleShiftBlockLineStyle,
-        fontSize: 14,
-        marginBottom: 4,
-        ...mobileStyles?.shiftEmployee,
-      }}
-      >
-        {isUnfilled ? t.notFound : entry.employee}
-      </div>
-      <div style={{
-        ...scheduleShiftBlockLineStyle,
-        fontSize: 13,
-        opacity: 0.92,
-        ...mobileStyles?.shiftTime,
-      }}
-      >
-        {timeLabel}
-      </div>
-    </div>
-  );
-}
-
 function formatTimeForApi(value) {
   const raw = String(value || '').trim();
   if (!raw) return raw;
@@ -388,8 +387,7 @@ function formatDate(d) {
 }
 
 function defaultPeriod() {
-  const today = formatLocalDate(new Date());
-  return getFourWeekPeriodRange(today) || defaultSchedulePeriod();
+  return defaultSchedulePeriod();
 }
 
 function normalizeArray(value) {
@@ -818,7 +816,7 @@ function DayScheduleTable({
   );
 }
 
-function buildDayScheduleEntries(dateKey, displaySchedule, unfilledNotFoundRequirements) {
+function buildDayScheduleEntries(dateKey, displaySchedule, unfilledNotFoundRequirements, branchLabel = '') {
   const shiftEntries = normalizeArray(displaySchedule?.shifts)
     .filter((shift) => formatDate(shift.date) === dateKey)
     .map((shift) => ({
@@ -827,6 +825,7 @@ function buildDayScheduleEntries(dateKey, displaySchedule, unfilledNotFoundRequi
       sortTime: parseTimeToHours(shift.start_time),
       position: getShiftPositionTitle(shift),
       employee: shift.employee_name || '—',
+      branch: branchLabel,
       startTime: shift.start_time,
       endTime: shift.end_time,
     }));
@@ -841,6 +840,8 @@ function buildDayScheduleEntries(dateKey, displaySchedule, unfilledNotFoundRequi
         position_id: item.position_id,
         position_title: item.position_title || item.position,
       }, item.position_title || '—'),
+      branch: branchLabel,
+      missingStaff: Number(item.missing_staff) || 1,
       startTime: item.start_time,
       endTime: item.end_time,
     }));
@@ -848,10 +849,10 @@ function buildDayScheduleEntries(dateKey, displaySchedule, unfilledNotFoundRequi
   return [...shiftEntries, ...unfilledEntries].sort((a, b) => a.sortTime - b.sortTime);
 }
 
-function buildMobileScheduleSections(visibleDates, displaySchedule, unfilledNotFoundRequirements) {
+function buildMobileScheduleSections(visibleDates, displaySchedule, unfilledNotFoundRequirements, branchLabel = '') {
   return visibleDates.map((dateKey) => ({
     dateKey,
-    entries: buildDayScheduleEntries(dateKey, displaySchedule, unfilledNotFoundRequirements),
+    entries: buildDayScheduleEntries(dateKey, displaySchedule, unfilledNotFoundRequirements, branchLabel),
   }));
 }
 
@@ -1146,8 +1147,8 @@ function hasStaffingRequirements(scheduleRead) {
 
 const EMPTY_SCHEDULE_VERSIONS = { draft: null, published: null };
 
-async function loadScheduleVersions(period) {
-  return fetchScheduleVersions(period);
+async function loadScheduleVersions(period, branchId) {
+  return fetchScheduleVersions(period, branchId);
 }
 
 function pickActiveVersion(versions, current) {
@@ -1179,18 +1180,21 @@ export default function ScheduleReview({ language }) {
   const mobileStyles = isMobile ? MOBILE_MANAGER_SCHEDULE_STYLES : null;
   const { user, isLoading: isAuthLoading } = useAuth();
   const hasCompany = Boolean(user?.company);
-  const [viewMode, setViewMode] = useState('day');
-  const [periodForm, setPeriodForm] = useState(defaultPeriod);
-  const [generatedPeriod, setGeneratedPeriod] = useState(null);
+  const companyId = user?.company?.id || user?.company_id || null;
+  const [branches, setBranches] = useState([]);
+  const [selectedBranchId, setSelectedBranchId] = useState(null);
+  const [generationStartMonday, setGenerationStartMonday] = useState(() => defaultSchedulePeriod().start_date);
+  const [deleteWeekMonday, setDeleteWeekMonday] = useState(() => defaultSchedulePeriod().start_date);
+  const [viewPeriod, setViewPeriod] = useState(() => defaultSchedulePeriod());
   const [scheduleVersions, setScheduleVersions] = useState(EMPTY_SCHEDULE_VERSIONS);
   const [activeVersion, setActiveVersion] = useState('draft');
+  const [coverageByDate, setCoverageByDate] = useState({});
   const [assignEmployeeIds, setAssignEmployeeIds] = useState({});
   const [manualEmployees, setManualEmployees] = useState([]);
   const [manualEmployeesLoaded, setManualEmployeesLoaded] = useState(false);
   const [employeesLoaded, setEmployeesLoaded] = useState(false);
-  const [selectedDateIndex, setSelectedDateIndex] = useState(0);
-  const [mobileCalendarMonth, setMobileCalendarMonth] = useState(() => formatLocalDate(new Date()));
-  const [mobileMonthSelectedDate, setMobileMonthSelectedDate] = useState(() => formatLocalDate(new Date()));
+  const [calendarMonth, setCalendarMonth] = useState(() => formatLocalDate(new Date()));
+  const [calendarSelectedDate, setCalendarSelectedDate] = useState(() => formatLocalDate(new Date()));
   const [isLoading, setIsLoading] = useState(true);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState('');
@@ -1198,17 +1202,19 @@ export default function ScheduleReview({ language }) {
 
   const texts = {
     ru: {
-      title: 'Просмотр сгенерированного расписания',
+      title: 'Расписание',
+      subtitle: 'Календарь смен по филиалам. Генерация и удаление — по неделям с понедельника.',
       employee: 'Сотрудник',
       date: 'Дата',
-      day: 'День',
-      threeDay: '3 дня',
-      month: 'Месяц',
       exportCSV: 'Экспорт CSV',
-      startDate: 'Начало',
-      endDate: 'Конец',
+      branch: 'Филиал',
+      startDate: 'Начало периода (понедельник)',
+      deleteWeekStart: 'Неделя для удаления (с понедельника)',
+      oneWeek: '1 неделя',
+      twoWeeks: '2 недели',
+      fourWeeks: '4 недели',
       generate: 'Сгенерировать',
-      fillMonth: '4 недели',
+      deleteWeek: 'Удалить неделю',
       publish: 'Опубликовать',
       status: 'Статус',
       draft: 'Черновик',
@@ -1219,36 +1225,54 @@ export default function ScheduleReview({ language }) {
       noShiftsThisDay: 'На этот день смен нет.',
       notFound: 'Не найдено',
       noSchedule: 'Расписание ещё не сгенерировано.',
-      noScheduleHint: 'Алгоритму нужны шаблоны потребности, часы филиала и доступность сотрудников.',
+      noScheduleHint: 'Для генерации нужны шаблоны потребности, часы филиала и доступность сотрудников.',
       noEmployeesAndRequirements: 'Нет сотрудников и требований для генерации расписания.',
       generating: 'Генерация...',
       loading: 'Загрузка...',
       generated: 'Черновик расписания создан.',
+      generatedRecovered: 'Расписание сохранено на сервере. Данные подгружены автоматически.',
       publishedDone: 'Расписание опубликовано.',
-      deletePublished: 'Удалить',
-      confirmDeletePublished: 'Вы точно хотите удалить опубликованное расписание?',
-      publishedDeleted: 'Опубликованное расписание удалено.',
-      deletePublishedError: 'Не удалось удалить опубликованное расписание.',
+      weekDeleted: 'Неделя расписания удалена.',
+      deleteWeekError: 'Не удалось удалить неделю расписания.',
+      confirmDeleteWeek: 'Удалить расписание за неделю с {start} по {end}?',
+      conflictError: 'На выбранные даты уже есть расписание. Сначала удалите старое.',
+      mondayRequired: 'Дата начала должна быть понедельником.',
       unfilledTitle: 'Незаполненные смены',
       assign: 'Назначить',
       chooseEmployee: 'Выберите сотрудника',
       noEmployeesAvailable: 'Нет доступных сотрудников',
       assigned: 'Сотрудник назначен на смену.',
       assignError: 'Не удалось назначить сотрудника.',
-      shiftsForDay: 'Смены на день',
+      loadedPeriod: 'Загруженный период',
+      prevMonth: 'Предыдущий месяц',
+      nextMonth: 'Следующий месяц',
+      hasScheduleMarker: 'Есть расписание',
+      hasShiftsMarker: 'Есть смены',
+      hasUnfilledMarker: 'Есть незаполненные смены',
+      legendCoverage: 'Черновик расписания',
+      legendCoveragePublished: 'Опубликованное расписание',
+      legendShifts: 'Назначенные смены',
+      legendUnfilled: 'Незаполненные смены',
+      position: 'Должность',
+      assignedBadge: 'Назначено',
+      unfilledBadge: 'Не назначено',
+      missingStaff: 'Не хватает: {count}',
+      moreShifts: '+{count}',
     },
     en: {
-      title: 'Generated Schedule Review',
+      title: 'Schedule',
+      subtitle: 'Branch calendar view. Generate and delete schedules week by week from Monday.',
       employee: 'Employee',
       date: 'Date',
-      day: 'Day',
-      threeDay: '3-day',
-      month: 'Month',
       exportCSV: 'Export CSV',
-      startDate: 'Start',
-      endDate: 'End',
+      branch: 'Branch',
+      startDate: 'Period start (Monday)',
+      deleteWeekStart: 'Week to delete (from Monday)',
+      oneWeek: '1 week',
+      twoWeeks: '2 weeks',
+      fourWeeks: '4 weeks',
       generate: 'Generate',
-      fillMonth: '4 weeks',
+      deleteWeek: 'Delete week',
       publish: 'Publish',
       status: 'Status',
       draft: 'Draft',
@@ -1264,18 +1288,34 @@ export default function ScheduleReview({ language }) {
       generating: 'Generating...',
       loading: 'Loading...',
       generated: 'Draft schedule generated.',
+      generatedRecovered: 'Schedule was saved on the server. Data loaded automatically.',
       publishedDone: 'Schedule published.',
-      deletePublished: 'Delete',
-      confirmDeletePublished: 'Are you sure you want to delete the published schedule?',
-      publishedDeleted: 'Published schedule deleted.',
-      deletePublishedError: 'Failed to delete published schedule.',
+      weekDeleted: 'Schedule week deleted.',
+      deleteWeekError: 'Failed to delete schedule week.',
+      confirmDeleteWeek: 'Delete schedule for week {start} to {end}?',
+      conflictError: 'A schedule already exists for these dates. Delete the old one first.',
+      mondayRequired: 'Start date must be a Monday.',
       unfilledTitle: 'Unfilled shifts',
       assign: 'Assign',
       chooseEmployee: 'Choose employee',
       noEmployeesAvailable: 'No available employees',
       assigned: 'Employee assigned to shift.',
       assignError: 'Failed to assign employee.',
-      shiftsForDay: 'Shifts for day',
+      loadedPeriod: 'Loaded period',
+      prevMonth: 'Previous month',
+      nextMonth: 'Next month',
+      hasScheduleMarker: 'Schedule exists',
+      hasShiftsMarker: 'Shifts assigned',
+      hasUnfilledMarker: 'Unfilled shifts',
+      legendCoverage: 'Draft schedule',
+      legendCoveragePublished: 'Published schedule',
+      legendShifts: 'Assigned shifts',
+      legendUnfilled: 'Unfilled shifts',
+      position: 'Position',
+      assignedBadge: 'Assigned',
+      unfilledBadge: 'Unassigned',
+      missingStaff: 'Missing: {count}',
+      moreShifts: '+{count}',
     },
   };
 
@@ -1314,97 +1354,57 @@ export default function ScheduleReview({ language }) {
     };
   }, [schedule, employeesLoaded]);
 
-  const monthViewRange = useMemo(() => (
-    getFourWeekPeriodRange(periodForm.start_date)
-    || getFourWeekPeriodRange(formatLocalDate(new Date()))
-  ), [periodForm.start_date]);
-
-  const applyMonthRangeFromStart = useCallback((startDate) => {
-    const range = getFourWeekPeriodRange(startDate);
-    if (!range) {
-      return null;
-    }
-    setGeneratedPeriod(null);
-    setPeriodForm(range);
-    setSelectedDateIndex(0);
-    return range;
-  }, []);
-
-  const activateMonthView = useCallback(() => {
-    const range = applyMonthRangeFromStart(periodForm.start_date || formatLocalDate(new Date()));
-    const anchor = range?.start_date || periodForm.start_date || formatLocalDate(new Date());
-    setMobileCalendarMonth(anchor);
-    setMobileMonthSelectedDate(anchor);
-    setViewMode('month');
-  }, [applyMonthRangeFromStart, periodForm.start_date]);
-
-  const viewPeriod = useMemo(() => {
-    if (generatedPeriod?.start_date && generatedPeriod?.end_date) {
-      return generatedPeriod;
-    }
-    if (viewMode === 'month') {
-      return monthViewRange || deriveSchedulePeriod(schedule, periodForm);
-    }
-    return deriveSchedulePeriod(schedule, periodForm);
-  }, [generatedPeriod, monthViewRange, periodForm, schedule, viewMode]);
-
   const scheduleStartDate = viewPeriod.start_date;
   const scheduleEndDate = viewPeriod.end_date;
 
-  useEffect(() => {
-    if (!isMobile || viewMode !== 'month') {
-      return;
-    }
-
-    const anchor = scheduleStartDate || periodForm.start_date || formatLocalDate(new Date());
-    setMobileCalendarMonth(anchor);
-    setMobileMonthSelectedDate((current) => (
-      isDateWithinRange(current, scheduleStartDate, scheduleEndDate) ? current : anchor
-    ));
-  }, [isMobile, viewMode, scheduleStartDate, scheduleEndDate, periodForm.start_date]);
+  const selectedBranchLabel = useMemo(() => {
+    const branch = branches.find((item) => Number(item.id) === Number(selectedBranchId));
+    return branch?.name || '';
+  }, [branches, selectedBranchId]);
 
   const groupedScheduleByDate = useMemo(
     () => buildGroupedScheduleCounts(displaySchedule, unfilledNotFoundRequirements),
     [displaySchedule, unfilledNotFoundRequirements, positionTitleRevision],
   );
 
-  const mobileCalendarGrid = useMemo(
-    () => buildCalendarGrid(mobileCalendarMonth),
-    [mobileCalendarMonth],
-  );
+  const calendarEntriesByDate = useMemo(() => {
+    const dateKeys = new Set([
+      ...normalizeArray(displaySchedule?.shifts).map((shift) => formatDate(shift.date)),
+      ...unfilledNotFoundRequirements.map((item) => formatDate(item.date)),
+    ]);
 
-  const mobileCalendarMonthLabel = useMemo(() => {
-    const date = startOfMonthDate(mobileCalendarMonth);
-    return date.toLocaleDateString(language === 'ru' ? 'ru-RU' : 'en-US', {
-      month: 'long',
-      year: 'numeric',
+    const byDate = {};
+    dateKeys.forEach((dateKey) => {
+      byDate[dateKey] = buildDayScheduleEntries(
+        dateKey,
+        displaySchedule,
+        unfilledNotFoundRequirements,
+        selectedBranchLabel,
+      );
     });
-  }, [language, mobileCalendarMonth]);
+    return byDate;
+  }, [
+    displaySchedule,
+    unfilledNotFoundRequirements,
+    positionTitleRevision,
+    selectedBranchLabel,
+  ]);
 
-  const mobileCalendarMonthKey = useMemo(() => {
-    const date = startOfMonthDate(mobileCalendarMonth);
-    return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
-  }, [mobileCalendarMonth]);
-
-  const mobileWeekdayLabels = useMemo(() => {
-    const base = startOfMonthDate(mobileCalendarMonth);
-    return Array.from({ length: 7 }, (_, index) => {
-      const day = new Date(base);
-      day.setDate(day.getDate() - ((day.getDay() + 6) % 7) + index);
-      return day.toLocaleDateString(language === 'ru' ? 'ru-RU' : 'en-US', { weekday: 'short' });
-    });
-  }, [language, mobileCalendarMonth]);
-
-  const mobileSelectedDayEntries = useMemo(
-    () => buildDayScheduleEntries(mobileMonthSelectedDate, displaySchedule, unfilledNotFoundRequirements),
-    [mobileMonthSelectedDate, displaySchedule, unfilledNotFoundRequirements, positionTitleRevision],
+  const calendarSelectedDayEntries = useMemo(
+    () => buildDayScheduleEntries(
+      calendarSelectedDate,
+      displaySchedule,
+      unfilledNotFoundRequirements,
+      selectedBranchLabel,
+    ),
+    [
+      calendarSelectedDate,
+      displaySchedule,
+      unfilledNotFoundRequirements,
+      positionTitleRevision,
+      selectedBranchLabel,
+    ],
   );
-
-  const shiftMobileCalendarMonth = useCallback((delta) => {
-    const current = startOfMonthDate(mobileCalendarMonth);
-    current.setMonth(current.getMonth() + delta);
-    setMobileCalendarMonth(formatLocalDate(current));
-  }, [mobileCalendarMonth]);
 
   const schedules = useMemo(
     () => buildFullScheduleRange(
@@ -1422,77 +1422,78 @@ export default function ScheduleReview({ language }) {
     ],
   );
 
-  const dates = useMemo(() => schedules.map((s) => s.date), [schedules]);
-
-  const maxVisibleStartIndex = useMemo(() => {
-    if (!dates.length) return 0;
-    if (viewMode === 'month') return 0;
-    const pageSize = viewMode === 'day' ? 1 : 3;
-    return Math.max(0, dates.length - pageSize);
-  }, [dates.length, viewMode]);
-
-  const navStep = viewMode === '3day' ? 3 : 1;
-
-  const visibleDates = useMemo(() => {
-    if (!dates.length) return [];
-    if (viewMode === 'month') return dates;
-    const start = Math.max(0, Math.min(selectedDateIndex, maxVisibleStartIndex));
-    const pageSize = viewMode === 'day' ? 1 : 3;
-    return dates.slice(start, start + pageSize);
-  }, [dates, maxVisibleStartIndex, selectedDateIndex, viewMode]);
-
-  const mobileScheduleSections = useMemo(
-    () => buildMobileScheduleSections(visibleDates, displaySchedule, unfilledNotFoundRequirements),
-    [visibleDates, displaySchedule, unfilledNotFoundRequirements, positionTitleRevision],
-  );
-
-  const mobileSectionsToRender = useMemo(() => {
-    if (viewMode === 'month') {
-      return mobileScheduleSections.filter((section) => section.entries.length > 0);
-    }
-    return mobileScheduleSections;
-  }, [mobileScheduleSections, viewMode]);
-
-  const navigationLabel = useMemo(() => {
-    if (viewMode === 'month') {
-      if (!scheduleStartDate || !scheduleEndDate) return '—';
-      return `${scheduleStartDate} — ${scheduleEndDate}`;
-    }
-    if (visibleDates.length === 1) return visibleDates[0] || '—';
-    return `${visibleDates[0]} — ${visibleDates[visibleDates.length - 1]}`;
-  }, [scheduleEndDate, scheduleStartDate, viewMode, visibleDates]);
-
-  const reloadScheduleVersions = useCallback(async (preferredVersion, period = null) => {
-    const targetPeriod = period || {
-      start_date: periodForm.start_date,
-      end_date: periodForm.end_date,
-    };
-    const versions = await loadScheduleVersions(targetPeriod);
+  const reloadScheduleVersions = useCallback(async (preferredVersion, period = null, branchId = selectedBranchId) => {
+    const targetPeriod = period || viewPeriod;
+    const versions = await loadScheduleVersions(targetPeriod, branchId);
     setScheduleVersions(versions);
     setActiveVersion((current) => pickActiveVersion(versions, preferredVersion || current));
     return versions;
-  }, [periodForm.end_date, periodForm.start_date]);
+  }, [selectedBranchId, viewPeriod]);
 
-  const runGenerate = useCallback(async (period) => {
+  const reloadCoverage = useCallback(async (branchId = selectedBranchId, monthAnchor = calendarMonth) => {
+    if (!branchId) {
+      setCoverageByDate({});
+      return;
+    }
+
+    const monthStart = startOfMonthDate(monthAnchor);
+    const monthEnd = endOfMonthDate(monthAnchor);
+    const coverage = await fetchScheduleCoverage({
+      branch_id: branchId,
+      date_from: formatLocalDate(monthStart),
+      date_to: formatLocalDate(monthEnd),
+    });
+    setCoverageByDate(coverage);
+  }, [calendarMonth, selectedBranchId]);
+
+  const runGenerate = useCallback(async (weeks) => {
+    if (!selectedBranchId) {
+      setError(t.noScheduleHint);
+      return;
+    }
+
+    const mondayStart = snapToMonday(generationStartMonday);
+    if (!isMonday(mondayStart)) {
+      setError(t.mondayRequired);
+      return;
+    }
+
+    const period = getWeekPeriodRange(mondayStart, weeks);
     setIsSubmitting(true);
     setError('');
     setSuccess('');
 
+    const applyGeneratedSchedule = (generated, versions = null) => {
+      const nextVersions = versions || { ...scheduleVersions, draft: generated };
+      applyLoadedScheduleState({
+        versions: nextVersions,
+        period,
+        setScheduleVersions,
+        setActiveVersion,
+        setViewPeriod,
+        setCalendarSelectedDate,
+        setCalendarMonth,
+      });
+      markUnsaved(SCHEDULE_DRAFT_SCOPE);
+    };
+
     try {
-      const generationPeriod = viewMode === 'month'
-        ? (getFourWeekPeriodRange(periodForm.start_date) || period)
-        : period;
-      const generated = await generateScheduleForPeriod(generationPeriod);
+      const conflicts = await findOverlappingSchedules({
+        branch_id: selectedBranchId,
+        start_date: period.start_date,
+        end_date: period.end_date,
+      });
+
+      if (conflicts.length > 0) {
+        setError(t.conflictError);
+        return;
+      }
+
+      const generated = await generateScheduleWeeks(mondayStart, weeks, selectedBranchId);
       const visibleShiftCount = countVisibleShifts(generated);
 
-      setGeneratedPeriod({
-        start_date: generationPeriod.start_date,
-        end_date: generationPeriod.end_date,
-      });
-      setScheduleVersions((prev) => ({ ...prev, draft: generated }));
-      setActiveVersion('draft');
-      setSelectedDateIndex(0);
-      markUnsaved(SCHEDULE_DRAFT_SCOPE);
+      applyGeneratedSchedule(generated);
+      await reloadCoverage(selectedBranchId, period.start_date);
 
       if (visibleShiftCount > 0) {
         setSuccess(t.generated);
@@ -1502,11 +1503,113 @@ export default function ScheduleReview({ language }) {
         setError(t.noScheduleHint);
       }
     } catch (e) {
+      if (isScheduleGenerateTransportError(e)) {
+        try {
+          const versions = await loadScheduleVersions(period, selectedBranchId);
+          const loaded = versions.draft || versions.published;
+          if (loaded?.id && scheduleCoversPeriod(loaded, period)) {
+            applyGeneratedSchedule(loaded, versions);
+            await reloadCoverage(selectedBranchId, period.start_date);
+            const visibleShiftCount = countVisibleShifts(loaded);
+            if (visibleShiftCount > 0 || hasStaffingRequirements(loaded)) {
+              setSuccess(t.generatedRecovered);
+            } else {
+              setError(t.noScheduleHint);
+            }
+            return;
+          }
+        } catch {
+          // Fall through to the original error message.
+        }
+      }
       setError(extractApiErrorMessage(e, t.noScheduleHint, language));
     } finally {
       setIsSubmitting(false);
     }
-  }, [language, markUnsaved, periodForm.start_date, t.generated, t.noEmployeesAndRequirements, t.noScheduleHint, viewMode]);
+  }, [
+    generationStartMonday,
+    language,
+    markUnsaved,
+    reloadCoverage,
+    scheduleVersions,
+    selectedBranchId,
+    t.conflictError,
+    t.generated,
+    t.generatedRecovered,
+    t.mondayRequired,
+    t.noEmployeesAndRequirements,
+    t.noScheduleHint,
+  ]);
+
+  const handleDeleteWeek = useCallback(async () => {
+    if (!selectedBranchId) return;
+
+    const mondayStart = snapToMonday(deleteWeekMonday);
+    const weekPeriod = getWeekPeriodRange(mondayStart, 1);
+    const confirmText = t.confirmDeleteWeek
+      .replace('{start}', weekPeriod.start_date)
+      .replace('{end}', weekPeriod.end_date);
+
+    if (!window.confirm(confirmText)) return;
+
+    setIsSubmitting(true);
+    setError('');
+    setSuccess('');
+
+    try {
+      await deleteScheduleWeek({
+        branch_id: selectedBranchId,
+        start_date: weekPeriod.start_date,
+        end_date: weekPeriod.end_date,
+      });
+      await reloadScheduleVersions('draft', viewPeriod, selectedBranchId);
+      await reloadCoverage(selectedBranchId, calendarMonth);
+      setSuccess(t.weekDeleted);
+    } catch (e) {
+      setError(extractApiErrorMessage(e, t.deleteWeekError, language));
+    } finally {
+      setIsSubmitting(false);
+    }
+  }, [
+    calendarMonth,
+    deleteWeekMonday,
+    language,
+    reloadCoverage,
+    reloadScheduleVersions,
+    selectedBranchId,
+    t.confirmDeleteWeek,
+    t.deleteWeekError,
+    t.weekDeleted,
+    viewPeriod,
+  ]);
+
+  useEffect(() => {
+    if (isAuthLoading || !hasCompany || !companyId) {
+      return undefined;
+    }
+
+    let cancelled = false;
+
+    async function loadBranches() {
+      try {
+        const data = await listBranches(companyId);
+        if (cancelled) return;
+        const normalized = normalizeArray(data);
+        setBranches(normalized);
+        setSelectedBranchId((current) => current || normalized[0]?.id || null);
+      } catch {
+        if (!cancelled) {
+          setBranches([]);
+        }
+      }
+    }
+
+    void loadBranches();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [companyId, hasCompany, isAuthLoading]);
 
   useEffect(() => {
     if (isAuthLoading) {
@@ -1519,27 +1622,29 @@ export default function ScheduleReview({ language }) {
       setIsLoading(true);
       setError('');
 
-      if (!hasCompany) {
+      if (!hasCompany || !selectedBranchId) {
         if (cancelled) return;
         setScheduleVersions(EMPTY_SCHEDULE_VERSIONS);
         setActiveVersion('draft');
-        setSelectedDateIndex(0);
         setEmployeesLoaded(true);
         setIsLoading(false);
         return;
       }
 
       try {
-        const versions = await loadScheduleVersions({
-          start_date: periodForm.start_date,
-          end_date: periodForm.end_date,
-        });
+        const monthPeriod = buildCalendarMonthPeriod(calendarMonth);
+        const versions = await loadScheduleVersions(monthPeriod, selectedBranchId);
 
         if (cancelled) return;
 
         setScheduleVersions(versions);
         setActiveVersion((current) => pickActiveVersion(versions, current));
-        setSelectedDateIndex(0);
+
+        const loadedSchedule = versions.draft || versions.published;
+        if (loadedSchedule) {
+          const derived = deriveSchedulePeriod(loadedSchedule, monthPeriod);
+          setViewPeriod(derived);
+        }
       } catch (error) {
         if (!cancelled && !isMissingCompanyError(error)) {
           setError(extractApiErrorMessage(error, t.noScheduleHint, language));
@@ -1558,7 +1663,86 @@ export default function ScheduleReview({ language }) {
     return () => {
       cancelled = true;
     };
-  }, [hasCompany, isAuthLoading, language, periodForm.end_date, periodForm.start_date, t.noScheduleHint]);
+  }, [calendarMonth, hasCompany, isAuthLoading, language, selectedBranchId, t.noScheduleHint]);
+
+  useEffect(() => {
+    if (!selectedBranchId || !hasCompany || isAuthLoading || isLoading) {
+      return undefined;
+    }
+
+    const loadedSchedule = scheduleVersions.draft || scheduleVersions.published;
+    const monthPeriod = buildCalendarMonthPeriod(calendarMonth);
+    if (loadedSchedule?.id && scheduleCoversPeriod(loadedSchedule, monthPeriod)) {
+      return undefined;
+    }
+
+    const hasCoverageInMonth = Object.keys(coverageByDate).some((dateKey) => (
+      dateKey >= monthPeriod.start_date && dateKey <= monthPeriod.end_date
+    ));
+    if (!hasCoverageInMonth) {
+      return undefined;
+    }
+
+    let cancelled = false;
+
+    async function syncScheduleFromCoverage() {
+      try {
+        const versions = await loadScheduleVersions(monthPeriod, selectedBranchId);
+        if (cancelled) return;
+
+        const loaded = versions.draft || versions.published;
+        if (!loaded?.id) return;
+
+        applyLoadedScheduleState({
+          versions,
+          period: deriveSchedulePeriod(loaded, monthPeriod),
+          setScheduleVersions,
+          setActiveVersion,
+          setViewPeriod,
+          setCalendarSelectedDate,
+          setCalendarMonth,
+        });
+      } catch {
+        // Ignore background sync errors.
+      }
+    }
+
+    void syncScheduleFromCoverage();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    calendarMonth,
+    coverageByDate,
+    hasCompany,
+    isAuthLoading,
+    isLoading,
+    scheduleVersions.draft,
+    scheduleVersions.published,
+    selectedBranchId,
+  ]);
+
+  useEffect(() => {
+    if (!selectedBranchId) return undefined;
+    let cancelled = false;
+
+    async function loadCoverage() {
+      try {
+        await reloadCoverage(selectedBranchId, calendarMonth);
+      } catch {
+        if (!cancelled) {
+          setCoverageByDate({});
+        }
+      }
+    }
+
+    void loadCoverage();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [calendarMonth, reloadCoverage, selectedBranchId]);
 
   useEffect(() => {
     if (!error && !success) return undefined;
@@ -1576,19 +1760,17 @@ export default function ScheduleReview({ language }) {
     setSuccess('');
 
     try {
-      const published = await publishScheduleForPeriod(schedule);
-      const publishedPeriod = getFourWeekPeriodRange(periodForm.start_date) || {
-        start_date: periodForm.start_date,
-        end_date: periodForm.end_date,
-      };
-      setGeneratedPeriod(publishedPeriod);
+      const published = await publishScheduleForPeriod({
+        ...schedule,
+        branch_id: schedule.branch_id || selectedBranchId,
+      });
       setScheduleVersions({
         draft: null,
         published,
       });
       setActiveVersion('published');
-      setSelectedDateIndex(0);
       markSaved(SCHEDULE_DRAFT_SCOPE);
+      await reloadCoverage(selectedBranchId, calendarMonth);
       setSuccess(t.publishedDone);
     } catch (e) {
       setError(extractApiErrorMessage(e, null, language));
@@ -1597,28 +1779,6 @@ export default function ScheduleReview({ language }) {
     }
   };
 
-  const handleDeletePublishedSchedule = async () => {
-    const publishedSchedule = scheduleVersions.published;
-    if (!publishedSchedule?.id) return;
-    if (!window.confirm(t.confirmDeletePublished)) return;
-
-    setIsSubmitting(true);
-    setError('');
-    setSuccess('');
-
-    try {
-      await deleteScheduleForPeriod(publishedSchedule);
-      setGeneratedPeriod(null);
-      await reloadScheduleVersions('draft');
-      setSuccess(t.publishedDeleted);
-    } catch (e) {
-      setError(extractApiErrorMessage(e, t.deletePublishedError, language));
-    } finally {
-      setIsSubmitting(false);
-    }
-  };
-
-  const showDeletePublished = activeVersion === 'published' && Boolean(scheduleVersions.published?.id);
   const canEditDraft = activeVersion === 'draft' && Boolean(schedule);
 
   useEffect(() => {
@@ -1658,12 +1818,18 @@ export default function ScheduleReview({ language }) {
     const employeeId = assignEmployeeIds[requirementId];
     if (!schedule?.id || !requirementId || !employeeId) return;
 
+    const requirement = unfilledRequirements.find(
+      (item) => Number(item.requirement_id) === Number(requirementId),
+    );
+    const requirementDate = String(requirement?.date || '').slice(0, 10);
+    const scheduleId = resolveScheduleIdForDate(schedule, requirementDate) || schedule.id;
+
     setIsSubmitting(true);
     setError('');
     setSuccess('');
 
     try {
-      await assignRequirement(schedule.id, requirementId, {
+      await assignRequirement(scheduleId, requirementId, {
         employee_id: Number(employeeId),
       });
       await reloadScheduleVersions('draft');
@@ -1701,20 +1867,24 @@ export default function ScheduleReview({ language }) {
   const actionButtonStyle = isMobile ? { flex: '1 1 calc(50% - 6px)', minWidth: '140px' } : {};
   const pageStyle = {
     width: '100%',
-    height: isMobile ? 'auto' : 'calc(100dvh - 96px)',
+    height: '100%',
+    minHeight: 0,
     boxSizing: 'border-box',
     padding: isMobile ? 10 : '16px 24px 18px',
-    overflow: isMobile ? 'auto' : 'hidden',
+    overflowX: 'hidden',
+    overflowY: 'auto',
+    WebkitOverflowScrolling: 'touch',
     background: '#f4faff',
     ...mobileStyles?.page,
   };
   const shellStyle = {
     width: isMobile ? '100%' : '125%',
-    height: isMobile ? 'auto' : '125%',
+    height: 'auto',
     minHeight: 0,
     margin: '0 auto',
     boxSizing: 'border-box',
     padding: 0,
+    paddingBottom: isMobile ? 16 : 24,
     borderRadius: 0,
     background: 'transparent',
     border: 'none',
@@ -1722,7 +1892,7 @@ export default function ScheduleReview({ language }) {
     display: 'flex',
     flexDirection: 'column',
     gap: '14px',
-    overflow: isMobile ? 'visible' : 'hidden',
+    overflow: 'visible',
     transform: isMobile ? 'none' : 'scale(0.8)',
     transformOrigin: 'top left',
     ...mobileStyles?.shell,
@@ -1837,7 +2007,6 @@ export default function ScheduleReview({ language }) {
                   disabled={isDisabled}
                   onClick={() => {
                     setActiveVersion(id);
-                    setSelectedDateIndex(0);
                     setError('');
                     setSuccess('');
                   }}
@@ -1892,28 +2061,34 @@ export default function ScheduleReview({ language }) {
             color: '#4f646f',
             fontSize: 12,
             fontWeight: 800,
-            width: isMobile ? '100%' : 'auto',
+            width: isMobile ? '100%' : '220px',
             ...mobileStyles?.label,
           }}
           >
-            {t.startDate}
-            <input
-              type="date"
-              value={periodForm.start_date}
+            {t.branch}
+            <select
+              value={selectedBranchId || ''}
               onChange={(e) => {
-                const startDate = e.target.value;
-                if (viewMode === 'month') {
-                  applyMonthRangeFromStart(startDate);
-                  return;
-                }
-                setGeneratedPeriod(null);
-                setPeriodForm((prev) => ({ ...prev, start_date: startDate }));
+                const branchId = Number(e.target.value) || null;
+                setSelectedBranchId(branchId);
+                setScheduleVersions(EMPTY_SCHEDULE_VERSIONS);
+                setActiveVersion('draft');
               }}
+              disabled={!branches.length || isSubmitting}
               style={{
-                width: isMobile ? '100%' : 'auto',
-                ...dateInputStyle,
+                width: '100%',
+                ...inputStyle,
+                fontWeight: 700,
               }}
-            />
+            >
+              {branches.length === 0 ? (
+                <option value="">—</option>
+              ) : (
+                branches.map((branch) => (
+                  <option key={branch.id} value={branch.id}>{branch.name}</option>
+                ))
+              )}
+            </select>
           </label>
 
           <label style={{
@@ -1924,64 +2099,38 @@ export default function ScheduleReview({ language }) {
             fontSize: 12,
             fontWeight: 800,
             width: isMobile ? '100%' : 'auto',
+            ...mobileStyles?.label,
           }}
           >
-            {t.endDate}
+            {t.startDate}
             <input
               type="date"
-              value={periodForm.end_date}
-              readOnly={viewMode === 'month'}
-              onChange={(e) => {
-                if (viewMode === 'month') return;
-                setGeneratedPeriod(null);
-                setPeriodForm((prev) => ({ ...prev, end_date: e.target.value }));
-              }}
+              value={generationStartMonday}
+              onChange={(e) => setGenerationStartMonday(snapToMonday(e.target.value))}
               style={{
                 width: isMobile ? '100%' : 'auto',
                 ...dateInputStyle,
-                background: viewMode === 'month' ? '#f4faff' : '#ffffff',
               }}
             />
           </label>
 
-          <button
-            type="button"
-            onClick={() => {
-              const range = getFourWeekPeriodRange(periodForm.start_date);
-              if (!range) return;
-              setGeneratedPeriod(null);
-              setPeriodForm(range);
-              if (viewMode === 'month') {
-                setSelectedDateIndex(0);
-              }
-            }}
-            disabled={isSubmitting}
-            style={{
-              ...secondaryButtonStyle,
-              background: '#f4faff',
-              color: '#002642',
-              border: '1px solid #dee7e7',
-              cursor: isSubmitting ? 'default' : 'pointer',
-              width: isMobile ? '100%' : 'auto',
-              ...actionButtonStyle,
-            }}
-          >
-            {t.fillMonth}
-          </button>
-
-          <button
-            onClick={() => runGenerate(periodForm)}
-            disabled={isSubmitting}
-            style={{
-              ...primaryButtonStyle,
-              cursor: isSubmitting ? 'default' : 'pointer',
-              opacity: isSubmitting ? 0.65 : 1,
-              width: isMobile ? '100%' : 'auto',
-              ...actionButtonStyle,
-            }}
-          >
-            {isSubmitting ? t.generating : t.generate}
-          </button>
+          {[1, 2, 4].map((weeks) => (
+            <button
+              key={weeks}
+              type="button"
+              onClick={() => runGenerate(weeks)}
+              disabled={isSubmitting || !selectedBranchId}
+              style={{
+                ...primaryButtonStyle,
+                cursor: isSubmitting || !selectedBranchId ? 'default' : 'pointer',
+                opacity: isSubmitting || !selectedBranchId ? 0.65 : 1,
+                width: isMobile ? '100%' : 'auto',
+                ...actionButtonStyle,
+              }}
+            >
+              {isSubmitting ? t.generating : (weeks === 1 ? t.oneWeek : weeks === 2 ? t.twoWeeks : t.fourWeeks)}
+            </button>
+          ))}
 
           {canEditDraft && schedule?.id && (
             <button
@@ -1998,24 +2147,56 @@ export default function ScheduleReview({ language }) {
               {t.publish}
             </button>
           )}
+        </div>
 
-          {showDeletePublished && (
-            <button
-              type="button"
-              onClick={handleDeletePublishedSchedule}
-              disabled={isSubmitting}
+        <div style={{
+          ...panelStyle,
+          padding: 18,
+          display: 'flex',
+          gap: 12,
+          alignItems: 'flex-end',
+          marginBottom: 0,
+          flexWrap: 'wrap',
+          flexDirection: isMobile ? 'column' : 'row',
+        }}
+        >
+          <label style={{
+            display: 'flex',
+            flexDirection: 'column',
+            gap: 4,
+            color: '#4f646f',
+            fontSize: 12,
+            fontWeight: 800,
+            width: isMobile ? '100%' : 'auto',
+          }}
+          >
+            {t.deleteWeekStart}
+            <input
+              type="date"
+              value={deleteWeekMonday}
+              onChange={(e) => setDeleteWeekMonday(snapToMonday(e.target.value))}
               style={{
-                ...primaryButtonStyle,
-                background: '#8d1d1d',
-                cursor: isSubmitting ? 'default' : 'pointer',
-                opacity: isSubmitting ? 0.65 : 1,
                 width: isMobile ? '100%' : 'auto',
-                ...actionButtonStyle,
+                ...dateInputStyle,
               }}
-            >
-              {t.deletePublished}
-            </button>
-          )}
+            />
+          </label>
+
+          <button
+            type="button"
+            onClick={handleDeleteWeek}
+            disabled={isSubmitting || !selectedBranchId}
+            style={{
+              ...primaryButtonStyle,
+              background: '#8d1d1d',
+              cursor: isSubmitting || !selectedBranchId ? 'default' : 'pointer',
+              opacity: isSubmitting || !selectedBranchId ? 0.65 : 1,
+              width: isMobile ? '100%' : 'auto',
+              ...actionButtonStyle,
+            }}
+          >
+            {t.deleteWeek}
+          </button>
         </div>
 
         {schedule?.id && canEditDraft && unfilledRequirements.length > 0 && (
@@ -2124,517 +2305,39 @@ export default function ScheduleReview({ language }) {
           marginBottom: 0,
           flexWrap: 'wrap',
           flexDirection: isMobile ? 'column' : 'row',
-          ...mobileStyles?.navPanel,
+          justifyContent: isMobile ? 'stretch' : 'flex-end',
         }}
         >
-          <div style={{
-            display: 'flex',
-            alignItems: 'center',
-            gap: 10,
-            background: '#ffffff',
-            border: '1px solid #dee7e7',
-            borderRadius: 10,
-            padding: '8px 12px',
+          <button onClick={exportCSV} disabled={!hasShifts} style={{
+            ...primaryButtonStyle,
+            cursor: hasShifts ? 'pointer' : 'default',
+            opacity: hasShifts ? 1 : 0.5,
             width: isMobile ? '100%' : 'auto',
-            justifyContent: 'center',
-            boxSizing: 'border-box',
-            ...(isMobile && viewMode === 'month' ? { display: 'none' } : {}),
-          }}
-          >
-            <button
-              type="button"
-              onClick={() => setSelectedDateIndex((index) => Math.max(0, index - navStep))}
-              disabled={viewMode === 'month' || selectedDateIndex <= 0}
-              style={{
-                border: 'none',
-                background: 'transparent',
-                cursor: viewMode === 'month' || selectedDateIndex <= 0 ? 'default' : 'pointer',
-                fontSize: 18,
-                opacity: viewMode === 'month' || selectedDateIndex <= 0 ? 0.35 : 1,
-                ...mobileStyles?.navButton,
-              }}
-            >
-              &larr;
-            </button>
-            <strong style={{ color: '#002642', ...mobileStyles?.navLabel }}>{navigationLabel}</strong>
-            <button
-              type="button"
-              onClick={() => setSelectedDateIndex((index) => Math.min(maxVisibleStartIndex, index + navStep))}
-              disabled={viewMode === 'month' || selectedDateIndex >= maxVisibleStartIndex}
-              style={{
-                border: 'none',
-                background: 'transparent',
-                cursor: viewMode === 'month' || selectedDateIndex >= maxVisibleStartIndex ? 'default' : 'pointer',
-                fontSize: 18,
-                opacity: viewMode === 'month' || selectedDateIndex >= maxVisibleStartIndex ? 0.35 : 1,
-                ...mobileStyles?.navButton,
-              }}
-            >
-              &rarr;
-            </button>
-          </div>
-
-          <div style={{
-            display: 'flex',
-            gap: 8,
-            flexWrap: 'wrap',
-            width: isMobile ? '100%' : 'auto',
-          }}
-          >
-            {['day', '3day', 'month'].map((mode) => (
-              <button
-                key={mode}
-                type="button"
-                onClick={() => {
-                  if (mode === 'month') {
-                    activateMonthView();
-                    return;
-                  }
-                  setViewMode(mode);
-                  setSelectedDateIndex(0);
-                }}
-                style={{
-                  fontWeight: viewMode === mode ? 700 : 400,
-                  height: 34,
-                  padding: '0 12px',
-                  borderRadius: '9px',
-                  background: viewMode === mode ? '#002642' : '#dee7e7',
-                  color: viewMode === mode ? '#fff' : '#002642',
-                  border: '1px solid #dee7e7',
-                  cursor: 'pointer',
-                  ...mobileStyles?.viewModeButton,
-                }}
-              >
-                {mode === 'day' ? t.day : mode === '3day' ? t.threeDay : t.month}
-              </button>
-            ))}
-          </div>
-
-          <div style={{
-            marginLeft: isMobile ? 0 : 'auto',
-            display: 'flex',
-            gap: 8,
-            flexWrap: 'wrap',
-            width: isMobile ? '100%' : 'auto',
-          }}
-          >
-            <button onClick={exportCSV} disabled={!hasShifts} style={{
-              ...primaryButtonStyle,
-              cursor: hasShifts ? 'pointer' : 'default',
-              opacity: hasShifts ? 1 : 0.5,
-              width: isMobile ? '100%' : 'auto',
-            }}>{t.exportCSV}</button>
-          </div>
+          }}>{t.exportCSV}</button>
         </div>
 
-        {!hasAnySchedule ? (
+        {hasCompany ? (
+          <ManagerScheduleCalendar
+            language={language}
+            texts={t}
+            panelStyle={panelStyle}
+            mobileStyles={mobileStyles}
+            calendarMonth={calendarMonth}
+            onCalendarMonthChange={setCalendarMonth}
+            selectedDate={calendarSelectedDate}
+            onSelectedDateChange={setCalendarSelectedDate}
+            groupedScheduleByDate={groupedScheduleByDate}
+            entriesByDate={calendarEntriesByDate}
+            coverageByDate={coverageByDate}
+            scheduleStartDate={scheduleStartDate}
+            scheduleEndDate={scheduleEndDate}
+            selectedDayEntries={calendarSelectedDayEntries}
+          />
+        ) : (
           <div style={{ ...panelStyle, padding: '48px 24px', textAlign: 'center' }}>
             <h3 style={{ margin: 0, color: '#002642' }}>{t.noSchedule}</h3>
             <p style={{ margin: '8px 0 0', color: '#4f646f', fontSize: 14 }}>{t.noScheduleHint}</p>
           </div>
-        ) : !hasGridContent ? (
-          <div style={{ ...panelStyle, padding: '48px 24px', textAlign: 'center' }}>
-            <h3 style={{ margin: 0, color: '#002642' }}>{getStatusLabel(scheduleStatus, t)}</h3>
-            <p style={{ margin: '8px 0 0', color: '#4f646f', fontSize: 14 }}>{t.noShiftsInVersion}</p>
-          </div>
-        ) : isMobile ? (
-          viewMode === 'month' ? (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: mobileStyles?.sectionGap || 10 }}>
-              <section style={{
-                ...panelStyle,
-                display: 'grid',
-                gridTemplateRows: 'auto auto minmax(0, 1fr)',
-                gap: 8,
-                ...mobileStyles?.calendarPanel,
-              }}
-              >
-                <div style={{
-                  display: 'flex',
-                  justifyContent: 'space-between',
-                  alignItems: 'center',
-                  gap: 8,
-                  flexWrap: 'wrap',
-                }}
-                >
-                  <div>
-                    <h3 style={{
-                      margin: 0,
-                      color: '#002642',
-                      fontSize: 18,
-                      fontWeight: 900,
-                      textTransform: 'capitalize',
-                      ...mobileStyles?.calendarTitle,
-                    }}
-                    >
-                      {mobileCalendarMonthLabel}
-                    </h3>
-                    <p style={{ ...mobileStyles?.selectedDayHint, margin: '2px 0 0', color: '#4f646f' }}>
-                      {scheduleStartDate} — {scheduleEndDate}
-                    </p>
-                  </div>
-
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                    <button
-                      type="button"
-                      onClick={() => shiftMobileCalendarMonth(-1)}
-                      style={{
-                        width: 48,
-                        height: 40,
-                        borderRadius: 10,
-                        border: '1px solid #dee7e7',
-                        background: '#eef3f6',
-                        color: '#002642',
-                        fontSize: 22,
-                        fontWeight: 800,
-                        cursor: 'pointer',
-                        ...mobileStyles?.calendarNavButton,
-                      }}
-                      aria-label="Previous month"
-                    >
-                      ←
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        const today = formatLocalDate(new Date());
-                        setMobileCalendarMonth(today);
-                        setMobileMonthSelectedDate(today);
-                      }}
-                      style={{
-                        height: 40,
-                        padding: '0 16px',
-                        borderRadius: 10,
-                        border: '1px solid #dbe6f0',
-                        background: '#ffffff',
-                        color: '#002642',
-                        fontSize: 14,
-                        fontWeight: 850,
-                        cursor: 'pointer',
-                        whiteSpace: 'nowrap',
-                        ...mobileStyles?.calendarMonthKey,
-                      }}
-                    >
-                      {mobileCalendarMonthKey}
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => shiftMobileCalendarMonth(1)}
-                      style={{
-                        width: 48,
-                        height: 40,
-                        borderRadius: 10,
-                        border: '1px solid #dee7e7',
-                        background: '#eef3f6',
-                        color: '#002642',
-                        fontSize: 22,
-                        fontWeight: 800,
-                        cursor: 'pointer',
-                        ...mobileStyles?.calendarNavButton,
-                      }}
-                      aria-label="Next month"
-                    >
-                      →
-                    </button>
-                  </div>
-                </div>
-
-                <div style={{
-                  display: 'grid',
-                  gridTemplateRows: '20px minmax(0, 1fr)',
-                  border: '1px solid #dee7e7',
-                  borderRadius: 10,
-                  overflow: 'hidden',
-                  background: '#ffffff',
-                  ...mobileStyles?.monthCalendar,
-                }}
-                >
-                  <div style={{
-                    display: 'grid',
-                    gridTemplateColumns: 'repeat(7, minmax(0, 1fr))',
-                    background: '#f4faff',
-                    borderBottom: '1px solid #dee7e7',
-                  }}
-                  >
-                    {mobileWeekdayLabels.map((weekday) => (
-                      <div
-                        key={weekday}
-                        style={{
-                          display: 'flex',
-                          alignItems: 'center',
-                          justifyContent: 'center',
-                          color: '#4f646f',
-                          fontSize: 12,
-                          fontWeight: 850,
-                          textTransform: 'capitalize',
-                          ...mobileStyles?.monthWeekday,
-                        }}
-                      >
-                        {weekday}
-                      </div>
-                    ))}
-                  </div>
-
-                  <div style={{
-                    display: 'grid',
-                    gridTemplateColumns: 'repeat(7, minmax(0, 1fr))',
-                    gridAutoRows: 'minmax(46px, 1fr)',
-                    background: '#dee7e7',
-                    gap: '1px',
-                    ...mobileStyles?.monthGrid,
-                  }}
-                  >
-                    {mobileCalendarGrid.days.map((calendarDay) => {
-                      const dayCounts = groupedScheduleByDate[calendarDay.date] || { shifts: 0, unfilled: 0 };
-                      const hasShifts = dayCounts.shifts > 0;
-                      const hasUnfilled = dayCounts.unfilled > 0;
-                      const isSelected = calendarDay.date === mobileMonthSelectedDate;
-                      const isTodayDate = isSameDateKey(calendarDay.date, formatLocalDate(new Date()));
-                      const inScheduleRange = isDateWithinRange(
-                        calendarDay.date,
-                        scheduleStartDate,
-                        scheduleEndDate,
-                      );
-
-                      return (
-                        <button
-                          key={calendarDay.date}
-                          type="button"
-                          onClick={() => setMobileMonthSelectedDate(calendarDay.date)}
-                          style={{
-                            minWidth: 0,
-                            minHeight: 0,
-                            border: 0,
-                            background: calendarDay.isCurrentMonth ? '#ffffff' : '#f8fbfd',
-                            color: calendarDay.isCurrentMonth ? '#002642' : '#8da0a9',
-                            cursor: 'pointer',
-                            padding: 6,
-                            display: 'flex',
-                            flexDirection: 'column',
-                            alignItems: 'center',
-                            justifyContent: 'space-between',
-                            gap: 4,
-                            opacity: inScheduleRange ? 1 : 0.45,
-                            ...(isSelected ? {
-                              background: '#eaf6ff',
-                              boxShadow: 'inset 0 0 0 2px #002642',
-                            } : {}),
-                            ...mobileStyles?.monthDayCell,
-                          }}
-                        >
-                          <span style={{
-                            width: 28,
-                            height: 28,
-                            borderRadius: '50%',
-                            display: 'flex',
-                            alignItems: 'center',
-                            justifyContent: 'center',
-                            fontSize: 16,
-                            fontWeight: 800,
-                            ...(isTodayDate ? { border: '2px solid #007aff', color: '#007aff' } : {}),
-                            ...(isSelected ? { background: '#002642', color: '#ffffff', borderColor: '#002642' } : {}),
-                            ...mobileStyles?.monthDayNumber,
-                          }}
-                          >
-                            {calendarDay.day}
-                          </span>
-
-                          <span style={{
-                            minHeight: 7,
-                            display: 'flex',
-                            justifyContent: 'center',
-                            alignItems: 'center',
-                            gap: 3,
-                            ...mobileStyles?.monthDots,
-                          }}
-                          >
-                            {hasShifts && (
-                              <span style={{
-                                width: 6,
-                                height: 6,
-                                borderRadius: '50%',
-                                display: 'block',
-                                background: SHIFT_DOT_COLORS[0],
-                                ...mobileStyles?.monthDot,
-                              }}
-                              />
-                            )}
-                            {hasUnfilled && (
-                              <span style={{
-                                width: 6,
-                                height: 6,
-                                borderRadius: '50%',
-                                display: 'block',
-                                background: '#ff9500',
-                                ...mobileStyles?.monthDot,
-                              }}
-                              />
-                            )}
-                          </span>
-                        </button>
-                      );
-                    })}
-                  </div>
-                </div>
-              </section>
-
-              <section style={{
-                ...panelStyle,
-                background: '#f8fbfd',
-                display: 'flex',
-                flexDirection: 'column',
-                gap: 8,
-                ...mobileStyles?.selectedDayPanel,
-              }}
-              >
-                <div style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'space-between',
-                  gap: 10,
-                }}
-                >
-                  <div>
-                    <h3 style={{
-                      margin: 0,
-                      color: '#002642',
-                      fontSize: 18,
-                      fontWeight: 900,
-                      ...mobileStyles?.selectedDayTitle,
-                    }}
-                    >
-                      {formatDisplayDate(mobileMonthSelectedDate, language)}
-                    </h3>
-                    <p style={{ margin: '2px 0 0', color: '#4f646f', fontSize: 13, ...mobileStyles?.selectedDayHint }}>
-                      {mobileMonthSelectedDate}
-                    </p>
-                  </div>
-                  <span style={{
-                    minWidth: 40,
-                    height: 32,
-                    padding: '0 10px',
-                    borderRadius: 999,
-                    background: '#002642',
-                    color: '#ffffff',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    fontSize: 15,
-                    fontWeight: 900,
-                    ...mobileStyles?.selectedDayCount,
-                  }}
-                  >
-                    {mobileSelectedDayEntries.length}
-                  </span>
-                </div>
-
-                {mobileSelectedDayEntries.length === 0 ? (
-                  <div style={{
-                    padding: '10px 12px',
-                    textAlign: 'center',
-                    background: '#ffffff',
-                    borderRadius: 10,
-                    border: '1px solid #dee7e7',
-                    color: '#4f646f',
-                    fontWeight: 600,
-                    fontSize: 12,
-                    ...mobileStyles?.emptyBox,
-                  }}
-                  >
-                    {!isDateWithinRange(mobileMonthSelectedDate, scheduleStartDate, scheduleEndDate)
-                      ? t.noShiftsThisDay
-                      : (Object.keys(groupedScheduleByDate).length === 0 ? t.noShiftsInVersion : t.noShiftsThisDay)}
-                  </div>
-                ) : (
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-                    {mobileSelectedDayEntries.map((entry) => renderMobileShiftCard(entry, t, mobileStyles))}
-                  </div>
-                )}
-              </section>
-            </div>
-          ) : (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: mobileStyles?.sectionGap || 10 }}>
-            {mobileSectionsToRender.length === 0 ? (
-              <div style={{
-                padding: '32px 18px',
-                textAlign: 'center',
-                background: '#f4faff',
-                borderRadius: 16,
-                border: '1px solid #dee7e7',
-                color: '#4f646f',
-                fontWeight: 600,
-                ...mobileStyles?.emptyBox,
-              }}
-              >
-                {t.noShiftsThisDay}
-              </div>
-            ) : (
-              mobileSectionsToRender.map(({ dateKey, entries }) => (
-                <section key={dateKey} style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-                  {visibleDates.length > 1 && (
-                    <div style={mobileStyles?.dateHeader}>{dateKey}</div>
-                  )}
-
-                  {entries.length === 0 ? (
-                    <div style={{
-                      padding: '10px 12px',
-                      textAlign: 'center',
-                      background: '#f4faff',
-                      borderRadius: 10,
-                      border: '1px solid #dee7e7',
-                      color: '#4f646f',
-                      fontWeight: 600,
-                      fontSize: 12,
-                    }}
-                    >
-                      {t.noShiftsThisDay}
-                    </div>
-                  ) : (
-                    entries.map((entry) => renderMobileShiftCard(entry, t, mobileStyles))
-                  )}
-                </section>
-              ))
-            )}
-          </div>
-          )
-        ) : viewMode === 'day' ? (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: viewMode === 'month' ? 20 : 24 }}>
-            {visibleDates.map((dateKey) => {
-              const dayIndex = schedules.findIndex((day) => day.date === dateKey);
-              const day = dayIndex >= 0 ? schedules[dayIndex] : { date: dateKey, shifts: [] };
-              const dayEmployees = buildEmployeeListFromIndexes(
-                schedules,
-                dayIndex >= 0 ? [dayIndex] : [],
-              );
-              const dayUnfilled = unfilledNotFoundRequirements.filter(
-                (item) => formatDate(item.date) === dateKey,
-              );
-
-              return (
-                <DayScheduleTable
-                  key={dateKey}
-                  dateKey={dateKey}
-                  day={day}
-                  employees={dayEmployees}
-                  unfilledItems={dayUnfilled}
-                  employeeLabel={t.employee}
-                  notFoundLabel={t.notFound}
-                  emptyDayLabel={t.noShiftsThisDay}
-                  cellWidth={cellWidth}
-                  slotsPerDay={slotsPerDay}
-                />
-              );
-            })}
-          </div>
-        ) : (
-          <DateScheduleGrid
-            dates={visibleDates}
-            displaySchedule={displaySchedule}
-            unfilledItems={unfilledNotFoundRequirements}
-            dateLabel={t.date}
-            notFoundLabel={t.notFound}
-            cellWidth={cellWidth}
-            slotsPerDay={slotsPerDay}
-          />
         )}
       </div>
     </section>

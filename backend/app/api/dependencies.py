@@ -34,7 +34,7 @@ def require_manager(current_user: UserRead = Depends(get_current_user)) -> UserR
 def require_active_manager(current_user: UserRead = Depends(get_current_user)) -> UserRead:
     if current_user.role != "manager":
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Manager access required")
-    if current_user.company_id is None or current_user.manager_status not in (None, "active"):
+    if current_user.company_id is None:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Active manager company membership required.",
@@ -43,9 +43,9 @@ def require_active_manager(current_user: UserRead = Depends(get_current_user)) -
 
 
 def ensure_manager_or_employee_self(employee_id: int, current_user: UserRead) -> None:
-    if current_user.role == "manager" and current_user.company_id is not None:
+    if current_user.role == "manager":
         return
-    if current_user.employee_id == employee_id and current_user.employee_status in (None, "active"):
+    if current_user.employee_id == employee_id:
         return
     raise HTTPException(
         status_code=status.HTTP_403_FORBIDDEN,
@@ -59,9 +59,14 @@ def ensure_employee_user(current_user: UserRead) -> int:
             status_code=status.HTTP_403_FORBIDDEN,
             detail="The 'employee' role is required for this action.",
         )
-    if current_user.employee_id is None or current_user.employee_status not in (None, "active"):
+    if current_user.employee_id is None:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="This employee account is not linked to an employee profile.",
+        )
+    if current_user.employee_status == "pending":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Employee membership is pending manager approval.",
         )
     return current_user.employee_id

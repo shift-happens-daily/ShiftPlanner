@@ -84,13 +84,14 @@ def test_requirement_schema_syncs_legacy_and_current_staff_fields() -> None:
 def test_period_and_shift_payload_validators_reject_invalid_ranges() -> None:
     with pytest.raises(ValidationError):
         ScheduleRequirementBulkCreate(
+            branch_id=1,
             start_date=date(2026, 7, 7),
             end_date=date(2026, 7, 1),
             weekdays=[0],
             requirements=[{"position_id": 1, "min_staff": 1, "start_time": "09:00", "end_time": "17:00"}],
         )
     with pytest.raises(ValidationError):
-        ScheduleGenerateRequest(start_date=date(2026, 7, 7), end_date=date(2026, 7, 1))
+        ScheduleGenerateRequest(branch_id=1, start_date=date(2026, 7, 7), end_date=date(2026, 7, 1))
     with pytest.raises(ValidationError):
         ManualShiftCreate(
             date=date(2026, 7, 1),

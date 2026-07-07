@@ -5,6 +5,8 @@ const translations = {
     requestFailed: 'Не удалось выполнить запрос.',
     validationError: 'Проверьте введенные данные.',
     network: 'Бэкенд недоступен.',
+    serverError: 'Ошибка на сервере при генерации. Попросите бэкендера проверить логи: docker compose logs backend.',
+    noResponse: 'Сервер не ответил — возможно, упал при генерации. Проверьте логи бэкенда.',
     sessionExpired: 'Сессия истекла. Войдите снова.',
     forbidden: 'У вас нет прав для этого действия.',
     notFound: 'Запрошенные данные не найдены.',
@@ -25,6 +27,10 @@ const translations = {
     shiftNotFound: 'Смена не найдена.',
     exchangeNotFound: 'Запрос на обмен не найден.',
     managersCannotJoin: 'Менеджер не может присоединиться к компании как сотрудник.',
+    managerJoinPending: 'Заявка менеджера уже отправлена.',
+    managerAlreadyActive: 'Менеджер уже состоит в другой компании.',
+    managerRequestNotFound: 'Заявка менеджера не найдена.',
+    ownerActionRequired: 'Только владелец компании может выполнить это действие.',
     permissionRequired: 'У вас нет прав для этого действия.',
     noAccessEmployee: 'У вас нет доступа к данным этого сотрудника.',
     invalidToken: 'Сессия истекла. Войдите снова.',
@@ -34,6 +40,8 @@ const translations = {
     requestFailed: 'Request failed.',
     validationError: 'Please check the entered data.',
     network: 'Backend is unavailable.',
+    serverError: 'Server error during generation. Ask the backend developer to check: docker compose logs backend.',
+    noResponse: 'Server did not respond — it may have crashed during generation. Check backend logs.',
     sessionExpired: 'Session expired. Please log in again.',
     forbidden: 'You do not have permission for this action.',
     notFound: 'Requested data was not found.',
@@ -54,6 +62,10 @@ const translations = {
     shiftNotFound: 'Shift was not found.',
     exchangeNotFound: 'Exchange request was not found.',
     managersCannotJoin: 'Managers cannot join a company as employees.',
+    managerJoinPending: 'Manager join request is already pending.',
+    managerAlreadyActive: 'Manager is already active in another company.',
+    managerRequestNotFound: 'Manager request not found.',
+    ownerActionRequired: 'Only the company owner can perform this action.',
     permissionRequired: 'You do not have permission for this action.',
     noAccessEmployee: 'You do not have access to this employee resource.',
     invalidToken: 'Session expired. Please log in again.',
@@ -69,6 +81,10 @@ const directDetailMap = {
   'Could not validate credentials.': 'invalidToken',
   'Company invite code not found.': 'inviteCodeNotFound',
   'Managers cannot join a company as employees.': 'managersCannotJoin',
+  'Manager join request is already pending.': 'managerJoinPending',
+  'Manager is already active in another company.': 'managerAlreadyActive',
+  'Manager request not found.': 'managerRequestNotFound',
+  'Only the company owner can perform this action.': 'ownerActionRequired',
   'Branch does not belong to company.': 'branchMismatch',
   'Position does not belong to company.': 'positionMismatch',
   'Employee was not found.': 'employeeNotFound',
@@ -156,7 +172,22 @@ export function extractApiErrorMessage(error, fallbackMessage, language = getSto
     return messages.validationError;
   }
 
-  if (error.message === 'Network Error') {
+  if (error.response?.status === 409) {
+    const detail = error.response?.data?.detail;
+    if (typeof detail === 'string') {
+      return localizeBackendMessage(detail, language);
+    }
+  }
+
+  if (error.response?.status >= 500) {
+    return messages.serverError;
+  }
+
+  if (error.request && !error.response) {
+    return messages.noResponse;
+  }
+
+  if (error.message === 'Network Error' || error.code === 'ERR_NETWORK') {
     return messages.network;
   }
 
