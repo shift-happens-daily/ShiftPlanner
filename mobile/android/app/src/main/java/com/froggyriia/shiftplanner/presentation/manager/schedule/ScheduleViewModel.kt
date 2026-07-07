@@ -32,7 +32,9 @@ data class ShiftDraft(
     val date: String = "",
     val positionId: Int? = null,
     val startMinutes: Int = 8 * 60,
-    val endMinutes: Int = 16 * 60
+    val endMinutes: Int = 16 * 60,
+    val employeeId: Int? = null,
+    val employeeName: String? = null
 )
 
 data class UnfilledReqDraft(
@@ -205,7 +207,6 @@ class ScheduleViewModel(
         viewModelScope.launch {
             try {
                 val parsedDate = dateFormat.parse(draft.date) ?: Date()
-                val existing = _uiState.value.schedule?.shifts?.firstOrNull { it.id == shiftId }
                 val updated = repository.updateShift(
                     scheduleId = schedId,
                     shiftId = shiftId,
@@ -214,7 +215,7 @@ class ScheduleViewModel(
                         startMinutes = draft.startMinutes,
                         endMinutes = draft.endMinutes,
                         positionId = posId,
-                        employeeId = existing?.employeeId
+                        employeeId = draft.employeeId?.takeIf { it > 0 }
                     )
                 )
                 _uiState.value = _uiState.value.copy(

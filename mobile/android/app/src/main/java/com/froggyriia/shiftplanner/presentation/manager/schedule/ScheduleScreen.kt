@@ -92,6 +92,7 @@ import com.froggyriia.shiftplanner.domain.model.AppUnfilledRequirement
 import com.froggyriia.shiftplanner.domain.model.AppUser
 import com.froggyriia.shiftplanner.domain.model.RequirementPositionOption
 import java.text.SimpleDateFormat
+import java.util.Date
 import java.util.Locale
 
 private val DAY_LABELS = listOf("Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun")
@@ -112,8 +113,11 @@ fun ScheduleScreen(
     val snackbarHostState = remember { SnackbarHostState() }
 
     val context = LocalContext.current
+    val dateFmt = remember { SimpleDateFormat("yyyy-MM-dd", Locale.US) }
     var showGenerateSheet by rememberSaveable { mutableStateOf(false) }
     var shiftDraft by remember { mutableStateOf<ShiftDraft?>(null) }
+    // When true: edit sheet is hidden, assign sheet is open; on selection we restore the draft
+    var draftWaitingForEmployee by remember { mutableStateOf(false) }
     var unfilledDraft by remember { mutableStateOf<UnfilledReqDraft?>(null) }
     var assigningShift by remember { mutableStateOf<AppScheduledShift?>(null) }
     var assigningReq by remember { mutableStateOf<AppUnfilledRequirement?>(null) }
@@ -185,10 +189,12 @@ fun ScheduleScreen(
                 onEditShift = { shift ->
                     shiftDraft = ShiftDraft(
                         shiftId = shift.id,
-                        date = SimpleDateFormat("yyyy-MM-dd", Locale.US).format(shift.date),
+                        date = dateFmt.format(shift.date),
                         positionId = shift.positionId,
                         startMinutes = shift.startMinutes,
-                        endMinutes = shift.endMinutes
+                        endMinutes = shift.endMinutes,
+                        employeeId = shift.employeeId,
+                        employeeName = shift.employeeName
                     )
                 },
                 onAssignShift = { shift ->
@@ -226,7 +232,9 @@ fun ScheduleScreen(
     }
 
     // ── Create / Edit shift sheet ─────────────────────────────────────────────
-    shiftDraft?.let { draft ->
+    // Only show edit sheet when not waiting for employee pick
+    if (shiftDraft != null && !draftWaitingForEmployee) {
+        val draft = shiftDraft!!
         ShiftEditSheet(
             draft = draft,
             positions = state.positions,
@@ -237,6 +245,22 @@ fun ScheduleScreen(
                 } else {
                     viewModel.updateShift(draft) { ok -> if (ok) shiftDraft = null }
                 }
+            },
+            onChangeEmployee = {
+                // Temporarily hide edit sheet, open assign sheet
+                val positionId = draft.positionId ?: return@ShiftEditSheet
+                val fakeShift = AppScheduledShift(
+                    id = draft.shiftId ?: 0,
+                    employeeId = draft.employeeId,
+                    employeeName = draft.employeeName,
+                    positionId = positionId,
+                    positionName = state.positions.firstOrNull { it.id == positionId }?.name ?: "",
+                    date = runCatching { dateFmt.parse(draft.date)!! }.getOrDefault(java.util.Date()),
+                    startMinutes = draft.startMinutes,
+                    endMinutes = draft.endMinutes
+                )
+                draftWaitingForEmployee = true
+                viewModel.fetchAvailableEmployees(fakeShift)
             },
             onDismiss = { shiftDraft = null }
         )
@@ -256,19 +280,37 @@ fun ScheduleScreen(
     }
 
     // ── Assign employee sheet ─────────────────────────────────────────────────
-    if (assigningShift != null || assigningReq != null) {
+    val showAssignSheet = assigningShift != null || assigningReq != null || draftWaitingForEmployee
+    if (showAssignSheet) {
         AssignEmployeeSheet(
             employees = state.availableEmployees,
             isLoading = state.loadingEmployees,
             onAssign = { emp ->
-                assigningShift?.let { viewModel.assignShift(it.id, emp.id) }
-                assigningReq?.let { viewModel.assignRequirement(it.id, emp.id) }
-                assigningShift = null
-                assigningReq = null
+                when {
+                    draftWaitingForEmployee -> {
+                        // Patch employee into draft and reopen edit sheet
+                        shiftDraft = shiftDraft?.copy(employeeId = emp.id, employeeName = emp.fullName)
+                        draftWaitingForEmployee = false
+                        viewModel.clearAvailableEmployees()
+                    }
+                    assigningShift != null -> {
+                        viewModel.assignShift(assigningShift!!.id, emp.id)
+                        assigningShift = null
+                    }
+                    assigningReq != null -> {
+                        viewModel.assignRequirement(assigningReq!!.id, emp.id)
+                        assigningReq = null
+                    }
+                }
             },
             onDismiss = {
-                assigningShift = null
-                assigningReq = null
+                if (draftWaitingForEmployee) {
+                    // User cancelled employee pick — reopen edit sheet as-is
+                    draftWaitingForEmployee = false
+                } else {
+                    assigningShift = null
+                    assigningReq = null
+                }
                 viewModel.clearAvailableEmployees()
             }
         )
@@ -766,13 +808,27 @@ private fun ShiftCard(
     onAssign: () -> Unit,
     onDelete: () -> Unit
 ) {
-    Card(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 3.dp)) {
+    val isAssigned = shift.hasAssignedEmployee
+    Card(
+        Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 3.dp),
+        colors = CardDefaults.cardColors(
+            containerColor = if (isAssigned)
+                MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.35f)
+            else
+                MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
+        )
+    ) {
         Row(
             Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
             Column(Modifier.weight(1f)) {
-                Text(shift.employeeName ?: "Unassigned", style = MaterialTheme.typography.bodyLarge)
+                Text(
+                    shift.employeeName ?: "Unassigned",
+                    style = MaterialTheme.typography.bodyLarge,
+                    color = if (isAssigned) MaterialTheme.colorScheme.onSurface
+                            else MaterialTheme.colorScheme.onSurfaceVariant
+                )
                 Text(
                     "${shift.positionName}  •  ${ScheduleViewModel.minutesToDisplay(shift.startMinutes)} – ${ScheduleViewModel.minutesToDisplay(shift.endMinutes)}",
                     style = MaterialTheme.typography.bodySmall,
@@ -780,10 +836,14 @@ private fun ShiftCard(
                 )
             }
             if (isDraft) {
-                if (!shift.hasAssignedEmployee) {
-                    IconButton(onClick = onAssign) { Icon(Icons.Default.PersonAdd, "Assign") }
+                // PersonAdd shown for ALL shifts: assign if empty, reassign if filled
+                IconButton(onClick = onAssign) {
+                    Icon(
+                        Icons.Default.PersonAdd,
+                        contentDescription = if (isAssigned) "Reassign" else "Assign"
+                    )
                 }
-                IconButton(onClick = onEdit) { Icon(Icons.Default.Edit, "Edit") }
+                IconButton(onClick = onEdit) { Icon(Icons.Default.Edit, "Edit time/position") }
                 IconButton(onClick = onDelete) { Icon(Icons.Default.Delete, "Delete") }
             }
         }
@@ -940,6 +1000,7 @@ private fun ShiftEditSheet(
     positions: List<RequirementPositionOption>,
     onDraftChange: (ShiftDraft) -> Unit,
     onSave: () -> Unit,
+    onChangeEmployee: () -> Unit,
     onDismiss: () -> Unit
 ) {
     ModalBottomSheet(onDismissRequest = onDismiss) {
@@ -951,6 +1012,34 @@ private fun ShiftEditSheet(
                 if (draft.shiftId == null) "Add Shift" else "Edit Shift",
                 style = MaterialTheme.typography.titleMedium
             )
+
+            // Employee row — only for existing shifts
+            if (draft.shiftId != null) {
+                Row(
+                    Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(8.dp))
+                        .background(MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.4f))
+                        .padding(horizontal = 12.dp, vertical = 8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Column(Modifier.weight(1f)) {
+                        Text("Employee", style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Text(
+                            draft.employeeName ?: "Unassigned",
+                            style = MaterialTheme.typography.bodyMedium
+                        )
+                    }
+                    TextButton(onClick = onChangeEmployee) {
+                        Icon(Icons.Default.PersonAdd, contentDescription = null,
+                            modifier = Modifier.padding(end = 4.dp))
+                        Text(if (draft.employeeName != null) "Change" else "Assign")
+                    }
+                }
+            }
+
             ScheduleDropdown(
                 label = "Position",
                 options = positions.map { it.id to it.name },
