@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { useAuth } from '../context/useAuth';
 import { useIsMobile } from '../hooks/useMediaQuery';
 import EmployeeDashboardTab from './tabs/EmployeeDashboardTab';
+import EmployeeCompanyTab from './tabs/EmployeeCompanyTab';
 import CompanyTab from './tabs/CompanyTab';
 import EmployeesTab from './tabs/EmployeesTab';
 import ProfileTab from './tabs/ProfileTab';
@@ -211,7 +212,9 @@ export default function DashboardTabs({ userRole, language, title, rightSlot }) 
       case 'profile':
         return <ProfileTab {...sharedProps} />;
       case 'company':
-        return <CompanyTab {...sharedProps} />;
+        return userRole === 'employee'
+          ? <EmployeeCompanyTab {...sharedProps} />
+          : <CompanyTab {...sharedProps} />;
       case 'employees':
         return <EmployeesTab {...sharedProps} />;
       case 'shifts':
@@ -331,7 +334,7 @@ export default function DashboardTabs({ userRole, language, title, rightSlot }) 
       <main style={{
         ...styles.content,
         ...(isMobile ? styles.contentMobile : {}),
-        ...(userRole === 'employee' && safeActiveTab === 'dashboard' ? styles.contentScrollHost : {}),
+        ...(userRole === 'employee' && ['dashboard', 'company'].includes(safeActiveTab) ? styles.contentScrollHost : {}),
       }}
       >
         {isDirty && (
