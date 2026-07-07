@@ -19,8 +19,6 @@ class CompanyUserPublicIdRequest(BaseModel):
             raise ValueError("User public ID must be a 16-character alphanumeric code.")
         return normalized
 
-# Backward compatibility for tests
-CompanyUserPublicIdRequest = CompanyLinkUserRequest
 
 class CompanyLinkUserRequest(CompanyUserPublicIdRequest):
     branch_id: int | None = None
