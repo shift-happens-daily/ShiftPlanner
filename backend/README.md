@@ -89,7 +89,30 @@ FRONTEND_ORIGINS=http://localhost:5173
 JWT_SECRET_KEY=change-me-in-production
 JWT_ALGORITHM=HS256
 ACCESS_TOKEN_EXPIRE_MINUTES=60
+ROOT_PATH=/api
+PUBLIC_API_BASE_URL=https://shiftplanner.online/api
+EMAIL_VERIFICATION_REQUIRED=true
+SMTP_HOST=smtp.mail.ru
+SMTP_PORT=465
+SMTP_USE_SSL=true
+SMTP_USERNAME=shiftplanner@mail.ru
+SMTP_FROM_EMAIL=shiftplanner@mail.ru
+SMTP_PASSWORD=mail-ru-app-password
 ```
+
+`SMTP_PASSWORD` must be an app password for `shiftplanner@mail.ru`, not the regular mailbox password.
+
+If the server blocks outbound SMTP ports, use an HTTPS email API instead:
+
+```env
+PUBLIC_API_BASE_URL=https://shiftplanner.online/api
+EMAIL_VERIFICATION_REQUIRED=true
+EMAIL_PROVIDER=resend
+EMAIL_FROM=ShiftPlanner <no-reply@shiftplanner.online>
+RESEND_API_KEY=re_...
+```
+
+For production delivery through Resend, verify the sending domain in Resend and use an address from that domain, for example `no-reply@shiftplanner.online`.
 
 ## Run PostgreSQL
 

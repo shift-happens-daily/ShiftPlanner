@@ -39,14 +39,13 @@ export function AuthProvider({ children }) {
   }, [refreshUser]);
 
   const register = useCallback(async (payload) => {
-    await registerRequest({
+    return registerRequest({
       full_name: payload.name.trim(),
       email: payload.email.trim(),
       password: payload.password,
       role: payload.role,
     });
-    return login(payload.email, payload.password);
-  }, [login]);
+  }, []);
 
   const logout = useCallback(async () => {
     try {

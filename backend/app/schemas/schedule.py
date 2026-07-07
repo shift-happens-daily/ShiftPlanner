@@ -66,6 +66,7 @@ class ScheduleRequirementTemplateCreate(BaseModel):
 
 
 class ScheduleRequirementBulkCreate(BaseModel):
+    branch_id: int | None = Field(default=None, ge=1)
     start_date: date
     end_date: date
     weekdays: list[int] = Field(min_length=1)
@@ -87,6 +88,7 @@ class ScheduleRequirementBulkRead(BaseModel):
 
 
 class ScheduleGenerateRequest(BaseModel):
+    branch_id: int | None = Field(default=None, ge=1)
     start_date: date | None = None
     end_date: date | None = None
 
@@ -128,10 +130,21 @@ class UnfilledRequirementRead(BaseModel):
 
 class ScheduleRead(BaseModel):
     id: int
+    branch_id: int | None = None
+    start_date: date
+    end_date: date
     status: Literal["draft", "published", "archived"]
     shifts: list[ShiftRead]
     conflicts: list[ScheduleConflictRead]
     unfilled_requirements: list[UnfilledRequirementRead]
+
+
+class ScheduleListItemRead(BaseModel):
+    id: int
+    branch_id: int
+    start_date: date
+    end_date: date
+    status: Literal["draft", "published", "archived"]
 
 
 class ManualShiftCreate(BaseModel):
@@ -188,7 +201,7 @@ class AvailableEmployeeRead(BaseModel):
     full_name: str
     position: AvailableEmployeePositionRead
     branch: AvailableEmployeeBranchRead | None = None
-    availability_status: Literal["available", "if_needed"]
+    availability_status: Literal["available", "if_needed", "unavailable"]
     assigned_hours: float = 0.0
 
 

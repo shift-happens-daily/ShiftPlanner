@@ -139,6 +139,44 @@ def test_assignment_candidates_must_match_position_id() -> None:
     assert solver.value(shortage_vars[DemandKey(WORK_DATE, SLOT_TIME, 1)]) == 1
 
 
+def test_short_requirement_can_be_covered_when_min_shift_exceeds_duration() -> None:
+    slots = [
+        time(10, 30),
+        time(11, 0),
+        time(11, 30),
+        time(12, 0),
+        time(12, 30),
+        time(13, 0),
+        time(13, 30),
+    ]
+    employee = EmployeeData(
+        id=1,
+        position_id=1,
+        weekly_target_slots=0,
+        min_daily_slots=10,
+        max_daily_slots=24,
+        branch_id=2,
+    )
+    availability = {(1, WORK_DATE, slot_time): "available" for slot_time in slots}
+    demand = {DemandKey(WORK_DATE, slot_time, 1, 2): 1 for slot_time in slots}
+    data = LoadedData(
+        employees=[employee],
+        dates=[WORK_DATE],
+        business_slots={WORK_DATE: slots},
+        demand=demand,
+        availability=availability,
+        absent_dates=set(),
+    )
+
+    assignment_vars, shortage_vars, solver = _solve_primary(data)
+
+    assert all(solver.value(variable) == 0 for variable in shortage_vars.values())
+    assignments = _extract_assignments(data, assignment_vars, solver)
+    assert len(assignments) == 1
+    assert assignments[0].start_time == slots[0]
+    assert assignments[0].end_time == time(14, 0)
+
+
 def test_availability_matches_exact_date_instead_of_weekday() -> None:
     data = _data(
         employees=[_employee(1)],

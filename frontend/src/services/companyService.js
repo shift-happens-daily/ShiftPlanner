@@ -14,6 +14,19 @@ export async function deleteBranch(branchId) {
   await api.delete(`/companies/branches/${branchId}`);
 }
 
+export async function getBranchWorkingHours(companyId, branchId) {
+  const { data } = await api.get(`/companies/${companyId}/branches/${branchId}/working-hours`);
+  return data;
+}
+
+export async function updateBranchWorkingHours(companyId, branchId, payload) {
+  const { data } = await api.patch(
+    `/companies/${companyId}/branches/${branchId}/working-hours`,
+    payload,
+  );
+  return data;
+}
+
 export async function listCompanies() {
   const response = await api.get('/companies/');
   return response.data;
@@ -25,7 +38,7 @@ export async function createCompany(payload) {
 }
 
 export async function previewInviteCode(inviteCode) {
-  const response = await api.get(`/companies/invite/${inviteCode}`);
+  const response = await api.get(`/companies/invite/${encodeURIComponent(inviteCode.trim())}`);
   return response.data;
 }
 
@@ -36,6 +49,26 @@ export async function regenerateInviteCode() {
 
 export async function joinCompany(payload) {
   const response = await api.post('/companies/join', payload);
+  return response.data;
+}
+
+export async function joinCompanyAsManager(payload) {
+  const response = await api.post('/companies/join-as-manager', payload);
+  return response.data;
+}
+
+export async function listManagerRequests() {
+  const response = await api.get('/companies/me/manager-requests');
+  return response.data;
+}
+
+export async function acceptManagerRequest(requestId) {
+  const response = await api.post(`/companies/me/manager-requests/${requestId}/accept`);
+  return response.data;
+}
+
+export async function declineManagerRequest(requestId) {
+  const response = await api.post(`/companies/me/manager-requests/${requestId}/decline`);
   return response.data;
 }
 

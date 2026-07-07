@@ -3,7 +3,7 @@ from datetime import UTC, date, datetime
 from sqlalchemy import delete, func, select, text, update
 from sqlalchemy.orm import Session
 
-from app.models import Absence, Branch, Employee, Position, Schedule, Shift, ShiftAssignment, ShiftExchangeRequest, ShiftRequirement, User
+from app.models import Absence, Branch, Employee, EmployeeBranch, EmployeePosition, Position, Schedule, Shift, ShiftAssignment, ShiftExchangeRequest, ShiftRequirement, User
 
 
 def create_requirement(
@@ -100,6 +100,7 @@ def create_schedule(
     db: Session,
     *,
     company_id: int,
+    branch_id: int | None = None,
     start_date: date,
     end_date: date,
     generated_shifts: list[dict],
@@ -108,6 +109,7 @@ def create_schedule(
         db.scalars(
             select(Schedule).where(
                 Schedule.company_id == company_id,
+                Schedule.branch_id == branch_id,
                 Schedule.start_date == start_date,
                 Schedule.end_date == end_date,
                 Schedule.status == "draft",
@@ -118,7 +120,7 @@ def create_schedule(
         db.delete(existing_draft)
     db.flush()
 
-    schedule = Schedule(company_id=company_id, start_date=start_date, end_date=end_date, status="draft")
+    schedule = Schedule(company_id=company_id, branch_id=branch_id, start_date=start_date, end_date=end_date, status="draft")
     db.add(schedule)
     db.flush()
 
@@ -144,6 +146,11 @@ def get_schedule(db: Session, schedule_id: int) -> Schedule | None:
     return db.get(Schedule, schedule_id)
 
 
+def delete_schedule(db: Session, schedule: Schedule) -> None:
+    db.delete(schedule)
+    db.commit()
+
+
 def get_latest_schedule(
     db: Session,
     *,
@@ -156,7 +163,84 @@ def get_latest_schedule(
     return db.scalars(query.order_by(Schedule.id.desc())).first()
 
 
+def list_schedules(
+    db: Session,
+    *,
+    company_id: int,
+    branch_id: int | None = None,
+    start_date: date | None = None,
+    end_date: date | None = None,
+    schedule_status: str | None = None,
+) -> list[dict]:
+    clauses = ["company_id = :company_id"]
+    params = {"company_id": company_id}
+    if branch_id is not None:
+        clauses.append("branch_id = :branch_id")
+        params["branch_id"] = branch_id
+    if schedule_status is not None:
+        clauses.append("status = :schedule_status")
+        params["schedule_status"] = schedule_status
+    if start_date is not None:
+        clauses.append("end_date >= :start_date")
+        params["start_date"] = start_date
+    if end_date is not None:
+        clauses.append("start_date <= :end_date")
+        params["end_date"] = end_date
+
+    query = text(
+        f"""
+        SELECT id, branch_id, start_date, end_date, status
+        FROM schedules
+        WHERE {" AND ".join(clauses)}
+        ORDER BY start_date, end_date, id
+        """
+    )
+    return [dict(row) for row in db.execute(query, params).mappings()]
+
+
+def find_active_schedule_conflict(
+    db: Session,
+    *,
+    company_id: int,
+    branch_id: int,
+    start_date: date,
+    end_date: date,
+) -> dict | None:
+    row = db.execute(
+        text(
+            """
+            SELECT id, branch_id, start_date, end_date, status
+            FROM schedules
+            WHERE company_id = :company_id
+              AND branch_id = :branch_id
+              AND status IN ('draft', 'published')
+              AND start_date <= :end_date
+              AND end_date >= :start_date
+            ORDER BY start_date, end_date, id
+            LIMIT 1
+            """
+        ),
+        {
+            "company_id": company_id,
+            "branch_id": branch_id,
+            "start_date": start_date,
+            "end_date": end_date,
+        },
+    ).mappings().first()
+    return None if row is None else dict(row)
+
+
 def list_schedule_shift_rows(db: Session, schedule_id: int) -> list[dict]:
+    primary_branch = (
+        select(EmployeeBranch.branch_id)
+        .where(
+            EmployeeBranch.employee_id == Employee.id,
+            EmployeeBranch.is_primary.is_(True),
+        )
+        .correlate(Employee)
+        .limit(1)
+        .scalar_subquery()
+    )
     return list(
         db.execute(
             select(
@@ -167,7 +251,7 @@ def list_schedule_shift_rows(db: Session, schedule_id: int) -> list[dict]:
                 Position.id.label("position_id"),
                 Position.name.label("position_name"),
                 Employee.id.label("employee_id"),
-                Employee.branch_id.label("employee_branch_id"),
+                primary_branch.label("employee_branch_id"),
                 User.full_name.label("employee_name"),
                 ShiftAssignment.id.label("assignment_id"),
             )
@@ -412,30 +496,51 @@ def list_candidate_employee_rows(
     db: Session,
     *,
     company_id: int,
-    position_id: int,
+    position_id: int | None = None,
     branch_id: int | None = None,
 ) -> list[dict]:
+    primary_position = (
+        select(EmployeePosition.position_id)
+        .where(
+            EmployeePosition.employee_id == Employee.id,
+            EmployeePosition.is_primary.is_(True),
+        )
+        .correlate(Employee)
+        .limit(1)
+        .scalar_subquery()
+    )
+    primary_branch = (
+        select(EmployeeBranch.branch_id)
+        .where(
+            EmployeeBranch.employee_id == Employee.id,
+            EmployeeBranch.is_primary.is_(True),
+        )
+        .correlate(Employee)
+        .limit(1)
+        .scalar_subquery()
+    )
     query = (
         select(
             Employee.id.label("employee_id"),
             User.full_name,
-            Position.id.label("position_id"),
+            primary_position.label("position_id"),
             Position.name.label("position_name"),
-            Branch.id.label("branch_id"),
+            primary_branch.label("branch_id"),
             Branch.name.label("branch_name"),
         )
         .join(User, User.id == Employee.user_id)
-        .join(Position, Position.id == Employee.position_id)
-        .outerjoin(Branch, Branch.id == Employee.branch_id)
+        .join(Position, Position.id == primary_position)
+        .outerjoin(Branch, Branch.id == primary_branch)
         .where(
             Employee.company_id == company_id,
-            Employee.position_id == position_id,
             Employee.is_active.is_(True),
         )
         .order_by(User.full_name, Employee.id)
     )
+    if position_id is not None:
+        query = query.where(primary_position == position_id)
     if branch_id is not None:
-        query = query.where(Employee.branch_id == branch_id)
+        query = query.where(primary_branch == branch_id)
     return list(db.execute(query).mappings())
 
 

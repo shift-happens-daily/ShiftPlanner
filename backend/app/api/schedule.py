@@ -1,7 +1,7 @@
 from datetime import date, time
 from typing import Literal
 
-from fastapi import APIRouter, Depends, Query, Response, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
 from sqlalchemy.orm import Session
 
 from app.api.dependencies import ensure_employee_user, get_current_user, require_role
@@ -19,6 +19,7 @@ from app.schemas.schedule import (
     ManualShiftCreate,
     RequirementAssignRequest,
     ScheduleGenerateRequest,
+    ScheduleListItemRead,
     ScheduleRead,
     ScheduleRequirementBulkCreate,
     ScheduleRequirementBulkRead,
@@ -100,16 +101,41 @@ def get_requirements(
 )
 def create_bulk_requirements(
     payload: ScheduleRequirementBulkCreate,
-    _: UserRead = Depends(require_role("manager")),
+    current_user: UserRead = Depends(require_role("manager")),
     db: Session = Depends(get_db),
 ) -> ScheduleRequirementBulkRead:
-    return schedule_service.create_bulk_requirements(db, payload)
+    return schedule_service.create_bulk_requirements(db, payload, current_user)
+
+
+@router.get(
+    "",
+    response_model=list[ScheduleListItemRead],
+    responses={**UNAUTHORIZED_RESPONSE, **FORBIDDEN_RESPONSE, **VALIDATION_ERROR_RESPONSE},
+)
+def get_schedules(
+    branch_id: int | None = Query(default=None, ge=1),
+    date_from: date | None = Query(default=None),
+    date_to: date | None = Query(default=None),
+    start_date: date | None = Query(default=None),
+    end_date: date | None = Query(default=None),
+    schedule_status: Literal["draft", "published", "archived"] | None = Query(default=None, alias="status"),
+    current_user: UserRead = Depends(require_role("manager")),
+    db: Session = Depends(get_db),
+) -> list[ScheduleListItemRead]:
+    return schedule_service.list_schedules(
+        db,
+        current_user,
+        branch_id=branch_id,
+        start_date=date_from or start_date,
+        end_date=date_to or end_date,
+        schedule_status=schedule_status,
+    )
 
 
 @router.post(
     "/generate",
     response_model=ScheduleRead,
-    responses={**UNAUTHORIZED_RESPONSE, **FORBIDDEN_RESPONSE, **VALIDATION_ERROR_RESPONSE},
+    responses={**BAD_REQUEST_RESPONSE, **UNAUTHORIZED_RESPONSE, **FORBIDDEN_RESPONSE, **VALIDATION_ERROR_RESPONSE},
 )
 def generate_schedule(
     payload: ScheduleGenerateRequest | None = None,
@@ -125,11 +151,23 @@ def generate_schedule(
     responses={**BAD_REQUEST_RESPONSE, **UNAUTHORIZED_RESPONSE, **FORBIDDEN_RESPONSE},
 )
 def get_my_schedule(
+    date_from: date | None = Query(default=None),
+    date_to: date | None = Query(default=None),
     current_user: UserRead = Depends(require_role("employee")),
     db: Session = Depends(get_db),
 ) -> list[ShiftRead]:
     ensure_employee_user(current_user)
-    return schedule_service.list_my_schedule(db, current_user)
+    if date_from is not None and date_to is not None and date_to < date_from:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="date_to must be later than or equal to date_from.",
+        )
+    return schedule_service.list_my_schedule(
+        db,
+        current_user,
+        start_date=date_from,
+        end_date=date_to,
+    )
 
 
 @router.post(
@@ -198,17 +236,53 @@ def get_latest_schedule(
     return schedule_service.get_latest_schedule(db, current_user, schedule_status)
 
 
+@router.delete(
+    "/week",
+    status_code=status.HTTP_204_NO_CONTENT,
+    responses={**UNAUTHORIZED_RESPONSE, **FORBIDDEN_RESPONSE, **NOT_FOUND_RESPONSE, **VALIDATION_ERROR_RESPONSE},
+)
+def delete_schedule_week(
+    branch_id: int = Query(ge=1),
+    start_date: date = Query(),
+    end_date: date = Query(),
+    current_user: UserRead = Depends(require_role("manager")),
+    db: Session = Depends(get_db),
+) -> Response:
+    schedule_service.delete_schedule_for_branch_week(
+        db,
+        current_user,
+        branch_id=branch_id,
+        start_date=start_date,
+        end_date=end_date,
+    )
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
 @router.get(
     "/{schedule_id}",
     response_model=ScheduleRead,
-    responses={**UNAUTHORIZED_RESPONSE, **NOT_FOUND_RESPONSE, **VALIDATION_ERROR_RESPONSE},
+    responses={**UNAUTHORIZED_RESPONSE, **FORBIDDEN_RESPONSE, **NOT_FOUND_RESPONSE, **VALIDATION_ERROR_RESPONSE},
 )
 def get_schedule(
     schedule_id: int,
-    _: UserRead = Depends(get_current_user),
+    current_user: UserRead = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> ScheduleRead:
-    return schedule_service.get_schedule(db, schedule_id)
+    return schedule_service.get_schedule(db, schedule_id, current_user)
+
+
+@router.delete(
+    "/{schedule_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    responses={**UNAUTHORIZED_RESPONSE, **FORBIDDEN_RESPONSE, **NOT_FOUND_RESPONSE},
+)
+def delete_schedule(
+    schedule_id: int,
+    current_user: UserRead = Depends(require_role("manager")),
+    db: Session = Depends(get_db),
+) -> Response:
+    schedule_service.delete_schedule(db, schedule_id, current_user)
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
 @router.post(
@@ -251,6 +325,7 @@ def get_available_employees(
     position_id: int = Query(ge=1),
     branch_id: int | None = Query(default=None, ge=1),
     include_unavailable: bool = Query(default=False),
+    include_other_positions: bool = Query(default=False),
     current_user: UserRead = Depends(require_role("manager")),
     db: Session = Depends(get_db),
 ) -> list[AvailableEmployeeRead]:
@@ -264,6 +339,7 @@ def get_available_employees(
         position_id=position_id,
         branch_id=branch_id,
         include_unavailable=include_unavailable,
+        include_other_positions=include_other_positions,
     )
 
 
@@ -361,7 +437,7 @@ def publish_schedule(
 @router.delete("/requirements/{requirement_id}", status_code=204)
 def delete_requirement(
     requirement_id: int,
-    _current_user: User = Depends(require_manager),
+    current_user: UserRead = Depends(require_role("manager")),
     db: Session = Depends(get_db),
 ):
-    schedule_service.delete_requirement(db, requirement_id)
+    schedule_service.delete_requirement(db, requirement_id, current_user)

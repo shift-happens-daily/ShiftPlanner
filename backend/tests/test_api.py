@@ -196,6 +196,92 @@ def test_auth_token_and_profile_endpoints(client: TestClient) -> None:
     assert unauthorized.status_code == 401
 
 
+def test_register_requires_email_verification_when_enabled(client: TestClient, monkeypatch: pytest.MonkeyPatch) -> None:
+    sent_messages: list[dict[str, str]] = []
+
+    def fake_send_verification_email(*, to_email: str, full_name: str, token: str) -> None:
+        sent_messages.append({"to_email": to_email, "full_name": full_name, "token": token})
+
+    monkeypatch.setenv("EMAIL_VERIFICATION_REQUIRED", "true")
+    monkeypatch.setattr(auth_service.email_service, "send_verification_email", fake_send_verification_email)
+
+    registered = client.post(
+        "/auth/register",
+        json={
+            "full_name": "Verify Me",
+            "email": "verify-me@example.com",
+            "password": "manager123",
+            "role": "manager",
+        },
+    )
+
+    assert registered.status_code == 201, registered.text
+    assert registered.json()["email_verification_required"] is True
+    assert sent_messages == [
+        {
+            "to_email": "verify-me@example.com",
+            "full_name": "Verify Me",
+            "token": sent_messages[0]["token"],
+        }
+    ]
+
+    blocked_login = client.post(
+        "/auth/login",
+        json={"email": "verify-me@example.com", "password": "manager123"},
+    )
+    assert blocked_login.status_code == 403
+    assert blocked_login.json()["detail"] == "Email is not verified."
+
+    verified = client.get(f"/auth/verify-email?token={sent_messages[0]['token']}")
+    assert verified.status_code == 200, verified.text
+
+    login = client.post(
+        "/auth/login",
+        json={"email": "verify-me@example.com", "password": "manager123"},
+    )
+    assert login.status_code == 200, login.text
+
+    with psycopg.connect(PSYCOPG_DSN) as connection:
+        with connection.cursor() as cursor:
+            cursor.execute(
+                """
+                SELECT email_verified, email_verification_token, email_verification_expires_at
+                FROM users
+                WHERE email = 'verify-me@example.com'
+                """
+            )
+            assert cursor.fetchone() == (True, None, None)
+
+
+def test_register_email_delivery_failure_does_not_persist_user(
+    client: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def fail_send_verification_email(*, to_email: str, full_name: str, token: str) -> None:
+        raise OSError("SMTP is unavailable")
+
+    monkeypatch.setenv("EMAIL_VERIFICATION_REQUIRED", "true")
+    monkeypatch.setattr(auth_service.email_service, "send_verification_email", fail_send_verification_email)
+
+    registered = client.post(
+        "/auth/register",
+        json={
+            "full_name": "SMTP Failure",
+            "email": "smtp-failure@example.com",
+            "password": "manager123",
+            "role": "manager",
+        },
+    )
+
+    assert registered.status_code == 503
+    assert registered.json()["detail"] == "Could not send verification email."
+
+    with psycopg.connect(PSYCOPG_DSN) as connection:
+        with connection.cursor() as cursor:
+            cursor.execute("SELECT COUNT(*) FROM users WHERE email = 'smtp-failure@example.com'")
+            assert cursor.fetchone()[0] == 0
+
+
 def test_user_can_delete_own_account(client: TestClient) -> None:
     employee_headers = login_json(client, "ivan@example.com", "employee123")
 
@@ -583,6 +669,64 @@ def test_employees_list_includes_position_and_role(client: TestClient) -> None:
     assert employee["position"] == {"id": 1, "name": "Barista"}
     assert employee["position_id"] == 1
     assert employee["position_title"] == "Barista"
+    assert employee["max_hours_per_week"] == 40
+    assert employee["max_hours_per_day"] == 8
+
+
+def test_manager_can_read_and_update_employee_work_limits(client: TestClient) -> None:
+    manager_headers = login_json(client, "manager@example.com", "manager123")
+    employee_headers = login_json(client, "ivan@example.com", "employee123")
+
+    initial = client.get("/employees/1/work-limits", headers=manager_headers)
+    assert initial.status_code == 200, initial.text
+    assert initial.json() == {"max_hours_per_week": 40, "max_hours_per_day": 8}
+
+    employee_response = client.get("/employees/1/work-limits", headers=employee_headers)
+    assert employee_response.status_code == 403
+    assert client.get("/employees/1/work-limits").status_code == 401
+
+    updated = client.patch(
+        "/employees/1/work-limits",
+        headers=manager_headers,
+        json={"max_hours_per_week": 36, "max_hours_per_day": 6},
+    )
+    assert updated.status_code == 200, updated.text
+    assert updated.json() == {"max_hours_per_week": 36, "max_hours_per_day": 6}
+
+    listed = client.get("/employees/", headers=manager_headers)
+    assert listed.status_code == 200, listed.text
+    employee = next(item for item in listed.json() if item["id"] == 1)
+    assert employee["max_hours_per_week"] == 36
+    assert employee["max_hours_per_day"] == 6
+
+    invalid = client.patch(
+        "/employees/1/work-limits",
+        headers=manager_headers,
+        json={"max_hours_per_week": 36, "max_hours_per_day": 25},
+    )
+    assert invalid.status_code == 422
+
+
+def test_employee_work_limits_are_company_scoped(client: TestClient) -> None:
+    seed_second_company_scope_data()
+    manager_headers = login_json(client, "manager@example.com", "manager123")
+
+    with psycopg.connect(PSYCOPG_DSN) as connection:
+        with connection.cursor() as cursor:
+            cursor.execute("SELECT id FROM companies WHERE invite_code = %s", (SECOND_COMPANY_INVITE_CODE,))
+            other_company_id = cursor.fetchone()[0]
+            cursor.execute("SELECT id FROM employees WHERE company_id = %s ORDER BY id LIMIT 1", (other_company_id,))
+            other_employee_id = cursor.fetchone()[0]
+
+    read_response = client.get(f"/employees/{other_employee_id}/work-limits", headers=manager_headers)
+    assert read_response.status_code == 403
+
+    update_response = client.patch(
+        f"/employees/{other_employee_id}/work-limits",
+        headers=manager_headers,
+        json={"max_hours_per_week": 30, "max_hours_per_day": 5},
+    )
+    assert update_response.status_code == 403
 
 
 def test_employee_position_data_does_not_change_role_permissions(client: TestClient) -> None:

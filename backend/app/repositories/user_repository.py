@@ -1,5 +1,6 @@
 import secrets
 import string
+from datetime import datetime
 
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session, joinedload
@@ -35,6 +36,14 @@ def get_user_by_public_id(db: Session, public_id: str) -> User | None:
     ).first()
 
 
+def get_user_by_email_verification_token(db: Session, token: str) -> User | None:
+    return db.scalars(
+        select(User)
+        .options(joinedload(User.employee))
+        .where(User.email_verification_token == token)
+    ).first()
+
+
 def create_user(
     db: Session,
     *,
@@ -43,6 +52,7 @@ def create_user(
     password_hash: str,
     role: str,
     is_registration_complete: bool = True,
+    email_verified: bool = True,
 ) -> User:
     user = User(
         public_id=_generate_unique_public_id(db),
@@ -51,6 +61,7 @@ def create_user(
         password_hash=password_hash,
         role=role,
         is_registration_complete=is_registration_complete,
+        email_verified=email_verified,
     )
     db.add(user)
     db.flush()
@@ -63,10 +74,35 @@ def update_registration(
     user: User,
     full_name: str,
     password_hash: str,
+    email_verified: bool = True,
 ) -> User:
     user.full_name = full_name
     user.password_hash = password_hash
     user.is_registration_complete = True
+    user.email_verified = email_verified
+    db.add(user)
+    db.flush()
+    return user
+
+
+def set_email_verification_token(
+    db: Session,
+    *,
+    user: User,
+    token: str,
+    expires_at: datetime,
+) -> User:
+    user.email_verification_token = token
+    user.email_verification_expires_at = expires_at
+    db.add(user)
+    db.flush()
+    return user
+
+
+def mark_email_verified(db: Session, user: User) -> User:
+    user.email_verified = True
+    user.email_verification_token = None
+    user.email_verification_expires_at = None
     db.add(user)
     db.commit()
     db.refresh(user)
