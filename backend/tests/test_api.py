@@ -196,6 +196,63 @@ def test_auth_token_and_profile_endpoints(client: TestClient) -> None:
     assert unauthorized.status_code == 401
 
 
+def test_register_requires_email_verification_when_enabled(client: TestClient, monkeypatch: pytest.MonkeyPatch) -> None:
+    sent_messages: list[dict[str, str]] = []
+
+    def fake_send_verification_email(*, to_email: str, full_name: str, token: str) -> None:
+        sent_messages.append({"to_email": to_email, "full_name": full_name, "token": token})
+
+    monkeypatch.setenv("EMAIL_VERIFICATION_REQUIRED", "true")
+    monkeypatch.setattr(auth_service.email_service, "send_verification_email", fake_send_verification_email)
+
+    registered = client.post(
+        "/auth/register",
+        json={
+            "full_name": "Verify Me",
+            "email": "verify-me@example.com",
+            "password": "manager123",
+            "role": "manager",
+        },
+    )
+
+    assert registered.status_code == 201, registered.text
+    assert registered.json()["email_verification_required"] is True
+    assert sent_messages == [
+        {
+            "to_email": "verify-me@example.com",
+            "full_name": "Verify Me",
+            "token": sent_messages[0]["token"],
+        }
+    ]
+
+    blocked_login = client.post(
+        "/auth/login",
+        json={"email": "verify-me@example.com", "password": "manager123"},
+    )
+    assert blocked_login.status_code == 403
+    assert blocked_login.json()["detail"] == "Email is not verified."
+
+    verified = client.get(f"/auth/verify-email?token={sent_messages[0]['token']}")
+    assert verified.status_code == 200, verified.text
+
+    login = client.post(
+        "/auth/login",
+        json={"email": "verify-me@example.com", "password": "manager123"},
+    )
+    assert login.status_code == 200, login.text
+
+    with psycopg.connect(PSYCOPG_DSN) as connection:
+        with connection.cursor() as cursor:
+            cursor.execute(
+                """
+                SELECT email_verified, email_verification_token, email_verification_expires_at
+                FROM users
+                WHERE email = 'verify-me@example.com'
+                """
+            )
+            assert cursor.fetchone() == (True, None, None)
+
+
 def test_user_can_delete_own_account(client: TestClient) -> None:
     employee_headers = login_json(client, "ivan@example.com", "employee123")
 

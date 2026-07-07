@@ -37,7 +37,16 @@ class RegisterRequest(BaseModel):
 
 
 class RegisterResponse(UserRead):
-    pass
+    email_verification_required: bool = False
+    detail: str | None = None
+
+
+class EmailVerificationResendRequest(BaseModel):
+    email: str = Field(min_length=3)
+
+
+class EmailVerificationResponse(BaseModel):
+    detail: str
 
 
 class CurrentUserCompanyRead(BaseModel):

@@ -97,7 +97,7 @@ export default function Auth() {
       nameRequired: 'Укажите имя и фамилию.',
       passwordTooShort: 'Пароль должен быть минимум 8 символов.',
       passwordMismatch: 'Пароли не совпадают.',
-      registerSuccess: 'Аккаунт создан. Выполняю вход...',
+      registerSuccess: 'Аккаунт создан. Проверьте почту и подтвердите email, затем войдите.',
       authError: 'Не удалось выполнить запрос.',
       loading: 'Загрузка...',
       wait: 'Подождите...',
@@ -122,7 +122,7 @@ export default function Auth() {
       nameRequired: 'Enter your full name.',
       passwordTooShort: 'Password must be at least 8 characters.',
       passwordMismatch: 'Passwords do not match.',
-      registerSuccess: 'Account created. Signing in...',
+      registerSuccess: 'Account created. Check your email to confirm it, then log in.',
       authError: 'Request failed.',
       loading: 'Loading...',
       wait: 'Please wait...',
@@ -301,20 +301,27 @@ export default function Auth() {
     setIsSubmitting(true);
 
     try {
-      const profile = isLogin
-        ? await login(formData.email.trim(), formData.password)
-        : await register({
-          name: formData.name.trim(),
-          email: formData.email.trim(),
-          password: formData.password,
-          role,
-        });
-
-      if (!isLogin) {
-        setSuccessMessage(t.registerSuccess);
+      if (isLogin) {
+        const profile = await login(formData.email.trim(), formData.password);
+        navigate(profile.role === 'manager' ? '/manager' : '/employee', { replace: true });
+        return;
       }
 
-      navigate(profile.role === 'manager' ? '/manager' : '/employee', { replace: true });
+      await register({
+        name: formData.name.trim(),
+        email: formData.email.trim(),
+        password: formData.password,
+        role,
+      });
+
+      setSuccessMessage(t.registerSuccess);
+      setIsLogin(true);
+      setFormData((prev) => ({
+        ...prev,
+        password: '',
+        confirmPassword: '',
+        name: '',
+      }));
     } catch (error) {
       setErrorMessage(extractErrorMessage(error, t.authError));
     } finally {
