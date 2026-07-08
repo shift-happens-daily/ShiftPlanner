@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/useAuth';
+import { requestPasswordResetRequest } from '../services/authService';
 import { getStoredLanguage } from '../services/language';
 
 const APP_ICON_SRC = '/v2-Photoroom.png';
@@ -48,7 +49,7 @@ function EyeOffIcon() {
 }
 
 export default function Auth() {
-  const [isLogin, setIsLogin] = useState(true);
+  const [authMode, setAuthMode] = useState('login');
   const [role, setRole] = useState('employee');
   const [isCompact, setIsCompact] = useState(false);
   const [language, setLanguage] = useState(getStoredLanguage);
@@ -79,6 +80,7 @@ export default function Auth() {
   const texts = {
     ru: {
       langBtn: 'RU',
+      forgotTitle: 'Сброс пароля',
       fullName: 'Имя и фамилия',
       email: 'Email',
       password: 'Пароль',
@@ -89,6 +91,12 @@ export default function Auth() {
       register: 'Зарегистрироваться',
       noAccount: 'Зарегистрироваться',
       hasAccount: 'Войти',
+      forgotPassword: 'Забыли пароль?',
+      sendResetLink: 'Отправить ссылку',
+      backToLogin: 'Вернуться ко входу',
+      forgotHint: 'Введите email — мы отправим ссылку для сброса пароля.',
+      resetEmailSent: 'Если аккаунт с этим email существует, мы отправили письмо со ссылкой для сброса пароля.',
+      emailRequired: 'Введите email.',
       namePlaceholder: 'Иван Петров',
       emailPlaceholder: 'ivan@example.com',
       passwordPlaceholder: 'Минимум 8 символов',
@@ -104,6 +112,7 @@ export default function Auth() {
     },
     en: {
       langBtn: 'EN',
+      forgotTitle: 'Reset password',
       fullName: 'Full name',
       email: 'Email',
       password: 'Password',
@@ -112,8 +121,14 @@ export default function Auth() {
       manager: 'Manager',
       login: 'Log in',
       register: 'Sign up',
-      noAccount: "Sign up",
+      noAccount: 'Sign up',
       hasAccount: 'Log in',
+      forgotPassword: 'Forgot password?',
+      sendResetLink: 'Send reset link',
+      backToLogin: 'Back to login',
+      forgotHint: 'Enter your email and we will send a password reset link.',
+      resetEmailSent: 'If an account exists for this email, a password reset email has been sent.',
+      emailRequired: 'Enter your email.',
       namePlaceholder: 'Ivan Petrov',
       emailPlaceholder: 'ivan@example.com',
       passwordPlaceholder: 'At least 8 characters',
@@ -129,7 +144,10 @@ export default function Auth() {
     },
   };
 
-  const t = texts[language];
+  const t = texts[language] || texts.ru;
+  const isLogin = authMode === 'login';
+  const isRegister = authMode === 'register';
+  const isForgot = authMode === 'forgot';
 
   useEffect(() => {
     const handleResize = () => {
@@ -267,22 +285,31 @@ export default function Auth() {
   };
 
   const validateForm = () => {
-    if (!formData.email.trim() || !formData.password) {
+    if (!formData.email.trim()) {
+      setErrorMessage(isForgot ? t.emailRequired : t.requiredFields);
+      return false;
+    }
+
+    if (isForgot) {
+      return true;
+    }
+
+    if (!formData.password) {
       setErrorMessage(t.requiredFields);
       return false;
     }
 
-    if (!isLogin && !formData.name.trim()) {
+    if (isRegister && !formData.name.trim()) {
       setErrorMessage(t.nameRequired);
       return false;
     }
 
-    if (!isLogin && formData.password.length < 8) {
+    if (isRegister && formData.password.length < 8) {
       setErrorMessage(t.passwordTooShort);
       return false;
     }
 
-    if (!isLogin && formData.password !== formData.confirmPassword) {
+    if (isRegister && formData.password !== formData.confirmPassword) {
       setErrorMessage(t.passwordMismatch);
       return false;
     }
@@ -301,6 +328,12 @@ export default function Auth() {
     setIsSubmitting(true);
 
     try {
+      if (isForgot) {
+        const response = await requestPasswordResetRequest(formData.email.trim());
+        setSuccessMessage(response?.detail || t.resetEmailSent);
+        return;
+      }
+
       if (isLogin) {
         const profile = await login(formData.email.trim(), formData.password);
         navigate(profile.role === 'manager' ? '/manager' : '/employee', { replace: true });
@@ -315,7 +348,7 @@ export default function Auth() {
       });
 
       setSuccessMessage(t.registerSuccess);
-      setIsLogin(true);
+      setAuthMode('login');
       setFormData((prev) => ({
         ...prev,
         password: '',
@@ -329,8 +362,8 @@ export default function Auth() {
     }
   };
 
-  const toggleMode = () => {
-    setIsLogin((prev) => !prev);
+  const switchToLogin = () => {
+    setAuthMode('login');
     setFormData({
       email: '',
       password: '',
@@ -341,6 +374,31 @@ export default function Auth() {
     setSuccessMessage('');
     setShowPassword(false);
     setRole('employee');
+  };
+
+  const toggleMode = () => {
+    if (isLogin) {
+      setAuthMode('register');
+    } else {
+      switchToLogin();
+    }
+    setFormData({
+      email: '',
+      password: '',
+      confirmPassword: '',
+      name: '',
+    });
+    setErrorMessage('');
+    setSuccessMessage('');
+    setShowPassword(false);
+    setRole('employee');
+  };
+
+  const openForgotPassword = () => {
+    setAuthMode('forgot');
+    setErrorMessage('');
+    setSuccessMessage('');
+    setShowPassword(false);
   };
 
   const changeLanguage = () => {
@@ -361,7 +419,7 @@ export default function Auth() {
   };
 
   const titleText = 'ShiftPlanner';
-  const pageTitle = isLogin ? t.welcomeBack : t.createAccount;
+  const cardLabel = isForgot ? t.forgotTitle : titleText;
 
   const view = createViewStyles(isCompact, isSubmitting);
 
@@ -384,12 +442,10 @@ export default function Auth() {
               <span style={styles.titleAccent}>{titleText.slice(5)}</span>
             </h1>
           </div>
-
-          <p style={view.subtitle}>{pageTitle}</p>
         </section>
 
-        <section style={view.card} aria-label={pageTitle}>
-          {!isLogin && (
+        <section style={view.card} aria-label={cardLabel}>
+          {isRegister && (
             <div style={styles.roleSwitchWrap}>
               <div className={`auth-role-switch ${role === 'manager' ? 'is-manager' : 'is-employee'}`}>
                 <button
@@ -411,10 +467,10 @@ export default function Auth() {
             </div>
           )}
 
-          <p style={view.hint}>{isLogin ? t.loginHint : t.registerHint}</p>
+          {isForgot && <p style={view.hint}>{t.forgotHint}</p>}
 
           <form onSubmit={handleSubmit} noValidate>
-            {!isLogin && (
+            {isRegister && (
               <div style={view.inputGroup}>
                 <label style={styles.label} htmlFor="auth-name">
                   {t.fullName}
@@ -450,36 +506,49 @@ export default function Auth() {
               />
             </div>
 
-            <div style={view.inputGroup}>
-              <label style={styles.label} htmlFor="auth-password">
-                {t.password}
-              </label>
+            {!isForgot && (
+              <div style={view.inputGroup}>
+                <label style={styles.label} htmlFor="auth-password">
+                  {t.password}
+                </label>
 
-              <div style={styles.passwordWrapper}>
-                <input
-                  id="auth-password"
-                  type={showPassword ? 'text' : 'password'}
-                  name="password"
-                  style={view.passwordInput}
-                  placeholder={t.passwordPlaceholder}
-                  value={formData.password}
-                  onChange={handleInputChange}
-                  autoComplete={isLogin ? 'current-password' : 'new-password'}
-                />
+                <div style={styles.passwordWrapper}>
+                  <input
+                    id="auth-password"
+                    type={showPassword ? 'text' : 'password'}
+                    name="password"
+                    style={view.passwordInput}
+                    placeholder={t.passwordPlaceholder}
+                    value={formData.password}
+                    onChange={handleInputChange}
+                    autoComplete={isLogin ? 'current-password' : 'new-password'}
+                  />
 
-                <button
-                  type="button"
-                  className="auth-eye-button"
-                  onClick={() => setShowPassword((prev) => !prev)}
-                  style={styles.eyeButton}
-                  aria-label={showPassword ? 'Hide password' : 'Show password'}
-                >
-                  {showPassword ? <EyeIcon /> : <EyeOffIcon />}
-                </button>
+                  <button
+                    type="button"
+                    className="auth-eye-button"
+                    onClick={() => setShowPassword((prev) => !prev)}
+                    style={styles.eyeButton}
+                    aria-label={showPassword ? 'Hide password' : 'Show password'}
+                  >
+                    {showPassword ? <EyeIcon /> : <EyeOffIcon />}
+                  </button>
+                </div>
+
+                {isLogin ? (
+                  <button
+                    type="button"
+                    className="auth-link-button"
+                    onClick={openForgotPassword}
+                    style={styles.forgotButton}
+                  >
+                    {t.forgotPassword}
+                  </button>
+                ) : null}
               </div>
-            </div>
+            )}
 
-            {!isLogin && (
+            {isRegister && (
               <div style={view.inputGroup}>
                 <label style={styles.label} htmlFor="auth-confirm-password">
                   {t.confirmPassword}
@@ -507,18 +576,31 @@ export default function Auth() {
               style={view.submitButton}
               disabled={isSubmitting}
             >
-              {isSubmitting ? t.wait : isLogin ? t.login : t.register}
+              {isSubmitting
+                ? t.wait
+                : (isForgot ? t.sendResetLink : (isLogin ? t.login : t.register))}
             </button>
 
             <div style={styles.toggleSection}>
-              <button
-                type="button"
-                onClick={toggleMode}
-                className="auth-link-button"
-                style={styles.toggleButton}
-              >
-                {isLogin ? t.noAccount : t.hasAccount}
-              </button>
+              {isForgot ? (
+                <button
+                  type="button"
+                  onClick={switchToLogin}
+                  className="auth-link-button"
+                  style={styles.toggleButton}
+                >
+                  {t.backToLogin}
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  onClick={toggleMode}
+                  className="auth-link-button"
+                  style={styles.toggleButton}
+                >
+                  {isLogin ? t.noAccount : t.hasAccount}
+                </button>
+              )}
             </div>
           </form>
         </section>
@@ -766,6 +848,17 @@ const styles = {
 
   toggleSection: {
     textAlign: 'center',
+  },
+
+  forgotButton: {
+    marginTop: '8px',
+    border: 0,
+    background: 'transparent',
+    color: '#4f646f',
+    fontSize: '13px',
+    fontWeight: 700,
+    cursor: 'pointer',
+    padding: 0,
   },
 
   toggleButton: {
