@@ -64,6 +64,22 @@ def build_verification_url(token: str) -> str:
     return f"{base_url}/auth/verify-email?token={quote(token)}"
 
 
+def build_password_reset_url(token: str) -> str:
+    explicit_url = os.getenv("PASSWORD_RESET_URL", "").strip()
+    if explicit_url:
+        if "{token}" in explicit_url:
+            return explicit_url.replace("{token}", quote(token))
+        separator = "&" if "?" in explicit_url else "?"
+        return f"{explicit_url}{separator}token={quote(token)}"
+
+    frontend_url = os.getenv("PUBLIC_FRONTEND_BASE_URL", "").strip().rstrip("/")
+    if frontend_url:
+        return f"{frontend_url}/reset-password?token={quote(token)}"
+
+    base_url = os.getenv("PUBLIC_API_BASE_URL", "http://localhost:8000").strip().rstrip("/")
+    return f"{base_url}/auth/password-reset?token={quote(token)}"
+
+
 def send_verification_email(*, to_email: str, full_name: str, token: str) -> None:
     provider = os.getenv("EMAIL_PROVIDER", "").strip().lower()
     if provider == "resend" or os.getenv("RESEND_API_KEY"):
@@ -71,6 +87,15 @@ def send_verification_email(*, to_email: str, full_name: str, token: str) -> Non
         return
 
     _send_verification_email_via_smtp(to_email=to_email, full_name=full_name, token=token)
+
+
+def send_password_reset_email(*, to_email: str, full_name: str, token: str) -> None:
+    provider = os.getenv("EMAIL_PROVIDER", "").strip().lower()
+    if provider == "resend" or os.getenv("RESEND_API_KEY"):
+        _send_password_reset_email_via_resend(to_email=to_email, full_name=full_name, token=token)
+        return
+
+    _send_password_reset_email_via_smtp(to_email=to_email, full_name=full_name, token=token)
 
 
 def _build_sender() -> str:
@@ -118,6 +143,41 @@ def _build_verification_email_content(*, full_name: str, token: str) -> tuple[st
     return subject, text_body, html_body
 
 
+def _build_password_reset_email_content(*, full_name: str, token: str) -> tuple[str, str, str]:
+    reset_url = build_password_reset_url(token)
+    safe_name = escape(full_name or "there")
+    safe_url = escape(reset_url)
+
+    subject = "Reset your ShiftPlanner password"
+    text_body = "\n".join(
+        [
+            f"Hello, {full_name or 'there'}!",
+            "",
+            "Use this link to reset your ShiftPlanner password:",
+            reset_url,
+            "",
+            "If you did not request a password reset, ignore this email.",
+        ]
+    )
+    html_body = f"""
+    <html>
+      <body style="font-family: Arial, sans-serif; color: #002642;">
+        <p>Hello, {safe_name}!</p>
+        <p>Use this link to reset your ShiftPlanner password.</p>
+        <p>
+          <a href="{safe_url}" style="display:inline-block;padding:12px 18px;background:#002642;color:#ffffff;text-decoration:none;border-radius:8px;">
+            Reset password
+          </a>
+        </p>
+        <p>If the button does not work, open this link:</p>
+        <p><a href="{safe_url}">{safe_url}</a></p>
+        <p>If you did not request a password reset, ignore this email.</p>
+      </body>
+    </html>
+    """
+    return subject, text_body, html_body
+
+
 def _send_verification_email_via_resend(*, to_email: str, full_name: str, token: str) -> None:
     api_key = os.getenv("RESEND_API_KEY") or os.getenv("EMAIL_API_KEY")
     if not api_key:
@@ -146,7 +206,49 @@ def _send_verification_email_via_resend(*, to_email: str, full_name: str, token:
         )
 
 
+def _send_password_reset_email_via_resend(*, to_email: str, full_name: str, token: str) -> None:
+    api_key = os.getenv("RESEND_API_KEY") or os.getenv("EMAIL_API_KEY")
+    if not api_key:
+        raise RuntimeError("RESEND_API_KEY is not configured.")
+
+    subject, text_body, html_body = _build_password_reset_email_content(full_name=full_name, token=token)
+    response = httpx.post(
+        os.getenv("RESEND_API_URL", DEFAULT_RESEND_API_URL),
+        headers={
+            "Authorization": f"Bearer {api_key}",
+            "Content-Type": "application/json",
+            "User-Agent": "ShiftPlanner/1.0",
+        },
+        json={
+            "from": _build_sender(),
+            "to": to_email,
+            "subject": subject,
+            "html": html_body,
+            "text": text_body,
+        },
+        timeout=20,
+    )
+    if response.status_code >= 400:
+        raise RuntimeError(
+            f"Resend API rejected email with status {response.status_code}: {response.text[:500]}"
+        )
+
+
 def _send_verification_email_via_smtp(*, to_email: str, full_name: str, token: str) -> None:
+    _send_email_via_smtp(
+        to_email=to_email,
+        subject_body_builder=lambda: _build_verification_email_content(full_name=full_name, token=token),
+    )
+
+
+def _send_password_reset_email_via_smtp(*, to_email: str, full_name: str, token: str) -> None:
+    _send_email_via_smtp(
+        to_email=to_email,
+        subject_body_builder=lambda: _build_password_reset_email_content(full_name=full_name, token=token),
+    )
+
+
+def _send_email_via_smtp(*, to_email: str, subject_body_builder) -> None:
     password = os.getenv("SMTP_PASSWORD")
     if not password:
         raise RuntimeError("SMTP_PASSWORD is not configured.")
@@ -161,7 +263,7 @@ def _send_verification_email_via_smtp(*, to_email: str, full_name: str, token: s
     use_ssl = _env_flag("SMTP_USE_SSL", True)
     force_ipv4 = _env_flag("SMTP_FORCE_IPV4", True)
 
-    subject, text_body, html_body = _build_verification_email_content(full_name=full_name, token=token)
+    subject, text_body, html_body = subject_body_builder()
 
     message = EmailMessage()
     message["Subject"] = subject

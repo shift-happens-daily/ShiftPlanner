@@ -253,6 +253,111 @@ def test_register_requires_email_verification_when_enabled(client: TestClient, m
             assert cursor.fetchone() == (True, None, None)
 
 
+def test_unverified_registration_expires_and_can_register_again(
+    client: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    sent_messages: list[dict[str, str]] = []
+
+    def fake_send_verification_email(*, to_email: str, full_name: str, token: str) -> None:
+        sent_messages.append({"to_email": to_email, "full_name": full_name, "token": token})
+
+    monkeypatch.setenv("EMAIL_VERIFICATION_REQUIRED", "true")
+    monkeypatch.setattr(auth_service.email_service, "send_verification_email", fake_send_verification_email)
+
+    first = client.post(
+        "/auth/register",
+        json={
+            "full_name": "Expired Verify",
+            "email": "expired-verify@example.com",
+            "password": "manager123",
+            "role": "manager",
+        },
+    )
+    assert first.status_code == 201, first.text
+    first_user_id = first.json()["id"]
+
+    with psycopg.connect(PSYCOPG_DSN) as connection:
+        with connection.cursor() as cursor:
+            cursor.execute(
+                """
+                UPDATE users
+                SET email_verification_expires_at = CURRENT_TIMESTAMP - INTERVAL '1 minute'
+                WHERE email = 'expired-verify@example.com'
+                """
+            )
+
+    second = client.post(
+        "/auth/register",
+        json={
+            "full_name": "Expired Verify Again",
+            "email": "expired-verify@example.com",
+            "password": "manager456",
+            "role": "manager",
+        },
+    )
+    assert second.status_code == 201, second.text
+    assert second.json()["id"] != first_user_id
+    assert len(sent_messages) == 2
+    assert sent_messages[0]["token"] != sent_messages[1]["token"]
+
+    with psycopg.connect(PSYCOPG_DSN) as connection:
+        with connection.cursor() as cursor:
+            cursor.execute("SELECT COUNT(*) FROM users WHERE email = 'expired-verify@example.com'")
+            assert cursor.fetchone()[0] == 1
+
+
+def test_password_reset_flow_changes_password(client: TestClient, monkeypatch: pytest.MonkeyPatch) -> None:
+    sent_messages: list[dict[str, str]] = []
+
+    def fake_send_password_reset_email(*, to_email: str, full_name: str, token: str) -> None:
+        sent_messages.append({"to_email": to_email, "full_name": full_name, "token": token})
+
+    monkeypatch.setattr(auth_service.email_service, "send_password_reset_email", fake_send_password_reset_email)
+
+    requested = client.post("/auth/password-reset/request", json={"email": "manager@example.com"})
+    assert requested.status_code == 200, requested.text
+    assert requested.json() == {"detail": "If an account exists for this email, a password reset email has been sent."}
+    assert len(sent_messages) == 1
+    assert sent_messages[0]["to_email"] == "manager@example.com"
+
+    confirmed = client.post(
+        "/auth/password-reset/confirm",
+        json={"token": sent_messages[0]["token"], "new_password": "manager456"},
+    )
+    assert confirmed.status_code == 200, confirmed.text
+    assert confirmed.json() == {"detail": "Password changed successfully."}
+
+    assert client.post("/auth/login", json={"email": "manager@example.com", "password": "manager123"}).status_code == 401
+    assert client.post("/auth/login", json={"email": "manager@example.com", "password": "manager456"}).status_code == 200
+    assert client.post(
+        "/auth/password-reset/confirm",
+        json={"token": sent_messages[0]["token"], "new_password": "manager789"},
+    ).status_code == 400
+
+
+def test_change_password_from_profile_requires_current_password(client: TestClient) -> None:
+    headers = login_json(client, "manager@example.com", "manager123")
+
+    rejected = client.post(
+        "/auth/change-password",
+        headers=headers,
+        json={"current_password": "wrong-password", "new_password": "manager456"},
+    )
+    assert rejected.status_code == 401
+
+    changed = client.post(
+        "/auth/change-password",
+        headers=headers,
+        json={"current_password": "manager123", "new_password": "manager456"},
+    )
+    assert changed.status_code == 200, changed.text
+    assert changed.json() == {"detail": "Password changed successfully."}
+
+    assert client.post("/auth/login", json={"email": "manager@example.com", "password": "manager123"}).status_code == 401
+    assert client.post("/auth/login", json={"email": "manager@example.com", "password": "manager456"}).status_code == 200
+
+
 def test_register_email_delivery_failure_does_not_persist_user(
     client: TestClient,
     monkeypatch: pytest.MonkeyPatch,

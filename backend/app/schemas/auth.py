@@ -48,6 +48,24 @@ class EmailVerificationResponse(BaseModel):
     detail: str
 
 
+class PasswordResetRequest(BaseModel):
+    email: str = Field(min_length=3)
+
+
+class PasswordResetConfirmRequest(BaseModel):
+    token: str = Field(min_length=1)
+    new_password: str = Field(min_length=8)
+
+
+class ChangePasswordRequest(BaseModel):
+    current_password: str = Field(min_length=1)
+    new_password: str = Field(min_length=8)
+
+
+class PasswordChangeResponse(BaseModel):
+    detail: str
+
+
 class CurrentUserCompanyRead(BaseModel):
     id: int
     name: str
