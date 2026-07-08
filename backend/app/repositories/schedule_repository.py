@@ -281,6 +281,7 @@ def publish_schedule(db: Session, schedule: Schedule) -> Schedule:
         update(Schedule)
         .where(
             Schedule.company_id == schedule.company_id,
+            Schedule.branch_id == schedule.branch_id,
             Schedule.id != schedule.id,
             Schedule.status == "published",
             Schedule.start_date <= schedule.end_date,
