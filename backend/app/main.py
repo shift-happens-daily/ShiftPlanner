@@ -1,4 +1,6 @@
 import os
+from pathlib import Path
+from urllib.parse import urlparse
 
 from dotenv import load_dotenv
 from fastapi import FastAPI, Request
@@ -10,8 +12,9 @@ from sqlalchemy.exc import SQLAlchemyError
 
 from app.database import SessionLocal
 from app.api import auth, companies, employees, imports, positions, reports, schedule
+from app.services.schema_service import ensure_runtime_schema
 
-load_dotenv()
+load_dotenv(Path(__file__).resolve().parents[1] / ".env")
 
 frontend_origins = [
     origin.strip()
@@ -19,10 +22,22 @@ frontend_origins = [
     if origin.strip()
 ]
 
+
+def get_root_path() -> str:
+    explicit_root_path = os.getenv("ROOT_PATH")
+    if explicit_root_path is not None and explicit_root_path.strip():
+        return explicit_root_path.strip().rstrip("/")
+
+    public_api_base_url = os.getenv("PUBLIC_API_BASE_URL", "")
+    parsed_path = urlparse(public_api_base_url).path.strip().rstrip("/")
+    return parsed_path if parsed_path and parsed_path != "/" else ""
+
+
 app = FastAPI(
     title="ShiftPlanner API",
     version="0.3.0",
     description="Stage 2 REST API for ShiftPlanner with JWT auth, RBAC, and PostgreSQL persistence.",
+    root_path=get_root_path(),
 )
 
 app.add_middleware(
@@ -51,6 +66,12 @@ app.include_router(employees.router, prefix="/employees", tags=["Employees"])
 app.include_router(imports.router, prefix="/imports", tags=["Imports"])
 app.include_router(schedule.router, prefix="/schedule", tags=["Schedule"])
 app.include_router(reports.router, prefix="/reports", tags=["Reports"])
+
+
+@app.on_event("startup")
+def ensure_runtime_schema_on_startup() -> None:
+    with SessionLocal() as session:
+        ensure_runtime_schema(session)
 
 
 @app.get("/health")

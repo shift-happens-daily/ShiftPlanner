@@ -31,6 +31,17 @@ def require_manager(current_user: UserRead = Depends(get_current_user)) -> UserR
     return current_user
 
 
+def require_active_manager(current_user: UserRead = Depends(get_current_user)) -> UserRead:
+    if current_user.role != "manager":
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Manager access required")
+    if current_user.company_id is None:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Active manager company membership required.",
+        )
+    return current_user
+
+
 def ensure_manager_or_employee_self(employee_id: int, current_user: UserRead) -> None:
     if current_user.role == "manager":
         return
@@ -52,5 +63,10 @@ def ensure_employee_user(current_user: UserRead) -> int:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="This employee account is not linked to an employee profile.",
+        )
+    if current_user.employee_status == "pending":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Employee membership is pending manager approval.",
         )
     return current_user.employee_id

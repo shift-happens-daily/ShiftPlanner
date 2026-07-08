@@ -5,12 +5,15 @@ const translations = {
     requestFailed: 'Не удалось выполнить запрос.',
     validationError: 'Проверьте введенные данные.',
     network: 'Бэкенд недоступен.',
+    serverError: 'Ошибка при генерации ссылки подтверждения.',
+    noResponse: 'Сервер не ответил — возможно, упал при генерации. Проверьте логи бэкенда.',
     sessionExpired: 'Сессия истекла. Войдите снова.',
     forbidden: 'У вас нет прав для этого действия.',
     notFound: 'Запрошенные данные не найдены.',
     employeeProfileMissing: 'Аккаунт сотрудника не привязан к профилю сотрудника.',
     inviteCodeNotFound: 'Компания с таким инвайт-кодом не найдена.',
     invalidCredentials: 'Неверный email или пароль.',
+    emailNotVerified: 'Подтвердите email по ссылке из письма, затем войдите.',
     userExists: 'Пользователь с таким email уже существует.',
     branchMismatch: 'Выбранный филиал не относится к компании.',
     positionMismatch: 'Выбранная позиция не относится к компании.',
@@ -24,6 +27,10 @@ const translations = {
     shiftNotFound: 'Смена не найдена.',
     exchangeNotFound: 'Запрос на обмен не найден.',
     managersCannotJoin: 'Менеджер не может присоединиться к компании как сотрудник.',
+    managerJoinPending: 'Заявка менеджера уже отправлена.',
+    managerAlreadyActive: 'Менеджер уже состоит в другой компании.',
+    managerRequestNotFound: 'Заявка менеджера не найдена.',
+    ownerActionRequired: 'Только владелец компании может выполнить это действие.',
     permissionRequired: 'У вас нет прав для этого действия.',
     noAccessEmployee: 'У вас нет доступа к данным этого сотрудника.',
     invalidToken: 'Сессия истекла. Войдите снова.',
@@ -33,12 +40,15 @@ const translations = {
     requestFailed: 'Request failed.',
     validationError: 'Please check the entered data.',
     network: 'Backend is unavailable.',
+    serverError: 'Error occurred while generating confirmation link. Please contact the backend developer.',
+    noResponse: 'Server did not respond — it may have crashed during generation. Check backend logs.',
     sessionExpired: 'Session expired. Please log in again.',
     forbidden: 'You do not have permission for this action.',
     notFound: 'Requested data was not found.',
     employeeProfileMissing: 'This employee account is not linked to an employee profile.',
     inviteCodeNotFound: 'Company with this invite code was not found.',
     invalidCredentials: 'Invalid email or password.',
+    emailNotVerified: 'Confirm your email from the message we sent, then log in.',
     userExists: 'A user with this email already exists.',
     branchMismatch: 'The selected branch does not belong to this company.',
     positionMismatch: 'The selected position does not belong to this company.',
@@ -52,6 +62,10 @@ const translations = {
     shiftNotFound: 'Shift was not found.',
     exchangeNotFound: 'Exchange request was not found.',
     managersCannotJoin: 'Managers cannot join a company as employees.',
+    managerJoinPending: 'Manager join request is already pending.',
+    managerAlreadyActive: 'Manager is already active in another company.',
+    managerRequestNotFound: 'Manager request not found.',
+    ownerActionRequired: 'Only the company owner can perform this action.',
     permissionRequired: 'You do not have permission for this action.',
     noAccessEmployee: 'You do not have access to this employee resource.',
     invalidToken: 'Session expired. Please log in again.',
@@ -61,11 +75,16 @@ const translations = {
 
 const directDetailMap = {
   'Invalid email or password.': 'invalidCredentials',
+  'Email is not verified.': 'emailNotVerified',
   'A user with this email already exists.': 'userExists',
   'Token is not active.': 'invalidToken',
   'Could not validate credentials.': 'invalidToken',
   'Company invite code not found.': 'inviteCodeNotFound',
   'Managers cannot join a company as employees.': 'managersCannotJoin',
+  'Manager join request is already pending.': 'managerJoinPending',
+  'Manager is already active in another company.': 'managerAlreadyActive',
+  'Manager request not found.': 'managerRequestNotFound',
+  'Only the company owner can perform this action.': 'ownerActionRequired',
   'Branch does not belong to company.': 'branchMismatch',
   'Position does not belong to company.': 'positionMismatch',
   'Employee was not found.': 'employeeNotFound',
@@ -153,7 +172,22 @@ export function extractApiErrorMessage(error, fallbackMessage, language = getSto
     return messages.validationError;
   }
 
-  if (error.message === 'Network Error') {
+  if (error.response?.status === 409) {
+    const detail = error.response?.data?.detail;
+    if (typeof detail === 'string') {
+      return localizeBackendMessage(detail, language);
+    }
+  }
+
+  if (error.response?.status >= 500) {
+    return messages.serverError;
+  }
+
+  if (error.request && !error.response) {
+    return messages.noResponse;
+  }
+
+  if (error.message === 'Network Error' || error.code === 'ERR_NETWORK') {
     return messages.network;
   }
 

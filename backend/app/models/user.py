@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 from datetime import date, datetime, time
 
 from sqlalchemy import Boolean, Date, DateTime, ForeignKey, Integer, String, Text, Time, func
@@ -11,6 +11,14 @@ from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from app.models.company import Branch, Company, Position
+
+
+def _primary_link(links):
+    if not links:
+        return None
+    return sorted(links, key=lambda item: (not item.is_primary, item.id))[0]
+
+
 class User(Base):
     __tablename__ = "users"
 
@@ -25,6 +33,13 @@ class User(Base):
         default=True,
         server_default="true",
     )
+    email_verified: Mapped[bool] = mapped_column(
+        Boolean,
+        default=True,
+        server_default="true",
+    )
+    email_verification_token: Mapped[str | None] = mapped_column(String(128), unique=True)
+    email_verification_expires_at: Mapped[datetime | None] = mapped_column(DateTime)
     created_at: Mapped[datetime] = mapped_column(
         DateTime,
         server_default=func.current_timestamp(),
@@ -44,16 +59,29 @@ class Employee(Base):
     id: Mapped[int] = mapped_column(primary_key=True)
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"))
     company_id: Mapped[int] = mapped_column(ForeignKey("companies.id", ondelete="CASCADE"))
-    branch_id: Mapped[int | None] = mapped_column(ForeignKey("branches.id", ondelete="SET NULL"))
-    position_id: Mapped[int | None] = mapped_column(ForeignKey("positions.id", ondelete="SET NULL"))
+    legacy_branch_id: Mapped[int | None] = mapped_column("branch_id", ForeignKey("branches.id", ondelete="SET NULL"))
+    legacy_position_id: Mapped[int | None] = mapped_column("position_id", ForeignKey("positions.id", ondelete="SET NULL"))
     max_hours_per_week: Mapped[int] = mapped_column(Integer, default=40, server_default="40")
+    max_hours_per_day: Mapped[int] = mapped_column(Integer, default=8, server_default="8")
+    min_hours_per_shift: Mapped[int] = mapped_column(Integer, default=5, server_default="5")
+    max_hours_per_shift: Mapped[int] = mapped_column(Integer, default=12, server_default="12")
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, server_default="true")
 
     user: Mapped[User] = relationship(back_populates="employee")
 
     company: Mapped["Company"] = relationship()
-    branch: Mapped["Branch | None"] = relationship()
-    position: Mapped["Position | None"] = relationship(back_populates="employees")
+    legacy_branch: Mapped["Branch | None"] = relationship(foreign_keys=[legacy_branch_id])
+    legacy_position: Mapped["Position | None"] = relationship(foreign_keys=[legacy_position_id])
+    branch_links: Mapped[list["EmployeeBranch"]] = relationship(
+        back_populates="employee",
+        cascade="all, delete-orphan",
+        passive_deletes=True,
+    )
+    position_links: Mapped[list["EmployeePosition"]] = relationship(
+        back_populates="employee",
+        cascade="all, delete-orphan",
+        passive_deletes=True,
+    )
 
     availability_blocks: Mapped[list["EmployeeAvailability"]] = relationship(
         back_populates="employee",
@@ -66,12 +94,59 @@ class Employee(Base):
         passive_deletes=True,
     )
 
+    @property
+    def branch(self) -> "Branch | None":
+        link = _primary_link(self.branch_links)
+        return link.branch if link is not None else None
+
+    @property
+    def branch_id(self) -> int | None:
+        branch = self.branch
+        return branch.id if branch is not None else None
+
+    @property
+    def position(self) -> "Position | None":
+        link = _primary_link(self.position_links)
+        return link.position if link is not None else None
+
+    @property
+    def position_id(self) -> int | None:
+        position = self.position
+        return position.id if position is not None else None
+
+
+class EmployeeBranch(Base):
+    __tablename__ = "employee_branches"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    employee_id: Mapped[int] = mapped_column(ForeignKey("employees.id", ondelete="CASCADE"))
+    branch_id: Mapped[int] = mapped_column(ForeignKey("branches.id", ondelete="CASCADE"))
+    is_primary: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.current_timestamp())
+
+    employee: Mapped[Employee] = relationship(back_populates="branch_links")
+    branch: Mapped["Branch"] = relationship(back_populates="employee_links")
+
+
+class EmployeePosition(Base):
+    __tablename__ = "employee_positions"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    employee_id: Mapped[int] = mapped_column(ForeignKey("employees.id", ondelete="CASCADE"))
+    position_id: Mapped[int] = mapped_column(ForeignKey("positions.id", ondelete="CASCADE"))
+    is_primary: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.current_timestamp())
+
+    employee: Mapped[Employee] = relationship(back_populates="position_links")
+    position: Mapped["Position"] = relationship(back_populates="employee_links")
+
 
 class EmployeeAvailability(Base):
     __tablename__ = "employee_availability"
 
     id: Mapped[int] = mapped_column(primary_key=True)
     employee_id: Mapped[int] = mapped_column(ForeignKey("employees.id", ondelete="CASCADE"))
+    availability_date: Mapped[date | None] = mapped_column(Date, nullable=True)
     weekday: Mapped[int] = mapped_column(Integer)
     start_time: Mapped[time] = mapped_column(Time)
     end_time: Mapped[time] = mapped_column(Time)

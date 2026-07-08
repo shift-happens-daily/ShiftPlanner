@@ -7,8 +7,8 @@ services:
       POSTGRES_DB: shiftplanner
       POSTGRES_USER: shiftplanner_user
       POSTGRES_PASSWORD: shiftplanner_password
-    ports:
-      - "5432:5432"
+    expose:
+      - "5432"
     volumes:
       - shiftplanner_postgres_data:/var/lib/postgresql/data
       - ./backend/db/schema.sql:/docker-entrypoint-initdb.d/01_schema.sql:ro
@@ -27,12 +27,26 @@ services:
     restart: unless-stopped
     environment:
       DATABASE_URL: postgresql+psycopg://shiftplanner_user:shiftplanner_password@postgres:5432/shiftplanner
-      FRONTEND_ORIGINS: http://localhost:5173,http://10.0.2.2:8000
+      FRONTEND_ORIGINS: http://localhost:5173,https://shiftplanner.online,http://10.0.2.2:8000
       JWT_SECRET_KEY: change-me-in-production
       JWT_ALGORITHM: HS256
       ACCESS_TOKEN_EXPIRE_MINUTES: 60
-    ports:
-      - "8000:8000"
+      ROOT_PATH: ${ROOT_PATH:-}
+      PUBLIC_API_BASE_URL: ${PUBLIC_API_BASE_URL:-http://localhost:8000}
+      EMAIL_VERIFICATION_REQUIRED: ${EMAIL_VERIFICATION_REQUIRED:-true}
+      EMAIL_PROVIDER: ${EMAIL_PROVIDER:-smtp}
+      EMAIL_FROM: "${EMAIL_FROM:-ShiftPlanner <shiftplanner@mail.ru>}"
+      RESEND_API_KEY: ${RESEND_API_KEY:-}
+      SMTP_HOST: ${SMTP_HOST:-smtp.mail.ru}
+      SMTP_PORT: ${SMTP_PORT:-465}
+      SMTP_USE_SSL: ${SMTP_USE_SSL:-true}
+      SMTP_FORCE_IPV4: ${SMTP_FORCE_IPV4:-true}
+      SMTP_USERNAME: ${SMTP_USERNAME:-shiftplanner@mail.ru}
+      SMTP_FROM_EMAIL: ${SMTP_FROM:-shiftplanner@mail.ru}
+      SMTP_FROM_NAME: ${SMTP_FROM_NAME:-ShiftPlanner}
+      SMTP_PASSWORD: ${SMTP_PASSWORD:-}
+    expose:
+      - "8000"
     depends_on:
       postgres:
         condition: service_healthy
@@ -47,6 +61,51 @@ services:
       timeout: 5s
       retries: 12
       start_period: 10s
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      args:
+        VITE_API_URL: /api
+    container_name: shiftplanner_frontend
+    restart: unless-stopped
+    environment:
+      VITE_API_URL: /api
+    expose:
+      - "80"
+    depends_on:
+      backend:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1/"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 5s
+
+  nginx:
+    build:
+      context: ./nginx
+      dockerfile: Dockerfile
+    container_name: shiftplanner_nginx
+    ports:
+      - "80:80"
+      - "443:443"
+    depends_on:
+      backend:
+        condition: service_healthy
+      frontend:
+        condition: service_healthy
+    volumes:
+      - /etc/letsencrypt:/etc/letsencrypt:ro
+      - /var/www/certbot:/var/www/certbot:ro
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1/nginx-health"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
 
 volumes:
   shiftplanner_postgres_data:

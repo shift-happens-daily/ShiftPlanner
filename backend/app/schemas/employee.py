@@ -20,8 +20,22 @@ class AvailabilityBlock(BaseModel):
         return self
 
 
+class AvailabilityDateBlock(BaseModel):
+    date: date
+    start_time: time
+    end_time: time
+    availability_status: AvailabilityStatus = "available"
+
+    @model_validator(mode="after")
+    def validate_time_range(self) -> "AvailabilityDateBlock":
+        if self.end_time <= self.start_time:
+            raise ValueError("end_time must be later than start_time.")
+        return self
+
+
 class AvailabilityUpsert(BaseModel):
     weekly_availability: list[AvailabilityBlock] = Field(default_factory=list)
+    daily_availability: list[AvailabilityDateBlock] = Field(default_factory=list)
     desired_days_off: list[int] = Field(default_factory=list)
 
     @model_validator(mode="after")
@@ -47,12 +61,31 @@ class EmployeePositionRead(BaseModel):
     name: str
 
 
+class EmployeeBranchRead(BaseModel):
+    id: int
+    name: str
+
+
+class EmployeeBranchAssignmentRead(EmployeeBranchRead):
+    is_primary: bool
+
+
 class EmployeePositionUpdate(BaseModel):
     position_id: int | None = Field(ge=1)
 
 
 class EmployeeBranchUpdate(BaseModel):
     branch_id: int | None = Field(ge=1)
+
+
+class EmployeeWorkLimits(BaseModel):
+    max_hours_per_week: int = Field(ge=1)
+    max_hours_per_day: int = Field(ge=1, le=24)
+
+
+class EmployeeBranchesUpdate(BaseModel):
+    branch_ids: list[int] = Field(min_length=1)
+    primary_branch_id: int = Field(ge=1)
 
 
 class EmployeeRead(BaseModel):
@@ -64,6 +97,10 @@ class EmployeeRead(BaseModel):
     branch_id: int | None
     position_id: int | None
     position_title: str
+    max_hours_per_week: int
+    max_hours_per_day: int
+    branch: EmployeeBranchRead | None = None
+    branches: list[EmployeeBranchAssignmentRead] = Field(default_factory=list)
     position: EmployeePositionRead | None = None
     availability: AvailabilityRead | None = None
 
