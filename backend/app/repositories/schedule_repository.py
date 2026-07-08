@@ -105,20 +105,15 @@ def create_schedule(
     end_date: date,
     generated_shifts: list[dict],
 ) -> Schedule:
-    existing_drafts = list(
-        db.scalars(
-            select(Schedule).where(
-                Schedule.company_id == company_id,
-                Schedule.branch_id == branch_id,
-                Schedule.start_date == start_date,
-                Schedule.end_date == end_date,
-                Schedule.status == "draft",
-            )
-        )
+    conflict = find_active_schedule_conflict(
+        db,
+        company_id=company_id,
+        branch_id=branch_id,
+        start_date=start_date,
+        end_date=end_date,
     )
-    for existing_draft in existing_drafts:
-        db.delete(existing_draft)
-    db.flush()
+    if conflict is not None:
+        raise ValueError(_format_schedule_conflict_message(conflict))
 
     schedule = Schedule(company_id=company_id, branch_id=branch_id, start_date=start_date, end_date=end_date, status="draft")
     db.add(schedule)
@@ -202,17 +197,22 @@ def find_active_schedule_conflict(
     db: Session,
     *,
     company_id: int,
-    branch_id: int,
+    branch_id: int | None,
     start_date: date,
     end_date: date,
 ) -> dict | None:
+    branch_clause = (
+        "AND (branch_id = :branch_id OR branch_id IS NULL)"
+        if branch_id is not None
+        else ""
+    )
     row = db.execute(
         text(
-            """
+            f"""
             SELECT id, branch_id, start_date, end_date, status
             FROM schedules
             WHERE company_id = :company_id
-              AND branch_id = :branch_id
+              {branch_clause}
               AND status IN ('draft', 'published')
               AND start_date <= :end_date
               AND end_date >= :start_date
@@ -228,6 +228,14 @@ def find_active_schedule_conflict(
         },
     ).mappings().first()
     return None if row is None else dict(row)
+
+
+def _format_schedule_conflict_message(conflict: dict) -> str:
+    return (
+        "Schedule already exists for this period. "
+        f"Delete schedule {conflict['id']} "
+        f"({conflict['start_date']} to {conflict['end_date']}) before creating a new one."
+    )
 
 
 def list_schedule_shift_rows(db: Session, schedule_id: int) -> list[dict]:

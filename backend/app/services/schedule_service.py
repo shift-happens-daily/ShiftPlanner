@@ -305,6 +305,15 @@ def generate_schedule(
             detail="Manager's company does not have a branch.",
         )
 
+    for branch in branches:
+        _ensure_no_schedule_conflict(
+            db,
+            company_id=current_user.company_id,
+            branch_id=branch.id,
+            start_date=start_date,
+            end_date=end_date,
+        )
+
     try:
         results = []
         for branch in branches:
@@ -321,7 +330,7 @@ def generate_schedule(
         db.commit()
     except schedule_solver.ScheduleDataError as exc:
         db.rollback()
-        if str(exc).startswith("schedule already exists"):
+        if str(exc).lower().startswith("schedule already exists"):
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,
                 detail=str(exc),
@@ -339,6 +348,33 @@ def generate_schedule(
     result = results[0]
     schedule = schedule_repository.get_schedule(db, result.schedule_id)
     return _build_schedule_read(db, result.schedule_id, schedule.status)
+
+
+def _ensure_no_schedule_conflict(
+    db: Session,
+    *,
+    company_id: int,
+    branch_id: int,
+    start_date: date,
+    end_date: date,
+) -> None:
+    conflict = schedule_repository.find_active_schedule_conflict(
+        db,
+        company_id=company_id,
+        branch_id=branch_id,
+        start_date=start_date,
+        end_date=end_date,
+    )
+    if conflict is None:
+        return
+    raise HTTPException(
+        status_code=status.HTTP_409_CONFLICT,
+        detail=(
+            "Schedule already exists for this period. "
+            f"Delete schedule {conflict['id']} "
+            f"({conflict['start_date']} to {conflict['end_date']}) before creating a new one."
+        ),
+    )
 
 
 def list_schedules(

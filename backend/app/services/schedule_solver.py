@@ -737,15 +737,18 @@ def _save_result(
     end_date: date,
     assignments: list[GeneratedAssignment],
 ) -> int:
-    db.execute(
+    conflict = db.execute(
         text(
             """
-            DELETE FROM schedules
+            SELECT id, start_date, end_date
+            FROM schedules
             WHERE company_id = :company_id
-              AND branch_id = :branch_id
+              AND (branch_id = :branch_id OR branch_id IS NULL)
               AND start_date <= :end_date
               AND end_date >= :start_date
-              AND status = 'draft'
+              AND status IN ('draft', 'published')
+            ORDER BY start_date, end_date, id
+            LIMIT 1
             """
         ),
         {
@@ -754,7 +757,14 @@ def _save_result(
             "start_date": start_date,
             "end_date": end_date,
         },
-    )
+    ).mappings().first()
+    if conflict is not None:
+        raise ScheduleDataError(
+            "Schedule already exists for this period. "
+            f"Delete schedule {conflict['id']} "
+            f"({conflict['start_date']} to {conflict['end_date']}) before creating a new one."
+        )
+
     schedule_id = db.execute(
         text(
             """

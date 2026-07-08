@@ -7,6 +7,7 @@ from sqlalchemy.orm import Session
 from app.api.dependencies import ensure_employee_user, get_current_user, require_role
 from app.api.responses import (
     BAD_REQUEST_RESPONSE,
+    CONFLICT_RESPONSE,
     FORBIDDEN_RESPONSE,
     NOT_FOUND_RESPONSE,
     UNAUTHORIZED_RESPONSE,
@@ -135,7 +136,13 @@ def get_schedules(
 @router.post(
     "/generate",
     response_model=ScheduleRead,
-    responses={**BAD_REQUEST_RESPONSE, **UNAUTHORIZED_RESPONSE, **FORBIDDEN_RESPONSE, **VALIDATION_ERROR_RESPONSE},
+    responses={
+        **BAD_REQUEST_RESPONSE,
+        **UNAUTHORIZED_RESPONSE,
+        **FORBIDDEN_RESPONSE,
+        **CONFLICT_RESPONSE,
+        **VALIDATION_ERROR_RESPONSE,
+    },
 )
 def generate_schedule(
     payload: ScheduleGenerateRequest | None = None,
