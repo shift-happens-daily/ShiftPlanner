@@ -34,9 +34,9 @@ class ApiAuthRepository(
         password: String,
         name: String,
         role: UserRole
-    ): AppUser {
+    ): AppUser? {
         try {
-            apiClient.api.register(
+            val response = apiClient.api.register(
                 RegisterRequestDto(
                     fullName = name,
                     email = email,
@@ -44,6 +44,9 @@ class ApiAuthRepository(
                     role = role
                 )
             )
+            if (response.emailVerificationRequired) {
+                return null // caller should show "check your inbox" UI
+            }
             return login(email = email, password = password)
         } catch (error: Throwable) {
             throw Exception(apiClient.userMessage(error))

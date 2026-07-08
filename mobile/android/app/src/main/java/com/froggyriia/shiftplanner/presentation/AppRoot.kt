@@ -40,12 +40,17 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.appcompat.app.AppCompatDelegate
+import androidx.annotation.StringRes
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.core.os.LocaleListCompat
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.froggyriia.shiftplanner.R
 import com.froggyriia.shiftplanner.AppContainer
 import com.froggyriia.shiftplanner.data.reports.ReportsRepository
 import com.froggyriia.shiftplanner.domain.model.AppUser
@@ -110,13 +115,13 @@ fun AppRoot(
 
 // ── Manager ───────────────────────────────────────────────────────────────────
 
-private enum class ManagerTab(val label: String, val icon: ImageVector) {
-    COMPANY("Company", Icons.Default.Business),
-    EMPLOYEES("Employees", Icons.Default.Group),
-    REQUIREMENTS("Reqs", Icons.Default.Assignment),
-    SCHEDULE("Schedule", Icons.Default.CalendarMonth),
-    REPORTS("Reports", Icons.Default.Assessment),
-    PROFILE("Profile", Icons.Default.Person)
+private enum class ManagerTab(@StringRes val labelRes: Int, val icon: ImageVector) {
+    COMPANY(R.string.nav_company, Icons.Default.Business),
+    EMPLOYEES(R.string.nav_employees, Icons.Default.Group),
+    REQUIREMENTS(R.string.nav_reqs, Icons.Default.Assignment),
+    SCHEDULE(R.string.nav_schedule, Icons.Default.CalendarMonth),
+    REPORTS(R.string.nav_reports, Icons.Default.Assessment),
+    PROFILE(R.string.nav_profile, Icons.Default.Person)
 }
 
 @Composable
@@ -132,11 +137,12 @@ private fun ManagerShell(
         bottomBar = {
             NavigationBar {
                 ManagerTab.entries.forEach { tab ->
+                    val label = stringResource(tab.labelRes)
                     NavigationBarItem(
                         selected = tab == selectedTab,
                         onClick = { selectedTab = tab },
-                        icon = { Icon(tab.icon, contentDescription = tab.label) },
-                        label = { Text(tab.label) }
+                        icon = { Icon(tab.icon, contentDescription = label) },
+                        label = { Text(label) }
                     )
                 }
             }
@@ -225,10 +231,10 @@ private fun ManagerShell(
 
 // ── Employee ──────────────────────────────────────────────────────────────────
 
-private enum class EmployeeTab(val label: String, val icon: ImageVector) {
-    AVAILABILITY("Availability", Icons.Default.EventAvailable),
-    SCHEDULE("Schedule", Icons.Default.CalendarToday),
-    PROFILE("Profile", Icons.Default.Person)
+private enum class EmployeeTab(@StringRes val labelRes: Int, val icon: ImageVector) {
+    AVAILABILITY(R.string.nav_availability, Icons.Default.EventAvailable),
+    SCHEDULE(R.string.nav_schedule, Icons.Default.CalendarToday),
+    PROFILE(R.string.nav_profile, Icons.Default.Person)
 }
 
 @Composable
@@ -255,11 +261,12 @@ private fun EmployeeShell(
         bottomBar = {
             NavigationBar {
                 EmployeeTab.entries.forEach { tab ->
+                    val label = stringResource(tab.labelRes)
                     NavigationBarItem(
                         selected = tab == selectedTab,
                         onClick = { selectedTab = tab },
-                        icon = { Icon(tab.icon, contentDescription = tab.label) },
-                        label = { Text(tab.label) }
+                        icon = { Icon(tab.icon, contentDescription = label) },
+                        label = { Text(label) }
                     )
                 }
             }
@@ -482,8 +489,56 @@ private fun ProfileScreen(
                 }
             }
 
+            // Language picker
             Spacer(Modifier.height(4.dp))
-            Button(onClick = onLogout) { Text("Log out") }
+            HorizontalDivider()
+            Spacer(Modifier.height(4.dp))
+            Text(
+                stringResource(R.string.language_label),
+                style = MaterialTheme.typography.titleSmall,
+                fontWeight = FontWeight.SemiBold
+            )
+            val currentLocale = AppCompatDelegate.getApplicationLocales().toLanguageTags()
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                listOf("en" to stringResource(R.string.language_en), "ru" to stringResource(R.string.language_ru)).forEach { (tag, label) ->
+                    val selected = if (tag == "en") !currentLocale.startsWith("ru") else currentLocale.startsWith("ru")
+                    Card(
+                        onClick = {
+                            AppCompatDelegate.setApplicationLocales(LocaleListCompat.forLanguageTags(tag))
+                        },
+                        modifier = Modifier.weight(1f),
+                        colors = androidx.compose.material3.CardDefaults.cardColors(
+                            containerColor = if (selected)
+                                MaterialTheme.colorScheme.primaryContainer
+                            else
+                                MaterialTheme.colorScheme.surfaceVariant
+                        )
+                    ) {
+                        Box(
+                            Modifier
+                                .fillMaxWidth()
+                                .padding(vertical = 12.dp),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text(
+                                label,
+                                style = MaterialTheme.typography.labelMedium,
+                                fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal,
+                                color = if (selected)
+                                    MaterialTheme.colorScheme.onPrimaryContainer
+                                else
+                                    MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    }
+                }
+            }
+
+            Spacer(Modifier.height(4.dp))
+            Button(onClick = onLogout) { Text(stringResource(R.string.logout_button)) }
             if (onDeleteAccount != null) {
                 OutlinedButton(
                     onClick = onDeleteAccount,

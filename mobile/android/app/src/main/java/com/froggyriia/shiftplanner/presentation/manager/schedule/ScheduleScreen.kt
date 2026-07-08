@@ -748,8 +748,8 @@ private fun CalendarUnfilledBlock(
     Box(
         modifier
             .clip(RoundedCornerShape(3.dp))
-            .background(MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.7f))
-            .border(1.dp, MaterialTheme.colorScheme.error.copy(alpha = 0.5f), RoundedCornerShape(3.dp))
+            .background(MaterialTheme.colorScheme.errorContainer)
+            .border(1.dp, MaterialTheme.colorScheme.error, RoundedCornerShape(3.dp))
             .clickable(enabled = isDraft) { onAssign() }
             .padding(2.dp)
     ) {

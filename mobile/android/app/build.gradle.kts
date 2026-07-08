@@ -69,4 +69,5 @@ dependencies {
     implementation(libs.retrofit.core)
     implementation(libs.retrofit.gson)
     implementation(libs.okhttp.logging)
+    implementation("androidx.appcompat:appcompat:1.7.0")
 }

@@ -1,5 +1,8 @@
 package com.froggyriia.shiftplanner.presentation.auth
 
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -48,5 +51,24 @@ fun AuthScreen(
                 }
             )
         }
+    }
+
+    if (uiState.emailVerificationPending) {
+        AlertDialog(
+            onDismissRequest = {
+                viewModel.dismissEmailVerification()
+                screenMode = AuthScreenMode.LOGIN
+            },
+            title = { Text("Check your email") },
+            text = { Text("We sent a confirmation link to ${uiState.email}. Click it to verify your account, then log in.") },
+            confirmButton = {
+                TextButton(onClick = {
+                    viewModel.dismissEmailVerification()
+                    screenMode = AuthScreenMode.LOGIN
+                }) {
+                    Text("Got it")
+                }
+            }
+        )
     }
 }

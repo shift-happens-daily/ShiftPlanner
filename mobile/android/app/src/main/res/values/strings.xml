@@ -1,3 +1,66 @@
 <resources>
     <string name="app_name">ShiftPlanner</string>
+
+    <!-- Navigation -->
+    <string name="nav_company">Company</string>
+    <string name="nav_employees">Employees</string>
+    <string name="nav_reqs">Reqs</string>
+    <string name="nav_schedule">Schedule</string>
+    <string name="nav_reports">Reports</string>
+    <string name="nav_profile">Profile</string>
+    <string name="nav_availability">Availability</string>
+
+    <!-- Auth -->
+    <string name="login_title">Welcome back</string>
+    <string name="login_button">Log in</string>
+    <string name="signup_title">Create account</string>
+    <string name="signup_button">Sign up</string>
+    <string name="logout_button">Log out</string>
+    <string name="email_label">Email</string>
+    <string name="password_label">Password</string>
+    <string name="confirm_password_label">Confirm password</string>
+    <string name="full_name_label">Full name</string>
+
+    <!-- Schedule -->
+    <string name="schedule_title">Schedule</string>
+    <string name="schedule_generate">Generate</string>
+    <string name="schedule_regenerate">Regenerate</string>
+    <string name="schedule_publish">Publish</string>
+    <string name="schedule_draft">DRAFT</string>
+    <string name="schedule_published">PUBLISHED</string>
+    <string name="schedule_unfilled">Unfilled</string>
+
+    <!-- Availability -->
+    <string name="availability_title">My Availability</string>
+    <string name="availability_available">Available</string>
+    <string name="availability_if_needed">If needed</string>
+    <string name="availability_unavailable">Unavailable</string>
+    <string name="availability_save">Save</string>
+    <string name="availability_restore">Restore saved</string>
+    <string name="availability_reset">Reset week</string>
+    <string name="availability_hint">Select color, then draw on the grid</string>
+
+    <!-- Company -->
+    <string name="company_title">Company</string>
+    <string name="invite_code_label">Invite code</string>
+    <string name="invite_code_copy">Copy code</string>
+    <string name="invite_code_copied">Copied!</string>
+    <string name="invite_code_share">Share</string>
+    <string name="invite_code_new">New code</string>
+
+    <!-- Common -->
+    <string name="save">Save</string>
+    <string name="cancel">Cancel</string>
+    <string name="delete">Delete</string>
+    <string name="edit">Edit</string>
+    <string name="add">Add</string>
+    <string name="confirm">Confirm</string>
+    <string name="loading">Loading…</string>
+
+    <!-- Profile -->
+    <string name="profile_title">Profile</string>
+    <string name="language_label">Language</string>
+    <string name="language_en">English</string>
+    <string name="language_ru">Русский</string>
+    <string name="theme_label">Theme</string>
 </resources>

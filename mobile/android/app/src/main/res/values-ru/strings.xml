@@ -1,0 +1,66 @@
+<resources>
+    <string name="app_name">ShiftPlanner</string>
+
+    <!-- Navigation -->
+    <string name="nav_company">Компания</string>
+    <string name="nav_employees">Сотрудники</string>
+    <string name="nav_reqs">Требования</string>
+    <string name="nav_schedule">Расписание</string>
+    <string name="nav_reports">Отчёты</string>
+    <string name="nav_profile">Профиль</string>
+    <string name="nav_availability">Доступность</string>
+
+    <!-- Auth -->
+    <string name="login_title">Вход</string>
+    <string name="login_button">Войти</string>
+    <string name="signup_title">Регистрация</string>
+    <string name="signup_button">Зарегистрироваться</string>
+    <string name="logout_button">Выйти</string>
+    <string name="email_label">Почта</string>
+    <string name="password_label">Пароль</string>
+    <string name="confirm_password_label">Подтвердите пароль</string>
+    <string name="full_name_label">Полное имя</string>
+
+    <!-- Schedule -->
+    <string name="schedule_title">Расписание</string>
+    <string name="schedule_generate">Создать</string>
+    <string name="schedule_regenerate">Пересоздать</string>
+    <string name="schedule_publish">Опубликовать</string>
+    <string name="schedule_draft">ЧЕРНОВИК</string>
+    <string name="schedule_published">ОПУБЛИКОВАНО</string>
+    <string name="schedule_unfilled">Не заполнено</string>
+
+    <!-- Availability -->
+    <string name="availability_title">Моя доступность</string>
+    <string name="availability_available">Доступен</string>
+    <string name="availability_if_needed">Если нужно</string>
+    <string name="availability_unavailable">Недоступен</string>
+    <string name="availability_save">Сохранить</string>
+    <string name="availability_restore">Восстановить</string>
+    <string name="availability_reset">Сбросить</string>
+    <string name="availability_hint">Выберите цвет и рисуйте на сетке</string>
+
+    <!-- Company -->
+    <string name="company_title">Компания</string>
+    <string name="invite_code_label">Инвайт-код</string>
+    <string name="invite_code_copy">Копировать</string>
+    <string name="invite_code_copied">Скопировано!</string>
+    <string name="invite_code_share">Поделиться</string>
+    <string name="invite_code_new">Новый код</string>
+
+    <!-- Common -->
+    <string name="save">Сохранить</string>
+    <string name="cancel">Отмена</string>
+    <string name="delete">Удалить</string>
+    <string name="edit">Изменить</string>
+    <string name="add">Добавить</string>
+    <string name="confirm">Подтвердить</string>
+    <string name="loading">Загрузка…</string>
+
+    <!-- Profile -->
+    <string name="profile_title">Профиль</string>
+    <string name="language_label">Язык</string>
+    <string name="language_en">English</string>
+    <string name="language_ru">Русский</string>
+    <string name="theme_label">Тема</string>
+</resources>

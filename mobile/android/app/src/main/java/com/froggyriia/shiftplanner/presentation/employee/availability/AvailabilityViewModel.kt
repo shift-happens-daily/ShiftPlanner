@@ -83,6 +83,21 @@ class AvailabilityViewModel(
         _uiState.value = _uiState.value.copy(grid = newGrid, hasChanges = true)
     }
 
+    /** Paint a specific slot with the given state (used by drag-to-paint). */
+    fun setSlot(weekday: Int, slot: Int, newState: AvailabilitySlotState) {
+        if (weekday !in 0..6) return
+        val currentGrid = _uiState.value.grid
+        val daySlots = currentGrid[weekday]?.toMutableMap() ?: mutableMapOf()
+        if (newState == AvailabilitySlotState.UNAVAILABLE) {
+            daySlots.remove(slot)
+        } else {
+            daySlots[slot] = newState
+        }
+        val newGrid = currentGrid.toMutableMap()
+        if (daySlots.isEmpty()) newGrid.remove(weekday) else newGrid[weekday] = daySlots
+        _uiState.value = _uiState.value.copy(grid = newGrid, hasChanges = true)
+    }
+
     fun saveAvailability() {
         viewModelScope.launch {
             _uiState.value = _uiState.value.copy(isSaving = true, errorMessage = null)

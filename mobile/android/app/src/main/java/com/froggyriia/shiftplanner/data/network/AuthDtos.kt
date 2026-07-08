@@ -35,7 +35,9 @@ data class RegisterResponseDto(
     val email: String,
     val role: UserRole,
     @SerializedName("employee_id")
-    val employeeId: Int?
+    val employeeId: Int?,
+    @SerializedName("email_verification_required")
+    val emailVerificationRequired: Boolean = false
 )
 
 data class CurrentUserResponseDto(

@@ -194,7 +194,37 @@ private fun CompanyDetailsContent(
                     // ── Read-only company info ──
                     Card(modifier = Modifier.fillMaxWidth()) {
                         Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                            Text("Invite code", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            // "Invite code" label + Regenerate button on same row
+                            Row(
+                                Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text("Invite code", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                if (state.isRegeneratingCode) {
+                                    CircularProgressIndicator(
+                                        modifier = Modifier
+                                            .height(20.dp)
+                                            .padding(end = 4.dp),
+                                        strokeWidth = 2.dp
+                                    )
+                                } else {
+                                    OutlinedButton(
+                                        onClick = viewModel::regenerateInviteCode,
+                                        contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 12.dp, vertical = 4.dp),
+                                        modifier = Modifier.height(32.dp)
+                                    ) {
+                                        Icon(
+                                            Icons.Default.Edit,
+                                            contentDescription = null,
+                                            modifier = Modifier
+                                                .height(14.dp)
+                                                .padding(end = 4.dp)
+                                        )
+                                        Text("New code", style = MaterialTheme.typography.labelSmall)
+                                    }
+                                }
+                            }
                             Text(
                                 company.inviteCode,
                                 style = MaterialTheme.typography.titleLarge,
@@ -237,15 +267,6 @@ private fun CompanyDetailsContent(
                                 ) {
                                     Icon(Icons.Default.Share, null, modifier = Modifier.padding(end = 4.dp))
                                     Text("Share")
-                                }
-                            }
-                            // Regenerate code
-                            if (state.isRegeneratingCode) {
-                                CircularProgressIndicator(modifier = Modifier.height(20.dp))
-                            } else {
-                                TextButton(onClick = viewModel::regenerateInviteCode) {
-                                    Text("Generate new code", style = MaterialTheme.typography.labelSmall,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant)
                                 }
                             }
 
