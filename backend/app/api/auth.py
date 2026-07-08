@@ -1,3 +1,5 @@
+from html import escape
+
 from fastapi import APIRouter, Depends, Query, Response, status
 from fastapi.responses import HTMLResponse
 from fastapi.security import OAuth2PasswordRequestForm
@@ -121,6 +123,65 @@ def confirm_password_reset(
     db: Session = Depends(get_db),
 ) -> PasswordChangeResponse:
     return auth_service.confirm_password_reset(db, payload)
+
+
+@router.get(
+    "/password-reset",
+    response_class=HTMLResponse,
+    responses={**VALIDATION_ERROR_RESPONSE},
+)
+def password_reset_page(token: str = Query(..., min_length=1)) -> HTMLResponse:
+    safe_token = escape(token, quote=True)
+    return HTMLResponse(
+        f"""
+        <!doctype html>
+        <html lang="en">
+          <head>
+            <meta charset="utf-8">
+            <meta name="viewport" content="width=device-width, initial-scale=1">
+            <title>Reset password</title>
+          </head>
+          <body style="margin:0;min-height:100vh;display:flex;align-items:center;justify-content:center;background:#f4faff;color:#002642;font-family:Arial,sans-serif;">
+            <main style="width:min(420px, calc(100vw - 32px));padding:28px;">
+              <h1 style="margin:0 0 16px;font-size:28px;text-align:center;">Reset password</h1>
+              <form id="reset-form" style="display:grid;gap:12px;">
+                <input id="password" type="password" minlength="8" required placeholder="New password" autocomplete="new-password" style="font:inherit;padding:12px;border:1px solid #b9c7d3;border-radius:8px;">
+                <input id="confirm-password" type="password" minlength="8" required placeholder="Confirm new password" autocomplete="new-password" style="font:inherit;padding:12px;border:1px solid #b9c7d3;border-radius:8px;">
+                <button type="submit" style="font:inherit;padding:12px 18px;border:0;border-radius:8px;background:#002642;color:#fff;cursor:pointer;">Change password</button>
+              </form>
+              <p id="message" style="margin:14px 0 0;font-size:15px;line-height:1.5;text-align:center;"></p>
+            </main>
+            <script>
+              const token = "{safe_token}";
+              const form = document.getElementById("reset-form");
+              const message = document.getElementById("message");
+              form.addEventListener("submit", async (event) => {{
+                event.preventDefault();
+                const password = document.getElementById("password").value;
+                const confirmPassword = document.getElementById("confirm-password").value;
+                if (password !== confirmPassword) {{
+                  message.textContent = "Passwords do not match.";
+                  return;
+                }}
+                const endpoint = window.location.pathname.replace(/\\/password-reset$/, "/password-reset/confirm");
+                const response = await fetch(endpoint, {{
+                  method: "POST",
+                  headers: {{"Content-Type": "application/json"}},
+                  body: JSON.stringify({{token, new_password: password}})
+                }});
+                if (response.ok) {{
+                  form.reset();
+                  message.textContent = "Password changed successfully. You can return to ShiftPlanner and log in.";
+                  return;
+                }}
+                const payload = await response.json().catch(() => null);
+                message.textContent = payload?.detail || "Could not change password.";
+              }});
+            </script>
+          </body>
+        </html>
+        """
+    )
 
 
 @router.post(

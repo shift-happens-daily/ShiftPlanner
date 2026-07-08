@@ -21,6 +21,7 @@ def test_send_verification_email_via_resend(monkeypatch):
         return FakeResponse()
 
     monkeypatch.setenv("EMAIL_PROVIDER", "resend")
+    monkeypatch.setenv("EMAIL_FORCE_IPV4", "false")
     monkeypatch.setenv("RESEND_API_KEY", "re_test")
     monkeypatch.setenv("EMAIL_FROM", "ShiftPlanner <no-reply@shiftplanner.online>")
     monkeypatch.setenv("PUBLIC_API_BASE_URL", "https://shiftplanner.online/api")
@@ -57,6 +58,7 @@ def test_send_password_reset_email_via_resend(monkeypatch):
         return FakeResponse()
 
     monkeypatch.setenv("EMAIL_PROVIDER", "resend")
+    monkeypatch.setenv("EMAIL_FORCE_IPV4", "false")
     monkeypatch.setenv("RESEND_API_KEY", "re_test")
     monkeypatch.setenv("EMAIL_FROM", "ShiftPlanner <no-reply@shiftplanner.online>")
     monkeypatch.setenv("PASSWORD_RESET_URL", "https://shiftplanner.online/reset-password")

@@ -4,10 +4,11 @@ on:
   pull_request:
     branches:
       - main
-      - dev2
+      - dev
   push:
     branches:
       - main
+      - dev
   workflow_dispatch:
 
 concurrency:

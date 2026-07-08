@@ -2,6 +2,7 @@ import os
 import smtplib
 import socket
 import ssl
+import logging
 from email.message import EmailMessage
 from html import escape
 from urllib.parse import quote
@@ -14,6 +15,7 @@ DEFAULT_FROM_NAME = "ShiftPlanner"
 DEFAULT_SMTP_HOST = "smtp.mail.ru"
 DEFAULT_SMTP_PORT = 465
 DEFAULT_RESEND_API_URL = "https://api.resend.com/emails"
+logger = logging.getLogger(__name__)
 
 
 def _env_flag(name: str, default: bool = False) -> bool:
@@ -83,7 +85,13 @@ def build_password_reset_url(token: str) -> str:
 def send_verification_email(*, to_email: str, full_name: str, token: str) -> None:
     provider = os.getenv("EMAIL_PROVIDER", "").strip().lower()
     if provider == "resend" or os.getenv("RESEND_API_KEY"):
-        _send_verification_email_via_resend(to_email=to_email, full_name=full_name, token=token)
+        try:
+            _send_verification_email_via_resend(to_email=to_email, full_name=full_name, token=token)
+        except Exception:
+            if not os.getenv("SMTP_PASSWORD"):
+                raise
+            logger.exception("Resend verification email failed; falling back to SMTP.")
+            _send_verification_email_via_smtp(to_email=to_email, full_name=full_name, token=token)
         return
 
     _send_verification_email_via_smtp(to_email=to_email, full_name=full_name, token=token)
@@ -92,7 +100,13 @@ def send_verification_email(*, to_email: str, full_name: str, token: str) -> Non
 def send_password_reset_email(*, to_email: str, full_name: str, token: str) -> None:
     provider = os.getenv("EMAIL_PROVIDER", "").strip().lower()
     if provider == "resend" or os.getenv("RESEND_API_KEY"):
-        _send_password_reset_email_via_resend(to_email=to_email, full_name=full_name, token=token)
+        try:
+            _send_password_reset_email_via_resend(to_email=to_email, full_name=full_name, token=token)
+        except Exception:
+            if not os.getenv("SMTP_PASSWORD"):
+                raise
+            logger.exception("Resend password reset email failed; falling back to SMTP.")
+            _send_password_reset_email_via_smtp(to_email=to_email, full_name=full_name, token=token)
         return
 
     _send_password_reset_email_via_smtp(to_email=to_email, full_name=full_name, token=token)
@@ -184,21 +198,14 @@ def _send_verification_email_via_resend(*, to_email: str, full_name: str, token:
         raise RuntimeError("RESEND_API_KEY is not configured.")
 
     subject, text_body, html_body = _build_verification_email_content(full_name=full_name, token=token)
-    response = httpx.post(
-        os.getenv("RESEND_API_URL", DEFAULT_RESEND_API_URL),
-        headers={
-            "Authorization": f"Bearer {api_key}",
-            "Content-Type": "application/json",
-            "User-Agent": "ShiftPlanner/1.0",
-        },
-        json={
-            "from": _build_sender(),
-            "to": to_email,
-            "subject": subject,
-            "html": html_body,
-            "text": text_body,
-        },
-        timeout=20,
+    response = _post_resend_email(
+        api_key=api_key,
+        payload=_build_email_payload(
+            to_email=to_email,
+            subject=subject,
+            text_body=text_body,
+            html_body=html_body,
+        ),
     )
     if response.status_code >= 400:
         raise RuntimeError(
@@ -212,26 +219,48 @@ def _send_password_reset_email_via_resend(*, to_email: str, full_name: str, toke
         raise RuntimeError("RESEND_API_KEY is not configured.")
 
     subject, text_body, html_body = _build_password_reset_email_content(full_name=full_name, token=token)
-    response = httpx.post(
-        os.getenv("RESEND_API_URL", DEFAULT_RESEND_API_URL),
-        headers={
-            "Authorization": f"Bearer {api_key}",
-            "Content-Type": "application/json",
-            "User-Agent": "ShiftPlanner/1.0",
-        },
-        json={
-            "from": _build_sender(),
-            "to": to_email,
-            "subject": subject,
-            "html": html_body,
-            "text": text_body,
-        },
-        timeout=20,
+    response = _post_resend_email(
+        api_key=api_key,
+        payload=_build_email_payload(
+            to_email=to_email,
+            subject=subject,
+            text_body=text_body,
+            html_body=html_body,
+        ),
     )
     if response.status_code >= 400:
         raise RuntimeError(
             f"Resend API rejected email with status {response.status_code}: {response.text[:500]}"
         )
+
+
+def _build_email_payload(*, to_email: str, subject: str, text_body: str, html_body: str) -> dict[str, str]:
+    return {
+        "from": _build_sender(),
+        "to": to_email,
+        "subject": subject,
+        "html": html_body,
+        "text": text_body,
+    }
+
+
+def _post_resend_email(*, api_key: str, payload: dict[str, str]) -> httpx.Response:
+    headers = {
+        "Authorization": f"Bearer {api_key}",
+        "Content-Type": "application/json",
+        "User-Agent": "ShiftPlanner/1.0",
+    }
+    request_kwargs = {
+        "headers": headers,
+        "json": payload,
+        "timeout": 20,
+    }
+    api_url = os.getenv("RESEND_API_URL", DEFAULT_RESEND_API_URL)
+    if _env_flag("EMAIL_FORCE_IPV4", True):
+        transport = httpx.HTTPTransport(local_address="0.0.0.0", retries=1)
+        with httpx.Client(transport=transport) as client:
+            return client.post(api_url, **request_kwargs)
+    return httpx.post(api_url, **request_kwargs)
 
 
 def _send_verification_email_via_smtp(*, to_email: str, full_name: str, token: str) -> None:
