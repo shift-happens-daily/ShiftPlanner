@@ -26,6 +26,8 @@ CREATE TABLE users (
     email_verified BOOLEAN NOT NULL DEFAULT TRUE,
     email_verification_token VARCHAR(128) UNIQUE,
     email_verification_expires_at TIMESTAMP,
+    password_reset_token VARCHAR(128) UNIQUE,
+    password_reset_expires_at TIMESTAMP,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     CHECK (public_id ~ '^[A-Za-z0-9]{16}$')   

@@ -13,6 +13,10 @@ from app.schemas.auth import (
     LoginRequest,
     LoginResponse,
     LogoutResponse,
+    ChangePasswordRequest,
+    PasswordChangeResponse,
+    PasswordResetConfirmRequest,
+    PasswordResetRequest,
     RegisterRequest,
     RegisterResponse,
 )
@@ -93,6 +97,43 @@ def resend_verification_email(
     db: Session = Depends(get_db),
 ) -> EmailVerificationResponse:
     return auth_service.resend_verification_email(db, payload)
+
+
+@router.post(
+    "/password-reset/request",
+    response_model=EmailVerificationResponse,
+    responses={**VALIDATION_ERROR_RESPONSE},
+)
+def request_password_reset(
+    payload: PasswordResetRequest,
+    db: Session = Depends(get_db),
+) -> EmailVerificationResponse:
+    return auth_service.request_password_reset(db, payload)
+
+
+@router.post(
+    "/password-reset/confirm",
+    response_model=PasswordChangeResponse,
+    responses={**BAD_REQUEST_RESPONSE, **VALIDATION_ERROR_RESPONSE},
+)
+def confirm_password_reset(
+    payload: PasswordResetConfirmRequest,
+    db: Session = Depends(get_db),
+) -> PasswordChangeResponse:
+    return auth_service.confirm_password_reset(db, payload)
+
+
+@router.post(
+    "/change-password",
+    response_model=PasswordChangeResponse,
+    responses={**UNAUTHORIZED_RESPONSE, **VALIDATION_ERROR_RESPONSE},
+)
+def change_password(
+    payload: ChangePasswordRequest,
+    current_user=Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> PasswordChangeResponse:
+    return auth_service.change_password(db, current_user, payload)
 
 
 @router.get(

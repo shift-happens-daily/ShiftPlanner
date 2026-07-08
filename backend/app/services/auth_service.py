@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session
 
 from app.repositories import company_repository, employee_repository, user_repository
 from app.schemas.auth import (
+    ChangePasswordRequest,
     CurrentUserBranchAssignmentRead,
     CurrentUserBranchRead,
     CurrentUserCompanyRead,
@@ -18,6 +19,9 @@ from app.schemas.auth import (
     LoginRequest,
     LoginResponse,
     LogoutResponse,
+    PasswordChangeResponse,
+    PasswordResetConfirmRequest,
+    PasswordResetRequest,
     RegisterRequest,
     RegisterResponse,
     UserRead,
@@ -28,10 +32,13 @@ from app.services.security import create_access_token, get_password_hash, verify
 _active_tokens: set[str] = set()
 logger = logging.getLogger(__name__)
 EMAIL_VERIFICATION_TOKEN_BYTES = 32
-EMAIL_VERIFICATION_EXPIRE_HOURS = 24
+EMAIL_VERIFICATION_EXPIRE_MINUTES = 5
+PASSWORD_RESET_TOKEN_BYTES = 32
+PASSWORD_RESET_EXPIRE_MINUTES = 15
 
 
 def login(db: Session, payload: LoginRequest) -> LoginResponse:
+    _delete_expired_unverified_users(db)
     user = user_repository.get_user_by_email(db, payload.email)
 
     if user is None or not verify_password(payload.password, user.password_hash) or not user.is_registration_complete:
@@ -57,6 +64,7 @@ def login(db: Session, payload: LoginRequest) -> LoginResponse:
 
 
 def register(db: Session, payload: RegisterRequest) -> RegisterResponse:
+    _delete_expired_unverified_users(db)
     existing_user = user_repository.get_user_by_email(db, payload.email)
     verification_required = email_service.is_email_verification_required()
 
@@ -117,6 +125,7 @@ def verify_email(db: Session, token: str) -> EmailVerificationResponse:
 
     expires_at = user.email_verification_expires_at
     if expires_at is None or _as_aware_utc(expires_at) < datetime.now(timezone.utc):
+        user_repository.delete_user(db, user)
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Email verification link has expired.",
@@ -127,6 +136,7 @@ def verify_email(db: Session, token: str) -> EmailVerificationResponse:
 
 
 def resend_verification_email(db: Session, payload: EmailVerificationResendRequest) -> EmailVerificationResponse:
+    _delete_expired_unverified_users(db)
     user = user_repository.get_user_by_email(db, payload.email)
     generic_response = EmailVerificationResponse(
         detail="If this email needs verification, a new confirmation email has been sent."
@@ -141,6 +151,61 @@ def resend_verification_email(db: Session, payload: EmailVerificationResendReque
 
     _send_or_raise_verification_email(db, user)
     return generic_response
+
+
+def request_password_reset(db: Session, payload: PasswordResetRequest) -> EmailVerificationResponse:
+    _delete_expired_unverified_users(db)
+    user = user_repository.get_user_by_email(db, payload.email)
+    generic_response = EmailVerificationResponse(
+        detail="If an account exists for this email, a password reset email has been sent."
+    )
+
+    if user is None or not user.is_registration_complete or not user.email_verified:
+        return generic_response
+
+    _send_or_raise_password_reset_email(db, user)
+    return generic_response
+
+
+def confirm_password_reset(db: Session, payload: PasswordResetConfirmRequest) -> PasswordChangeResponse:
+    user = user_repository.get_user_by_password_reset_token(db, payload.token)
+    if user is None:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid password reset token.",
+        )
+
+    expires_at = user.password_reset_expires_at
+    if expires_at is None or _as_aware_utc(expires_at) < datetime.now(timezone.utc):
+        user.password_reset_token = None
+        user.password_reset_expires_at = None
+        db.add(user)
+        db.commit()
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Password reset token has expired.",
+        )
+
+    user_repository.update_password_hash(db, user, get_password_hash(payload.new_password))
+    return PasswordChangeResponse(detail="Password changed successfully.")
+
+
+def change_password(db: Session, current_user: UserRead, payload: ChangePasswordRequest) -> PasswordChangeResponse:
+    user = user_repository.get_user_by_id(db, current_user.id)
+    if user is None:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Could not validate credentials.",
+        )
+
+    if not verify_password(payload.current_password, user.password_hash):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid current password.",
+        )
+
+    user_repository.update_password_hash(db, user, get_password_hash(payload.new_password))
+    return PasswordChangeResponse(detail="Password changed successfully.")
 
 
 def logout(token: str) -> LogoutResponse:
@@ -382,8 +447,16 @@ def _generate_email_verification_token() -> str:
     return secrets.token_urlsafe(EMAIL_VERIFICATION_TOKEN_BYTES)
 
 
+def _generate_password_reset_token() -> str:
+    return secrets.token_urlsafe(PASSWORD_RESET_TOKEN_BYTES)
+
+
 def _verification_expires_at() -> datetime:
-    return datetime.now(timezone.utc) + timedelta(hours=EMAIL_VERIFICATION_EXPIRE_HOURS)
+    return datetime.now(timezone.utc) + timedelta(minutes=EMAIL_VERIFICATION_EXPIRE_MINUTES)
+
+
+def _password_reset_expires_at() -> datetime:
+    return datetime.now(timezone.utc) + timedelta(minutes=PASSWORD_RESET_EXPIRE_MINUTES)
 
 
 def _prepare_verification_token(db: Session, user) -> str:
@@ -397,9 +470,27 @@ def _prepare_verification_token(db: Session, user) -> str:
     return token
 
 
+def _prepare_password_reset_token(db: Session, user) -> str:
+    token = _generate_password_reset_token()
+    user_repository.set_password_reset_token(
+        db,
+        user=user,
+        token=token,
+        expires_at=_password_reset_expires_at(),
+    )
+    return token
+
+
 def _send_or_raise_verification_email(db: Session, user) -> None:
     _prepare_verification_token(db, user)
     _deliver_verification_email(user)
+    db.commit()
+    db.refresh(user)
+
+
+def _send_or_raise_password_reset_email(db: Session, user) -> None:
+    _prepare_password_reset_token(db, user)
+    _deliver_password_reset_email(user)
     db.commit()
     db.refresh(user)
 
@@ -417,6 +508,27 @@ def _deliver_verification_email(user) -> None:
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="Could not send verification email.",
         ) from exc
+
+
+def _deliver_password_reset_email(user) -> None:
+    try:
+        email_service.send_password_reset_email(
+            to_email=user.email,
+            full_name=user.full_name,
+            token=user.password_reset_token,
+        )
+    except Exception as exc:
+        logger.exception("Could not send password reset email to %s", user.email)
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Could not send password reset email.",
+        ) from exc
+
+
+def _delete_expired_unverified_users(db: Session) -> None:
+    deleted_count = user_repository.delete_expired_unverified_users(db, datetime.now(timezone.utc))
+    if deleted_count:
+        db.commit()
 
 
 def _as_aware_utc(value: datetime) -> datetime:

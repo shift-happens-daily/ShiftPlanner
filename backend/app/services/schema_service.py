@@ -4,6 +4,7 @@ from sqlalchemy.orm import Session
 
 def ensure_runtime_schema(db: Session) -> None:
     ensure_email_verification_schema(db)
+    ensure_password_reset_schema(db)
     ensure_company_management_schema(db)
     ensure_employee_assignment_schema(db)
     db.commit()
@@ -26,6 +27,27 @@ def ensure_email_verification_schema(db: Session) -> None:
             CREATE UNIQUE INDEX IF NOT EXISTS users_email_verification_token_unique
             ON users (email_verification_token)
             WHERE email_verification_token IS NOT NULL
+            """
+        )
+    )
+
+
+def ensure_password_reset_schema(db: Session) -> None:
+    db.execute(
+        text(
+            """
+            ALTER TABLE users
+                ADD COLUMN IF NOT EXISTS password_reset_token VARCHAR(128),
+                ADD COLUMN IF NOT EXISTS password_reset_expires_at TIMESTAMP
+            """
+        )
+    )
+    db.execute(
+        text(
+            """
+            CREATE UNIQUE INDEX IF NOT EXISTS users_password_reset_token_unique
+            ON users (password_reset_token)
+            WHERE password_reset_token IS NOT NULL
             """
         )
     )

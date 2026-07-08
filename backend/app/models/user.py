@@ -40,6 +40,8 @@ class User(Base):
     )
     email_verification_token: Mapped[str | None] = mapped_column(String(128), unique=True)
     email_verification_expires_at: Mapped[datetime | None] = mapped_column(DateTime)
+    password_reset_token: Mapped[str | None] = mapped_column(String(128), unique=True)
+    password_reset_expires_at: Mapped[datetime | None] = mapped_column(DateTime)
     created_at: Mapped[datetime] = mapped_column(
         DateTime,
         server_default=func.current_timestamp(),
