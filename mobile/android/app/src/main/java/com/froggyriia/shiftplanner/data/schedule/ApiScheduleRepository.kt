@@ -10,6 +10,8 @@ import com.froggyriia.shiftplanner.data.network.ScheduleResponseDto
 import com.froggyriia.shiftplanner.data.network.ScheduleShiftResponseDto
 import com.froggyriia.shiftplanner.data.network.ScheduleShiftUpdateRequestDto
 import com.froggyriia.shiftplanner.data.network.ScheduleUnfilledRequirementResponseDto
+import com.google.gson.Gson
+import com.google.gson.reflect.TypeToken
 import com.froggyriia.shiftplanner.domain.model.AppAvailableEmployee
 import com.froggyriia.shiftplanner.domain.model.AppEmployeeAvailabilityStatus
 import com.froggyriia.shiftplanner.domain.model.AppSchedule
@@ -25,10 +27,25 @@ class ApiScheduleRepository(
     private val apiClient: ApiClient
 ) : ScheduleRepository {
 
+    private val gson = Gson()
+
+
     override suspend fun generateSchedule(startDate: String, endDate: String): List<AppSchedule> = wrap {
-        apiClient.api.generateSchedule(
+        val element = apiClient.api.generateSchedule(
             ScheduleGenerateRequestDto(startDate = startDate, endDate = endDate)
-        ).map { it.toDomain() }
+        )
+        // Deployed backend (old) returns a single object {}; algorithm2 returns an array [].
+        // Handle both transparently.
+        when {
+            element.isJsonArray -> {
+                val type = object : TypeToken<List<ScheduleResponseDto>>() {}.type
+                gson.fromJson<List<ScheduleResponseDto>>(element, type).map { it.toDomain() }
+            }
+            element.isJsonObject -> {
+                listOf(gson.fromJson(element, ScheduleResponseDto::class.java).toDomain())
+            }
+            else -> emptyList()
+        }
     }
 
     override suspend fun fetchSchedule(scheduleId: Int): AppSchedule = wrap {

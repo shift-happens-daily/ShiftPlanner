@@ -1,5 +1,6 @@
 package com.froggyriia.shiftplanner.data.network
 
+import com.google.gson.JsonElement
 import retrofit2.Response
 import retrofit2.http.Body
 import retrofit2.http.DELETE
@@ -133,8 +134,9 @@ interface ShiftPlannerApi {
 
     // ── Schedule ──────────────────────────────────────────────────────────────
 
+    // Returns JsonElement because deployed backend returns {} (old) while algorithm2 returns [] (new)
     @POST("schedule/generate")
-    suspend fun generateSchedule(@Body request: ScheduleGenerateRequestDto): List<ScheduleResponseDto>
+    suspend fun generateSchedule(@Body request: ScheduleGenerateRequestDto): JsonElement
 
     @GET("schedule/latest")
     suspend fun getLatestSchedule(@Query("status") status: String? = null): Response<ScheduleResponseDto>
