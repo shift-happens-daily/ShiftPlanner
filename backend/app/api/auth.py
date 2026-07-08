@@ -1,6 +1,6 @@
 from html import escape
 
-from fastapi import APIRouter, Depends, Query, Response, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
 from fastapi.responses import HTMLResponse
 from fastapi.security import OAuth2PasswordRequestForm
 from sqlalchemy.orm import Session
@@ -68,24 +68,21 @@ def register(payload: RegisterRequest, db: Session = Depends(get_db)) -> Registe
     responses={**BAD_REQUEST_RESPONSE, **VALIDATION_ERROR_RESPONSE},
 )
 def verify_email(token: str = Query(..., min_length=1), db: Session = Depends(get_db)) -> HTMLResponse:
-    auth_service.verify_email(db, token)
-    return HTMLResponse(
-        """
-        <!doctype html>
-        <html lang="en">
-          <head>
-            <meta charset="utf-8">
-            <meta name="viewport" content="width=device-width, initial-scale=1">
-            <title>Email confirmed</title>
-          </head>
-          <body style="margin:0;min-height:100vh;display:flex;align-items:center;justify-content:center;background:#f4faff;color:#002642;font-family:Arial,sans-serif;">
-            <main style="max-width:420px;padding:28px;text-align:center;">
-              <h1 style="margin:0 0 12px;font-size:28px;">Email confirmed</h1>
-              <p style="margin:0;font-size:16px;line-height:1.5;">You can now return to ShiftPlanner and log in.</p>
-            </main>
-          </body>
-        </html>
-        """
+    try:
+        auth_service.verify_email(db, token)
+    except HTTPException as exc:
+        return _auth_message_page(
+            title="Email link is not valid",
+            message=(
+                "This confirmation link is expired, already used, or replaced by a newer email. "
+                "Return to ShiftPlanner and request a new confirmation email or register again."
+            ),
+            status_code=exc.status_code,
+        )
+
+    return _auth_message_page(
+        title="Email confirmed",
+        message="You can now return to ShiftPlanner and log in.",
     )
 
 
@@ -230,3 +227,27 @@ def delete_me(
 )
 def logout(token: str = Depends(oauth2_scheme), _: dict = Depends(get_current_user)) -> LogoutResponse:
     return auth_service.logout(token)
+
+
+def _auth_message_page(*, title: str, message: str, status_code: int = status.HTTP_200_OK) -> HTMLResponse:
+    safe_title = escape(title)
+    safe_message = escape(message)
+    return HTMLResponse(
+        f"""
+        <!doctype html>
+        <html lang="en">
+          <head>
+            <meta charset="utf-8">
+            <meta name="viewport" content="width=device-width, initial-scale=1">
+            <title>{safe_title}</title>
+          </head>
+          <body style="margin:0;min-height:100vh;display:flex;align-items:center;justify-content:center;background:#f4faff;color:#002642;font-family:Arial,sans-serif;">
+            <main style="max-width:420px;padding:28px;text-align:center;">
+              <h1 style="margin:0 0 12px;font-size:28px;">{safe_title}</h1>
+              <p style="margin:0;font-size:16px;line-height:1.5;">{safe_message}</p>
+            </main>
+          </body>
+        </html>
+        """,
+        status_code=status_code,
+    )

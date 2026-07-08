@@ -1,5 +1,7 @@
 import api from './api';
 
+const SCHEDULE_GENERATION_TIMEOUT_MS = 180000;
+
 export function formatLocalDate(value) {
   const date = value instanceof Date ? value : new Date(`${value}T12:00:00`);
   if (Number.isNaN(date.getTime())) {
@@ -289,7 +291,7 @@ export async function generateScheduleWeek(period, branchId = null) {
     payload.branch_id = branchId;
   }
   const response = await api.post('/schedule/generate', payload, {
-    timeout: 120000,
+    timeout: SCHEDULE_GENERATION_TIMEOUT_MS,
   });
   return Array.isArray(response.data) ? response.data : [response.data].filter(Boolean);
 }
@@ -468,7 +470,9 @@ export async function createBulkRequirements(payload) {
 }
 
 export async function generateSchedule(payload) {
-  const response = await api.post('/schedule/generate', payload);
+  const response = await api.post('/schedule/generate', payload, {
+    timeout: SCHEDULE_GENERATION_TIMEOUT_MS,
+  });
   return withPeriod(response.data, payload);
 }
 
