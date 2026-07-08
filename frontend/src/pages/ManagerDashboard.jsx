@@ -9,12 +9,11 @@ import { getStoredLanguage } from '../services/language';
 import { useIsMobile } from '../hooks/useMediaQuery';
 import { useUnsavedChanges } from '../context/useUnsavedChanges';
 
-function ManagerDashboardContent() {
+function ManagerDashboardContent({ language, onLanguageChange }) {
   const isMobile = useIsMobile();
   const { user, logout } = useAuth();
   const { confirmDiscardChanges, resetUnsavedChanges } = useUnsavedChanges();
   const navigate = useNavigate();
-  const [language, setLanguage] = useState(getStoredLanguage);
 
   const handleLogout = () => {
     if (!confirmDiscardChanges()) return;
@@ -24,7 +23,7 @@ function ManagerDashboardContent() {
   };
 
   const handleLanguageChange = (lang) => {
-    setLanguage(lang);
+    onLanguageChange(lang);
   };
 
   const texts = {
@@ -64,9 +63,11 @@ function ManagerDashboardContent() {
 }
 
 export default function ManagerDashboard() {
+  const [language, setLanguage] = useState(getStoredLanguage);
+
   return (
-    <UnsavedChangesProvider>
-      <ManagerDashboardContent />
+    <UnsavedChangesProvider language={language}>
+      <ManagerDashboardContent language={language} onLanguageChange={setLanguage} />
     </UnsavedChangesProvider>
   );
 }

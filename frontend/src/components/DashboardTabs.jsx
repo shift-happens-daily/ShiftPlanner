@@ -106,7 +106,7 @@ export default function DashboardTabs({ userRole, language, title, rightSlot }) 
 
   const tabLabels = {
     ru: {
-      dashboard: 'Dashboard',
+      dashboard: 'Доска',
       profile: 'Профиль',
       company: 'Компания',
       employees: 'Сотрудники',

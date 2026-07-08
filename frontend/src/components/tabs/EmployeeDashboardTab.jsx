@@ -207,7 +207,7 @@ export default function EmployeeDashboardTab({ language = 'ru', user, onNavigate
 
   const texts = {
     ru: {
-      dashboard: 'Dashboard',
+      dashboard: 'Доска',
       upcomingShifts: 'Предстоящие смены',
       oneWeek: '1 неделя',
       twoWeeks: '2 недели',
