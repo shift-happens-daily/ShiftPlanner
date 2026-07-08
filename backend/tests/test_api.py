@@ -2876,6 +2876,9 @@ def test_manager_generation_is_company_scoped_and_publishable(client: TestClient
 
     manager_headers = login_json(client, "manager@example.com", "manager123")
     employee_headers = login_json(client, "ivan@example.com", "employee123")
+    deleted_existing = client.delete("/schedule/1", headers=manager_headers)
+    assert deleted_existing.status_code == 204, deleted_existing.text
+
     generated = client.post(
         "/schedule/generate",
         headers=manager_headers,
@@ -2906,7 +2909,7 @@ def test_manager_generation_is_company_scoped_and_publishable(client: TestClient
     assert len(visible.json()) == 1
 
 
-def test_generating_four_week_period_creates_one_full_period_schedule(client: TestClient) -> None:
+def test_generating_schedule_rejects_existing_overlapping_schedule(client: TestClient) -> None:
     with psycopg.connect(PSYCOPG_DSN) as connection:
         with connection.cursor() as cursor:
             cursor.execute("UPDATE employees SET position_id = 1 WHERE id = 1")
@@ -2918,6 +2921,36 @@ def test_generating_four_week_period_creates_one_full_period_schedule(client: Te
                 """
             )
             old_overlapping_draft_id = cursor.fetchone()[0]
+
+    manager_headers = login_json(client, "manager@example.com", "manager123")
+    generated = client.post(
+        "/schedule/generate",
+        headers=manager_headers,
+        json={"start_date": "2026-07-06", "end_date": "2026-08-02"},
+    )
+    assert generated.status_code == 409, generated.text
+    assert "Delete schedule" in generated.json()["detail"]
+
+    with psycopg.connect(PSYCOPG_DSN) as connection:
+        with connection.cursor() as cursor:
+            cursor.execute("SELECT COUNT(*) FROM schedules WHERE id = %s", (old_overlapping_draft_id,))
+            assert cursor.fetchone()[0] == 1
+            cursor.execute(
+                """
+                SELECT COUNT(*)
+                FROM schedules
+                WHERE company_id = 1
+                  AND start_date = '2026-07-06'
+                  AND end_date = '2026-08-02'
+                """
+            )
+            assert cursor.fetchone()[0] == 0
+
+
+def test_generating_four_week_period_creates_one_full_period_schedule(client: TestClient) -> None:
+    with psycopg.connect(PSYCOPG_DSN) as connection:
+        with connection.cursor() as cursor:
+            cursor.execute("UPDATE employees SET position_id = 1 WHERE id = 1")
 
     manager_headers = login_json(client, "manager@example.com", "manager123")
     requirements = client.post(
@@ -2960,8 +2993,6 @@ def test_generating_four_week_period_creates_one_full_period_schedule(client: Te
                 """
             )
             assert cursor.fetchall() == [(schedule_id, date(2026, 7, 6), date(2026, 8, 2))]
-            cursor.execute("SELECT COUNT(*) FROM schedules WHERE id = %s", (old_overlapping_draft_id,))
-            assert cursor.fetchone()[0] == 0
             cursor.execute("SELECT COUNT(DISTINCT schedule_id) FROM shifts WHERE schedule_id = %s", (schedule_id,))
             assert cursor.fetchone()[0] == 1
             cursor.execute("SELECT COUNT(*) FROM shifts WHERE schedule_id = %s", (schedule_id,))
@@ -3057,22 +3088,6 @@ def test_publishing_archives_only_overlapping_published_schedules(client: TestCl
     with psycopg.connect(PSYCOPG_DSN) as connection:
         with connection.cursor() as cursor:
             cursor.execute("UPDATE employees SET position_id = 1 WHERE id = 1")
-            cursor.execute(
-                """
-                INSERT INTO schedules (company_id, start_date, end_date, status)
-                VALUES (1, '2026-07-01', '2026-07-10', 'published')
-                RETURNING id
-                """
-            )
-            overlapping_schedule_id = cursor.fetchone()[0]
-            cursor.execute(
-                """
-                INSERT INTO schedules (company_id, start_date, end_date, status)
-                VALUES (1, '2026-09-01', '2026-09-07', 'published')
-                RETURNING id
-                """
-            )
-            non_overlapping_schedule_id = cursor.fetchone()[0]
 
     manager_headers = login_json(client, "manager@example.com", "manager123")
     requirements = client.post(
@@ -3095,6 +3110,26 @@ def test_publishing_archives_only_overlapping_published_schedules(client: TestCl
     )
     assert generated.status_code == 200, generated.text
     schedule_id = generated.json()["id"]
+
+    with psycopg.connect(PSYCOPG_DSN) as connection:
+        with connection.cursor() as cursor:
+            cursor.execute(
+                """
+                INSERT INTO schedules (company_id, start_date, end_date, status)
+                VALUES (1, '2026-07-01', '2026-07-10', 'published')
+                RETURNING id
+                """
+            )
+            overlapping_schedule_id = cursor.fetchone()[0]
+            cursor.execute(
+                """
+                INSERT INTO schedules (company_id, start_date, end_date, status)
+                VALUES (1, '2026-09-01', '2026-09-07', 'published')
+                RETURNING id
+                """
+            )
+            non_overlapping_schedule_id = cursor.fetchone()[0]
+
     published = client.post(f"/schedule/{schedule_id}/publish", headers=manager_headers)
     assert published.status_code == 200, published.text
 
@@ -3141,7 +3176,7 @@ def test_manager_can_list_schedules_overlapping_period(client: TestClient) -> No
     assert all("start_date" in schedule and "end_date" in schedule for schedule in response.json())
 
 
-def test_repeated_generation_does_not_stack_shifts_or_reported_hours(client: TestClient) -> None:
+def test_repeated_generation_requires_deleting_existing_schedule(client: TestClient) -> None:
     with psycopg.connect(PSYCOPG_DSN) as connection:
         with connection.cursor() as cursor:
             set_employee_assignment(cursor, 1, branch_id=1, position_id=1)
@@ -3150,12 +3185,15 @@ def test_repeated_generation_does_not_stack_shifts_or_reported_hours(client: Tes
     employee_headers = login_json(client, "ivan@example.com", "employee123")
     payload = {"start_date": "2026-06-15", "end_date": "2026-06-21"}
 
+    deleted_existing = client.delete("/schedule/1", headers=manager_headers)
+    assert deleted_existing.status_code == 204, deleted_existing.text
+
     first = client.post("/schedule/generate", headers=manager_headers, json=payload)
     second = client.post("/schedule/generate", headers=manager_headers, json=payload)
     assert first.status_code == 200, first.text
-    assert second.status_code == 200, second.text
-    assert first.json()["id"] != second.json()["id"]
-    second_schedule_id = second.json()["id"]
+    assert second.status_code == 409, second.text
+    assert "Delete schedule" in second.json()["detail"]
+    first_schedule_id = first.json()["id"]
 
     with psycopg.connect(PSYCOPG_DSN) as connection:
         with connection.cursor() as cursor:
@@ -3176,13 +3214,13 @@ def test_repeated_generation_does_not_stack_shifts_or_reported_hours(client: Tes
                 JOIN shifts s ON s.id = sa.shift_id
                 WHERE s.schedule_id = %s
                 """,
-                (second_schedule_id,),
+                (first_schedule_id,),
             )
             assert cursor.fetchone()[0] == 1
 
     assert client.get("/schedule/my", headers=employee_headers).json() == []
-    published_second = client.post(f"/schedule/{second_schedule_id}/publish", headers=manager_headers)
-    assert published_second.status_code == 200, published_second.text
+    published_first = client.post(f"/schedule/{first_schedule_id}/publish", headers=manager_headers)
+    assert published_first.status_code == 200, published_first.text
     assert len(client.get("/schedule/my", headers=employee_headers).json()) == 1
 
     first_report = client.get(
@@ -3194,18 +3232,12 @@ def test_repeated_generation_does_not_stack_shifts_or_reported_hours(client: Tes
     assert first_report.json()["total_hours"] == 8.0
 
     third = client.post("/schedule/generate", headers=manager_headers, json=payload)
-    assert third.status_code == 200, third.text
-    third_schedule_id = third.json()["id"]
-    assert len(client.get("/schedule/my", headers=employee_headers).json()) == 1
-
-    published_third = client.post(f"/schedule/{third_schedule_id}/publish", headers=manager_headers)
-    assert published_third.status_code == 200, published_third.text
+    assert third.status_code == 409, third.text
+    assert "Delete schedule" in third.json()["detail"]
 
     with psycopg.connect(PSYCOPG_DSN) as connection:
         with connection.cursor() as cursor:
-            cursor.execute("SELECT status FROM schedules WHERE id = %s", (second_schedule_id,))
-            assert cursor.fetchone()[0] == "archived"
-            cursor.execute("SELECT status FROM schedules WHERE id = %s", (third_schedule_id,))
+            cursor.execute("SELECT status FROM schedules WHERE id = %s", (first_schedule_id,))
             assert cursor.fetchone()[0] == "published"
 
     final_schedule = client.get("/schedule/my", headers=employee_headers)
@@ -3288,6 +3320,8 @@ def test_calendar_summary_reports_and_exchange_flow(client: TestClient) -> None:
     draft_report = client.get("/reports/me?start_date=2026-06-15&end_date=2026-06-30", headers=employee_headers)
     assert draft_report.status_code == 200, draft_report.text
     assert draft_report.json()["total_shifts"] == 0
+    deleted_existing = client.delete("/schedule/1", headers=manager_headers)
+    assert deleted_existing.status_code == 204, deleted_existing.text
 
     created_employee = client.post(
         "/employees/",
