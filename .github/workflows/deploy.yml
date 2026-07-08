@@ -229,11 +229,6 @@ jobs:
             install -D -m 755 \
               nginx/renewal-hooks/post/shiftplanner-nginx \
               /etc/letsencrypt/renewal-hooks/post/shiftplanner-nginx
-            echo "=== Backend logs after deploy ==="
-            $COMPOSE logs --tail=120 backend
-            echo "=== Waiting for runtime errors ==="
-            sleep 90
-            $COMPOSE logs --tail=200 backend
             docker image prune -f
           else
             git reset --hard "$PREVIOUS_SHA"
