@@ -289,44 +289,42 @@ def generate_schedule(
         )
     _validate_generation_period_http(start_date, end_date)
 
-    if payload and payload.branch_id is not None:
-        branch = company_repository.get_branch_by_id(db, payload.branch_id)
-        if branch is None or branch.company_id != current_user.company_id:
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="Branch does not belong to the authenticated user's company.",
-            )
-        branches = [branch]
-    else:
-        branches = company_repository.list_branches_for_company(db, current_user.company_id)
-    if not branches:
+    branch_id = payload.branch_id if payload else None
+    if branch_id is None:
         raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Manager's company does not have a branch.",
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="branch_id is required for schedule generation.",
         )
 
-    for branch in branches:
-        _ensure_no_schedule_conflict(
+    branch = company_repository.get_branch_by_id(db, branch_id)
+    if branch is None:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Branch {branch_id} was not found.",
+        )
+    if branch.company_id != current_user.company_id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Branch does not belong to the authenticated user's company.",
+        )
+
+    _ensure_no_schedule_conflict(
+        db,
+        company_id=current_user.company_id,
+        branch_id=branch.id,
+        start_date=start_date,
+        end_date=end_date,
+    )
+
+    try:
+        result = schedule_solver.generate_schedule(
             db,
             company_id=current_user.company_id,
             branch_id=branch.id,
             start_date=start_date,
             end_date=end_date,
+            commit=False,
         )
-
-    try:
-        results = []
-        for branch in branches:
-            results.append(
-                schedule_solver.generate_schedule(
-                    db,
-                    company_id=current_user.company_id,
-                    branch_id=branch.id,
-                    start_date=start_date,
-                    end_date=end_date,
-                    commit=False,
-                )
-            )
         db.commit()
     except schedule_solver.ScheduleDataError as exc:
         db.rollback()
@@ -343,9 +341,8 @@ def generate_schedule(
         db.rollback()
         raise
 
-    if not results:
+    if result is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Schedule was not generated.")
-    result = results[0]
     schedule = schedule_repository.get_schedule(db, result.schedule_id)
     return _build_schedule_read(db, result.schedule_id, schedule.status)
 

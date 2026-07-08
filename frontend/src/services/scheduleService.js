@@ -116,17 +116,6 @@ function buildScheduleQueryParams(period = null, status = null, branchId = null)
   return params;
 }
 
-function pickPrimarySchedule(schedules, branchId = null) {
-  if (!Array.isArray(schedules) || schedules.length === 0) {
-    return null;
-  }
-  const filtered = branchId
-    ? schedules.filter((schedule) => Number(schedule.branch_id) === Number(branchId))
-    : schedules;
-  const source = filtered.length > 0 ? filtered : schedules;
-  return [...source].sort((a, b) => b.id - a.id)[0];
-}
-
 export function pickScheduleForBranch(schedules, branchId) {
   if (!Array.isArray(schedules) || branchId == null) {
     return null;
@@ -332,9 +321,7 @@ export async function generateScheduleWeeks(mondayStart, weeks, branchId) {
 /** Backward-compatible alias: generate for branch across one or more weeks. */
 export async function generateScheduleForBranch(period, branchId, weeks = null) {
   if (!branchId) {
-    const response = await api.post('/schedule/generate', period, { timeout: 120000 });
-    const schedules = Array.isArray(response.data) ? response.data : [response.data].filter(Boolean);
-    return mergeWeeklySchedules(schedules, branchId, period) || withPeriod(schedules[0], period);
+    throw new Error('Branch is required to generate a schedule.');
   }
 
   const mondayStart = snapToMonday(period.start_date);
@@ -360,8 +347,7 @@ export async function generateScheduleForPeriod(period, branchId = null) {
     return generateScheduleForBranch(period, branchId);
   }
 
-  const response = await api.post('/schedule/generate', period);
-  return withPeriod(response.data, period);
+  throw new Error('Branch is required to generate a schedule.');
 }
 
 /** Solver-friendly default: next Mon–Sun week. */

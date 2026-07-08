@@ -2882,7 +2882,7 @@ def test_manager_generation_is_company_scoped_and_publishable(client: TestClient
     generated = client.post(
         "/schedule/generate",
         headers=manager_headers,
-        json={"start_date": "2026-06-15", "end_date": "2026-06-15"},
+        json={"branch_id": 1, "start_date": "2026-06-15", "end_date": "2026-06-15"},
     )
     assert generated.status_code == 200, generated.text
     generated_json = generated.json()
@@ -2926,7 +2926,7 @@ def test_generating_schedule_rejects_existing_overlapping_schedule(client: TestC
     generated = client.post(
         "/schedule/generate",
         headers=manager_headers,
-        json={"start_date": "2026-07-06", "end_date": "2026-08-02"},
+        json={"branch_id": 1, "start_date": "2026-07-06", "end_date": "2026-08-02"},
     )
     assert generated.status_code == 409, generated.text
     assert "Delete schedule" in generated.json()["detail"]
@@ -2970,7 +2970,7 @@ def test_generating_four_week_period_creates_one_full_period_schedule(client: Te
     generated = client.post(
         "/schedule/generate",
         headers=manager_headers,
-        json={"start_date": "2026-07-06", "end_date": "2026-08-02"},
+        json={"branch_id": 1, "start_date": "2026-07-06", "end_date": "2026-08-02"},
     )
     assert generated.status_code == 200, generated.text
     generated_json = generated.json()
@@ -2999,6 +2999,56 @@ def test_generating_four_week_period_creates_one_full_period_schedule(client: Te
             assert cursor.fetchone()[0] == 20
 
 
+def test_generation_creates_schedule_only_for_selected_branch(client: TestClient) -> None:
+    with psycopg.connect(PSYCOPG_DSN) as connection:
+        with connection.cursor() as cursor:
+            set_employee_assignment(cursor, 1, branch_id=1, position_id=1)
+            cursor.execute(
+                """
+                INSERT INTO branches (company_id, name, address)
+                VALUES (1, 'Second Branch', 'Second Street')
+                RETURNING id
+                """
+            )
+            second_branch_id = cursor.fetchone()[0]
+            cursor.execute(
+                """
+                INSERT INTO shift_requirements (
+                    company_id, branch_id, position_id, shift_date,
+                    start_time, end_time, required_employees
+                )
+                VALUES
+                    (1, 1, 1, '2026-07-06', '09:00', '17:00', 1),
+                    (1, %s, 1, '2026-07-06', '09:00', '17:00', 1)
+                """,
+                (second_branch_id,),
+            )
+
+    manager_headers = login_json(client, "manager@example.com", "manager123")
+    generated = client.post(
+        "/schedule/generate",
+        headers=manager_headers,
+        json={"branch_id": 1, "start_date": "2026-07-06", "end_date": "2026-07-12"},
+    )
+    assert generated.status_code == 200, generated.text
+    assert generated.json()["branch_id"] == 1
+
+    with psycopg.connect(PSYCOPG_DSN) as connection:
+        with connection.cursor() as cursor:
+            cursor.execute(
+                """
+                SELECT branch_id, COUNT(*)
+                FROM schedules
+                WHERE company_id = 1
+                  AND start_date = '2026-07-06'
+                  AND end_date = '2026-07-12'
+                GROUP BY branch_id
+                ORDER BY branch_id
+                """
+            )
+            assert cursor.fetchall() == [(1, 1)]
+
+
 def test_publishing_full_period_schedule_exposes_all_employee_shifts(client: TestClient) -> None:
     with psycopg.connect(PSYCOPG_DSN) as connection:
         with connection.cursor() as cursor:
@@ -3022,7 +3072,7 @@ def test_publishing_full_period_schedule_exposes_all_employee_shifts(client: Tes
     generated = client.post(
         "/schedule/generate",
         headers=manager_headers,
-        json={"start_date": "2026-07-06", "end_date": "2026-08-02"},
+        json={"branch_id": 1, "start_date": "2026-07-06", "end_date": "2026-08-02"},
     )
     assert generated.status_code == 200, generated.text
     schedule_id = generated.json()["id"]
@@ -3088,6 +3138,14 @@ def test_publishing_archives_only_overlapping_published_schedules(client: TestCl
     with psycopg.connect(PSYCOPG_DSN) as connection:
         with connection.cursor() as cursor:
             cursor.execute("UPDATE employees SET position_id = 1 WHERE id = 1")
+            cursor.execute(
+                """
+                INSERT INTO branches (company_id, name, address)
+                VALUES (1, 'Second Branch', 'Second Street')
+                RETURNING id
+                """
+            )
+            other_branch_id = cursor.fetchone()[0]
 
     manager_headers = login_json(client, "manager@example.com", "manager123")
     requirements = client.post(
@@ -3106,7 +3164,7 @@ def test_publishing_archives_only_overlapping_published_schedules(client: TestCl
     generated = client.post(
         "/schedule/generate",
         headers=manager_headers,
-        json={"start_date": "2026-07-06", "end_date": "2026-08-02"},
+        json={"branch_id": 1, "start_date": "2026-07-06", "end_date": "2026-08-02"},
     )
     assert generated.status_code == 200, generated.text
     schedule_id = generated.json()["id"]
@@ -3115,20 +3173,29 @@ def test_publishing_archives_only_overlapping_published_schedules(client: TestCl
         with connection.cursor() as cursor:
             cursor.execute(
                 """
-                INSERT INTO schedules (company_id, start_date, end_date, status)
-                VALUES (1, '2026-07-01', '2026-07-10', 'published')
+                INSERT INTO schedules (company_id, branch_id, start_date, end_date, status)
+                VALUES (1, 1, '2026-07-01', '2026-07-10', 'published')
                 RETURNING id
                 """
             )
             overlapping_schedule_id = cursor.fetchone()[0]
             cursor.execute(
                 """
-                INSERT INTO schedules (company_id, start_date, end_date, status)
-                VALUES (1, '2026-09-01', '2026-09-07', 'published')
+                INSERT INTO schedules (company_id, branch_id, start_date, end_date, status)
+                VALUES (1, 1, '2026-09-01', '2026-09-07', 'published')
                 RETURNING id
                 """
             )
             non_overlapping_schedule_id = cursor.fetchone()[0]
+            cursor.execute(
+                """
+                INSERT INTO schedules (company_id, branch_id, start_date, end_date, status)
+                VALUES (1, %s, '2026-07-01', '2026-07-10', 'published')
+                RETURNING id
+                """,
+                (other_branch_id,),
+            )
+            other_branch_schedule_id = cursor.fetchone()[0]
 
     published = client.post(f"/schedule/{schedule_id}/publish", headers=manager_headers)
     assert published.status_code == 200, published.text
@@ -3138,6 +3205,8 @@ def test_publishing_archives_only_overlapping_published_schedules(client: TestCl
             cursor.execute("SELECT status FROM schedules WHERE id = %s", (overlapping_schedule_id,))
             assert cursor.fetchone()[0] == "archived"
             cursor.execute("SELECT status FROM schedules WHERE id = %s", (non_overlapping_schedule_id,))
+            assert cursor.fetchone()[0] == "published"
+            cursor.execute("SELECT status FROM schedules WHERE id = %s", (other_branch_schedule_id,))
             assert cursor.fetchone()[0] == "published"
             cursor.execute("SELECT status FROM schedules WHERE id = %s", (schedule_id,))
             assert cursor.fetchone()[0] == "published"
@@ -3183,7 +3252,7 @@ def test_repeated_generation_requires_deleting_existing_schedule(client: TestCli
 
     manager_headers = login_json(client, "manager@example.com", "manager123")
     employee_headers = login_json(client, "ivan@example.com", "employee123")
-    payload = {"start_date": "2026-06-15", "end_date": "2026-06-21"}
+    payload = {"branch_id": 1, "start_date": "2026-06-15", "end_date": "2026-06-21"}
 
     deleted_existing = client.delete("/schedule/1", headers=manager_headers)
     assert deleted_existing.status_code == 204, deleted_existing.text
@@ -3267,6 +3336,32 @@ def test_manager_without_company_cannot_generate_schedule(client: TestClient) ->
 
     generated = client.post("/schedule/generate", headers=headers, json={})
     assert generated.status_code == 403
+
+
+def test_manager_must_select_branch_to_generate_schedule(client: TestClient) -> None:
+    manager_headers = login_json(client, "manager@example.com", "manager123")
+
+    generated = client.post(
+        "/schedule/generate",
+        headers=manager_headers,
+        json={"start_date": "2026-07-06", "end_date": "2026-07-12"},
+    )
+
+    assert generated.status_code == 422, generated.text
+    assert generated.json()["detail"] == "branch_id is required for schedule generation."
+
+    with psycopg.connect(PSYCOPG_DSN) as connection:
+        with connection.cursor() as cursor:
+            cursor.execute(
+                """
+                SELECT COUNT(*)
+                FROM schedules
+                WHERE company_id = 1
+                  AND start_date = '2026-07-06'
+                  AND end_date = '2026-07-12'
+                """
+            )
+            assert cursor.fetchone()[0] == 0
 
 
 def test_manager_cannot_publish_another_company_schedule(client: TestClient) -> None:
@@ -3359,7 +3454,7 @@ def test_calendar_summary_reports_and_exchange_flow(client: TestClient) -> None:
     generated = client.post(
         "/schedule/generate",
         headers=manager_headers,
-        json={"start_date": "2026-06-15", "end_date": "2026-06-21"},
+        json={"branch_id": 1, "start_date": "2026-06-15", "end_date": "2026-06-21"},
     )
     assert generated.status_code == 200, generated.text
     generated_json = generated.json()
