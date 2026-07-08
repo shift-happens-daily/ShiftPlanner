@@ -9,12 +9,11 @@ import { useUnsavedChanges } from '../context/useUnsavedChanges';
 import { getStoredLanguage } from '../services/language';
 import { useIsMobile } from '../hooks/useMediaQuery';
 
-function EmployeeDashboardContent() {
+function EmployeeDashboardContent({ language, onLanguageChange }) {
   const isMobile = useIsMobile();
   const { user, logout } = useAuth();
   const { confirmDiscardChanges, resetUnsavedChanges } = useUnsavedChanges();
   const navigate = useNavigate();
-  const [language, setLanguage] = useState(getStoredLanguage);
 
   const texts = {
     ru: {
@@ -37,7 +36,7 @@ function EmployeeDashboardContent() {
   };
 
   const handleLanguageChange = (lang) => {
-    setLanguage(lang);
+    onLanguageChange(lang);
   };
 
   const rightSlot = (
@@ -66,9 +65,11 @@ function EmployeeDashboardContent() {
 }
 
 export default function EmployeeDashboard() {
+  const [language, setLanguage] = useState(getStoredLanguage);
+
   return (
-    <UnsavedChangesProvider>
-      <EmployeeDashboardContent />
+    <UnsavedChangesProvider language={language}>
+      <EmployeeDashboardContent language={language} onLanguageChange={setLanguage} />
     </UnsavedChangesProvider>
   );
 }
