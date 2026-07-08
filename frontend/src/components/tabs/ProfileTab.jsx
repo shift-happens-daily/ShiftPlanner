@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../../context/useAuth';
-import { deleteAccountRequest } from '../../services/authService';
+import { deleteAccountRequest, changePasswordRequest } from '../../services/authService';
 import { leaveCompany, updateMyPosition } from '../../services/employeeService';
 import { extractApiErrorMessage } from '../../services/error';
 import { listPositions } from '../../services/positionService';
@@ -11,6 +11,7 @@ import { getBranchLabel, getPositionLabel } from '../../utils/employeeDisplay';
 import { useUnsavedChanges } from '../../context/useUnsavedChanges';
 
 const POSITION_SCOPE = 'profile-position';
+const PASSWORD_SCOPE = 'profile-password';
 
 export default function ProfileTab({ language, user }) {
   const r = useTabResponsive(1040);
@@ -23,6 +24,11 @@ export default function ProfileTab({ language, user }) {
   const [successMessage, setSuccessMessage] = useState('');
   const [positions, setPositions] = useState([]);
   const [selectedPositionId, setSelectedPositionId] = useState('');
+  const [passwordForm, setPasswordForm] = useState({
+    current_password: '',
+    new_password: '',
+    confirm_password: '',
+  });
 
   const texts = {
     ru: {
@@ -57,6 +63,17 @@ export default function ProfileTab({ language, user }) {
       positionSectionHint: 'Выберите позицию из списка компании.',
       noPosition: 'Без позиции',
       noBranch: 'Без филиала',
+      passwordSection: 'Смена пароля',
+      passwordSectionHint: 'Смените пароль, если подозреваете, что аккаунт мог быть скомпрометирован.',
+      currentPassword: 'Текущий пароль',
+      newPassword: 'Новый пароль',
+      confirmPassword: 'Подтверждение пароля',
+      changePassword: 'Сменить пароль',
+      passwordChanged: 'Пароль успешно изменён.',
+      passwordError: 'Не удалось сменить пароль.',
+      passwordTooShort: 'Новый пароль должен быть минимум 8 символов.',
+      passwordMismatch: 'Новые пароли не совпадают.',
+      currentPasswordRequired: 'Введите текущий пароль.',
     },
     en: {
       title: 'Profile',
@@ -90,6 +107,17 @@ export default function ProfileTab({ language, user }) {
       positionSectionHint: 'Select a position from your company list.',
       noPosition: 'No position',
       noBranch: 'No branch',
+      passwordSection: 'Change password',
+      passwordSectionHint: 'Change your password if you suspect your account may have been compromised.',
+      currentPassword: 'Current password',
+      newPassword: 'New password',
+      confirmPassword: 'Confirm password',
+      changePassword: 'Change password',
+      passwordChanged: 'Password changed successfully.',
+      passwordError: 'Failed to change password.',
+      passwordTooShort: 'New password must be at least 8 characters.',
+      passwordMismatch: 'New passwords do not match.',
+      currentPasswordRequired: 'Enter your current password.',
     },
   };
 
@@ -238,6 +266,44 @@ export default function ProfileTab({ language, user }) {
       setSuccessMessage(t.leftCompany);
     } catch (error) {
       setErrorMessage(extractApiErrorMessage(error, t.leaveCompanyError, language));
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const handleChangePassword = async () => {
+    if (!passwordForm.current_password) {
+      setErrorMessage(t.currentPasswordRequired);
+      return;
+    }
+
+    if (passwordForm.new_password.length < 8) {
+      setErrorMessage(t.passwordTooShort);
+      return;
+    }
+
+    if (passwordForm.new_password !== passwordForm.confirm_password) {
+      setErrorMessage(t.passwordMismatch);
+      return;
+    }
+
+    clearMessages();
+    setIsSubmitting(true);
+
+    try {
+      await changePasswordRequest({
+        current_password: passwordForm.current_password,
+        new_password: passwordForm.new_password,
+      });
+      setPasswordForm({
+        current_password: '',
+        new_password: '',
+        confirm_password: '',
+      });
+      markSaved(PASSWORD_SCOPE);
+      setSuccessMessage(t.passwordChanged);
+    } catch (error) {
+      setErrorMessage(extractApiErrorMessage(error, t.passwordError, language));
     } finally {
       setIsSubmitting(false);
     }
@@ -430,6 +496,93 @@ export default function ProfileTab({ language, user }) {
             </div>
           </div>
         )}
+
+        <div style={{
+          ...styles.section,
+          padding: r.isMobile ? '10px 8px' : styles.section.padding,
+          borderRadius: r.isMobile ? 12 : 20,
+        }}
+        >
+          <h3 style={{
+            ...styles.sectionTitle,
+            fontSize: r.isMobile ? 12 : 18,
+            marginBottom: r.isMobile ? 2 : 0,
+          }}
+          >
+            {t.passwordSection}
+          </h3>
+          <p style={{
+            ...styles.sectionHint,
+            fontSize: r.isMobile ? 10 : 13,
+            margin: r.isMobile ? '1px 0 8px' : '6px 0 16px',
+          }}
+          >
+            {t.passwordSectionHint}
+          </p>
+
+          <div style={{
+            ...styles.formStack,
+            gap: r.isMobile ? 6 : 12,
+          }}
+          >
+            <label style={{ ...styles.fieldLabel, fontSize: r.isMobile ? 10 : 13 }}>{t.currentPassword}</label>
+            <input
+              type="password"
+              value={passwordForm.current_password}
+              onChange={(event) => {
+                setPasswordForm((prev) => ({ ...prev, current_password: event.target.value }));
+                markUnsaved(PASSWORD_SCOPE);
+              }}
+              style={{
+                ...styles.textInput,
+                ...(r.isMobile ? { height: 32, borderRadius: 8, fontSize: 11 } : {}),
+              }}
+              autoComplete="current-password"
+            />
+
+            <label style={{ ...styles.fieldLabel, fontSize: r.isMobile ? 10 : 13 }}>{t.newPassword}</label>
+            <input
+              type="password"
+              value={passwordForm.new_password}
+              onChange={(event) => {
+                setPasswordForm((prev) => ({ ...prev, new_password: event.target.value }));
+                markUnsaved(PASSWORD_SCOPE);
+              }}
+              style={{
+                ...styles.textInput,
+                ...(r.isMobile ? { height: 32, borderRadius: 8, fontSize: 11 } : {}),
+              }}
+              autoComplete="new-password"
+            />
+
+            <label style={{ ...styles.fieldLabel, fontSize: r.isMobile ? 10 : 13 }}>{t.confirmPassword}</label>
+            <input
+              type="password"
+              value={passwordForm.confirm_password}
+              onChange={(event) => {
+                setPasswordForm((prev) => ({ ...prev, confirm_password: event.target.value }));
+                markUnsaved(PASSWORD_SCOPE);
+              }}
+              style={{
+                ...styles.textInput,
+                ...(r.isMobile ? { height: 32, borderRadius: 8, fontSize: 11 } : {}),
+              }}
+              autoComplete="new-password"
+            />
+
+            <button
+              type="button"
+              onClick={handleChangePassword}
+              style={{
+                ...(isSubmitting ? styles.primaryButtonDisabled : styles.primaryButton),
+                ...(r.isMobile ? { padding: '5px 10px', fontSize: 11, borderRadius: 8 } : {}),
+              }}
+              disabled={isSubmitting}
+            >
+              {t.changePassword}
+            </button>
+          </div>
+        </div>
 
         <div style={{
           ...styles.actionsFooter,
@@ -649,6 +802,18 @@ const styles = {
     color: '#002642',
     background: '#fff',
     fontSize: '14px',
+  },
+
+  textInput: {
+    height: '42px',
+    borderRadius: '12px',
+    border: '2px solid #dee7e7',
+    padding: '0 12px',
+    color: '#002642',
+    background: '#fff',
+    fontSize: '14px',
+    width: '100%',
+    boxSizing: 'border-box',
   },
 
   primaryButton: {

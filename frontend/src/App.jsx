@@ -3,6 +3,7 @@ import PrivateRoute from './components/PrivateRoute';
 import { AuthProvider } from './context/AuthContext';
 import { useAuth } from './context/useAuth';
 import Auth from './pages/Auth';
+import ResetPassword from './pages/ResetPassword';
 import EmployeeDashboard from './pages/EmployeeDashboard';
 import ManagerDashboard from './pages/ManagerDashboard';
 import { getStoredLanguage } from './services/language';
@@ -23,6 +24,10 @@ function AppRoutes() {
       <Route
         path="/"
         element={isAuthenticated ? <Navigate to="/dashboard" replace /> : <Auth />}
+      />
+      <Route
+        path="/reset-password"
+        element={isAuthenticated ? <Navigate to="/dashboard" replace /> : <ResetPassword />}
       />
       <Route
         path="/employee"
