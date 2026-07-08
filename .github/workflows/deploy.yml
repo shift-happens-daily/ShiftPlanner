@@ -8,8 +8,6 @@ on:
   push:
     branches:
       - main
-      - dev
-      - dev2
   workflow_dispatch:
 
 concurrency:
