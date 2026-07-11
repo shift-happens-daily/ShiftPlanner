@@ -15,6 +15,7 @@ import {
   listBranches,
   listEmployeeRequests,
   listManagerRequests,
+  listCompanyManagers,
   previewInviteCode,
   regenerateInviteCode,
 } from '../../services/companyService';
@@ -91,6 +92,30 @@ function getInviteCode(company) {
   return company?.invite_code || company?.inviteCode;
 }
 
+function buildCurrentManagerEntry(user) {
+  if (!user?.id) return null;
+
+  return {
+    id: `self-${user.id}`,
+    user_id: user.id,
+    public_id: user.publicId || '',
+    full_name: user.fullName || user.email || '',
+    email: user.email || '',
+    manager_role: 'manager',
+    membership_status: 'active',
+  };
+}
+
+function sortCompanyManagers(managers) {
+  return [...managers].sort((left, right) => {
+    if (left.manager_role === 'owner' && right.manager_role !== 'owner') return -1;
+    if (right.manager_role === 'owner' && left.manager_role !== 'owner') return 1;
+    return String(left.full_name || left.email || '').localeCompare(
+      String(right.full_name || right.email || ''),
+    );
+  });
+}
+
 export default function CompanyTab({ language, userRole, user }) {
   usePositionTitleRevision();
   const r = useTabResponsive(1480);
@@ -108,6 +133,8 @@ export default function CompanyTab({ language, userRole, user }) {
   const [companyName, setCompanyName] = useState('');
   const [employeeRequests, setEmployeeRequests] = useState([]);
   const [managerRequests, setManagerRequests] = useState([]);
+  const [companyManagers, setCompanyManagers] = useState([]);
+  const [companyManagersFromApi, setCompanyManagersFromApi] = useState(false);
 
   const [errorMessage, setErrorMessage] = useState('');
   const [successMessage, setSuccessMessage] = useState('');
@@ -150,6 +177,14 @@ export default function CompanyTab({ language, userRole, user }) {
       managerRequests: 'Заявки менеджеров',
       managerRequestsHint: 'Примите или отклоните заявки других менеджеров на вступление в компанию.',
       noManagerRequests: 'Нет ожидающих заявок менеджеров.',
+      companyManagers: 'Менеджеры компании',
+      companyManagersHint: 'Активные менеджеры с доступом к управлению компанией.',
+      noCompanyManagers: 'Пока нет других активных менеджеров.',
+      managerRoleOwner: 'Владелец',
+      managerRoleManager: 'Менеджер',
+      managerYou: 'Вы',
+      managerPublicId: 'ID пользователя',
+      managersEndpointPending: 'Полный список менеджеров появится после обновления сервера. Сейчас отображается только ваш профиль.',
       employeeInviteHint: 'Один код для сотрудников и других менеджеров.',
       previewInvite: 'Проверить код',
       joinCompany: 'Присоединиться',
@@ -234,6 +269,14 @@ export default function CompanyTab({ language, userRole, user }) {
       managerRequests: 'Manager requests',
       managerRequestsHint: 'Approve or decline requests from other managers to join your company.',
       noManagerRequests: 'No pending manager requests.',
+      companyManagers: 'Company managers',
+      companyManagersHint: 'Active managers with access to manage this company.',
+      noCompanyManagers: 'No other active managers yet.',
+      managerRoleOwner: 'Owner',
+      managerRoleManager: 'Manager',
+      managerYou: 'You',
+      managerPublicId: 'User ID',
+      managersEndpointPending: 'The full manager roster will appear after a server update. Only your profile is shown for now.',
       employeeInviteHint: 'One invite code for employees and other managers.',
       previewInvite: 'Preview invite',
       joinCompany: 'Join company',
@@ -351,6 +394,27 @@ export default function CompanyTab({ language, userRole, user }) {
     }
   };
 
+  const loadCompanyManagers = async () => {
+    if (!isManager || !currentCompanyId || isPendingManager) {
+      setCompanyManagers([]);
+      setCompanyManagersFromApi(false);
+      return;
+    }
+
+    try {
+      const data = await listCompanyManagers();
+      const activeManagers = normalizeArray(data).filter(
+        (manager) => manager?.membership_status === 'active',
+      );
+      setCompanyManagers(sortCompanyManagers(activeManagers));
+      setCompanyManagersFromApi(true);
+    } catch {
+      const selfEntry = buildCurrentManagerEntry(user);
+      setCompanyManagers(selfEntry ? [selfEntry] : []);
+      setCompanyManagersFromApi(false);
+    }
+  };
+
   useEffect(() => {
     if (!isManager || !currentCompanyId) {
       setBranches([]);
@@ -367,6 +431,10 @@ export default function CompanyTab({ language, userRole, user }) {
   useEffect(() => {
     void loadManagerRequests();
   }, [isManager, currentCompanyId]);
+
+  useEffect(() => {
+    void loadCompanyManagers();
+  }, [isManager, currentCompanyId, isPendingManager, user?.id, user?.publicId, user?.fullName, user?.email]);
 
   const handlePreview = async () => {
     if (!inviteCode.trim()) {
@@ -600,7 +668,7 @@ export default function CompanyTab({ language, userRole, user }) {
 
     try {
       await acceptManagerRequest(requestId);
-      await loadManagerRequests();
+      await Promise.all([loadManagerRequests(), loadCompanyManagers()]);
       setSuccessMessage(t.requestAccepted);
     } catch (error) {
       setErrorMessage(extractApiErrorMessage(error, t.requestActionError, language));
@@ -824,6 +892,63 @@ export default function CompanyTab({ language, userRole, user }) {
                 </div>
               </div>
             </section>
+
+            {!isPendingManager && (
+              <section style={{
+                ...styles.requestsCard,
+                gridColumn: r.isMobile ? 'auto' : '1 / -1',
+              }}>
+                <div style={styles.requestsHeader}>
+                  <h3 style={styles.sectionTitle}>{t.companyManagers}</h3>
+                  <p style={styles.hint}>{t.companyManagersHint}</p>
+                </div>
+
+                {!companyManagersFromApi && companyManagers.length > 0 ? (
+                  <p style={styles.managersPendingNote}>{t.managersEndpointPending}</p>
+                ) : null}
+
+                <div style={styles.requestList}>
+                  {companyManagers.length === 0 ? (
+                    <div style={styles.emptyRequests}>{t.noCompanyManagers}</div>
+                  ) : (
+                    companyManagers.map((manager) => {
+                      const isSelf = Number(manager.user_id) === Number(user?.id);
+                      const roleLabel = manager.manager_role === 'owner'
+                        ? t.managerRoleOwner
+                        : t.managerRoleManager;
+
+                      return (
+                        <div key={manager.id} style={styles.requestItem}>
+                          <div style={styles.requestMain}>
+                            <div style={styles.managerNameRow}>
+                              <strong style={styles.requestName}>
+                                {manager.full_name || manager.email}
+                              </strong>
+                              {isSelf ? (
+                                <span style={styles.managerYouBadge}>{t.managerYou}</span>
+                              ) : null}
+                            </div>
+                            <span style={styles.requestMeta}>{manager.email}</span>
+                            {manager.public_id ? (
+                              <span style={styles.requestMeta}>
+                                {t.managerPublicId}: {manager.public_id}
+                              </span>
+                            ) : null}
+                          </div>
+                          <span style={{
+                            ...styles.managerRoleBadge,
+                            ...(manager.manager_role === 'owner' ? styles.managerRoleBadgeOwner : {}),
+                          }}
+                          >
+                            {roleLabel}
+                          </span>
+                        </div>
+                      );
+                    })
+                  )}
+                </div>
+              </section>
+            )}
 
             <section style={{
               ...styles.requestsCard,
@@ -1561,6 +1686,52 @@ const styles = {
   requestMeta: {
     color: '#64748b',
     fontSize: '12px',
+  },
+
+  managerNameRow: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '8px',
+    flexWrap: 'wrap',
+  },
+
+  managerYouBadge: {
+    display: 'inline-flex',
+    alignItems: 'center',
+    padding: '2px 8px',
+    borderRadius: '999px',
+    background: '#e0ecff',
+    color: '#1e3a5f',
+    fontSize: '11px',
+    fontWeight: '800',
+  },
+
+  managerRoleBadge: {
+    display: 'inline-flex',
+    alignItems: 'center',
+    padding: '6px 10px',
+    borderRadius: '999px',
+    background: '#eef3f6',
+    color: '#4f646f',
+    fontSize: '12px',
+    fontWeight: '800',
+    flexShrink: 0,
+  },
+
+  managerRoleBadgeOwner: {
+    background: '#e8f7ee',
+    color: '#1f7a3f',
+  },
+
+  managersPendingNote: {
+    margin: '0 0 12px',
+    padding: '10px 12px',
+    borderRadius: '12px',
+    background: '#fff8e8',
+    border: '1px solid #f2dfae',
+    color: '#7a5b14',
+    fontSize: '13px',
+    lineHeight: 1.45,
   },
 
   requestActions: {

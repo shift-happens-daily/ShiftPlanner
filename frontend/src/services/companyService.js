@@ -62,6 +62,11 @@ export async function listManagerRequests() {
   return response.data;
 }
 
+export async function listCompanyManagers() {
+  const response = await api.get('/companies/me/managers');
+  return response.data;
+}
+
 export async function acceptManagerRequest(requestId) {
   const response = await api.post(`/companies/me/manager-requests/${requestId}/accept`);
   return response.data;
