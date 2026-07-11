@@ -206,6 +206,42 @@ class EmployeesViewModel(
         }
     }
 
+    // ── Link by public ID ─────────────────────────────────────────────────────
+
+    fun linkEmployeeByPublicId(
+        publicId: String,
+        branchId: Int?,
+        positionId: Int?,
+        onDone: (Boolean) -> Unit
+    ) {
+        val trimmed = publicId.trim()
+        if (trimmed.length != 16) {
+            error("ID должен быть 16 символов")
+            onDone(false)
+            return
+        }
+        viewModelScope.launch {
+            try {
+                val linked = repository.linkEmployeeByPublicId(trimmed, branchId, positionId)
+                val existing = _uiState.value.employees
+                val updated = if (existing.any { it.id == linked.id }) {
+                    existing.map { if (it.id == linked.id) linked else it }
+                } else {
+                    (existing + linked).sortedBy { it.fullName }
+                }
+                _uiState.value = _uiState.value.copy(
+                    employees = updated,
+                    statusMessage = "${linked.fullName} привязан к компании.",
+                    errorMessage = null
+                )
+                onDone(true)
+            } catch (e: Exception) {
+                _uiState.value = _uiState.value.copy(errorMessage = e.message, statusMessage = null)
+                onDone(false)
+            }
+        }
+    }
+
     // ── Pending requests ──────────────────────────────────────────────────────
 
     fun acceptManagerRequest(req: PendingManagerRequest) {

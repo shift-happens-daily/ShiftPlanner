@@ -22,6 +22,8 @@ interface EmployeeManagementRepository {
     suspend fun createPosition(title: String, companyId: Int): ManagedPosition
     suspend fun deletePosition(positionId: Int)
 
+    suspend fun linkEmployeeByPublicId(publicId: String, branchId: Int?, positionId: Int?): ManagedEmployee
+
     // ── Pending join requests ─────────────────────────────────────────────────
     suspend fun fetchManagerRequests(): List<PendingManagerRequest>
     suspend fun acceptManagerRequest(id: Int)

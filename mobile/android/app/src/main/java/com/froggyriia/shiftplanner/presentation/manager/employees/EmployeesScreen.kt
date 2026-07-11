@@ -16,6 +16,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Link
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
@@ -74,6 +75,7 @@ fun EmployeesScreen(
 
     var tabIndex by rememberSaveable { mutableIntStateOf(0) }
     var showAddEmployeeSheet by remember { mutableStateOf(false) }
+    var showLinkByIdSheet by remember { mutableStateOf(false) }
     var showAddPositionDialog by remember { mutableStateOf(false) }
     var employeeToDelete by remember { mutableStateOf<ManagedEmployee?>(null) }
     var positionToDelete by remember { mutableStateOf<ManagedPosition?>(null) }
@@ -93,10 +95,15 @@ fun EmployeesScreen(
                 title = { Text("Сотрудники") },
                 actions = {
                     when (tabIndex) {
-                        0 -> IconButton(
-                            onClick = { showAddEmployeeSheet = true },
-                            enabled = state.positions.isNotEmpty()
-                        ) { Icon(Icons.Default.Add, contentDescription = "Добавить сотрудника") }
+                        0 -> Row {
+                            IconButton(onClick = { showLinkByIdSheet = true }) {
+                                Icon(Icons.Default.Link, contentDescription = "Привязать по ID")
+                            }
+                            IconButton(
+                                onClick = { showAddEmployeeSheet = true },
+                                enabled = state.positions.isNotEmpty()
+                            ) { Icon(Icons.Default.Add, contentDescription = "Добавить сотрудника") }
+                        }
                         1 -> IconButton(onClick = { showAddPositionDialog = true }) {
                             Icon(Icons.Default.Add, contentDescription = "Добавить должность")
                         }
@@ -214,6 +221,59 @@ fun EmployeesScreen(
                     },
                     modifier = Modifier.fillMaxWidth()
                 ) { Text("Add") }
+            }
+        }
+    }
+
+    // ── Link by Public ID Sheet ───────────────────────────────────────────────
+
+    if (showLinkByIdSheet) {
+        var publicId by remember { mutableStateOf("") }
+        var linkBranchId by remember { mutableStateOf<Int?>(null) }
+        var linkPositionId by remember { mutableStateOf<Int?>(null) }
+        ModalBottomSheet(onDismissRequest = { showLinkByIdSheet = false }) {
+            Column(
+                modifier = Modifier
+                    .padding(horizontal = 20.dp)
+                    .padding(bottom = 32.dp)
+                    .verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                Text("Добавить по ID", style = MaterialTheme.typography.headlineSmall)
+                OutlinedTextField(
+                    value = publicId,
+                    onValueChange = { if (it.length <= 16) publicId = it },
+                    label = { Text("ID пользователя (16 символов)") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth(),
+                    supportingText = { Text("${publicId.length}/16") }
+                )
+                if (state.branches.isNotEmpty()) {
+                    NullableDropdown(
+                        label = "Филиал (необязательно)",
+                        options = state.branches.map { it.id to it.name },
+                        selected = linkBranchId,
+                        onSelect = { linkBranchId = it }
+                    )
+                }
+                if (state.positions.isNotEmpty()) {
+                    NullableDropdown(
+                        label = "Должность (необязательно)",
+                        options = state.positions.map { it.id to it.title },
+                        selected = linkPositionId,
+                        onSelect = { linkPositionId = it }
+                    )
+                }
+                Spacer(Modifier.height(8.dp))
+                Button(
+                    onClick = {
+                        viewModel.linkEmployeeByPublicId(publicId, linkBranchId, linkPositionId) { success ->
+                            if (success) showLinkByIdSheet = false
+                        }
+                    },
+                    modifier = Modifier.fillMaxWidth(),
+                    enabled = publicId.length == 16
+                ) { Text("Привязать") }
             }
         }
     }

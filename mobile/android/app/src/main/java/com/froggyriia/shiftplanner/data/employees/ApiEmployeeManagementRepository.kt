@@ -4,6 +4,7 @@ import com.froggyriia.shiftplanner.data.network.ApiClient
 import com.froggyriia.shiftplanner.data.network.EmployeeBranchUpdateRequestDto
 import com.froggyriia.shiftplanner.data.network.EmployeeCreateRequestDto
 import com.froggyriia.shiftplanner.data.network.EmployeePositionUpdateRequestDto
+import com.froggyriia.shiftplanner.data.network.LinkUserRequestDto
 import com.froggyriia.shiftplanner.data.network.PositionCreateRequestDto
 import com.froggyriia.shiftplanner.domain.model.ManagedBranch
 import com.froggyriia.shiftplanner.domain.model.ManagedEmployee
@@ -80,6 +81,16 @@ class ApiEmployeeManagementRepository(
     override suspend fun deletePosition(positionId: Int) = wrap {
         apiClient.api.deletePosition(positionId)
         Unit
+    }
+
+    override suspend fun linkEmployeeByPublicId(
+        publicId: String,
+        branchId: Int?,
+        positionId: Int?
+    ): ManagedEmployee = wrap {
+        apiClient.api.linkUserToCompany(
+            LinkUserRequestDto(userPublicId = publicId, branchId = branchId, positionId = positionId)
+        ).toDomain()
     }
 
     // ── Pending join requests ─────────────────────────────────────────────────
