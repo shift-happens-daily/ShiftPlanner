@@ -74,7 +74,6 @@ fun EmployeesScreen(
     }
 
     var tabIndex by rememberSaveable { mutableIntStateOf(0) }
-    var showAddEmployeeSheet by remember { mutableStateOf(false) }
     var showLinkByIdSheet by remember { mutableStateOf(false) }
     var showAddPositionDialog by remember { mutableStateOf(false) }
     var employeeToDelete by remember { mutableStateOf<ManagedEmployee?>(null) }
@@ -95,14 +94,8 @@ fun EmployeesScreen(
                 title = { Text("Сотрудники") },
                 actions = {
                     when (tabIndex) {
-                        0 -> Row {
-                            IconButton(onClick = { showLinkByIdSheet = true }) {
-                                Icon(Icons.Default.Link, contentDescription = "Привязать по ID")
-                            }
-                            IconButton(
-                                onClick = { showAddEmployeeSheet = true },
-                                enabled = state.positions.isNotEmpty()
-                            ) { Icon(Icons.Default.Add, contentDescription = "Добавить сотрудника") }
+                        0 -> IconButton(onClick = { showLinkByIdSheet = true }) {
+                            Icon(Icons.Default.Link, contentDescription = "Привязать по ID")
                         }
                         1 -> IconButton(onClick = { showAddPositionDialog = true }) {
                             Icon(Icons.Default.Add, contentDescription = "Добавить должность")
@@ -135,7 +128,6 @@ fun EmployeesScreen(
                 0 -> EmployeeListTab(
                     employees = state.employees,
                     viewModel = viewModel,
-                    onAddClick = { showAddEmployeeSheet = true },
                     onDeleteEmployee = { employeeToDelete = it },
                     onPickPosition = { positionPickerEmployee = it },
                     onPickBranch = if (state.branches.isNotEmpty()) { { branchPickerEmployee = it } } else null
@@ -162,65 +154,6 @@ fun EmployeesScreen(
                     style = MaterialTheme.typography.bodySmall,
                     modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp)
                 )
-            }
-        }
-    }
-
-    // ── Add Employee Sheet ────────────────────────────────────────────────────
-
-    if (showAddEmployeeSheet) {
-        var draft by remember { mutableStateOf(
-            EmployeeCreationDraft(
-                positionId = state.positions.firstOrNull()?.id,
-                branchId = state.branches.firstOrNull()?.id
-            )
-        ) }
-        ModalBottomSheet(onDismissRequest = { showAddEmployeeSheet = false }) {
-            Column(
-                modifier = Modifier
-                    .padding(horizontal = 20.dp)
-                    .padding(bottom = 32.dp)
-                    .verticalScroll(rememberScrollState()),
-                verticalArrangement = Arrangement.spacedBy(12.dp)
-            ) {
-                Text("Add Employee", style = MaterialTheme.typography.headlineSmall)
-                OutlinedTextField(
-                    value = draft.fullName,
-                    onValueChange = { draft = draft.copy(fullName = it) },
-                    label = { Text("Full name") },
-                    singleLine = true,
-                    modifier = Modifier.fillMaxWidth()
-                )
-                OutlinedTextField(
-                    value = draft.email,
-                    onValueChange = { draft = draft.copy(email = it) },
-                    label = { Text("Email") },
-                    singleLine = true,
-                    modifier = Modifier.fillMaxWidth()
-                )
-                NullableDropdown(
-                    label = "Position",
-                    options = state.positions.map { it.id to it.title },
-                    selected = draft.positionId,
-                    onSelect = { draft = draft.copy(positionId = it) }
-                )
-                if (state.branches.isNotEmpty()) {
-                    NullableDropdown(
-                        label = "Branch (optional)",
-                        options = state.branches.map { it.id to it.name },
-                        selected = draft.branchId,
-                        onSelect = { draft = draft.copy(branchId = it) }
-                    )
-                }
-                Spacer(Modifier.height(8.dp))
-                Button(
-                    onClick = {
-                        viewModel.createEmployee(draft) { success ->
-                            if (success) showAddEmployeeSheet = false
-                        }
-                    },
-                    modifier = Modifier.fillMaxWidth()
-                ) { Text("Add") }
             }
         }
     }
@@ -418,18 +351,13 @@ fun EmployeesScreen(
 private fun EmployeeListTab(
     employees: List<ManagedEmployee>,
     viewModel: EmployeesViewModel,
-    onAddClick: () -> Unit,
     onDeleteEmployee: (ManagedEmployee) -> Unit,
     onPickPosition: (ManagedEmployee) -> Unit,
     onPickBranch: ((ManagedEmployee) -> Unit)?
 ) {
     if (employees.isEmpty()) {
         Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-            Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                Text("No employees yet", color = MaterialTheme.colorScheme.onSurfaceVariant)
-                Spacer(Modifier.height(8.dp))
-                Button(onClick = onAddClick) { Text("Add employee") }
-            }
+            Text("Нет сотрудников", color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
         return
     }
