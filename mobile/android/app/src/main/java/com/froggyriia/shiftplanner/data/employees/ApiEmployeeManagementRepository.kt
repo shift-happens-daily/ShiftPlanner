@@ -8,6 +8,8 @@ import com.froggyriia.shiftplanner.data.network.PositionCreateRequestDto
 import com.froggyriia.shiftplanner.domain.model.ManagedBranch
 import com.froggyriia.shiftplanner.domain.model.ManagedEmployee
 import com.froggyriia.shiftplanner.domain.model.ManagedPosition
+import com.froggyriia.shiftplanner.domain.model.PendingEmployeeRequest
+import com.froggyriia.shiftplanner.domain.model.PendingManagerRequest
 
 class ApiEmployeeManagementRepository(
     private val apiClient: ApiClient,
@@ -78,6 +80,36 @@ class ApiEmployeeManagementRepository(
     override suspend fun deletePosition(positionId: Int) = wrap {
         apiClient.api.deletePosition(positionId)
         Unit
+    }
+
+    // ── Pending join requests ─────────────────────────────────────────────────
+
+    override suspend fun fetchManagerRequests(): List<PendingManagerRequest> = wrap {
+        apiClient.api.getManagerRequests()
+            .filter { it.membershipStatus == "pending" }
+            .map { it.toDomain() }
+    }
+
+    override suspend fun acceptManagerRequest(id: Int) = wrap {
+        apiClient.api.acceptManagerRequest(id); Unit
+    }
+
+    override suspend fun declineManagerRequest(id: Int) = wrap {
+        apiClient.api.declineManagerRequest(id); Unit
+    }
+
+    override suspend fun fetchEmployeeRequests(): List<PendingEmployeeRequest> = wrap {
+        apiClient.api.getEmployeeRequests()
+            .filter { !it.isActive }
+            .map { it.toDomain() }
+    }
+
+    override suspend fun acceptEmployeeRequest(id: Int) = wrap {
+        apiClient.api.acceptEmployeeRequest(id); Unit
+    }
+
+    override suspend fun declineEmployeeRequest(id: Int) = wrap {
+        apiClient.api.declineEmployeeRequest(id); Unit
     }
 
     private suspend fun <T> wrap(block: suspend () -> T): T {

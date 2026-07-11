@@ -21,3 +21,18 @@ data class ManagedBranch(
     val id: Int,
     val name: String
 )
+
+data class PendingManagerRequest(
+    val id: Int,
+    val fullName: String,
+    val email: String,
+    val managerRole: String   // "owner" | "manager"
+)
+
+data class PendingEmployeeRequest(
+    val id: Int,
+    val fullName: String,
+    val email: String,
+    val positionId: Int?,
+    val branchId: Int?
+)

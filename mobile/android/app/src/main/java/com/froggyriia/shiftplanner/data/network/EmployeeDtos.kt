@@ -92,3 +92,35 @@ data class EmployeeBranchResponseDto(
 ) {
     fun toDomain(): ManagedBranch = ManagedBranch(id = id, name = name)
 }
+
+data class ManagerRequestDto(
+    val id: Int,
+    @SerializedName("company_id") val companyId: Int,
+    @SerializedName("user_id") val userId: Int,
+    @SerializedName("public_id") val publicId: String,
+    @SerializedName("full_name") val fullName: String,
+    val email: String,
+    @SerializedName("manager_role") val managerRole: String,
+    @SerializedName("membership_status") val membershipStatus: String
+) {
+    fun toDomain() = com.froggyriia.shiftplanner.domain.model.PendingManagerRequest(
+        id = id, fullName = fullName, email = email, managerRole = managerRole
+    )
+}
+
+data class EmployeeRequestDto(
+    val id: Int,
+    @SerializedName("company_id") val companyId: Int,
+    @SerializedName("user_id") val userId: Int,
+    @SerializedName("public_id") val publicId: String,
+    @SerializedName("full_name") val fullName: String,
+    val email: String,
+    @SerializedName("branch_id") val branchId: Int?,
+    @SerializedName("position_id") val positionId: Int?,
+    @SerializedName("is_active") val isActive: Boolean
+) {
+    fun toDomain() = com.froggyriia.shiftplanner.domain.model.PendingEmployeeRequest(
+        id = id, fullName = fullName, email = email,
+        positionId = positionId, branchId = branchId
+    )
+}

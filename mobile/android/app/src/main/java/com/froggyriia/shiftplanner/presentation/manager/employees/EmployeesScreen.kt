@@ -53,6 +53,8 @@ import androidx.compose.ui.unit.dp
 import com.froggyriia.shiftplanner.domain.model.AppUser
 import com.froggyriia.shiftplanner.domain.model.ManagedEmployee
 import com.froggyriia.shiftplanner.domain.model.ManagedPosition
+import com.froggyriia.shiftplanner.domain.model.PendingEmployeeRequest
+import com.froggyriia.shiftplanner.domain.model.PendingManagerRequest
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -87,15 +89,15 @@ fun EmployeesScreen(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Employees") },
+                title = { Text("Сотрудники") },
                 actions = {
                     when (tabIndex) {
                         0 -> IconButton(
                             onClick = { showAddEmployeeSheet = true },
                             enabled = state.positions.isNotEmpty()
-                        ) { Icon(Icons.Default.Add, contentDescription = "Add employee") }
+                        ) { Icon(Icons.Default.Add, contentDescription = "Добавить сотрудника") }
                         1 -> IconButton(onClick = { showAddPositionDialog = true }) {
-                            Icon(Icons.Default.Add, contentDescription = "Add position")
+                            Icon(Icons.Default.Add, contentDescription = "Добавить должность")
                         }
                     }
                 }
@@ -104,9 +106,14 @@ fun EmployeesScreen(
         snackbarHost = { SnackbarHost(snackbar) }
     ) { padding ->
         Column(modifier = Modifier.padding(padding)) {
+            val pendingCount = state.pendingManagerRequests.size + state.pendingEmployeeRequests.size
             TabRow(selectedTabIndex = tabIndex) {
-                Tab(selected = tabIndex == 0, onClick = { tabIndex = 0 }) { Text("Employees", modifier = Modifier.padding(vertical = 12.dp)) }
-                Tab(selected = tabIndex == 1, onClick = { tabIndex = 1 }) { Text("Positions", modifier = Modifier.padding(vertical = 12.dp)) }
+                Tab(selected = tabIndex == 0, onClick = { tabIndex = 0 }) { Text("Сотрудники", modifier = Modifier.padding(vertical = 12.dp)) }
+                Tab(selected = tabIndex == 1, onClick = { tabIndex = 1 }) { Text("Должности", modifier = Modifier.padding(vertical = 12.dp)) }
+                Tab(selected = tabIndex == 2, onClick = { tabIndex = 2 }) {
+                    val label = if (pendingCount > 0) "Заявки ($pendingCount)" else "Заявки"
+                    Text(label, modifier = Modifier.padding(vertical = 12.dp))
+                }
             }
 
             if (state.isLoading) {
@@ -126,6 +133,14 @@ fun EmployeesScreen(
                     positions = state.positions,
                     onAddClick = { showAddPositionDialog = true },
                     onDeletePosition = { positionToDelete = it }
+                )
+                2 -> PendingRequestsTab(
+                    managerRequests = state.pendingManagerRequests,
+                    employeeRequests = state.pendingEmployeeRequests,
+                    onAcceptManager = { viewModel.acceptManagerRequest(it) },
+                    onDeclineManager = { viewModel.declineManagerRequest(it) },
+                    onAcceptEmployee = { viewModel.acceptEmployeeRequest(it) },
+                    onDeclineEmployee = { viewModel.declineEmployeeRequest(it) }
                 )
             }
 
@@ -450,6 +465,106 @@ private fun PositionListTab(
                         Icon(Icons.Default.Delete, contentDescription = "Delete", tint = MaterialTheme.colorScheme.error)
                     }
                 }
+            }
+        }
+    }
+}
+
+// ── Pending Requests Tab ───────────────────────────────────────────────────────
+
+@Composable
+private fun PendingRequestsTab(
+    managerRequests: List<PendingManagerRequest>,
+    employeeRequests: List<PendingEmployeeRequest>,
+    onAcceptManager: (PendingManagerRequest) -> Unit,
+    onDeclineManager: (PendingManagerRequest) -> Unit,
+    onAcceptEmployee: (PendingEmployeeRequest) -> Unit,
+    onDeclineEmployee: (PendingEmployeeRequest) -> Unit
+) {
+    if (managerRequests.isEmpty() && employeeRequests.isEmpty()) {
+        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+            Text("Нет ожидающих заявок", color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+        return
+    }
+
+    LazyColumn(
+        modifier = Modifier.fillMaxSize(),
+        contentPadding = androidx.compose.foundation.layout.PaddingValues(16.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+        if (managerRequests.isNotEmpty()) {
+            item {
+                Text(
+                    "Заявки менеджеров",
+                    style = MaterialTheme.typography.titleSmall,
+                    color = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.padding(vertical = 4.dp)
+                )
+            }
+            items(managerRequests, key = { "mgr_${it.id}" }) { req ->
+                PendingRequestCard(
+                    fullName = req.fullName,
+                    email = req.email,
+                    subtitle = if (req.managerRole == "owner") "Владелец" else "Менеджер",
+                    onAccept = { onAcceptManager(req) },
+                    onDecline = { onDeclineManager(req) }
+                )
+            }
+        }
+
+        if (employeeRequests.isNotEmpty()) {
+            item {
+                if (managerRequests.isNotEmpty()) Spacer(Modifier.height(8.dp))
+                Text(
+                    "Заявки сотрудников",
+                    style = MaterialTheme.typography.titleSmall,
+                    color = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.padding(vertical = 4.dp)
+                )
+            }
+            items(employeeRequests, key = { "emp_${it.id}" }) { req ->
+                PendingRequestCard(
+                    fullName = req.fullName,
+                    email = req.email,
+                    subtitle = null,
+                    onAccept = { onAcceptEmployee(req) },
+                    onDecline = { onDeclineEmployee(req) }
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun PendingRequestCard(
+    fullName: String,
+    email: String,
+    subtitle: String?,
+    onAccept: () -> Unit,
+    onDecline: () -> Unit
+) {
+    Card(modifier = Modifier.fillMaxWidth()) {
+        Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(fullName, style = MaterialTheme.typography.titleMedium)
+                    Text(email, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    if (subtitle != null) {
+                        Text(subtitle, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.secondary)
+                    }
+                }
+            }
+            HorizontalDivider()
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Button(onClick = onAccept, modifier = Modifier.weight(1f)) { Text("Принять") }
+                TextButton(
+                    onClick = onDecline,
+                    modifier = Modifier.weight(1f)
+                ) { Text("Отклонить", color = MaterialTheme.colorScheme.error) }
             }
         }
     }

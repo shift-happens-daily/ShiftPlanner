@@ -6,6 +6,8 @@ import com.froggyriia.shiftplanner.data.employees.EmployeeManagementRepository
 import com.froggyriia.shiftplanner.domain.model.ManagedBranch
 import com.froggyriia.shiftplanner.domain.model.ManagedEmployee
 import com.froggyriia.shiftplanner.domain.model.ManagedPosition
+import com.froggyriia.shiftplanner.domain.model.PendingEmployeeRequest
+import com.froggyriia.shiftplanner.domain.model.PendingManagerRequest
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -15,6 +17,8 @@ data class EmployeesUiState(
     val employees: List<ManagedEmployee> = emptyList(),
     val positions: List<ManagedPosition> = emptyList(),
     val branches: List<ManagedBranch> = emptyList(),
+    val pendingManagerRequests: List<PendingManagerRequest> = emptyList(),
+    val pendingEmployeeRequests: List<PendingEmployeeRequest> = emptyList(),
     val isLoading: Boolean = false,
     val errorMessage: String? = null,
     val statusMessage: String? = null
@@ -55,6 +59,20 @@ class EmployeesViewModel(
             } catch (e: Exception) {
                 _uiState.value = _uiState.value.copy(errorMessage = e.message, isLoading = false)
             }
+        }
+        loadPendingRequests()
+    }
+
+    fun loadPendingRequests() {
+        viewModelScope.launch {
+            try {
+                val managerReqs = repository.fetchManagerRequests()
+                val employeeReqs = repository.fetchEmployeeRequests()
+                _uiState.value = _uiState.value.copy(
+                    pendingManagerRequests = managerReqs,
+                    pendingEmployeeRequests = employeeReqs
+                )
+            } catch (_: Exception) {}
         }
     }
 
@@ -179,6 +197,62 @@ class EmployeesViewModel(
             } catch (e: Exception) {
                 _uiState.value = _uiState.value.copy(errorMessage = e.message, statusMessage = null)
             }
+        }
+    }
+
+    // ── Pending requests ──────────────────────────────────────────────────────
+
+    fun acceptManagerRequest(req: PendingManagerRequest) {
+        viewModelScope.launch {
+            try {
+                repository.acceptManagerRequest(req.id)
+                val updated = _uiState.value.pendingManagerRequests.filter { it.id != req.id }
+                _uiState.value = _uiState.value.copy(
+                    pendingManagerRequests = updated,
+                    statusMessage = "${req.fullName} принят как менеджер."
+                )
+                loadData(force = true)
+            } catch (e: Exception) { error(e.message ?: "Ошибка") }
+        }
+    }
+
+    fun declineManagerRequest(req: PendingManagerRequest) {
+        viewModelScope.launch {
+            try {
+                repository.declineManagerRequest(req.id)
+                val updated = _uiState.value.pendingManagerRequests.filter { it.id != req.id }
+                _uiState.value = _uiState.value.copy(
+                    pendingManagerRequests = updated,
+                    statusMessage = "Заявка ${req.fullName} отклонена."
+                )
+            } catch (e: Exception) { error(e.message ?: "Ошибка") }
+        }
+    }
+
+    fun acceptEmployeeRequest(req: PendingEmployeeRequest) {
+        viewModelScope.launch {
+            try {
+                repository.acceptEmployeeRequest(req.id)
+                val updated = _uiState.value.pendingEmployeeRequests.filter { it.id != req.id }
+                _uiState.value = _uiState.value.copy(
+                    pendingEmployeeRequests = updated,
+                    statusMessage = "${req.fullName} принят как сотрудник."
+                )
+                loadData(force = true)
+            } catch (e: Exception) { error(e.message ?: "Ошибка") }
+        }
+    }
+
+    fun declineEmployeeRequest(req: PendingEmployeeRequest) {
+        viewModelScope.launch {
+            try {
+                repository.declineEmployeeRequest(req.id)
+                val updated = _uiState.value.pendingEmployeeRequests.filter { it.id != req.id }
+                _uiState.value = _uiState.value.copy(
+                    pendingEmployeeRequests = updated,
+                    statusMessage = "Заявка ${req.fullName} отклонена."
+                )
+            } catch (e: Exception) { error(e.message ?: "Ошибка") }
         }
     }
 

@@ -64,6 +64,24 @@ interface ShiftPlannerApi {
     @POST("companies/join")
     suspend fun joinCompany(@Body request: CompanyJoinRequestDto): CurrentUserResponseDto
 
+    @GET("companies/me/manager-requests")
+    suspend fun getManagerRequests(): List<ManagerRequestDto>
+
+    @POST("companies/me/manager-requests/{id}/accept")
+    suspend fun acceptManagerRequest(@Path("id") id: Int): ManagerRequestDto
+
+    @POST("companies/me/manager-requests/{id}/decline")
+    suspend fun declineManagerRequest(@Path("id") id: Int): ManagerRequestDto
+
+    @GET("companies/me/employee-requests")
+    suspend fun getEmployeeRequests(): List<EmployeeRequestDto>
+
+    @POST("companies/me/employee-requests/{id}/accept")
+    suspend fun acceptEmployeeRequest(@Path("id") id: Int): EmployeeRequestDto
+
+    @POST("companies/me/employee-requests/{id}/decline")
+    suspend fun declineEmployeeRequest(@Path("id") id: Int): EmployeeRequestDto
+
     // ── Employees ─────────────────────────────────────────────────────────────
 
     @GET("employees/")

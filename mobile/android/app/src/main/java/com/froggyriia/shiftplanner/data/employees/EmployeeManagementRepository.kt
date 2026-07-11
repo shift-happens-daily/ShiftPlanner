@@ -3,6 +3,8 @@ package com.froggyriia.shiftplanner.data.employees
 import com.froggyriia.shiftplanner.domain.model.ManagedBranch
 import com.froggyriia.shiftplanner.domain.model.ManagedEmployee
 import com.froggyriia.shiftplanner.domain.model.ManagedPosition
+import com.froggyriia.shiftplanner.domain.model.PendingEmployeeRequest
+import com.froggyriia.shiftplanner.domain.model.PendingManagerRequest
 
 interface EmployeeManagementRepository {
     suspend fun fetchEmployees(): List<ManagedEmployee>
@@ -19,4 +21,12 @@ interface EmployeeManagementRepository {
     suspend fun assignBranch(employeeId: Int, branchId: Int?): ManagedEmployee
     suspend fun createPosition(title: String, companyId: Int): ManagedPosition
     suspend fun deletePosition(positionId: Int)
+
+    // ── Pending join requests ─────────────────────────────────────────────────
+    suspend fun fetchManagerRequests(): List<PendingManagerRequest>
+    suspend fun acceptManagerRequest(id: Int)
+    suspend fun declineManagerRequest(id: Int)
+    suspend fun fetchEmployeeRequests(): List<PendingEmployeeRequest>
+    suspend fun acceptEmployeeRequest(id: Int)
+    suspend fun declineEmployeeRequest(id: Int)
 }
