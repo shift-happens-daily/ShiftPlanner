@@ -1,6 +1,6 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useAuth } from '../../context/useAuth';
-import { joinCompany, previewInviteCode } from '../../services/companyService';
+import { joinCompany, listEmployeeCompanyManagers, previewInviteCode } from '../../services/companyService';
 import { extractApiErrorMessage } from '../../services/error';
 import { useUserBranches } from '../../hooks/useUserBranches';
 import { useUnsavedChanges } from '../../context/useUnsavedChanges';
@@ -66,6 +66,28 @@ function getInitials(value) {
   return `${parts[0][0]}${parts[1][0]}`.toUpperCase();
 }
 
+function sortCompanyManagers(managers) {
+  return [...managers].sort((left, right) => {
+    if (left.manager_role === 'owner' && right.manager_role !== 'owner') return -1;
+    if (right.manager_role === 'owner' && left.manager_role !== 'owner') return 1;
+    return String(left.full_name || left.email || '').localeCompare(
+      String(right.full_name || right.email || ''),
+    );
+  });
+}
+
+function getMockCompanyManagers(language) {
+  return [{
+    id: 'mock-manager',
+    full_name: language === 'ru' ? 'Менеджер компании' : 'Company Manager',
+    email: 'manager@company.example',
+    public_id: '',
+    manager_role: 'owner',
+    membership_status: 'active',
+    isMock: true,
+  }];
+}
+
 function IconBuilding() {
   return (
     <svg width="32" height="32" viewBox="0 0 24 24" fill="none" aria-hidden="true">
@@ -96,6 +118,8 @@ export default function EmployeeCompanyTab({ language, user }) {
   const [errorMessage, setErrorMessage] = useState('');
   const [successMessage, setSuccessMessage] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [companyManagers, setCompanyManagers] = useState([]);
+  const [managersFromApi, setManagersFromApi] = useState(false);
 
   const texts = {
     ru: {
@@ -125,7 +149,13 @@ export default function EmployeeCompanyTab({ language, user }) {
       noBranchesAssigned: 'Филиалы не назначены',
       noBranchSelected: 'Без филиала',
       noPositionSelected: 'Без позиции',
-      accountTitle: 'Ваш аккаунт',
+      managerTitle: 'Менеджер компании',
+      managersTitle: 'Менеджеры компании',
+      managerEmail: 'Email',
+      managerRoleOwner: 'Владелец',
+      managerRoleManager: 'Менеджер',
+      managersMockNote: 'Контакт менеджера появится после обновления сервера. Сейчас показан пример.',
+      noManagerAvailable: 'Контакт менеджера пока недоступен.',
       empty: '—',
     },
     en: {
@@ -155,7 +185,13 @@ export default function EmployeeCompanyTab({ language, user }) {
       noBranchesAssigned: 'No branches assigned',
       noBranchSelected: 'No branch selected',
       noPositionSelected: 'No position selected',
-      accountTitle: 'Your account',
+      managerTitle: 'Company manager',
+      managersTitle: 'Company managers',
+      managerEmail: 'Email',
+      managerRoleOwner: 'Owner',
+      managerRoleManager: 'Manager',
+      managersMockNote: 'Manager contact details will appear after a server update. A placeholder is shown for now.',
+      noManagerAvailable: 'Manager contact is not available yet.',
       empty: '—',
     },
   };
@@ -173,10 +209,41 @@ export default function EmployeeCompanyTab({ language, user }) {
   const previewPositions = getPositionsFromPreview(invitePreview);
   const canJoin = Boolean(invitePreview) && !isSubmitting;
 
-  const userName = user?.full_name || user?.fullName || user?.name || user?.email || t.empty;
-  const userEmail = user?.email || t.empty;
   const employeePublicId = user?.publicId || user?.public_id || t.empty;
   const primaryBranch = userBranches[0] ? getName(userBranches[0]) : t.noBranchesAssigned;
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function loadManagers() {
+      if (!currentCompany) {
+        setCompanyManagers([]);
+        setManagersFromApi(false);
+        return;
+      }
+
+      try {
+        const data = await listEmployeeCompanyManagers();
+        if (cancelled) return;
+
+        const activeManagers = normalizeArray(data).filter(
+          (manager) => manager?.membership_status === 'active',
+        );
+        setCompanyManagers(sortCompanyManagers(activeManagers));
+        setManagersFromApi(true);
+      } catch {
+        if (cancelled) return;
+        setCompanyManagers(getMockCompanyManagers(language));
+        setManagersFromApi(false);
+      }
+    }
+
+    void loadManagers();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [currentCompany, language]);
 
   const clearMessages = () => {
     setErrorMessage('');
@@ -413,20 +480,46 @@ export default function EmployeeCompanyTab({ language, user }) {
           </div>
 
           <aside className="ed-card ed-side-card">
-            <h3 className="ed-side-title">{t.accountTitle}</h3>
+            <h3 className="ed-side-title">
+              {companyManagers.length > 1 ? t.managersTitle : t.managerTitle}
+            </h3>
 
-            <div className="ed-profile-row">
-              <div className="ed-profile-avatar">{getInitials(userName)}</div>
-              <div>
-                <p className="ed-profile-name">{userName}</p>
-                <p className="ed-profile-meta">{employeePositionLabel}</p>
+            {!managersFromApi && companyManagers.length > 0 ? (
+              <p className="ed-manager-mock-note">{t.managersMockNote}</p>
+            ) : null}
+
+            {companyManagers.length === 0 ? (
+              <p className="ed-side-text">{t.noManagerAvailable}</p>
+            ) : (
+              <div className="ed-manager-list">
+                {companyManagers.map((manager) => {
+                  const managerName = manager.full_name || manager.email || t.empty;
+                  const managerEmail = manager.email || t.empty;
+                  const roleLabel = manager.manager_role === 'owner'
+                    ? t.managerRoleOwner
+                    : t.managerRoleManager;
+
+                  return (
+                    <div key={manager.id} className="ed-manager-card">
+                      <div className="ed-profile-row">
+                        <div className="ed-profile-avatar">{getInitials(managerName)}</div>
+                        <div>
+                          <p className="ed-profile-name">{managerName}</p>
+                          <span className={`ed-manager-role-badge ${manager.manager_role === 'owner' ? 'is-owner' : ''}`}>
+                            {roleLabel}
+                          </span>
+                        </div>
+                      </div>
+
+                      <div className="ed-email-box">
+                        <p className="ed-email-label">{t.managerEmail}</p>
+                        <p className="ed-email-value">{managerEmail}</p>
+                      </div>
+                    </div>
+                  );
+                })}
               </div>
-            </div>
-
-            <div className="ed-email-box">
-              <p className="ed-email-label">{t.email}</p>
-              <p className="ed-email-value">{userEmail}</p>
-            </div>
+            )}
           </aside>
         </div>
       </div>

@@ -183,7 +183,6 @@ export default function CompanyTab({ language, userRole, user }) {
       managerRoleOwner: 'Владелец',
       managerRoleManager: 'Менеджер',
       managerYou: 'Вы',
-      managerPublicId: 'ID пользователя',
       managersEndpointPending: 'Полный список менеджеров появится после обновления сервера. Сейчас отображается только ваш профиль.',
       employeeInviteHint: 'Один код для сотрудников и других менеджеров.',
       previewInvite: 'Проверить код',
@@ -275,7 +274,6 @@ export default function CompanyTab({ language, userRole, user }) {
       managerRoleOwner: 'Owner',
       managerRoleManager: 'Manager',
       managerYou: 'You',
-      managerPublicId: 'User ID',
       managersEndpointPending: 'The full manager roster will appear after a server update. Only your profile is shown for now.',
       employeeInviteHint: 'One invite code for employees and other managers.',
       previewInvite: 'Preview invite',
@@ -929,11 +927,6 @@ export default function CompanyTab({ language, userRole, user }) {
                               ) : null}
                             </div>
                             <span style={styles.requestMeta}>{manager.email}</span>
-                            {manager.public_id ? (
-                              <span style={styles.requestMeta}>
-                                {t.managerPublicId}: {manager.public_id}
-                              </span>
-                            ) : null}
                           </div>
                           <span style={{
                             ...styles.managerRoleBadge,
