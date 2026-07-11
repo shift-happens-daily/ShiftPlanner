@@ -4,7 +4,7 @@ import { getEmployeeReports, getMyReport } from '../../services/reportService';
 import { listBranches } from '../../services/companyService';
 import { filterRealEmployees, listEmployees } from '../../services/employeeService';
 import { listPositions } from '../../services/positionService';
-import { enrichReportRowBranch } from '../../utils/employeeBranches';
+import { enrichReportRowBranch, getEmployeeBranchesLabel, getUserBranchesLabel, resolveEmployeeBranches } from '../../utils/employeeBranches';
 import { getEmployeePositionLabel, getPositionLabel } from '../../utils/employeeDisplay';
 import { extractApiErrorMessage } from '../../services/error';
 import { POSITION_TITLES_CHANGED_EVENT } from '../../services/positionService';
@@ -51,15 +51,26 @@ function uniqueSorted(values) {
     .sort((a, b) => a.localeCompare(b));
 }
 
-const DEFAULT_HOURLY_RATE = 25;
+function unwrapReportPayload(value) {
+  if (!value) return null;
+  if (Array.isArray(value)) return value.length ? value[0] : null;
+  if (value?.report && typeof value.report === 'object') return value.report;
+  if (value?.data && typeof value.data === 'object' && !Array.isArray(value.data)) return value.data;
+  return value;
+}
 
 function normalizeManagerRow(item, allBranches = [], employeesById = {}) {
   const totalHours = normalizeNumber(item?.total_hours);
-  const hourlyRate = normalizeNumber(item?.hourly_rate) || DEFAULT_HOURLY_RATE;
-  const totalSalary = normalizeNumber(item?.total_salary) || normalizeNumber(item?.salary) || totalHours * hourlyRate;
-  const branchInfo = enrichReportRowBranch(item, allBranches);
   const employeeId = item?.employee_id || item?.id || item?.user_id;
   const employee = employeesById[String(employeeId)] || null;
+  const branchInfo = employee
+    ? {
+      branch: getEmployeeBranchesLabel(employee, allBranches) || '—',
+      branchNames: resolveEmployeeBranches(employee, allBranches)
+        .map((branch) => branch.name || branch.title || branch.branch_name)
+        .filter(Boolean),
+    }
+    : enrichReportRowBranch(item, allBranches);
   const position = employee
     ? getEmployeePositionLabel(employee, item?.position || item?.position_title || item?.position_name || '—')
     : getPositionLabel({
@@ -74,30 +85,28 @@ function normalizeManagerRow(item, allBranches = [], employeesById = {}) {
     branchNames: branchInfo.branchNames,
     total_hours: totalHours,
     total_shifts: normalizeNumber(item?.total_shifts),
-    hourly_rate: hourlyRate,
-    total_salary: totalSalary,
   };
 }
 
 function normalizeEmployeeReport(report, user) {
-  if (!report) {
+  const payload = unwrapReportPayload(report);
+  if (!payload) {
     return null;
   }
 
-  const totalHours = normalizeNumber(report.total_hours);
-  const totalSalary = normalizeNumber(report.total_salary) || normalizeNumber(report.salary) || totalHours * DEFAULT_HOURLY_RATE;
+  const totalHours = normalizeNumber(payload.total_hours);
   const position = user
-    ? getEmployeePositionLabel(user, report.position || report.position_title || report.position_name || '—')
+    ? getEmployeePositionLabel(user, payload.position || payload.position_title || payload.position_name || '—')
     : getPositionLabel({
-      position_title: report.position || report.position_title || report.position_name,
+      position_title: payload.position || payload.position_title || payload.position_name,
     }, '—');
 
   return {
-    full_name: report.full_name || report.employee_name || report.name || '—',
+    full_name: payload.full_name || payload.employee_name || payload.name || user?.fullName || user?.full_name || '—',
     position,
+    branches: getUserBranchesLabel(user) || '—',
     total_hours: totalHours,
-    total_shifts: normalizeNumber(report.total_shifts),
-    total_salary: totalSalary,
+    total_shifts: normalizeNumber(payload.total_shifts),
   };
 }
 
@@ -243,6 +252,15 @@ const MOBILE_REPORTS_STYLES = {
     fontSize: 11,
     marginBottom: 4,
   },
+  employeeReportName: {
+    fontSize: 20,
+  },
+  employeePosition: {
+    fontSize: 14,
+  },
+  employeeBranches: {
+    fontSize: 12,
+  },
   employeeStats: {
     gridTemplateColumns: '1fr',
     gap: 6,
@@ -279,7 +297,6 @@ export default function ReportsTab({ language, userRole, user }) {
 
   const [filterForm, setFilterForm] = useState(defaultRange);
   const [appliedRange, setAppliedRange] = useState(defaultRange);
-  const [reportMode, setReportMode] = useState('hours');
   const [employeeSearch, setEmployeeSearch] = useState('');
   const [positionFilter, setPositionFilter] = useState('');
   const [branchFilter, setBranchFilter] = useState('');
@@ -308,15 +325,11 @@ export default function ReportsTab({ language, userRole, user }) {
       position: 'Позиция',
       hours: 'Часы',
       shifts: 'Смены',
-      salary: 'Зарплата',
       branch: 'Филиал',
       allBranches: 'Все филиалы',
       allEmployees: 'Все сотрудники',
       allPositions: 'Все позиции',
-      reportType: 'Тип отчета',
       hoursReport: 'По часам',
-      shiftsReport: 'По сменам',
-      salaryReport: 'По зарплате',
       total: 'Итого',
       export: 'Скачать XLSX',
       loading: 'Загрузка...',
@@ -342,15 +355,11 @@ export default function ReportsTab({ language, userRole, user }) {
       position: 'Position',
       hours: 'Hours',
       shifts: 'Shifts',
-      salary: 'Salary',
       branch: 'Branch',
       allBranches: 'All branches',
       allEmployees: 'All employees',
       allPositions: 'All positions',
-      reportType: 'Report type',
       hoursReport: 'By hours',
-      shiftsReport: 'By shifts',
-      salaryReport: 'By salary',
       total: 'Total',
       export: 'Download XLSX',
       loading: 'Loading...',
@@ -433,7 +442,10 @@ export default function ReportsTab({ language, userRole, user }) {
     return normalizedManagerReport.filter((item) => {
       const matchesEmployee = !employeeSearch || item.full_name.toLowerCase().includes(employeeSearch.toLowerCase());
       const matchesPosition = !positionFilter || item.position.toLowerCase().includes(positionFilter.toLowerCase());
-      const matchesBranch = !branchFilter || item.branch.toLowerCase().includes(branchFilter.toLowerCase());
+      const matchesBranch = !branchFilter || (
+        (item.branchNames || []).some((name) => name.toLowerCase() === branchFilter.toLowerCase())
+        || item.branch.toLowerCase().includes(branchFilter.toLowerCase())
+      );
       return matchesEmployee && matchesPosition && matchesBranch;
     });
   }, [normalizedManagerReport, employeeSearch, positionFilter, branchFilter]);
@@ -467,17 +479,15 @@ export default function ReportsTab({ language, userRole, user }) {
         (acc, item) => ({
           total_hours: acc.total_hours + item.total_hours,
           total_shifts: acc.total_shifts + item.total_shifts,
-          total_salary: acc.total_salary + item.total_salary,
           employees: acc.employees + 1,
         }),
-        { total_hours: 0, total_shifts: 0, total_salary: 0, employees: 0 }
+        { total_hours: 0, total_shifts: 0, employees: 0 }
       );
     }
 
     return {
       total_hours: normalizedEmployeeReport?.total_hours || 0,
       total_shifts: normalizedEmployeeReport?.total_shifts || 0,
-      total_salary: normalizedEmployeeReport?.total_salary || 0,
       employees: normalizedEmployeeReport ? 1 : 0,
     };
   }, [isManager, normalizedEmployeeReport, filteredManagerReport]);
@@ -504,7 +514,7 @@ export default function ReportsTab({ language, userRole, user }) {
 
     const requestParams = {
       ...range,
-      report_type: reportMode,
+      report_type: 'hours',
     };
 
     setErrorMessage('');
@@ -543,7 +553,6 @@ export default function ReportsTab({ language, userRole, user }) {
     appliedRange,
     isManager,
     language,
-    reportMode,
     t.empty,
     t.noPermission,
     t.reportReady,
@@ -564,42 +573,25 @@ export default function ReportsTab({ language, userRole, user }) {
 
   const exportToExcel = () => {
     const rows = isManager
-      ? filteredManagerReport.map((item) => {
-          const baseRow = {
-            [t.employee]: item.full_name,
-            [t.position]: item.position || t.unknownPosition,
-            [t.branch]: item.branch || '—',
-          };
-
-          if (reportMode === 'salary') {
-            return {
-              ...baseRow,
-              [t.hours]: item.total_hours,
-              [t.salary]: item.total_salary,
-            };
-          }
-
-          return {
-            ...baseRow,
-            [t.hours]: item.total_hours,
-          };
-        })
+      ? filteredManagerReport.map((item) => ({
+          [t.employee]: item.full_name,
+          [t.position]: item.position || t.unknownPosition,
+          [t.branch]: item.branch || '—',
+          [t.hours]: item.total_hours,
+          [t.shifts]: item.total_shifts,
+        }))
       : [
           {
             [t.employee]: normalizedEmployeeReport?.full_name || '',
             [t.position]: normalizedEmployeeReport?.position || t.unknownPosition,
             [t.hours]: normalizedEmployeeReport?.total_hours || 0,
-            ...(reportMode === 'salary'
-              ? { [t.salary]: normalizedEmployeeReport?.total_salary || 0 }
-              : {}),
+            [t.shifts]: normalizedEmployeeReport?.total_shifts || 0,
           },
         ];
 
     const summaryRows = [
       { metric: t.totalHours, value: totals.total_hours },
-      ...(reportMode === 'salary'
-        ? [{ metric: t.salary, value: totals.total_salary }]
-        : []),
+      { metric: t.totalShifts, value: totals.total_shifts },
       { metric: t.employees, value: totals.employees },
       { metric: t.startDate, value: appliedRange.start_date },
       { metric: t.endDate, value: appliedRange.end_date },
@@ -650,10 +642,12 @@ export default function ReportsTab({ language, userRole, user }) {
   }
 
   const hasManagerRows = filteredManagerReport.length > 0;
-  const hasEmployeeReport = Boolean(normalizedEmployeeReport);
-  const tableColumns = reportMode === 'salary'
-    ? '1.2fr 1fr 0.8fr 0.7fr 0.7fr'
-    : '1.2fr 1fr 0.8fr 0.7fr';
+  const hasEmployeeReport = normalizedEmployeeReport != null;
+  const hasEmployeeData = hasEmployeeReport && (
+    normalizedEmployeeReport.total_hours > 0
+    || normalizedEmployeeReport.total_shifts > 0
+  );
+  const tableColumns = '1.2fr 1fr 0.8fr 0.7fr 0.7fr';
 
   return (
     <section style={{ ...styles.page, ...r.page, ...(r.isMobile ? {} : styles.desktopPage), ...mobileStyles?.page }}>
@@ -704,27 +698,6 @@ export default function ReportsTab({ language, userRole, user }) {
                   />
                 </Field>
 
-                <Field label={t.reportType} labelStyle={mobileStyles?.label}>
-                  <div style={{ ...styles.modeSegment, ...r.modeSegment, ...mobileStyles?.modeSegment }}>
-                    {[
-                      { id: 'hours', label: t.hoursReport },
-                      { id: 'salary', label: t.salaryReport },
-                    ].map((mode) => (
-                      <button
-                        key={mode.id}
-                        type="button"
-                        onClick={() => setReportMode(mode.id)}
-                        style={
-                          reportMode === mode.id
-                            ? { ...styles.modeButton, ...styles.modeButtonActive, ...r.modeButton, ...mobileStyles?.modeButton }
-                            : { ...styles.modeButton, ...r.modeButton, ...mobileStyles?.modeButton }
-                        }
-                      >
-                        {mode.label}
-                      </button>
-                    ))}
-                  </div>
-                </Field>
                 {isManager && (
                   <>
                     <Field label={t.employee} labelStyle={mobileStyles?.label}>
@@ -789,16 +762,14 @@ export default function ReportsTab({ language, userRole, user }) {
                 metricLabelStyle={mobileStyles?.metricLabel}
                 metricValueStyle={mobileStyles?.metricValue}
               />
-              {reportMode === 'salary' && (
-                <Metric
-                  label={t.salary}
-                  value={totals.total_salary}
-                  metricStyle={mobileStyles?.metric}
-                  metricLabelStyle={mobileStyles?.metricLabel}
-                  metricValueStyle={mobileStyles?.metricValue}
-                />
-              )}
-              {isManager && (
+              <Metric
+                label={t.totalShifts}
+                value={totals.total_shifts}
+                metricStyle={mobileStyles?.metric}
+                metricLabelStyle={mobileStyles?.metricLabel}
+                metricValueStyle={mobileStyles?.metricValue}
+              />
+              {isManager ? (
                 <Metric
                   label={t.employees}
                   value={totals.employees}
@@ -806,7 +777,7 @@ export default function ReportsTab({ language, userRole, user }) {
                   metricLabelStyle={mobileStyles?.metricLabel}
                   metricValueStyle={mobileStyles?.metricValue}
                 />
-              )}
+              ) : null}
             </section>
           </aside>
 
@@ -830,12 +801,10 @@ export default function ReportsTab({ language, userRole, user }) {
                           <span>{t.hours}</span>
                           <span style={{ ...r.reportCardValue, ...mobileStyles?.reportCardValue }}>{item.total_hours}</span>
                         </div>
-                        {reportMode === 'salary' && (
-                          <div style={{ ...r.reportCardRow, ...mobileStyles?.reportCardRow }}>
-                            <span>{t.salary}</span>
-                            <span style={{ ...r.reportCardValue, ...mobileStyles?.reportCardValue }}>{item.total_salary}</span>
-                          </div>
-                        )}
+                        <div style={{ ...r.reportCardRow, ...mobileStyles?.reportCardRow }}>
+                          <span>{t.shifts}</span>
+                          <span style={{ ...r.reportCardValue, ...mobileStyles?.reportCardValue }}>{item.total_shifts}</span>
+                        </div>
                       </div>
                     ))}
                     <div style={{
@@ -851,12 +820,10 @@ export default function ReportsTab({ language, userRole, user }) {
                         <span>{t.hours}</span>
                         <span style={{ ...r.reportCardValue, ...mobileStyles?.reportCardValue }}>{totals.total_hours}</span>
                       </div>
-                      {reportMode === 'salary' && (
-                        <div style={{ ...r.reportCardRow, ...mobileStyles?.reportCardRow }}>
-                          <span>{t.salary}</span>
-                          <span style={{ ...r.reportCardValue, ...mobileStyles?.reportCardValue }}>{totals.total_salary}</span>
-                        </div>
-                      )}
+                      <div style={{ ...r.reportCardRow, ...mobileStyles?.reportCardRow }}>
+                        <span>{t.shifts}</span>
+                        <span style={{ ...r.reportCardValue, ...mobileStyles?.reportCardValue }}>{totals.total_shifts}</span>
+                      </div>
                     </div>
                   </div>
                 ) : (
@@ -866,7 +833,7 @@ export default function ReportsTab({ language, userRole, user }) {
                     <span>{t.position}</span>
                     <span>{t.branch}</span>
                     <span>{t.hours}</span>
-                    {reportMode === 'salary' && <span>{t.salary}</span>}
+                    <span>{t.shifts}</span>
                   </div>
 
                   <div style={styles.tableBody}>
@@ -876,9 +843,7 @@ export default function ReportsTab({ language, userRole, user }) {
                         <span style={styles.tableCell}>{item.position || t.unknownPosition}</span>
                         <span style={styles.tableCell}>{item.branch}</span>
                         <span style={styles.numberCell}>{item.total_hours}</span>
-                        {reportMode === 'salary' && (
-                          <span style={styles.numberCell}>{item.total_salary}</span>
-                        )}
+                        <span style={styles.numberCell}>{item.total_shifts}</span>
                       </div>
                     ))}
                   </div>
@@ -888,7 +853,7 @@ export default function ReportsTab({ language, userRole, user }) {
                     <span />
                     <span />
                     <strong>{totals.total_hours}</strong>
-                    {reportMode === 'salary' && <strong>{totals.total_salary}</strong>}
+                    <strong>{totals.total_shifts}</strong>
                   </div>
                 </div>
                 )
@@ -911,39 +876,43 @@ export default function ReportsTab({ language, userRole, user }) {
                     <span style={{ ...styles.miniLabel, ...mobileStyles?.miniLabel }}>
                       {appliedRange.start_date} — {appliedRange.end_date}
                     </span>
+                    <h3 style={{ ...styles.employeeReportName, ...mobileStyles?.employeeReportName }}>
+                      {normalizedEmployeeReport.full_name}
+                    </h3>
+                    <p style={{ ...styles.employeePosition, ...mobileStyles?.employeePosition }}>
+                      {normalizedEmployeeReport.position || t.unknownPosition}
+                    </p>
+                    <p style={{ ...styles.employeeBranches, ...mobileStyles?.employeeBranches }}>
+                      {t.branch}: {normalizedEmployeeReport.branches || '—'}
+                    </p>
                   </div>
-                  <span style={{ ...styles.employeeReportPill, ...mobileStyles?.employeeReportPill }}>{reportMode === 'salary' ? t.salaryReport : t.hoursReport}</span>
+                  <span style={{ ...styles.employeeReportPill, ...mobileStyles?.employeeReportPill }}>{t.hoursReport}</span>
                 </div>
 
-                <div style={{
-                  ...styles.employeeStats,
-                  ...mobileStyles?.employeeStats,
-                }}
-                >
-                  <Metric
-                    label={t.totalHours}
-                    value={normalizedEmployeeReport.total_hours}
-                    metricStyle={mobileStyles?.metric}
-                    metricLabelStyle={mobileStyles?.metricLabel}
-                    metricValueStyle={mobileStyles?.metricValue}
-                  />
-                  <Metric
-                    label={t.totalShifts}
-                    value={normalizedEmployeeReport.total_shifts}
-                    metricStyle={mobileStyles?.metric}
-                    metricLabelStyle={mobileStyles?.metricLabel}
-                    metricValueStyle={mobileStyles?.metricValue}
-                  />
-                  {reportMode === 'salary' && (
+                {hasEmployeeData ? (
+                  <div style={{
+                    ...styles.employeeStats,
+                    ...mobileStyles?.employeeStats,
+                  }}
+                  >
                     <Metric
-                      label={t.salary}
-                      value={normalizedEmployeeReport.total_salary}
+                      label={t.totalHours}
+                      value={normalizedEmployeeReport.total_hours}
                       metricStyle={mobileStyles?.metric}
                       metricLabelStyle={mobileStyles?.metricLabel}
                       metricValueStyle={mobileStyles?.metricValue}
                     />
-                  )}
-                </div>
+                    <Metric
+                      label={t.totalShifts}
+                      value={normalizedEmployeeReport.total_shifts}
+                      metricStyle={mobileStyles?.metric}
+                      metricLabelStyle={mobileStyles?.metricLabel}
+                      metricValueStyle={mobileStyles?.metricValue}
+                    />
+                  </div>
+                ) : (
+                  <div style={{ ...styles.emptyBox, ...mobileStyles?.emptyBox }}>{t.empty}</div>
+                )}
               </div>
             ) : (
               <div style={{ ...styles.emptyHero, ...mobileStyles?.emptyHero }}>
@@ -1060,7 +1029,8 @@ const styles = {
 
   content: {
     minHeight: 0,
-    overflow: 'hidden',
+    overflowY: 'auto',
+    overflowX: 'hidden',
   },
 
   panel: {
@@ -1298,15 +1268,17 @@ const styles = {
   },
 
   employeeReportCard: {
-    height: '100%',
-    minHeight: '360px',
+    height: 'auto',
+    minHeight: '280px',
+    width: '100%',
+    alignSelf: 'start',
     borderRadius: 12,
     background: '#ffffff',
     border: '1px solid #dee7e7',
     boxShadow: '0 10px 24px rgba(0, 38, 66, 0.035)',
     display: 'flex',
     flexDirection: 'column',
-    justifyContent: 'space-between',
+    justifyContent: 'flex-start',
     gap: '22px',
     padding: '28px',
     boxSizing: 'border-box',
@@ -1349,10 +1321,17 @@ const styles = {
   },
 
   employeePosition: {
-    margin: '8px 0 24px',
+    margin: '8px 0 0',
     color: '#4f646f',
     fontSize: '16px',
     fontWeight: '700',
+  },
+
+  employeeBranches: {
+    margin: '8px 0 0',
+    color: '#4f646f',
+    fontSize: '14px',
+    fontWeight: '650',
   },
 
   employeeStats: {
