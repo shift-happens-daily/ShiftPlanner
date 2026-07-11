@@ -377,6 +377,7 @@ private fun PlaceholderWithJoin(
     }
 }
 
+@OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
 @Composable
 private fun ProfileScreen(
     user: AppUser,
