@@ -21,6 +21,7 @@ import {
 import { useTabResponsive } from '../../utils/tabResponsive';
 import { formatLocalDate } from '../../services/scheduleService';
 import { getEmployeePositionLabel, getPositionLabel } from '../../utils/employeeDisplay';
+import { CHECK_MARK, CLOSE_MARK } from '../../utils/textSymbols';
 import { usePositionTitleRevision } from '../../hooks/usePositionTitleRevision';
 import { useUnsavedChanges } from '../../context/useUnsavedChanges';
 
@@ -1359,7 +1360,7 @@ export default function EmployeesTab({ language, userRole, user }) {
           <div style={{ ...styles.toastLayer, ...mobileStyles?.toastLayer }}>
             <div style={errorMessage ? styles.toastError : styles.toastSuccess}>
               <span style={errorMessage ? styles.toastIconError : styles.toastIconSuccess}>
-                {errorMessage ? '!' : '✓'}
+                {errorMessage ? '!' : CHECK_MARK}
               </span>
 
               <span style={styles.toastText}>{errorMessage || successMessage}</span>
@@ -1373,7 +1374,7 @@ export default function EmployeesTab({ language, userRole, user }) {
                 style={styles.toastClose}
                 aria-label="Close notification"
               >
-                ×
+                {CLOSE_MARK}
               </button>
             </div>
           </div>

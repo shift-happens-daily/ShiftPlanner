@@ -28,6 +28,7 @@ import {
   getPositionLabel,
   normalizeAvailabilityStatus,
 } from '../../utils/employeeDisplay';
+import { CHECK_MARK, CLOSE_MARK } from '../../utils/textSymbols';
 import WorkingHoursPanel from '../requirements/WorkingHoursPanel';
 import RequirementTimeFields from '../requirements/RequirementTimeFields';
 import {
@@ -1862,7 +1863,7 @@ export default function ShiftsTab({ language, userRole, user }) {
       <div style={styles.toastLayer}>
         <div style={errorMessage ? styles.toastError : styles.toastSuccess}>
           <span style={errorMessage ? styles.toastIconError : styles.toastIconSuccess}>
-            {errorMessage ? '!' : '✓'}
+            {errorMessage ? '!' : CHECK_MARK}
           </span>
           <span style={styles.toastText}>{errorMessage || successMessage}</span>
           <button
@@ -1871,7 +1872,7 @@ export default function ShiftsTab({ language, userRole, user }) {
             style={styles.toastClose}
             aria-label="Close notification"
           >
-            ×
+            {CLOSE_MARK}
           </button>
         </div>
       </div>
