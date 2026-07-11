@@ -1191,6 +1191,13 @@ def test_manager_invite_request_accept_and_non_owner_permissions(client: TestCli
     assert profile.json()["company_id"] == 1
     assert client.get("/companies/me", headers=candidate_headers).status_code == 200
 
+    managers = client.get("/companies/me/managers", headers=candidate_headers)
+    assert managers.status_code == 200, managers.text
+    assert {manager["email"] for manager in managers.json()} == {
+        "manager@example.com",
+        "pending-manager@example.com",
+    }
+
     second = client.post(
         "/auth/register",
         json={
@@ -1218,6 +1225,28 @@ def test_manager_invite_request_accept_and_non_owner_permissions(client: TestCli
         headers=candidate_headers,
     )
     assert non_owner_accept.status_code == 403
+
+
+def test_employee_can_list_active_company_managers(client: TestClient) -> None:
+    employee_headers = login_json(client, "ivan@example.com", "employee123")
+
+    response = client.get("/employees/me/company-managers", headers=employee_headers)
+
+    assert response.status_code == 200, response.text
+    managers = response.json()
+    assert len(managers) == 1
+    assert managers[0]["id"] == 1
+    assert managers[0]["company_id"] == 1
+    assert managers[0]["user_id"] == 1
+    assert managers[0]["full_name"] == "Maria Manager"
+    assert managers[0]["email"] == "manager@example.com"
+    assert managers[0]["manager_role"] == "owner"
+    assert managers[0]["membership_status"] == "active"
+    assert client.get("/employees/me/company-managers").status_code == 401
+    assert client.get(
+        "/employees/me/company-managers",
+        headers=login_json(client, "manager@example.com", "manager123"),
+    ).status_code == 403
 
 
 def test_first_manager_declines_manager_and_adds_by_public_id(client: TestClient) -> None:
