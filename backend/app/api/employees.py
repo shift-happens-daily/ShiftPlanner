@@ -35,7 +35,7 @@ from app.schemas.employee import (
     EmployeeWorkLimits,
 )
 from app.schemas.schedule import ShiftRead
-from app.services import auth_service, employee_service, schedule_service
+from app.services import auth_service, company_service, employee_service, schedule_service
 
 router = APIRouter()
 

@@ -621,6 +621,10 @@
   line-height: 1.55;
 }
 
+.ed-error-inline {
+  color: #b42318;
+}
+
 .ed-manager-list {
   display: flex;
   flex-direction: column;

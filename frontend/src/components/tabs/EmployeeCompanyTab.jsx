@@ -89,6 +89,7 @@ export default function EmployeeCompanyTab({ language, user }) {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [companyManagers, setCompanyManagers] = useState([]);
   const [managersLoading, setManagersLoading] = useState(false);
+  const [managersError, setManagersError] = useState('');
 
   const texts = {
     ru: {
@@ -127,6 +128,7 @@ export default function EmployeeCompanyTab({ language, user }) {
       noManagerAvailable: 'Контакт менеджера пока недоступен.',
       pendingManagerContact: 'Контакт менеджера появится после подтверждения вашей заявки.',
       managersLoading: 'Загрузка контактов менеджеров…',
+      managersLoadError: 'Не удалось загрузить контакты менеджеров.',
       empty: '—',
     },
     en: {
@@ -165,6 +167,7 @@ export default function EmployeeCompanyTab({ language, user }) {
       noManagerAvailable: 'Manager contact is not available yet.',
       pendingManagerContact: 'Manager contact will appear after your request is approved.',
       managersLoading: 'Loading manager contacts…',
+      managersLoadError: 'Could not load manager contacts.',
       empty: '—',
     },
   };
@@ -175,8 +178,6 @@ export default function EmployeeCompanyTab({ language, user }) {
   const companyId = user?.companyId ?? currentCompany?.id ?? null;
   const employeeStatus = user?.employeeStatus ?? user?.employee_status ?? null;
   const isPendingEmployee = employeeStatus === 'pending';
-  const isActiveEmployee = employeeStatus === 'active';
-  const canLoadManagers = isActiveEmployee && Boolean(companyId);
   const employeePositionLabel = getEmployeePositionLabel(user, t.empty);
   const { userBranches } = useUserBranches(user);
 
@@ -190,29 +191,35 @@ export default function EmployeeCompanyTab({ language, user }) {
   const primaryBranch = userBranches[0] ? getName(userBranches[0]) : t.noBranchesAssigned;
 
   useEffect(() => {
-    void refreshUser();
-  }, [refreshUser]);
-
-  useEffect(() => {
     let cancelled = false;
 
     async function loadManagers() {
-      if (!canLoadManagers) {
-        setCompanyManagers([]);
-        setManagersLoading(false);
-        return;
-      }
-
-      setManagersLoading(true);
+      setManagersError('');
 
       try {
+        const freshUser = await refreshUser();
+        if (cancelled) return;
+
+        const freshCompanyId = freshUser?.companyId ?? freshUser?.company?.id ?? null;
+        const freshStatus = freshUser?.employeeStatus ?? freshUser?.employee_status ?? null;
+        const freshIsPending = freshStatus === 'pending';
+
+        if (!freshCompanyId || freshIsPending) {
+          setCompanyManagers([]);
+          setManagersLoading(false);
+          return;
+        }
+
+        setManagersLoading(true);
+
         const data = await listEmployeeCompanyManagers();
         if (cancelled) return;
 
         setCompanyManagers(sortCompanyManagers(normalizeManagerList(data)));
-      } catch {
+      } catch (error) {
         if (cancelled) return;
         setCompanyManagers([]);
+        setManagersError(extractApiErrorMessage(error, t.managersLoadError, language));
       } finally {
         if (!cancelled) {
           setManagersLoading(false);
@@ -225,7 +232,7 @@ export default function EmployeeCompanyTab({ language, user }) {
     return () => {
       cancelled = true;
     };
-  }, [canLoadManagers, companyId, employeeStatus]);
+  }, [companyId, employeeStatus, language, refreshUser, t.managersLoadError]);
 
   const clearMessages = () => {
     setErrorMessage('');
@@ -479,6 +486,8 @@ export default function EmployeeCompanyTab({ language, user }) {
             <p className="ed-side-text">{t.pendingManagerContact}</p>
           ) : managersLoading ? (
             <p className="ed-side-text">{t.managersLoading}</p>
+          ) : managersError ? (
+            <p className="ed-side-text ed-error-inline">{managersError}</p>
           ) : companyManagers.length === 0 ? (
             <p className="ed-side-text">{t.noManagerAvailable}</p>
           ) : (
