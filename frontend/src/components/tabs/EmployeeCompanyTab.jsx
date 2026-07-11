@@ -116,7 +116,7 @@ export default function EmployeeCompanyTab({ language, user }) {
       email: 'Email',
       status: 'Статус',
       active: 'Активен',
-      noBranchesAssigned: 'Филиалы не назначены',
+      noBranchesAssigned: 'Филиал не назначен',
       noBranchSelected: 'Без филиала',
       noPositionSelected: 'Без позиции',
       managerTitle: 'Менеджер компании',
@@ -155,7 +155,7 @@ export default function EmployeeCompanyTab({ language, user }) {
       email: 'Email',
       status: 'Status',
       active: 'Active',
-      noBranchesAssigned: 'No branches assigned',
+      noBranchesAssigned: 'No branch assigned',
       noBranchSelected: 'No branch selected',
       noPositionSelected: 'No position selected',
       managerTitle: 'Company manager',
@@ -437,17 +437,11 @@ export default function EmployeeCompanyTab({ language, user }) {
 
             <div className="ed-info-grid">
               <div className="ed-info-tile ed-info-tile--branches">
-                <span className="ed-info-label">{userBranches.length > 1 ? t.branches : t.branch}</span>
+                <span className="ed-info-label">{t.branch}</span>
                 {userBranches.length === 0 ? (
                   <p className="ed-info-value">{t.noBranchesAssigned}</p>
                 ) : (
-                  <div className="ed-branch-pills">
-                    {userBranches.map((branch) => (
-                      <span key={branch.id} className="ed-branch-pill">
-                        {getName(branch)}
-                      </span>
-                    ))}
-                  </div>
+                  <p className="ed-info-value">{getName(userBranches[0])}</p>
                 )}
               </div>
 

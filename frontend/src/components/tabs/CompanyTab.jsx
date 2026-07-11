@@ -188,7 +188,7 @@ export default function CompanyTab({ language, userRole, user }) {
       branchRequired: 'Введите название филиала.',
       noBranchSelected: 'Без филиала',
       noPositionSelected: 'Без позиции',
-      noBranchesAssigned: 'Филиалы не назначены',
+      noBranchesAssigned: 'Филиал не назначен',
       positionsHint: '',
       employeeHint: 'После подтверждения менеджером станут доступны расписание и отчёты.',
       managerHint: 'Скопируйте инвайт-код и отправьте его сотрудникам или другим менеджерам.',
@@ -205,7 +205,7 @@ export default function CompanyTab({ language, userRole, user }) {
       requestAccepted: 'Сотрудник принят.',
       requestDeclined: 'Заявка отклонена.',
       requestActionError: 'Не удалось обработать заявку.',
-      requestBranches: 'Филиалы в заявке',
+      requestBranches: 'Филиал в заявке',
       requestPosition: 'Позиция в заявке',
     },
     en: {
@@ -279,7 +279,7 @@ export default function CompanyTab({ language, userRole, user }) {
       branchRequired: 'Enter branch name.',
       noBranchSelected: 'No branch selected',
       noPositionSelected: 'No position selected',
-      noBranchesAssigned: 'No branches assigned',
+      noBranchesAssigned: 'No branch assigned',
       positionsHint: '',
       employeeHint: 'Schedule and reports become available after a manager approves your request.',
       managerHint: 'Copy the invite code and send it to employees or other managers.',
@@ -296,7 +296,7 @@ export default function CompanyTab({ language, userRole, user }) {
       requestAccepted: 'Employee accepted.',
       requestDeclined: 'Request declined.',
       requestActionError: 'Failed to process the request.',
-      requestBranches: 'Requested branches',
+      requestBranches: 'Requested branch',
       requestPosition: 'Requested position',
     },
   };
@@ -591,10 +591,8 @@ export default function CompanyTab({ language, userRole, user }) {
   };
 
   const getRequestBranchesLabel = (request) => {
-    const labels = normalizeArray(request?.branches)
-      .map((branch) => branch?.name || branch?.title)
-      .filter(Boolean);
-    return labels.length > 0 ? labels.join(', ') : '—';
+    const [branch] = normalizeArray(request?.branches);
+    return branch?.name || branch?.title || '\u2014';
   };
 
   const handleAcceptEmployeeRequest = async (requestId) => {
@@ -1058,17 +1056,11 @@ export default function CompanyTab({ language, userRole, user }) {
                         gridTemplateColumns: r.gridCols('minmax(0, 1.3fr) minmax(0, 1fr)'),
                       }}>
                         <div style={{ ...styles.infoItem, ...styles.employeeInfoItem }}>
-                          <span style={styles.infoLabel}>{t.branches}</span>
+                          <span style={styles.infoLabel}>{t.branch}</span>
                           {userBranches.length === 0 ? (
                             <strong style={styles.infoValue}>{t.noBranchesAssigned}</strong>
                           ) : (
-                            <div style={styles.assignedBranchList}>
-                              {userBranches.map((branch) => (
-                                <span key={branch.id} style={styles.assignedBranchPill}>
-                                  {getName(branch)}
-                                </span>
-                              ))}
-                            </div>
+                            <strong style={styles.infoValue}>{getName(userBranches[0])}</strong>
                           )}
                         </div>
                         <InfoItem

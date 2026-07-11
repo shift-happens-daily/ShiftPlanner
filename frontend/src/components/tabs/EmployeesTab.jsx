@@ -64,9 +64,9 @@ function getInitials(value) {
 }
 
 function getBranchLabel(employee, branches, fallback) {
-  const employeeBranches = resolveEmployeeBranches(employee, branches);
-  if (employeeBranches.length > 0) {
-    return employeeBranches.map((branch) => branch.name || branch.title || `#${branch.id}`).join(', ');
+  const [branch] = resolveEmployeeBranches(employee, branches);
+  if (branch) {
+    return branch.name || branch.title || `#${branch.id}`;
   }
 
   return employee?.branch?.name || employee?.branch_name || fallback;
@@ -506,8 +506,7 @@ export default function EmployeesTab({ language, userRole, user }) {
     max_hours_per_week: DEFAULT_WEEKLY_HOURS,
     max_hours_per_day: DEFAULT_DAILY_HOURS,
   });
-  const [selectedEmployeeBranchIds, setSelectedEmployeeBranchIds] = useState([]);
-  const [branchToAddId, setBranchToAddId] = useState('');
+  const [selectedEmployeeBranchId, setSelectedEmployeeBranchId] = useState('');
   const [branchAssignmentsRevision, setBranchAssignmentsRevision] = useState(0);
 
   const [selectedBranchId, setSelectedBranchId] = useState('');
@@ -586,7 +585,6 @@ export default function EmployeesTab({ language, userRole, user }) {
       assignmentsError: 'Не удалось обновить данные сотрудника.',
       branch: 'Филиал',
       selectBranch: 'Выберите филиал',
-      assignBranch: 'Назначить филиал',
       assignPosition: 'Назначить позицию',
       backToList: 'Назад к списку',
       edit: 'Редактировать',
@@ -615,9 +613,7 @@ export default function EmployeesTab({ language, userRole, user }) {
       employeeRemoved: 'Сотрудник удалён из компании.',
       removeEmployeeError: 'Не удалось удалить сотрудника.',
       branches: 'Филиалы',
-      addBranch: 'Добавить филиал',
-      removeBranch: 'Убрать',
-      noBranchesAssigned: 'Филиалы не назначены',
+      noBranchAssigned: 'Филиал не назначен',
       workLimits: 'Ограничения рабочего времени',
       weeklyHours: 'Часов в неделю',
       weeklyHoursHint: 'Сколько часов сотрудник должен отработать за неделю',
@@ -685,7 +681,6 @@ export default function EmployeesTab({ language, userRole, user }) {
       assignmentsError: 'Failed to update employee details.',
       branch: 'Branch',
       selectBranch: 'Select branch',
-      assignBranch: 'Assign branch',
       assignPosition: 'Assign position',
       backToList: 'Back to list',
       edit: 'Edit',
@@ -714,9 +709,7 @@ export default function EmployeesTab({ language, userRole, user }) {
       employeeRemoved: 'Employee removed from company.',
       removeEmployeeError: 'Failed to remove employee.',
       branches: 'Branches',
-      addBranch: 'Add branch',
-      removeBranch: 'Remove',
-      noBranchesAssigned: 'No branches assigned',
+      noBranchAssigned: 'No branch assigned',
       workLimits: 'Work time limits',
       weeklyHours: 'Hours per week',
       weeklyHoursHint: 'How many hours the employee should work per week',
@@ -762,14 +755,6 @@ export default function EmployeesTab({ language, userRole, user }) {
   );
 
   const selectedEmployeePosition = getEmployeePositionLabel(selectedEmployee);
-  const selectedEmployeeBranches = useMemo(() => {
-    if (!selectedEmployee) return [];
-
-    return mergeBranchLists(
-      resolveEmployeeBranches(selectedEmployee, branches),
-      resolveBranchesFromIds(selectedEmployeeBranchIds, branches)
-    );
-  }, [selectedEmployee, branches, selectedEmployeeBranchIds]);
 
   const filteredEmployees = useMemo(() => {
     const query = searchQuery.trim().toLowerCase();
@@ -804,14 +789,6 @@ export default function EmployeesTab({ language, userRole, user }) {
       .slice(0, 3);
   }, [employeeAbsences]);
 
-  const availableBranchesToAdd = useMemo(() => {
-    const assigned = new Set(selectedEmployeeBranches.map(getBranchId).filter(Boolean));
-    return branches.filter((branch) => {
-      const branchId = getBranchId(branch);
-      return branchId && !assigned.has(branchId);
-    });
-  }, [branches, selectedEmployeeBranches]);
-
   useEffect(() => {
     if (filteredEmployees.some((employee) => String(employee.id) === String(selectedEmployeeId))) return;
 
@@ -821,18 +798,16 @@ export default function EmployeesTab({ language, userRole, user }) {
   useEffect(() => {
     if (!selectedEmployee) {
       setSelectedEmployeeDetails({ position_id: '' });
-      setSelectedEmployeeBranchIds([]);
+      setSelectedEmployeeBranchId('');
       setSelectedEmployeeWorkLimits({
         max_hours_per_week: DEFAULT_WEEKLY_HOURS,
         max_hours_per_day: DEFAULT_DAILY_HOURS,
       });
-      setBranchToAddId('');
       return;
     }
 
-    const resolvedBranchIds = resolveEmployeeBranches(selectedEmployee, branches)
-      .map(getBranchId)
-      .filter(Boolean);
+    const [assignedBranch] = resolveEmployeeBranches(selectedEmployee, branches);
+    const assignedBranchId = getPrimaryBranchId(selectedEmployee) || getBranchId(assignedBranch) || '';
 
     setSelectedEmployeeDetails({
       position_id: selectedEmployee.position_id || selectedEmployee.position?.id || selectedEmployee.position?.position_id || '',
@@ -841,8 +816,7 @@ export default function EmployeesTab({ language, userRole, user }) {
       max_hours_per_week: selectedEmployee.max_hours_per_week ?? DEFAULT_WEEKLY_HOURS,
       max_hours_per_day: selectedEmployee.max_hours_per_day ?? DEFAULT_DAILY_HOURS,
     });
-    setSelectedEmployeeBranchIds(uniqueBranchIds([...getEmployeeBranchIds(selectedEmployee), ...resolvedBranchIds]));
-    setBranchToAddId('');
+    setSelectedEmployeeBranchId(assignedBranchId ? String(assignedBranchId) : '');
   }, [selectedEmployee?.id, branches]);
 
   useEffect(() => {
@@ -997,7 +971,7 @@ export default function EmployeesTab({ language, userRole, user }) {
   };
 
   const persistEmployeeBranches = async (employee, branchIds, primaryBranchId = null) => {
-    const normalizedIds = uniqueBranchIds(branchIds);
+    const normalizedIds = uniqueBranchIds(branchIds).slice(0, 1);
     const currentPrimary = normalizeBranchId(primaryBranchId ?? getPrimaryBranchId(employee));
     const primaryId = currentPrimary && normalizedIds.includes(currentPrimary)
       ? currentPrimary
@@ -1015,7 +989,7 @@ export default function EmployeesTab({ language, userRole, user }) {
   };
 
   const patchEmployeeBranchesLocally = (employeeId, branchIds) => {
-    const normalizedIds = uniqueBranchIds(branchIds);
+    const normalizedIds = uniqueBranchIds(branchIds).slice(0, 1);
     const branchObjects = resolveBranchesFromIds(normalizedIds, branches);
     const primaryBranch = branchObjects[0] || null;
 
@@ -1033,63 +1007,6 @@ export default function EmployeesTab({ language, userRole, user }) {
         };
       })
     );
-  };
-
-  const handleAddEmployeeBranch = async () => {
-    if (!selectedEmployee || !branchToAddId) return;
-
-    clearMessages();
-    setIsSubmitting(true);
-
-    const currentIds = uniqueBranchIds([
-      ...getEmployeeBranchIds(selectedEmployee),
-      ...selectedEmployeeBranchIds,
-      ...selectedEmployeeBranches.map(getBranchId),
-    ]);
-    const nextIds = uniqueBranchIds([...currentIds, branchToAddId]);
-
-    try {
-      await persistEmployeeBranches(selectedEmployee, nextIds);
-      await reloadEmployees(selectedEmployee.id);
-      setSelectedEmployeeBranchIds(nextIds);
-      patchEmployeeBranchesLocally(selectedEmployee.id, nextIds);
-      bumpBranchAssignments();
-      setBranchToAddId('');
-      markSaved(EMPLOYEE_BRANCH_SCOPE);
-      setSuccessMessage(t.assignmentsSaved);
-    } catch (error) {
-      setErrorMessage(getFriendlyError(error, t.assignmentsError));
-    } finally {
-      setIsSubmitting(false);
-    }
-  };
-
-  const handleRemoveEmployeeBranch = async (branchId) => {
-    if (!selectedEmployee) return;
-
-    clearMessages();
-    const currentIds = uniqueBranchIds([
-      ...getEmployeeBranchIds(selectedEmployee),
-      ...selectedEmployeeBranchIds,
-      ...selectedEmployeeBranches.map(getBranchId),
-    ]);
-    const nextIds = currentIds.filter((id) => String(id) !== String(branchId));
-
-    setIsSubmitting(true);
-
-    try {
-      await persistEmployeeBranches(selectedEmployee, nextIds);
-      await reloadEmployees(selectedEmployee.id);
-      setSelectedEmployeeBranchIds(nextIds);
-      patchEmployeeBranchesLocally(selectedEmployee.id, nextIds);
-      bumpBranchAssignments();
-      markSaved(EMPLOYEE_BRANCH_SCOPE);
-      setSuccessMessage(t.assignmentsSaved);
-    } catch (error) {
-      setErrorMessage(getFriendlyError(error, t.assignmentsError));
-    } finally {
-      setIsSubmitting(false);
-    }
   };
 
   const handleSaveEmployeeDetails = async () => {
@@ -1111,6 +1028,8 @@ export default function EmployeesTab({ language, userRole, user }) {
     clearMessages();
     setIsSubmitting(true);
 
+    const branchIds = selectedEmployeeBranchId ? [selectedEmployeeBranchId] : [];
+
     try {
       const [savedLimits] = await Promise.all([
         updateEmployeeWorkLimits(selectedEmployee.id, {
@@ -1122,8 +1041,10 @@ export default function EmployeesTab({ language, userRole, user }) {
             ? Number(selectedEmployeeDetails.position_id)
             : null,
         }),
+        persistEmployeeBranches(selectedEmployee, branchIds, selectedEmployeeBranchId),
       ]);
 
+      patchEmployeeBranchesLocally(selectedEmployee.id, branchIds);
       setSelectedEmployeeWorkLimits(savedLimits);
       setEmployees((currentEmployees) =>
         currentEmployees.map((employee) => (
@@ -1135,6 +1056,7 @@ export default function EmployeesTab({ language, userRole, user }) {
       await reloadEmployees(selectedEmployee.id);
       bumpBranchAssignments();
       markSaved(EMPLOYEE_POSITION_SCOPE);
+      markSaved(EMPLOYEE_BRANCH_SCOPE);
       markSaved(EMPLOYEE_WORK_LIMITS_SCOPE);
       setSuccessMessage(t.assignmentsSaved);
     } catch (error) {
@@ -1813,68 +1735,23 @@ export default function EmployeesTab({ language, userRole, user }) {
                 </div>
 
                 <div style={{ ...(r.isMobile ? { display: 'flex', flexDirection: 'column', gap: 6 } : styles.stack) }}>
-                  <label style={{ ...styles.label, ...mobileStyles?.label, marginBottom: r.isMobile ? 4 : 8 }}>{t.branches}</label>
-                  <p style={{ ...styles.panelHint, ...mobileStyles?.panelHint }}>{t.branchesPreviewHint}</p>
-
-                  {selectedEmployeeBranches.length === 0 ? (
-                    <div style={{ ...styles.emptyBox, ...mobileStyles?.emptyBox }}>{t.noBranchesAssigned}</div>
-                  ) : (
-                    <div style={{ ...styles.branchPills, ...mobileStyles?.branchPills }}>
-                      {selectedEmployeeBranches.map((branch) => (
-                        <span key={branch.id} style={{ ...styles.branchPill, ...mobileStyles?.branchPill }}>
-                          <span style={{ flex: 1, minWidth: 0, overflowWrap: 'anywhere' }}>
-                            {branch.name || branch.title || `#${branch.id}`}
-                          </span>
-                          <button
-                            type="button"
-                            onClick={() => handleRemoveEmployeeBranch(branch.id)}
-                            style={{ ...styles.branchPillRemove, ...mobileStyles?.branchPillRemove }}
-                            aria-label={`${t.removeBranch} ${branch.name || branch.id}`}
-                            disabled={isSubmitting}
-                          >
-                            x
-                          </button>
-                        </span>
-                      ))}
-                    </div>
-                  )}
-
-                  <div style={{
-                    display: 'grid',
-                    gridTemplateColumns: r.gridCols(r.isMobile ? '1fr' : '1fr auto'),
-                    gap: r.isMobile ? 8 : 10,
-                    alignItems: 'center',
-                  }}>
-                    <select
-                      value={branchToAddId}
-                      onChange={(event) => {
-                        setBranchToAddId(event.target.value);
-                        markUnsaved(EMPLOYEE_BRANCH_SCOPE);
-                      }}
-                      style={{ ...styles.select, ...mobileStyles?.select }}
-                      disabled={availableBranchesToAdd.length === 0 || isSubmitting}
-                    >
-                      <option value="">{t.selectBranch}</option>
-                      {availableBranchesToAdd.map((branch) => (
-                        <option key={branch.id} value={branch.id}>
-                          {branch.name}
-                        </option>
-                      ))}
-                    </select>
-                    <button
-                      type="button"
-                      onClick={handleAddEmployeeBranch}
-                      style={{
-                        ...styles.secondaryButton,
-                        ...mobileStyles?.secondaryButton,
-                        ...(r.isMobile ? r.fullWidth : {}),
-                        ...((!branchToAddId || isSubmitting) ? { opacity: 0.65, cursor: 'default' } : {}),
-                      }}
-                      disabled={!branchToAddId || isSubmitting}
-                    >
-                      {t.addBranch}
-                    </button>
-                  </div>
+                  <label style={{ ...styles.label, ...mobileStyles?.label, marginBottom: r.isMobile ? 4 : 8 }}>{t.branch}</label>
+                  <select
+                    value={selectedEmployeeBranchId}
+                    onChange={(event) => {
+                      setSelectedEmployeeBranchId(event.target.value);
+                      markUnsaved(EMPLOYEE_BRANCH_SCOPE);
+                    }}
+                    style={{ ...styles.select, ...mobileStyles?.select }}
+                    disabled={isSubmitting}
+                  >
+                    <option value="">{t.noBranchSelected}</option>
+                    {branches.map((branch) => (
+                      <option key={branch.id} value={branch.id}>
+                        {branch.name}
+                      </option>
+                    ))}
+                  </select>
                 </div>
 
                 <div style={{
