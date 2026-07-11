@@ -42,15 +42,21 @@ class EmployeesViewModel(
     private var hasLoaded = false
 
     fun loadData(force: Boolean = false) {
+        // Branches always refresh — they can be added from CompanyScreen at any time
+        viewModelScope.launch {
+            try {
+                val branches = repository.fetchBranches().sortedBy { it.name }
+                _uiState.value = _uiState.value.copy(branches = branches)
+            } catch (_: Exception) {}
+        }
+
         if (hasLoaded && !force) return
         viewModelScope.launch {
             _uiState.value = _uiState.value.copy(isLoading = true, errorMessage = null)
             try {
-                val branches = repository.fetchBranches().sortedBy { it.name }
                 val positions = repository.fetchPositions().sortedBy { it.title }
                 val employees = repository.fetchEmployees().sortedBy { it.fullName }
                 _uiState.value = _uiState.value.copy(
-                    branches = branches,
                     positions = positions,
                     employees = employees,
                     isLoading = false
