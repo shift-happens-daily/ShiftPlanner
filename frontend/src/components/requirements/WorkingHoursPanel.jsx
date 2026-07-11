@@ -25,6 +25,8 @@ export default function WorkingHoursPanel({
   language,
   companyId,
   branchId,
+  branches = [],
+  onBranchChange,
   branchWorkingHours,
   revision = 0,
   onChange,
@@ -39,7 +41,9 @@ export default function WorkingHoursPanel({
     ru: {
       title: 'Часы работы',
       hint: 'Используются для ограничения времени новых требований.',
-      chooseBranch: 'Выберите филиал, чтобы настроить часы работы.',
+      branch: 'Филиал',
+      selectBranch: 'Выберите филиал',
+      noBranches: 'Сначала создайте филиалы во вкладке «Компания».',
       weekday: 'День недели',
       from: 'С',
       to: 'До',
@@ -50,7 +54,9 @@ export default function WorkingHoursPanel({
     en: {
       title: 'Working hours',
       hint: 'Used to constrain times for new requirements.',
-      chooseBranch: 'Select a branch to configure working hours.',
+      branch: 'Branch',
+      selectBranch: 'Select branch',
+      noBranches: 'Create branches in the Company tab first.',
       weekday: 'Weekday',
       from: 'From',
       to: 'To',
@@ -136,11 +142,12 @@ export default function WorkingHoursPanel({
     }
   };
 
-  if (!branchId) {
+  if (!branches.length) {
     return (
       <section style={{ ...styles.panel, ...mobileStyles?.panel }}>
         <h3 style={{ ...styles.panelTitle, ...mobileStyles?.panelTitle }}>{t.title}</h3>
-        <p style={{ ...styles.panelHint, ...mobileStyles?.panelHint }}>{t.chooseBranch}</p>
+        <p style={{ ...styles.panelHint, ...mobileStyles?.panelHint }}>{t.hint}</p>
+        <p style={{ ...styles.panelHint, ...mobileStyles?.panelHint }}>{t.noBranches}</p>
       </section>
     );
   }
@@ -151,6 +158,28 @@ export default function WorkingHoursPanel({
       <p style={{ ...styles.panelHint, ...mobileStyles?.panelHint }}>{t.hint}</p>
 
       <div style={{ ...styles.stack, ...mobileStyles?.stack }}>
+        <label style={{ ...styles.label, ...mobileStyles?.label }}>{t.branch}</label>
+        <select
+          value={branchId ?? ''}
+          onChange={(event) => {
+            const nextBranchId = event.target.value ? Number(event.target.value) : null;
+            onBranchChange?.(nextBranchId);
+          }}
+          style={{ ...styles.input, ...mobileStyles?.input }}
+          disabled={isLoading || isSaving}
+        >
+          <option value="">{t.selectBranch}</option>
+          {branches.map((branch) => (
+            <option key={branch.id} value={branch.id}>
+              {branch.name || branch.title || `#${branch.id}`}
+            </option>
+          ))}
+        </select>
+
+        {!branchId ? (
+          <p style={{ ...styles.panelHint, ...mobileStyles?.panelHint }}>{t.selectBranch}</p>
+        ) : (
+          <>
         <label style={{ ...styles.label, ...mobileStyles?.label }}>{t.weekday}</label>
         <div style={{ ...styles.dayPills, ...mobileStyles?.dayPills }}>
           {WEEKDAYS.map((day) => {
@@ -216,6 +245,8 @@ export default function WorkingHoursPanel({
         >
           {isSaving ? '...' : t.apply}
         </button>
+          </>
+        )}
       </div>
     </section>
   );
