@@ -9,6 +9,8 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Assessment
 import androidx.compose.material.icons.filled.Assignment
@@ -181,6 +183,7 @@ private fun ManagerShell(
                                     @Suppress("UNCHECKED_CAST")
                                     return RequirementsViewModel(
                                         appContainer.requirementsRepository,
+                                        appContainer.companyRepository,
                                         user.company?.id
                                     ) as T
                                 }
@@ -387,71 +390,72 @@ private fun ProfileScreen(
         if (reportsRepository != null) {
             try {
                 myReport = reportsRepository.fetchMyReport(startDate = null, endDate = null)
-            } catch (_: Exception) { /* stats optional */ }
+            } catch (_: Exception) { }
         }
     }
 
-    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+    Scaffold(
+        topBar = {
+            androidx.compose.material3.TopAppBar(
+                title = { Text(stringResource(R.string.profile_title), style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold) }
+            )
+        }
+    ) { padding ->
         Column(
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.spacedBy(12.dp),
-            modifier = Modifier.padding(24.dp)
+            modifier = Modifier
+                .padding(padding)
+                .padding(horizontal = 16.dp)
+                .verticalScroll(rememberScrollState()),
+            verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
-            Icon(
-                Icons.Default.Person,
-                contentDescription = null,
-                modifier = Modifier.padding(bottom = 4.dp),
-                tint = MaterialTheme.colorScheme.primary
-            )
-            Text(user.name, style = MaterialTheme.typography.headlineSmall)
-            Text(
-                user.email,
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
+            Spacer(Modifier.height(4.dp))
 
-            // Stats (employees only)
-            myReport?.let { report ->
-                Spacer(Modifier.height(4.dp))
-                HorizontalDivider()
-                Spacer(Modifier.height(4.dp))
-                Text(
-                    "My Stats (all time)",
-                    style = MaterialTheme.typography.labelMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-                Column(
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                    verticalArrangement = Arrangement.spacedBy(4.dp)
-                ) {
-                    Text(
-                        "${"%.1f".format(report.totalHours)} hours",
-                        style = MaterialTheme.typography.titleLarge,
-                        fontWeight = FontWeight.Bold
-                    )
-                    Text(
-                        "${report.totalShifts} shifts",
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
+            // ── Info cards ────────────────────────────────────────────────────
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                ProfileInfoCard(label = "Full name", value = user.name, modifier = Modifier.weight(1f))
+                ProfileInfoCard(label = "Email", value = user.email, modifier = Modifier.weight(1f))
+            }
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                ProfileInfoCard(label = "User ID", value = user.id, monospace = true, modifier = Modifier.weight(1f))
+                ProfileInfoCard(label = "Role", value = user.role.title, modifier = Modifier.weight(1f))
+            }
+            user.company?.let { company ->
+                ProfileInfoCard(label = "Company", value = company.name, modifier = Modifier.fillMaxWidth())
+            }
+            if (user.role == UserRole.EMPLOYEE) {
+                user.position?.let { pos ->
+                    ProfileInfoCard(label = "Position", value = pos.name, modifier = Modifier.fillMaxWidth())
                 }
-                Spacer(Modifier.height(4.dp))
-                HorizontalDivider()
             }
 
-            // Theme picker
-            Spacer(Modifier.height(4.dp))
-            HorizontalDivider()
-            Spacer(Modifier.height(4.dp))
+            // ── Stats (employees only) ─────────────────────────────────────
+            myReport?.let { report ->
+                HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
+                Text(
+                    "My Stats (all time)",
+                    style = MaterialTheme.typography.titleSmall,
+                    fontWeight = FontWeight.SemiBold
+                )
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    ProfileInfoCard(
+                        label = "Hours",
+                        value = "${"%.1f".format(report.totalHours)} ч",
+                        modifier = Modifier.weight(1f)
+                    )
+                    ProfileInfoCard(
+                        label = "Shifts",
+                        value = "${report.totalShifts}",
+                        modifier = Modifier.weight(1f)
+                    )
+                }
+            }
+
+            // ── Theme picker ──────────────────────────────────────────────
+            HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
             Text(
                 "App Theme",
                 style = MaterialTheme.typography.titleSmall,
                 fontWeight = FontWeight.SemiBold
-            )
-            Text(
-                "Current: ${currentTheme.title}",
-                style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.primary
             )
             Row(
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -470,9 +474,7 @@ private fun ProfileScreen(
                         )
                     ) {
                         Box(
-                            Modifier
-                                .fillMaxWidth()
-                                .padding(vertical = 12.dp),
+                            Modifier.fillMaxWidth().padding(vertical = 12.dp),
                             contentAlignment = Alignment.Center
                         ) {
                             Text(
@@ -489,10 +491,8 @@ private fun ProfileScreen(
                 }
             }
 
-            // Language picker
-            Spacer(Modifier.height(4.dp))
-            HorizontalDivider()
-            Spacer(Modifier.height(4.dp))
+            // ── Language picker ───────────────────────────────────────────
+            HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
             Text(
                 stringResource(R.string.language_label),
                 style = MaterialTheme.typography.titleSmall,
@@ -506,9 +506,7 @@ private fun ProfileScreen(
                 listOf("en" to stringResource(R.string.language_en), "ru" to stringResource(R.string.language_ru)).forEach { (tag, label) ->
                     val selected = if (tag == "en") !currentLocale.startsWith("ru") else currentLocale.startsWith("ru")
                     Card(
-                        onClick = {
-                            AppCompatDelegate.setApplicationLocales(LocaleListCompat.forLanguageTags(tag))
-                        },
+                        onClick = { AppCompatDelegate.setApplicationLocales(LocaleListCompat.forLanguageTags(tag)) },
                         modifier = Modifier.weight(1f),
                         colors = androidx.compose.material3.CardDefaults.cardColors(
                             containerColor = if (selected)
@@ -518,9 +516,7 @@ private fun ProfileScreen(
                         )
                     ) {
                         Box(
-                            Modifier
-                                .fillMaxWidth()
-                                .padding(vertical = 12.dp),
+                            Modifier.fillMaxWidth().padding(vertical = 12.dp),
                             contentAlignment = Alignment.Center
                         ) {
                             Text(
@@ -537,16 +533,53 @@ private fun ProfileScreen(
                 }
             }
 
-            Spacer(Modifier.height(4.dp))
-            Button(onClick = onLogout) { Text(stringResource(R.string.logout_button)) }
+            // ── Actions ───────────────────────────────────────────────────
+            HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
+            Button(onClick = onLogout, modifier = Modifier.fillMaxWidth()) {
+                Text(stringResource(R.string.logout_button))
+            }
             if (onDeleteAccount != null) {
                 OutlinedButton(
                     onClick = onDeleteAccount,
-                    colors = ButtonDefaults.outlinedButtonColors(
-                        contentColor = MaterialTheme.colorScheme.error
-                    )
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.error)
                 ) { Text("Delete account") }
             }
+            Spacer(Modifier.height(16.dp))
+        }
+    }
+}
+
+@Composable
+private fun ProfileInfoCard(
+    label: String,
+    value: String,
+    modifier: Modifier = Modifier,
+    monospace: Boolean = false
+) {
+    Card(modifier = modifier) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp, vertical = 14.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(4.dp)
+        ) {
+            Text(
+                label,
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            Text(
+                value,
+                style = if (monospace)
+                    MaterialTheme.typography.titleSmall.copy(fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace)
+                else
+                    MaterialTheme.typography.titleSmall,
+                fontWeight = FontWeight.Bold,
+                textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                modifier = Modifier.fillMaxWidth()
+            )
         }
     }
 }
