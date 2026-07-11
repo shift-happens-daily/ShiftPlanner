@@ -1,10 +1,11 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useAuth } from '../../context/useAuth';
-import { joinCompany, previewInviteCode } from '../../services/companyService';
+import { joinCompany, listEmployeeCompanyManagers, previewInviteCode } from '../../services/companyService';
 import { extractApiErrorMessage } from '../../services/error';
 import { useUserBranches } from '../../hooks/useUserBranches';
 import { useUnsavedChanges } from '../../context/useUnsavedChanges';
 import { getEmployeePositionLabel, getPositionLabel } from '../../utils/employeeDisplay';
+import { getManagerInitials, normalizeManagerList, sortCompanyManagers } from '../../utils/managerDisplay';
 import '../../styles/employee-dashboard.css';
 
 const JOIN_SCOPE = 'company-join';
@@ -56,16 +57,6 @@ function getPositionsFromPreview(preview) {
   ).filter(Boolean);
 }
 
-function getInitials(value) {
-  const parts = String(value || '')
-    .trim()
-    .split(/\s+/)
-    .filter(Boolean);
-  if (parts.length === 0) return '?';
-  if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
-  return `${parts[0][0]}${parts[1][0]}`.toUpperCase();
-}
-
 function IconBuilding() {
   return (
     <svg width="32" height="32" viewBox="0 0 24 24" fill="none" aria-hidden="true">
@@ -96,6 +87,9 @@ export default function EmployeeCompanyTab({ language, user }) {
   const [errorMessage, setErrorMessage] = useState('');
   const [successMessage, setSuccessMessage] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [companyManagers, setCompanyManagers] = useState([]);
+  const [managersLoading, setManagersLoading] = useState(false);
+  const [managersError, setManagersError] = useState('');
 
   const texts = {
     ru: {
@@ -125,7 +119,16 @@ export default function EmployeeCompanyTab({ language, user }) {
       noBranchesAssigned: 'Филиалы не назначены',
       noBranchSelected: 'Без филиала',
       noPositionSelected: 'Без позиции',
-      accountTitle: 'Ваш аккаунт',
+      managerTitle: 'Менеджер компании',
+      managersTitle: 'Менеджеры компании',
+      managersHint: 'Контакты менеджеров вашей компании.',
+      managerEmail: 'Email',
+      managerRoleOwner: 'Владелец',
+      managerRoleManager: 'Менеджер',
+      noManagerAvailable: 'Контакт менеджера пока недоступен.',
+      pendingManagerContact: 'Контакт менеджера появится после подтверждения вашей заявки.',
+      managersLoading: 'Загрузка контактов менеджеров…',
+      managersLoadError: 'Не удалось загрузить контакты менеджеров.',
       empty: '—',
     },
     en: {
@@ -155,7 +158,16 @@ export default function EmployeeCompanyTab({ language, user }) {
       noBranchesAssigned: 'No branches assigned',
       noBranchSelected: 'No branch selected',
       noPositionSelected: 'No position selected',
-      accountTitle: 'Your account',
+      managerTitle: 'Company manager',
+      managersTitle: 'Company managers',
+      managersHint: 'Contact details for your company managers.',
+      managerEmail: 'Email',
+      managerRoleOwner: 'Owner',
+      managerRoleManager: 'Manager',
+      noManagerAvailable: 'Manager contact is not available yet.',
+      pendingManagerContact: 'Manager contact will appear after your request is approved.',
+      managersLoading: 'Loading manager contacts…',
+      managersLoadError: 'Could not load manager contacts.',
       empty: '—',
     },
   };
@@ -163,7 +175,9 @@ export default function EmployeeCompanyTab({ language, user }) {
   const t = texts[language] || texts.ru;
 
   const currentCompany = user?.company || null;
-  const isPendingEmployee = user?.employeeStatus === 'pending';
+  const companyId = user?.companyId ?? currentCompany?.id ?? null;
+  const employeeStatus = user?.employeeStatus ?? user?.employee_status ?? null;
+  const isPendingEmployee = employeeStatus === 'pending';
   const employeePositionLabel = getEmployeePositionLabel(user, t.empty);
   const { userBranches } = useUserBranches(user);
 
@@ -173,10 +187,52 @@ export default function EmployeeCompanyTab({ language, user }) {
   const previewPositions = getPositionsFromPreview(invitePreview);
   const canJoin = Boolean(invitePreview) && !isSubmitting;
 
-  const userName = user?.full_name || user?.fullName || user?.name || user?.email || t.empty;
-  const userEmail = user?.email || t.empty;
   const employeePublicId = user?.publicId || user?.public_id || t.empty;
   const primaryBranch = userBranches[0] ? getName(userBranches[0]) : t.noBranchesAssigned;
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function loadManagers() {
+      setManagersError('');
+
+      try {
+        const freshUser = await refreshUser();
+        if (cancelled) return;
+
+        const freshCompanyId = freshUser?.companyId ?? freshUser?.company?.id ?? null;
+        const freshStatus = freshUser?.employeeStatus ?? freshUser?.employee_status ?? null;
+        const freshIsPending = freshStatus === 'pending';
+
+        if (!freshCompanyId || freshIsPending) {
+          setCompanyManagers([]);
+          setManagersLoading(false);
+          return;
+        }
+
+        setManagersLoading(true);
+
+        const data = await listEmployeeCompanyManagers();
+        if (cancelled) return;
+
+        setCompanyManagers(sortCompanyManagers(normalizeManagerList(data)));
+      } catch (error) {
+        if (cancelled) return;
+        setCompanyManagers([]);
+        setManagersError(extractApiErrorMessage(error, t.managersLoadError, language));
+      } finally {
+        if (!cancelled) {
+          setManagersLoading(false);
+        }
+      }
+    }
+
+    void loadManagers();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [companyId, employeeStatus, language, refreshUser, t.managersLoadError]);
 
   const clearMessages = () => {
     setErrorMessage('');
@@ -364,10 +420,10 @@ export default function EmployeeCompanyTab({ language, user }) {
         ) : null}
 
         <div className="ed-company-grid">
-          <div className="ed-card ed-company-hero-card">
+          <div className="ed-card ed-company-hero-card ed-company-hero-card--full">
             <div className="ed-company-hero">
               <div className="ed-company-logo">
-                {getInitials(currentCompany?.name)}
+                {getManagerInitials(currentCompany?.name)}
               </div>
               <div>
                 <h2 className="ed-company-name">{currentCompany?.name || t.empty}</h2>
@@ -411,24 +467,60 @@ export default function EmployeeCompanyTab({ language, user }) {
               </div>
             </div>
           </div>
-
-          <aside className="ed-card ed-side-card">
-            <h3 className="ed-side-title">{t.accountTitle}</h3>
-
-            <div className="ed-profile-row">
-              <div className="ed-profile-avatar">{getInitials(userName)}</div>
-              <div>
-                <p className="ed-profile-name">{userName}</p>
-                <p className="ed-profile-meta">{employeePositionLabel}</p>
-              </div>
-            </div>
-
-            <div className="ed-email-box">
-              <p className="ed-email-label">{t.email}</p>
-              <p className="ed-email-value">{userEmail}</p>
-            </div>
-          </aside>
         </div>
+
+        <section className="ed-card ed-managers-section">
+          <div className="ed-managers-section-header">
+            <div>
+              <h3 className="ed-managers-section-title">
+                {companyManagers.length > 1 ? t.managersTitle : t.managerTitle}
+              </h3>
+              <p className="ed-managers-section-hint">{t.managersHint}</p>
+            </div>
+            {companyManagers.length > 0 ? (
+              <span className="ed-managers-count">{companyManagers.length}</span>
+            ) : null}
+          </div>
+
+          {isPendingEmployee ? (
+            <p className="ed-side-text">{t.pendingManagerContact}</p>
+          ) : managersLoading ? (
+            <p className="ed-side-text">{t.managersLoading}</p>
+          ) : managersError ? (
+            <p className="ed-side-text ed-error-inline">{managersError}</p>
+          ) : companyManagers.length === 0 ? (
+            <p className="ed-side-text">{t.noManagerAvailable}</p>
+          ) : (
+            <div className="ed-managers-grid">
+              {companyManagers.map((manager) => {
+                const managerName = manager.full_name || manager.email || t.empty;
+                const managerEmail = manager.email || t.empty;
+                const roleLabel = manager.manager_role === 'owner'
+                  ? t.managerRoleOwner
+                  : t.managerRoleManager;
+
+                return (
+                  <div key={manager.id ?? manager.user_id ?? manager.email} className="ed-manager-card">
+                    <div className="ed-profile-row ed-profile-row--compact">
+                      <div className="ed-profile-avatar">{getManagerInitials(managerName)}</div>
+                      <div>
+                        <p className="ed-profile-name">{managerName}</p>
+                        <span className={`ed-manager-role-badge ${manager.manager_role === 'owner' ? 'is-owner' : ''}`}>
+                          {roleLabel}
+                        </span>
+                      </div>
+                    </div>
+
+                    <div className="ed-email-box">
+                      <p className="ed-email-label">{t.managerEmail}</p>
+                      <p className="ed-email-value">{managerEmail}</p>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </section>
       </div>
     </div>
   );

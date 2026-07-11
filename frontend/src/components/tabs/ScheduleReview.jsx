@@ -1,4 +1,5 @@
 ﻿import { useCallback, useEffect, useMemo, useState } from 'react';
+import '../../styles/schedule-tab.css';
 import {
   defaultSchedulePeriod,
   deleteScheduleWeek,
@@ -1254,6 +1255,14 @@ export default function ScheduleReview({ language }) {
       unfilledBadge: 'Не назначено',
       missingStaff: 'Не хватает: {count}',
       moreShifts: '+{count}',
+      shiftTime: 'ВРЕМЯ СМЕНЫ',
+      shiftSingular: 'смена',
+      shiftPlural: 'смен',
+      selectDay: 'Выберите день',
+      selectDayHint: 'Нажмите на день с индикатором смены, чтобы увидеть детали.',
+      closeDetail: 'Закрыть',
+      legendNoShift: 'Нет смен',
+      calendarTitle: 'Расписание',
     },
     en: {
       title: 'Schedule',
@@ -1308,6 +1317,14 @@ export default function ScheduleReview({ language }) {
       unfilledBadge: 'Unassigned',
       missingStaff: 'Missing: {count}',
       moreShifts: '+{count}',
+      shiftTime: 'SHIFT TIME',
+      shiftSingular: 'shift',
+      shiftPlural: 'shifts',
+      selectDay: 'Select a day',
+      selectDayHint: 'Click a day with a shift indicator to see details here.',
+      closeDetail: 'Close',
+      legendNoShift: 'No shift',
+      calendarTitle: 'Schedule',
     },
   };
 
@@ -1857,208 +1874,62 @@ export default function ScheduleReview({ language }) {
     { id: 'published', label: t.viewPublished, schedule: scheduleVersions.published },
   ];
   const actionButtonStyle = isMobile ? { flex: '1 1 calc(50% - 6px)', minWidth: '140px' } : {};
-  const pageStyle = {
-    width: '100%',
-    height: '100%',
-    minHeight: 0,
-    boxSizing: 'border-box',
-    padding: isMobile ? 10 : '16px 24px 18px',
-    overflowX: 'hidden',
-    overflowY: 'auto',
-    WebkitOverflowScrolling: 'touch',
-    background: '#f4faff',
-    ...mobileStyles?.page,
-  };
-  const shellStyle = {
-    width: isMobile ? '100%' : '125%',
-    height: 'auto',
-    minHeight: 0,
-    margin: '0 auto',
-    boxSizing: 'border-box',
-    padding: 0,
-    paddingBottom: isMobile ? 16 : 24,
-    borderRadius: 0,
-    background: 'transparent',
-    border: 'none',
-    boxShadow: 'none',
-    display: 'flex',
-    flexDirection: 'column',
-    gap: '14px',
-    overflow: 'visible',
-    transform: isMobile ? 'none' : 'scale(0.8)',
-    transformOrigin: 'top left',
-    ...mobileStyles?.shell,
-  };
-  const panelStyle = {
-    background: '#ffffff',
-    border: '1px solid #dee7e7',
-    borderRadius: 14,
-    boxShadow: '0 12px 30px rgba(0, 38, 66, 0.04)',
-  };
-  const inputStyle = {
-    height: 40,
-    borderRadius: 10,
-    border: '1px solid #dbe6f0',
-    padding: '0 14px',
-    background: '#ffffff',
-    color: '#002642',
-    colorScheme: 'light',
-    boxSizing: 'border-box',
-    ...mobileStyles?.input,
-  };
-  const dateInputStyle = {
-    ...inputStyle,
-    fontWeight: 700,
-    cursor: 'pointer',
-  };
-  const primaryButtonStyle = {
-    height: 40,
-    padding: '0 16px',
-    borderRadius: 10,
-    background: '#002642',
-    color: '#fff',
-    border: 'none',
-    fontWeight: 800,
-    ...mobileStyles?.actionButton,
-  };
-  const secondaryButtonStyle = {
-    height: 40,
-    padding: '0 16px',
-    borderRadius: 10,
-    background: '#eef2ff',
-    color: '#3730a3',
-    border: '1px solid rgba(99, 102, 241, 0.18)',
-    fontWeight: 800,
-    ...mobileStyles?.actionButton,
-  };
 
   if (isLoading || isAuthLoading) {
     return (
-      <section style={pageStyle}>
-        <div style={shellStyle}>
-          <div style={{ ...panelStyle, padding: 26, color: '#4f646f', fontWeight: 800, textAlign: 'center' }}>
-            {t.loading}
-          </div>
+      <section className="schedule-tab">
+        <div className="st-page">
+          <div className="st-loading">{t.loading}</div>
         </div>
       </section>
     );
   }
 
   return (
-    <section style={pageStyle}>
-      <div style={shellStyle}>
-        <div style={{ flexShrink: 0, marginBottom: 0, display: 'flex', flexDirection: 'column', gap: 12 }}>
-          <div style={{
-            display: 'flex',
-            alignItems: isMobile ? 'flex-start' : 'center',
-            justifyContent: 'space-between',
-            gap: 12,
-            flexWrap: 'wrap',
-            flexDirection: isMobile ? 'column' : 'row',
-          }}
-          >
-            <div style={{ width: isMobile ? '100%' : 'auto' }}>
-              <h2 style={{
-                margin: 0,
-                color: '#002642',
-                fontSize: isMobile ? 22 : 28,
-                fontWeight: 900,
-                letterSpacing: 0,
-                ...mobileStyles?.title,
-              }}
-              >{t.title}</h2>
-              {!isMobile && (
-                <p style={{ margin: '4px 0 0', color: '#4f646f', fontSize: 13, fontWeight: 600, maxWidth: 680 }}>{t.subtitle}</p>
-              )}
-            </div>
-
-            <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
-              <span style={{
-                padding: '8px 12px',
-                borderRadius: 999,
-                fontWeight: 800,
-                fontSize: 13,
-                border: '1px solid #dee7e7',
-                ...getStatusBadgeStyle(scheduleStatus),
-                ...mobileStyles?.statusBadge,
-              }}>
-                {t.status}: {getStatusLabel(scheduleStatus, t)}
-              </span>
-            </div>
+    <section className="schedule-tab">
+      <div className="st-page">
+        <div className="st-page-header">
+          <div>
+            <h1 className="st-page-title">{t.title}</h1>
+            {!isMobile && <p className="st-page-subtitle">{t.subtitle}</p>}
           </div>
 
-          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-            {versionOptions.map(({ id, label, schedule: versionSchedule }) => {
-              const isActive = activeVersion === id;
-              const isDisabled = !versionSchedule;
-
-              return (
-                <button
-                  key={id}
-                  type="button"
-                  disabled={isDisabled}
-                  onClick={() => {
-                    setActiveVersion(id);
-                    setError('');
-                    setSuccess('');
-                  }}
-                  style={{
-                    height: 38,
-                    padding: '0 14px',
-                    borderRadius: 10,
-                    border: isActive ? '1px solid #002642' : '1px solid #dee7e7',
-                    background: isActive ? '#002642' : '#f4faff',
-                    color: isDisabled ? 'rgba(79, 100, 111, 0.45)' : (isActive ? '#fff' : '#002642'),
-                    fontWeight: 800,
-                    fontSize: 13,
-                    cursor: isDisabled ? 'default' : 'pointer',
-                    opacity: isDisabled ? 0.55 : 1,
-                    ...mobileStyles?.versionButton,
-                  }}
-                >
-                  {label}
-                </button>
-              );
-            })}
-          </div>
+          <span className={`st-status-badge ${scheduleStatus === 'published' ? 'st-status-badge--published' : 'st-status-badge--draft'}`}>
+            {t.status}: {getStatusLabel(scheduleStatus, t)}
+          </span>
         </div>
 
-        {error && (
-          <div style={{ ...panelStyle, marginBottom: 0, padding: '10px 12px', background: 'rgba(215, 173, 207, 0.35)', color: '#8d1d1d', fontWeight: 700 }}>
-            {error}
-          </div>
-        )}
-        {success && (
-          <div style={{ ...panelStyle, marginBottom: 0, padding: '10px 12px', color: '#002642', fontWeight: 700 }}>
-            {success}
-          </div>
-        )}
+        <div className="st-version-toggle">
+          {versionOptions.map(({ id, label, schedule: versionSchedule }) => {
+            const isActive = activeVersion === id;
+            const isDisabled = !versionSchedule;
 
-        <div style={{
-          ...panelStyle,
-          padding: 18,
-          display: 'flex',
-          gap: 12,
-          alignItems: 'flex-end',
-          marginBottom: 0,
-          flexWrap: 'wrap',
-          flexDirection: isMobile ? 'column' : 'row',
-          ...mobileStyles?.controlsPanel,
-        }}
-        >
-          <label style={{
-            display: 'flex',
-            flexDirection: 'column',
-            gap: 4,
-            color: '#4f646f',
-            fontSize: 12,
-            fontWeight: 800,
-            width: isMobile ? '100%' : '220px',
-            ...mobileStyles?.label,
-          }}
-          >
-            {t.branch}
+            return (
+              <button
+                key={id}
+                type="button"
+                disabled={isDisabled}
+                onClick={() => {
+                  setActiveVersion(id);
+                  setError('');
+                  setSuccess('');
+                }}
+                className={`st-version-btn ${isActive ? 'st-version-btn--active' : ''}`}
+              >
+                {label}
+              </button>
+            );
+          })}
+        </div>
+
+        {error && <div className="st-alert st-alert--error">{error}</div>}
+        {success && <div className="st-alert st-alert--success">{success}</div>}
+
+        <div className="st-control-panel">
+          <label className="st-field" style={{ width: isMobile ? '100%' : '220px' }}>
+            <span className="st-field-label">{t.branch}</span>
             <select
+              className="st-select"
               value={selectedBranchId || ''}
               onChange={(e) => {
                 const branchId = Number(e.target.value) || null;
@@ -2067,11 +1938,6 @@ export default function ScheduleReview({ language }) {
                 setActiveVersion('draft');
               }}
               disabled={!branches.length || isSubmitting}
-              style={{
-                width: '100%',
-                ...inputStyle,
-                fontWeight: 700,
-              }}
             >
               {branches.length === 0 ? (
                 <option value="">—</option>
@@ -2083,26 +1949,13 @@ export default function ScheduleReview({ language }) {
             </select>
           </label>
 
-          <label style={{
-            display: 'flex',
-            flexDirection: 'column',
-            gap: 4,
-            color: '#4f646f',
-            fontSize: 12,
-            fontWeight: 800,
-            width: isMobile ? '100%' : 'auto',
-            ...mobileStyles?.label,
-          }}
-          >
-            {t.startDate}
+          <label className="st-field">
+            <span className="st-field-label">{t.startDate}</span>
             <input
               type="date"
+              className="st-input"
               value={generationStartMonday}
               onChange={(e) => setGenerationStartMonday(snapToMonday(e.target.value))}
-              style={{
-                width: isMobile ? '100%' : 'auto',
-                ...dateInputStyle,
-              }}
             />
           </label>
 
@@ -2112,13 +1965,8 @@ export default function ScheduleReview({ language }) {
               type="button"
               onClick={() => runGenerate(weeks)}
               disabled={isSubmitting || !selectedBranchId}
-              style={{
-                ...primaryButtonStyle,
-                cursor: isSubmitting || !selectedBranchId ? 'default' : 'pointer',
-                opacity: isSubmitting || !selectedBranchId ? 0.65 : 1,
-                width: isMobile ? '100%' : 'auto',
-                ...actionButtonStyle,
-              }}
+              className="st-btn st-btn--primary"
+              style={actionButtonStyle}
             >
               {isSubmitting ? t.generating : (weeks === 1 ? t.oneWeek : weeks === 2 ? t.twoWeeks : t.fourWeeks)}
             </button>
@@ -2128,49 +1976,22 @@ export default function ScheduleReview({ language }) {
             <button
               onClick={handlePublish}
               disabled={isSubmitting || !hasShifts}
-              style={{
-                ...secondaryButtonStyle,
-                cursor: isSubmitting || !hasShifts ? 'default' : 'pointer',
-                opacity: isSubmitting || !hasShifts ? 0.65 : 1,
-                width: isMobile ? '100%' : 'auto',
-                ...actionButtonStyle,
-              }}
+              className="st-btn st-btn--secondary"
+              style={actionButtonStyle}
             >
               {t.publish}
             </button>
           )}
         </div>
 
-        <div style={{
-          ...panelStyle,
-          padding: 18,
-          display: 'flex',
-          gap: 12,
-          alignItems: 'flex-end',
-          marginBottom: 0,
-          flexWrap: 'wrap',
-          flexDirection: isMobile ? 'column' : 'row',
-        }}
-        >
-          <label style={{
-            display: 'flex',
-            flexDirection: 'column',
-            gap: 4,
-            color: '#4f646f',
-            fontSize: 12,
-            fontWeight: 800,
-            width: isMobile ? '100%' : 'auto',
-          }}
-          >
-            {t.deleteWeekStart}
+        <div className="st-control-panel">
+          <label className="st-field">
+            <span className="st-field-label">{t.deleteWeekStart}</span>
             <input
               type="date"
+              className="st-input"
               value={deleteWeekMonday}
               onChange={(e) => setDeleteWeekMonday(snapToMonday(e.target.value))}
-              style={{
-                width: isMobile ? '100%' : 'auto',
-                ...dateInputStyle,
-              }}
             />
           </label>
 
@@ -2178,142 +1999,90 @@ export default function ScheduleReview({ language }) {
             type="button"
             onClick={handleDeleteWeek}
             disabled={isSubmitting || !selectedBranchId}
-            style={{
-              ...primaryButtonStyle,
-              background: '#8d1d1d',
-              cursor: isSubmitting || !selectedBranchId ? 'default' : 'pointer',
-              opacity: isSubmitting || !selectedBranchId ? 0.65 : 1,
-              width: isMobile ? '100%' : 'auto',
-              ...actionButtonStyle,
-            }}
+            className="st-btn st-btn--danger"
+            style={actionButtonStyle}
           >
             {t.deleteWeek}
           </button>
         </div>
 
         {schedule?.id && canEditDraft && unfilledRequirements.length > 0 && (
-          <div style={{
-            ...panelStyle,
-            marginBottom: 0,
-            padding: '16px 18px',
-            ...mobileStyles?.unfilledPanel,
-          }}>
-            <h3 style={{ margin: '0 0 12px', color: '#002642', fontSize: 16, ...mobileStyles?.unfilledTitle }}>{t.unfilledTitle}</h3>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: isMobile ? 8 : 12 }}>
-              {unfilledRequirements.map((item) => {
-                const requirementId = item.requirement_id;
+          <div className="st-unfilled-panel">
+            <h3 className="st-unfilled-title">{t.unfilledTitle}</h3>
+            {unfilledRequirements.map((item) => {
+              const requirementId = item.requirement_id;
 
-                return (
-                  <div
-                    key={requirementId}
-                    style={{
-                      display: 'flex',
-                      gap: 12,
-                      alignItems: isMobile ? 'stretch' : 'center',
-                      flexWrap: 'wrap',
-                      flexDirection: isMobile ? 'column' : 'row',
-                      padding: '10px 12px',
-                      borderRadius: 12,
-                      background: '#fff',
-                      border: '1px solid #edf2f2',
-                      ...mobileStyles?.unfilledItem,
-                    }}
-                  >
-                    <div style={{ minWidth: isMobile ? 0 : 180, width: isMobile ? '100%' : undefined }}>
-                      <strong style={{ color: '#002642', ...mobileStyles?.unfilledPosition }}>
-                        {getPositionLabel({
-                          position_id: item.position_id,
-                          position_title: item.position_title || item.position,
-                        }, item.position_title || '—')}
-                      </strong>
-                      <div style={{ color: '#4f646f', fontSize: 13, ...mobileStyles?.unfilledMeta }}>
-                        {formatDate(item.date)} · {String(item.start_time || '').slice(0, 5)}–{String(item.end_time || '').slice(0, 5)}
-                      </div>
-                      {unfilledNotFoundRequirements.some((entry) => entry.requirement_id === requirementId) && (
-                        <div style={{ color: '#8d1d1d', fontSize: 12, fontWeight: 700 }}>
-                          {t.notFound}
-                        </div>
-                      )}
+              return (
+                <div key={requirementId} className="st-unfilled-item">
+                  <div style={{ minWidth: isMobile ? 0 : 180, flex: '1 1 auto' }}>
+                    <strong>
+                      {getPositionLabel({
+                        position_id: item.position_id,
+                        position_title: item.position_title || item.position,
+                      }, item.position_title || '—')}
+                    </strong>
+                    <div className="st-unfilled-meta">
+                      {formatDate(item.date)} · {String(item.start_time || '').slice(0, 5)}–{String(item.end_time || '').slice(0, 5)}
                     </div>
-
-                    <select
-                      value={assignEmployeeIds[requirementId] || ''}
-                      onChange={(event) => setAssignEmployeeIds((prev) => ({
-                        ...prev,
-                        [requirementId]: event.target.value,
-                      }))}
-                      style={{
-                        minWidth: isMobile ? 0 : 200,
-                        width: isMobile ? '100%' : undefined,
-                        ...inputStyle,
-                        height: 36,
-                        ...mobileStyles?.unfilledSelect,
-                      }}
-                      disabled={isSubmitting}
-                    >
-                      <option value="">
-                        {!manualEmployeesLoaded
-                          ? t.loading
-                          : manualEmployees.length
-                            ? t.chooseEmployee
-                            : t.noEmployeesAvailable}
-                      </option>
-                      {manualEmployees.map((employee) => (
-                        <option key={employee.id} value={employee.id}>
-                          {employee.full_name}
-                          {employee.position?.name ? ` (${employee.position.name})` : ''}
-                        </option>
-                      ))}
-                    </select>
-
-                    <button
-                      type="button"
-                      onClick={() => handleAssignRequirement(requirementId)}
-                      disabled={isSubmitting || !assignEmployeeIds[requirementId]}
-                      style={{
-                        ...primaryButtonStyle,
-                        height: 36,
-                        padding: '0 14px',
-                        cursor: isSubmitting || !assignEmployeeIds[requirementId] ? 'default' : 'pointer',
-                        opacity: isSubmitting || !assignEmployeeIds[requirementId] ? 0.6 : 1,
-                        ...mobileStyles?.unfilledAssignButton,
-                      }}
-                    >
-                      {t.assign}
-                    </button>
+                    {unfilledNotFoundRequirements.some((entry) => entry.requirement_id === requirementId) && (
+                      <div className="st-unfilled-warning">{t.notFound}</div>
+                    )}
                   </div>
-                );
-              })}
-            </div>
+
+                  <select
+                    className="st-select"
+                    value={assignEmployeeIds[requirementId] || ''}
+                    onChange={(event) => setAssignEmployeeIds((prev) => ({
+                      ...prev,
+                      [requirementId]: event.target.value,
+                    }))}
+                    style={{ minWidth: isMobile ? 0 : 200, flex: '1 1 200px' }}
+                    disabled={isSubmitting}
+                  >
+                    <option value="">
+                      {!manualEmployeesLoaded
+                        ? t.loading
+                        : manualEmployees.length
+                          ? t.chooseEmployee
+                          : t.noEmployeesAvailable}
+                    </option>
+                    {manualEmployees.map((employee) => (
+                      <option key={employee.id} value={employee.id}>
+                        {employee.full_name}
+                        {employee.position?.name ? ` (${employee.position.name})` : ''}
+                      </option>
+                    ))}
+                  </select>
+
+                  <button
+                    type="button"
+                    onClick={() => handleAssignRequirement(requirementId)}
+                    disabled={isSubmitting || !assignEmployeeIds[requirementId]}
+                    className="st-btn st-btn--primary"
+                  >
+                    {t.assign}
+                  </button>
+                </div>
+              );
+            })}
           </div>
         )}
 
-        <div style={{
-          ...panelStyle,
-          padding: 14,
-          display: 'flex',
-          gap: 12,
-          alignItems: 'center',
-          marginBottom: 0,
-          flexWrap: 'wrap',
-          flexDirection: isMobile ? 'column' : 'row',
-          justifyContent: isMobile ? 'stretch' : 'flex-end',
-        }}
-        >
-          <button onClick={exportCSV} disabled={!hasShifts} style={{
-            ...primaryButtonStyle,
-            cursor: hasShifts ? 'pointer' : 'default',
-            opacity: hasShifts ? 1 : 0.5,
-            width: isMobile ? '100%' : 'auto',
-          }}>{t.exportCSV}</button>
+        <div className="st-control-panel" style={{ justifyContent: 'flex-end' }}>
+          <button
+            onClick={exportCSV}
+            disabled={!hasShifts}
+            className="st-btn st-btn--primary"
+            style={isMobile ? { width: '100%' } : {}}
+          >
+            {t.exportCSV}
+          </button>
         </div>
 
         {hasCompany ? (
           <ManagerScheduleCalendar
             language={language}
             texts={t}
-            panelStyle={panelStyle}
-            mobileStyles={mobileStyles}
             calendarMonth={calendarMonth}
             onCalendarMonthChange={setCalendarMonth}
             selectedDate={calendarSelectedDate}
@@ -2326,9 +2095,9 @@ export default function ScheduleReview({ language }) {
             selectedDayEntries={calendarSelectedDayEntries}
           />
         ) : (
-          <div style={{ ...panelStyle, padding: '48px 24px', textAlign: 'center' }}>
-            <h3 style={{ margin: 0, color: '#002642' }}>{t.noSchedule}</h3>
-            <p style={{ margin: '8px 0 0', color: '#4f646f', fontSize: 14 }}>{t.noScheduleHint}</p>
+          <div className="st-detail-empty">
+            <p className="st-detail-empty-title">{t.noSchedule}</p>
+            <p className="st-detail-empty-message">{t.noScheduleHint}</p>
           </div>
         )}
       </div>

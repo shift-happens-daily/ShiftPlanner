@@ -1091,7 +1091,7 @@ export default function EmployeesTab({ language, userRole, user }) {
     }
   };
 
-  const handleSaveWorkLimits = async () => {
+  const handleSaveEmployeeDetails = async () => {
     if (!selectedEmployee) return;
 
     const weekly = Number(selectedEmployeeWorkLimits.max_hours_per_week);
@@ -1111,44 +1111,30 @@ export default function EmployeesTab({ language, userRole, user }) {
     setIsSubmitting(true);
 
     try {
-      const saved = await updateEmployeeWorkLimits(selectedEmployee.id, {
-        max_hours_per_week: Math.round(weekly),
-        max_hours_per_day: Math.round(daily),
-      });
+      const [savedLimits] = await Promise.all([
+        updateEmployeeWorkLimits(selectedEmployee.id, {
+          max_hours_per_week: Math.round(weekly),
+          max_hours_per_day: Math.round(daily),
+        }),
+        updateEmployeePosition(selectedEmployee.id, {
+          position_id: selectedEmployeeDetails.position_id
+            ? Number(selectedEmployeeDetails.position_id)
+            : null,
+        }),
+      ]);
 
-      setSelectedEmployeeWorkLimits(saved);
+      setSelectedEmployeeWorkLimits(savedLimits);
       setEmployees((currentEmployees) =>
         currentEmployees.map((employee) => (
           String(employee.id) === String(selectedEmployee.id)
-            ? { ...employee, ...saved }
+            ? { ...employee, ...savedLimits }
             : employee
         ))
       );
-      markSaved(EMPLOYEE_WORK_LIMITS_SCOPE);
-      setSuccessMessage(t.workLimitsSaved);
-    } catch (error) {
-      setErrorMessage(getFriendlyError(error, t.workLimitsError));
-    } finally {
-      setIsSubmitting(false);
-    }
-  };
-
-  const handleAssignDetails = async () => {
-    if (!selectedEmployee) return;
-
-    clearMessages();
-    setIsSubmitting(true);
-
-    try {
-      await updateEmployeePosition(selectedEmployee.id, {
-        position_id: selectedEmployeeDetails.position_id
-          ? Number(selectedEmployeeDetails.position_id)
-          : null,
-      });
-
       await reloadEmployees(selectedEmployee.id);
       bumpBranchAssignments();
       markSaved(EMPLOYEE_POSITION_SCOPE);
+      markSaved(EMPLOYEE_WORK_LIMITS_SCOPE);
       setSuccessMessage(t.assignmentsSaved);
     } catch (error) {
       setErrorMessage(getFriendlyError(error, t.assignmentsError));
@@ -1890,18 +1876,6 @@ export default function EmployeesTab({ language, userRole, user }) {
                   </div>
                 </div>
 
-                <button
-                  type="button"
-                  onClick={handleAssignDetails}
-                  style={{
-                    ...styles.primaryButton,
-                    ...mobileStyles?.primaryButton,
-                    ...(r.isMobile ? r.fullWidth : {}),
-                  }}
-                >
-                  {t.save}
-                </button>
-
                 <div style={{
                   ...styles.innerSection,
                   ...mobileStyles?.innerSection,
@@ -1969,7 +1943,7 @@ export default function EmployeesTab({ language, userRole, user }) {
 
                   <button
                     type="button"
-                    onClick={handleSaveWorkLimits}
+                    onClick={handleSaveEmployeeDetails}
                     style={{
                       ...styles.primaryButton,
                       ...mobileStyles?.primaryButton,

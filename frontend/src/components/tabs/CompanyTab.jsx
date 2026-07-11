@@ -15,6 +15,7 @@ import {
   listBranches,
   listEmployeeRequests,
   listManagerRequests,
+  listCompanyManagers,
   previewInviteCode,
   regenerateInviteCode,
 } from '../../services/companyService';
@@ -23,6 +24,7 @@ import { useUserBranches } from '../../hooks/useUserBranches';
 import { removeBranchFromAllStoredAssignments } from '../../utils/employeeBranches';
 import { useTabResponsive } from '../../utils/tabResponsive';
 import { getEmployeePositionLabel, getPositionLabel } from '../../utils/employeeDisplay';
+import { getManagerInitials, normalizeManagerList, sortCompanyManagers } from '../../utils/managerDisplay';
 import { usePositionTitleRevision } from '../../hooks/usePositionTitleRevision';
 import { useUnsavedChanges } from '../../context/useUnsavedChanges';
 
@@ -108,6 +110,7 @@ export default function CompanyTab({ language, userRole, user }) {
   const [companyName, setCompanyName] = useState('');
   const [employeeRequests, setEmployeeRequests] = useState([]);
   const [managerRequests, setManagerRequests] = useState([]);
+  const [companyManagers, setCompanyManagers] = useState([]);
 
   const [errorMessage, setErrorMessage] = useState('');
   const [successMessage, setSuccessMessage] = useState('');
@@ -150,6 +153,13 @@ export default function CompanyTab({ language, userRole, user }) {
       managerRequests: 'Заявки менеджеров',
       managerRequestsHint: 'Примите или отклоните заявки других менеджеров на вступление в компанию.',
       noManagerRequests: 'Нет ожидающих заявок менеджеров.',
+      companyManagers: 'Менеджеры компании',
+      companyManagersHint: 'Активные менеджеры с доступом к управлению компанией.',
+      noCompanyManagers: 'Пока нет других активных менеджеров.',
+      managerRoleOwner: 'Владелец',
+      managerRoleManager: 'Менеджер',
+      managerYou: 'Вы',
+      email: 'Email',
       employeeInviteHint: 'Один код для сотрудников и других менеджеров.',
       previewInvite: 'Проверить код',
       joinCompany: 'Присоединиться',
@@ -234,6 +244,13 @@ export default function CompanyTab({ language, userRole, user }) {
       managerRequests: 'Manager requests',
       managerRequestsHint: 'Approve or decline requests from other managers to join your company.',
       noManagerRequests: 'No pending manager requests.',
+      companyManagers: 'Company managers',
+      companyManagersHint: 'Active managers with access to manage this company.',
+      noCompanyManagers: 'No other active managers yet.',
+      managerRoleOwner: 'Owner',
+      managerRoleManager: 'Manager',
+      managerYou: 'You',
+      email: 'Email',
       employeeInviteHint: 'One invite code for employees and other managers.',
       previewInvite: 'Preview invite',
       joinCompany: 'Join company',
@@ -351,6 +368,20 @@ export default function CompanyTab({ language, userRole, user }) {
     }
   };
 
+  const loadCompanyManagers = async () => {
+    if (!isManager || !currentCompanyId || isPendingManager) {
+      setCompanyManagers([]);
+      return;
+    }
+
+    try {
+      const data = await listCompanyManagers();
+      setCompanyManagers(sortCompanyManagers(normalizeManagerList(data)));
+    } catch {
+      setCompanyManagers([]);
+    }
+  };
+
   useEffect(() => {
     if (!isManager || !currentCompanyId) {
       setBranches([]);
@@ -367,6 +398,10 @@ export default function CompanyTab({ language, userRole, user }) {
   useEffect(() => {
     void loadManagerRequests();
   }, [isManager, currentCompanyId]);
+
+  useEffect(() => {
+    void loadCompanyManagers();
+  }, [isManager, currentCompanyId, isPendingManager]);
 
   const handlePreview = async () => {
     if (!inviteCode.trim()) {
@@ -600,7 +635,7 @@ export default function CompanyTab({ language, userRole, user }) {
 
     try {
       await acceptManagerRequest(requestId);
-      await loadManagerRequests();
+      await Promise.all([loadManagerRequests(), loadCompanyManagers()]);
       setSuccessMessage(t.requestAccepted);
     } catch (error) {
       setErrorMessage(extractApiErrorMessage(error, t.requestActionError, language));
@@ -662,7 +697,7 @@ export default function CompanyTab({ language, userRole, user }) {
           background: 'transparent',
           border: 'none',
           boxShadow: 'none',
-          ...(r.isMobile ? {} : styles.desktopScaleShell),
+          ...(r.isMobile ? {} : {}),
         }}
       >
         {(errorMessage || successMessage) && (
@@ -824,6 +859,69 @@ export default function CompanyTab({ language, userRole, user }) {
                 </div>
               </div>
             </section>
+
+            {!isPendingManager && (
+              <section style={{
+                ...styles.managersCard,
+                gridColumn: r.isMobile ? 'auto' : '1 / -1',
+              }}>
+                <div style={styles.managersHeader}>
+                  <div>
+                    <h3 style={styles.managersSectionTitle}>{t.companyManagers}</h3>
+                    <p style={styles.managersHint}>{t.companyManagersHint}</p>
+                  </div>
+                  {companyManagers.length > 0 ? (
+                    <span style={styles.managersCountBadge}>{companyManagers.length}</span>
+                  ) : null}
+                </div>
+
+                {companyManagers.length === 0 ? (
+                  <div style={styles.managersEmpty}>{t.noCompanyManagers}</div>
+                ) : (
+                  <div style={{
+                    ...styles.managersGrid,
+                    gridTemplateColumns: r.isMobile
+                      ? '1fr'
+                      : 'repeat(auto-fill, minmax(280px, 1fr))',
+                  }}>
+                    {companyManagers.map((manager) => {
+                      const isSelf = Number(manager.user_id) === Number(user?.id);
+                      const managerName = manager.full_name || manager.email || t.empty;
+                      const roleLabel = manager.manager_role === 'owner'
+                        ? t.managerRoleOwner
+                        : t.managerRoleManager;
+
+                      return (
+                        <div key={manager.id ?? manager.user_id ?? manager.email} style={styles.managerCard}>
+                          <div style={styles.managerCardHeader}>
+                            <div style={styles.managerAvatar}>{getManagerInitials(managerName)}</div>
+                            <div style={styles.managerCardMain}>
+                              <div style={styles.managerNameRow}>
+                                <strong style={styles.managerCardName}>{managerName}</strong>
+                                {isSelf ? (
+                                  <span style={styles.managerYouBadge}>{t.managerYou}</span>
+                                ) : null}
+                              </div>
+                              <span style={{
+                                ...styles.managerRoleBadge,
+                                ...(manager.manager_role === 'owner' ? styles.managerRoleBadgeOwner : {}),
+                              }}
+                              >
+                                {roleLabel}
+                              </span>
+                            </div>
+                          </div>
+                          <div style={styles.managerEmailBox}>
+                            <span style={styles.managerEmailLabel}>{t.email}</span>
+                            <span style={styles.managerEmailValue}>{manager.email || t.empty}</span>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </section>
+            )}
 
             <section style={{
               ...styles.requestsCard,
@@ -1179,25 +1277,27 @@ const styles = {
     height: '100%',
     boxSizing: 'border-box',
     padding: '16px 24px 18px',
-    overflow: 'hidden',
+    overflowX: 'hidden',
+    overflowY: 'auto',
     background: '#f4faff',
   },
 
   desktopViewportPage: {
     height: 'calc(100dvh - 96px)',
-    overflow: 'hidden',
+    overflowX: 'hidden',
+    overflowY: 'auto',
   },
 
   shell: {
     width: 'min(100%, 1480px)',
-    height: '100%',
+    height: 'auto',
+    minHeight: '100%',
     margin: '0 auto',
     boxSizing: 'border-box',
     display: 'flex',
     flexDirection: 'column',
     gap: '14px',
-    minHeight: 0,
-    overflow: 'hidden',
+    overflow: 'visible',
     position: 'relative',
   },
 
@@ -1209,14 +1309,13 @@ const styles = {
   },
 
   managerGrid: {
-    flex: '1 1 auto',
-    minHeight: 0,
+    flex: '0 0 auto',
     width: '100%',
     display: 'grid',
     gridTemplateColumns: 'minmax(0, 1fr) minmax(0, 1fr)',
-    gridTemplateRows: 'auto minmax(0, 1fr)',
+    gridAutoRows: 'auto',
     gap: '14px',
-    alignItems: 'stretch',
+    alignContent: 'start',
   },
 
   grid: {
@@ -1277,6 +1376,153 @@ const styles = {
     flexDirection: 'column',
     gap: '12px',
     overflow: 'hidden',
+  },
+
+  managersCard: {
+    boxSizing: 'border-box',
+    width: '100%',
+    minWidth: 0,
+    padding: '24px',
+    borderRadius: '16px',
+    background: '#ffffff',
+    border: '1px solid #dee7e7',
+    boxShadow: '0 12px 30px rgba(0, 38, 66, 0.04)',
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '18px',
+    overflow: 'visible',
+    flexShrink: 0,
+  },
+
+  managersHeader: {
+    display: 'flex',
+    alignItems: 'flex-start',
+    justifyContent: 'space-between',
+    gap: '16px',
+    paddingBottom: '14px',
+    borderBottom: '1px solid #dee7e7',
+  },
+
+  managersSectionTitle: {
+    margin: 0,
+    color: '#002642',
+    fontSize: '18px',
+    fontWeight: '900',
+    letterSpacing: 0,
+    textAlign: 'left',
+  },
+
+  managersHint: {
+    margin: '6px 0 0',
+    color: '#4f646f',
+    fontSize: '14px',
+    lineHeight: 1.45,
+    textAlign: 'left',
+  },
+
+  managersCountBadge: {
+    display: 'inline-flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    minWidth: '32px',
+    height: '32px',
+    padding: '0 10px',
+    borderRadius: '999px',
+    background: '#e0ecff',
+    color: '#1e3a5f',
+    fontSize: '14px',
+    fontWeight: '800',
+    flexShrink: 0,
+  },
+
+  managersGrid: {
+    display: 'grid',
+    gap: '16px',
+  },
+
+  managersEmpty: {
+    minHeight: '140px',
+    borderRadius: '16px',
+    background: '#f8fbff',
+    border: '1px dashed #cfdde8',
+    color: '#4f646f',
+    fontSize: '15px',
+    fontWeight: '750',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    textAlign: 'center',
+    padding: '24px',
+  },
+
+  managerCard: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '14px',
+    padding: '18px 20px',
+    borderRadius: '16px',
+    background: '#f8fbff',
+    border: '1px solid #dee7e7',
+    minHeight: '148px',
+  },
+
+  managerCardHeader: {
+    display: 'flex',
+    alignItems: 'flex-start',
+    gap: '14px',
+  },
+
+  managerAvatar: {
+    width: '48px',
+    height: '48px',
+    borderRadius: '14px',
+    background: '#1e3a5f',
+    color: '#ffffff',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    fontSize: '16px',
+    fontWeight: '800',
+    flexShrink: 0,
+  },
+
+  managerCardMain: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '8px',
+    minWidth: 0,
+  },
+
+  managerCardName: {
+    color: '#002642',
+    fontSize: '16px',
+    fontWeight: '850',
+    lineHeight: 1.3,
+  },
+
+  managerEmailBox: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '4px',
+    padding: '12px 14px',
+    borderRadius: '12px',
+    background: '#ffffff',
+    border: '1px solid #e8eef2',
+  },
+
+  managerEmailLabel: {
+    color: '#64748b',
+    fontSize: '11px',
+    fontWeight: '700',
+    letterSpacing: '0.04em',
+    textTransform: 'uppercase',
+  },
+
+  managerEmailValue: {
+    color: '#002642',
+    fontSize: '14px',
+    fontWeight: '650',
+    wordBreak: 'break-word',
   },
 
   cardHeaderCompact: {
@@ -1561,6 +1807,41 @@ const styles = {
   requestMeta: {
     color: '#64748b',
     fontSize: '12px',
+  },
+
+  managerNameRow: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '8px',
+    flexWrap: 'wrap',
+  },
+
+  managerYouBadge: {
+    display: 'inline-flex',
+    alignItems: 'center',
+    padding: '2px 8px',
+    borderRadius: '999px',
+    background: '#e0ecff',
+    color: '#1e3a5f',
+    fontSize: '11px',
+    fontWeight: '800',
+  },
+
+  managerRoleBadge: {
+    display: 'inline-flex',
+    alignItems: 'center',
+    padding: '6px 10px',
+    borderRadius: '999px',
+    background: '#eef3f6',
+    color: '#4f646f',
+    fontSize: '12px',
+    fontWeight: '800',
+    flexShrink: 0,
+  },
+
+  managerRoleBadgeOwner: {
+    background: '#e8f7ee',
+    color: '#1f7a3f',
   },
 
   requestActions: {

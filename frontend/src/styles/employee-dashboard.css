@@ -426,10 +426,68 @@
   gap: 24px;
 }
 
-@media (min-width: 1024px) {
-  .ed-company-grid {
-    grid-template-columns: 2fr 1fr;
+.ed-company-hero-card--full {
+  grid-column: 1 / -1;
+}
+
+.ed-managers-section {
+  padding: 24px;
+  overflow: visible;
+}
+
+.ed-managers-section-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 20px;
+  padding-bottom: 14px;
+  border-bottom: 1px solid var(--ed-border);
+}
+
+.ed-managers-section-title {
+  margin: 0;
+  font-size: 1.125rem;
+  font-weight: 700;
+  color: var(--ed-foreground);
+}
+
+.ed-managers-section-hint {
+  margin: 6px 0 0;
+  font-size: 0.875rem;
+  color: var(--ed-muted);
+  line-height: 1.5;
+}
+
+.ed-managers-count {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 32px;
+  height: 32px;
+  padding: 0 10px;
+  border-radius: 999px;
+  background: rgba(30, 58, 95, 0.1);
+  color: var(--ed-primary);
+  font-size: 0.875rem;
+  font-weight: 700;
+  flex-shrink: 0;
+}
+
+.ed-managers-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 16px;
+}
+
+@media (min-width: 768px) {
+  .ed-managers-grid {
+    grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
   }
+}
+
+.ed-profile-row--compact {
+  margin-bottom: 0;
 }
 
 .ed-company-hero-card {
@@ -544,12 +602,12 @@
 }
 
 .ed-side-card {
-  padding: 20px;
+  padding: 28px;
 }
 
 .ed-side-title {
-  margin: 0 0 16px;
-  font-size: 0.75rem;
+  margin: 0 0 20px;
+  font-size: 0.875rem;
   font-weight: 600;
   color: var(--ed-muted);
   text-transform: uppercase;
@@ -561,6 +619,50 @@
   font-size: 0.875rem;
   color: var(--ed-muted);
   line-height: 1.55;
+}
+
+.ed-error-inline {
+  color: #b42318;
+}
+
+.ed-manager-list {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.ed-manager-card {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 18px;
+  border-radius: 14px;
+  background: var(--ed-muted-bg);
+  border: 1px solid var(--ed-border);
+}
+
+.ed-manager-card:last-child {
+  padding-bottom: 18px;
+  border-bottom: 1px solid var(--ed-border);
+}
+
+.ed-manager-role-badge {
+  display: inline-flex;
+  align-items: center;
+  margin-top: 4px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: var(--ed-muted-bg);
+  color: var(--ed-muted);
+  font-size: 0.6875rem;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+}
+
+.ed-manager-role-badge.is-owner {
+  background: #e8f7ee;
+  color: #1f7a3f;
 }
 
 .ed-join-card {
