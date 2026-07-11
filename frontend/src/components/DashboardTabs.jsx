@@ -112,7 +112,7 @@ export default function DashboardTabs({ userRole, language, title, rightSlot }) 
       employees: 'Сотрудники',
       shifts: 'Смены',
       schedule: 'Расписание',
-      reports: 'Отчеты',
+      reports: 'Отчёты',
       manager: 'Менеджер',
       employee: 'Сотрудник',
       openProfile: 'Открыть профиль',

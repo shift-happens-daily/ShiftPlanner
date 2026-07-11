@@ -28,12 +28,12 @@ import {
   getPositionLabel,
   normalizeAvailabilityStatus,
 } from '../../utils/employeeDisplay';
+import { CHECK_MARK, CLOSE_MARK } from '../../utils/textSymbols';
 import WorkingHoursPanel from '../requirements/WorkingHoursPanel';
 import RequirementTimeFields from '../requirements/RequirementTimeFields';
 import {
   clampRequirementTimes,
   dateKeyToWeekday,
-  fetchWorkingHoursStore,
   formatWorkingHoursRange,
   getWorkingHoursForWeekday,
   getWorkingHoursForWeekdays,
@@ -833,6 +833,7 @@ export default function ShiftsTab({ language, userRole, user }) {
   const [positions, setPositions] = useState([]);
   const [branches, setBranches] = useState([]);
   const [workingHoursRevision, setWorkingHoursRevision] = useState(0);
+  const [workingHoursBranchId, setWorkingHoursBranchId] = useState('');
   const [requirements, setRequirements] = useState([]);
   const [singleRequirement, setSingleRequirement] = useState(defaultSingleRequirement);
   const [bulkRequirement, setBulkRequirement] = useState(defaultBulkRequirement);
@@ -1139,42 +1140,6 @@ export default function ShiftsTab({ language, userRole, user }) {
     );
   }, [bulkRequirement.branch_id, bulkRequirement.weekdays, companyId, workingHoursRevision]);
 
-  const activeWorkingHoursBranchId =
-    Number(singleRequirement.branch_id)
-    || Number(bulkRequirement.branch_id)
-    || Number(filterForm.branch_id)
-    || null;
-
-  const activeBranchWorkingHours = useMemo(() => {
-    if (!activeWorkingHoursBranchId) return null;
-    const branch = branches.find((item) => Number(item.id) === activeWorkingHoursBranchId);
-    return branch?.working_hours_by_weekday || null;
-  }, [activeWorkingHoursBranchId, branches]);
-
-  useEffect(() => {
-    if (!companyId || !activeWorkingHoursBranchId) return undefined;
-
-    if (activeBranchWorkingHours) {
-      setWorkingHoursStoreFromApi(companyId, activeWorkingHoursBranchId, activeBranchWorkingHours);
-      setWorkingHoursRevision((value) => value + 1);
-      return undefined;
-    }
-
-    let cancelled = false;
-
-    void fetchWorkingHoursStore(companyId, activeWorkingHoursBranchId)
-      .then(() => {
-        if (!cancelled) {
-          setWorkingHoursRevision((value) => value + 1);
-        }
-      })
-      .catch(() => {});
-
-    return () => {
-      cancelled = true;
-    };
-  }, [activeBranchWorkingHours, activeWorkingHoursBranchId, companyId]);
-
   useEffect(() => {
     if (!singleWorkingHours) return;
 
@@ -1226,6 +1191,7 @@ export default function ShiftsTab({ language, userRole, user }) {
         const defaultBranchId = String(normalized[0]?.id || '');
         if (!defaultBranchId) return;
 
+        setWorkingHoursBranchId((prev) => prev || defaultBranchId);
         setSingleRequirement((prev) => ({
           ...prev,
           branch_id: prev.branch_id || defaultBranchId,
@@ -1862,7 +1828,7 @@ export default function ShiftsTab({ language, userRole, user }) {
       <div style={styles.toastLayer}>
         <div style={errorMessage ? styles.toastError : styles.toastSuccess}>
           <span style={errorMessage ? styles.toastIconError : styles.toastIconSuccess}>
-            {errorMessage ? '!' : '✓'}
+            {errorMessage ? '!' : CHECK_MARK}
           </span>
           <span style={styles.toastText}>{errorMessage || successMessage}</span>
           <button
@@ -1871,7 +1837,7 @@ export default function ShiftsTab({ language, userRole, user }) {
             style={styles.toastClose}
             aria-label="Close notification"
           >
-            ×
+            {CLOSE_MARK}
           </button>
         </div>
       </div>
@@ -1997,8 +1963,9 @@ export default function ShiftsTab({ language, userRole, user }) {
               <WorkingHoursPanel
                 language={language}
                 companyId={companyId}
-                branchId={activeWorkingHoursBranchId}
-                branchWorkingHours={activeBranchWorkingHours}
+                branches={branches}
+                branchId={workingHoursBranchId ? Number(workingHoursBranchId) : null}
+                onBranchChange={(id) => setWorkingHoursBranchId(id ? String(id) : '')}
                 revision={workingHoursRevision}
                 onChange={() => setWorkingHoursRevision((value) => value + 1)}
                 onError={(message) => setErrorMessage(message)}

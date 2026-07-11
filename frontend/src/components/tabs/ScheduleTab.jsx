@@ -24,6 +24,7 @@ import { usePositionTitleRevision } from '../../hooks/usePositionTitleRevision';
 import { useUnsavedChanges } from '../../context/useUnsavedChanges';
 import { useAuth } from '../../context/useAuth';
 import '../../styles/schedule-tab.css';
+import { CHECK_MARK } from '../../utils/textSymbols';
 
 const EXCHANGE_NOTE_SCOPE = 'schedule-exchange-note';
 
@@ -58,7 +59,9 @@ function getShiftDurationLabel(shift, language) {
   const hours = Math.floor(duration / 60);
   const minutes = duration % 60;
   if (language === 'ru') {
-    return minutes ? `${hours} С‡ ${minutes} РјРёРЅ` : `${hours} С‡`;
+    const hoursUnit = '\u0447';
+    const minutesUnit = '\u043c\u0438\u043d';
+    return minutes ? `${hours} ${hoursUnit} ${minutes} ${minutesUnit}` : `${hours} ${hoursUnit}`;
   }
   return minutes ? `${hours}h ${minutes}m` : `${hours}h`;
 }
@@ -940,7 +943,7 @@ export default function ScheduleTab({ language, userRole }) {
       <div style={styles.toastLayer}>
         <div style={errorMessage ? styles.toastError : styles.toastSuccess}>
           <span style={errorMessage ? styles.toastIconError : styles.toastIconSuccess}>
-            {errorMessage ? '!' : 'вњ“'}
+            {errorMessage ? '!' : CHECK_MARK}
           </span>
 
           <span style={styles.toastText}>{errorMessage || successMessage}</span>
