@@ -19,6 +19,7 @@ from app.api.responses import (
 )
 from app.database import get_db
 from app.schemas.auth import CurrentUserResponse, UserRead
+from app.schemas.company import ManagerRequestRead
 from app.schemas.employee import (
     AbsenceCreate,
     AbsenceRead,
@@ -143,6 +144,19 @@ def leave_company(
 ) -> Response:
     employee_service.leave_company(db, current_user)
     return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+@router.get(
+    "/me/company-managers",
+    response_model=list[ManagerRequestRead],
+    responses={**UNAUTHORIZED_RESPONSE, **FORBIDDEN_RESPONSE, **BAD_REQUEST_RESPONSE},
+)
+def list_my_company_managers(
+    current_user: UserRead = Depends(require_role("employee")),
+    db: Session = Depends(get_db),
+) -> list[ManagerRequestRead]:
+    ensure_employee_user(current_user)
+    return company_service.list_employee_company_managers(db, current_user)
 
 
 @router.patch(

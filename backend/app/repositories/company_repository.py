@@ -165,6 +165,19 @@ def list_pending_manager_memberships(db: Session, company_id: int) -> list[Compa
     )
 
 
+def list_active_manager_memberships(db: Session, company_id: int) -> list[CompanyManager]:
+    return list(
+        db.scalars(
+            select(CompanyManager)
+            .where(
+                CompanyManager.company_id == company_id,
+                CompanyManager.membership_status == "active",
+            )
+            .order_by(CompanyManager.id)
+        )
+    )
+
+
 def manager_is_owner(db: Session, *, company_id: int, user_id: int) -> bool:
     membership_id = db.scalar(
         select(CompanyManager.id)
