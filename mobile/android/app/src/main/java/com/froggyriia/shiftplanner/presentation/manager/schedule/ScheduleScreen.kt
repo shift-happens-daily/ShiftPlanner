@@ -115,6 +115,7 @@ fun ScheduleScreen(
     val context = LocalContext.current
     val dateFmt = remember { SimpleDateFormat("yyyy-MM-dd", Locale.US) }
     var showGenerateSheet by rememberSaveable { mutableStateOf(false) }
+    var showDeleteScheduleDialog by remember { mutableStateOf(false) }
     var shiftDraft by remember { mutableStateOf<ShiftDraft?>(null) }
     // When true: edit sheet is hidden, assign sheet is open; on selection we restore the draft
     var draftWaitingForEmployee by remember { mutableStateOf(false) }
@@ -144,6 +145,10 @@ fun ScheduleScreen(
                 actions = {
                     val schedule = state.schedule
                     if (schedule != null) {
+                        IconButton(onClick = { showDeleteScheduleDialog = true }) {
+                            Icon(Icons.Default.Delete, contentDescription = "Удалить расписание",
+                                tint = MaterialTheme.colorScheme.error)
+                        }
                         IconButton(
                             onClick = {
                                 val csv = viewModel.buildScheduleCsv()
@@ -157,7 +162,7 @@ fun ScheduleScreen(
                             if (state.isPublishing) {
                                 CircularProgressIndicator(modifier = Modifier.padding(end = 12.dp))
                             } else {
-                                TextButton(onClick = viewModel::publishSchedule) { Text("Publish") }
+                                TextButton(onClick = viewModel::publishSchedule) { Text("Опубликовать") }
                             }
                         }
                     }
@@ -329,6 +334,34 @@ fun ScheduleScreen(
                 ) { Text("Delete") }
             },
             dismissButton = { TextButton(onClick = { deleteShiftTarget = null }) { Text("Cancel") } }
+        )
+    }
+
+    // ── Delete schedule confirm ───────────────────────────────────────────────
+    if (showDeleteScheduleDialog) {
+        val schedule = state.schedule
+        val isDraft = schedule?.status == AppScheduleStatus.DRAFT
+        AlertDialog(
+            onDismissRequest = { showDeleteScheduleDialog = false },
+            title = { Text("Удалить расписание?") },
+            text = {
+                Text(
+                    if (isDraft) "Черновик расписания будет удалён без возможности восстановления."
+                    else "Опубликованное расписание будет удалено. Это действие необратимо."
+                )
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        showDeleteScheduleDialog = false
+                        viewModel.deleteSchedule {}
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
+                ) { Text("Удалить") }
+            },
+            dismissButton = {
+                TextButton(onClick = { showDeleteScheduleDialog = false }) { Text("Отмена") }
+            }
         )
     }
 }

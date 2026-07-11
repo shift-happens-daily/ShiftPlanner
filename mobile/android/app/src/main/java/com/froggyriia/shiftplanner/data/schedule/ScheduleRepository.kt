@@ -28,6 +28,7 @@ interface ScheduleRepository {
         shiftId: Int,
         mutation: ScheduleShiftMutation
     ): AppSchedule
+    suspend fun deleteSchedule(scheduleId: Int)
     suspend fun deleteShift(scheduleId: Int, shiftId: Int): AppSchedule
     suspend fun updateScheduleRequirement(
         scheduleId: Int,

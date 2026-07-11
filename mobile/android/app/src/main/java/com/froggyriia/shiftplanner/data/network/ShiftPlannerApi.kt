@@ -64,6 +64,9 @@ interface ShiftPlannerApi {
     @POST("companies/join")
     suspend fun joinCompany(@Body request: CompanyJoinRequestDto): CurrentUserResponseDto
 
+    @POST("companies/me/link-user")
+    suspend fun linkUserToCompany(@Body request: LinkUserRequestDto): LinkedEmployeeResponseDto
+
     @GET("companies/me/manager-requests")
     suspend fun getManagerRequests(): List<ManagerRequestDto>
 
@@ -164,6 +167,9 @@ interface ShiftPlannerApi {
 
     @POST("schedule/{id}/publish")
     suspend fun publishSchedule(@Path("id") id: Int): ScheduleResponseDto
+
+    @DELETE("schedule/{id}")
+    suspend fun deleteSchedule(@Path("id") id: Int): Response<Unit>
 
     @GET("schedule/my")
     suspend fun getMySchedule(): List<ScheduleShiftResponseDto>

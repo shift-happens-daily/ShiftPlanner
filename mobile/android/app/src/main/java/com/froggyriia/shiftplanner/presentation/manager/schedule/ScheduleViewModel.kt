@@ -157,6 +157,22 @@ class ScheduleViewModel(
         }
     }
 
+    fun deleteSchedule(onDone: () -> Unit) {
+        val id = _uiState.value.schedule?.id ?: return
+        viewModelScope.launch {
+            try {
+                repository.deleteSchedule(id)
+                _uiState.value = _uiState.value.copy(
+                    schedule = null,
+                    statusMessage = "Расписание удалено."
+                )
+                onDone()
+            } catch (e: Exception) {
+                _uiState.value = _uiState.value.copy(errorMessage = e.message)
+            }
+        }
+    }
+
     // ── Shift CRUD ────────────────────────────────────────────────────────────
 
     fun createShift(draft: ShiftDraft, onDone: (Boolean) -> Unit) {

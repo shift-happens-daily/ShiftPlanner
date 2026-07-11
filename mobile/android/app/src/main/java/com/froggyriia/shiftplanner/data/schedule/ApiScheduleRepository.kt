@@ -136,6 +136,11 @@ class ApiScheduleRepository(
         ).toDomain()
     }
 
+    override suspend fun deleteSchedule(scheduleId: Int) = wrap {
+        apiClient.api.deleteSchedule(scheduleId)
+        Unit
+    }
+
     override suspend fun deleteShift(scheduleId: Int, shiftId: Int): AppSchedule = wrap {
         apiClient.api.deleteShift(scheduleId = scheduleId, shiftId = shiftId)
         fetchSchedule(scheduleId)
