@@ -4,6 +4,7 @@ import com.google.gson.annotations.SerializedName
 
 data class AppUser(
     val id: String,
+    val publicId: String = "",
     val email: String,
     val name: String,
     val role: UserRole,

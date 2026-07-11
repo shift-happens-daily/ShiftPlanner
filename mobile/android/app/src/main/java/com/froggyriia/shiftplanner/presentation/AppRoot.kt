@@ -429,7 +429,7 @@ private fun ProfileScreen(
                 Modifier.fillMaxWidth().height(IntrinsicSize.Max),
                 horizontalArrangement = Arrangement.spacedBy(12.dp)
             ) {
-                ProfileInfoCard(label = "User ID", value = user.id, monospace = true, modifier = Modifier.weight(1f).fillMaxHeight())
+                ProfileInfoCard(label = "User ID", value = user.publicId.ifEmpty { user.id }, monospace = true, modifier = Modifier.weight(1f).fillMaxHeight())
                 ProfileInfoCard(label = "Role", value = user.role.title, modifier = Modifier.weight(1f).fillMaxHeight())
             }
             user.company?.let { company ->
