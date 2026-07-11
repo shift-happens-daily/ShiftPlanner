@@ -3,8 +3,10 @@ package com.froggyriia.shiftplanner.presentation
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -104,7 +106,8 @@ fun AppRoot(
             user = currentUser,
             appContainer = appContainer,
             onUserUpdated = authViewModel::updateUser,
-            onLogout = authViewModel::logout
+            onLogout = authViewModel::logout,
+            onDeleteAccount = authViewModel::deleteAccount
         )
         UserRole.EMPLOYEE -> EmployeeShell(
             user = currentUser,
@@ -132,7 +135,8 @@ private fun ManagerShell(
     user: AppUser,
     appContainer: AppContainer,
     onUserUpdated: (AppUser) -> Unit,
-    onLogout: () -> Unit
+    onLogout: () -> Unit,
+    onDeleteAccount: () -> Unit
 ) {
     var selectedTab by rememberSaveable { mutableStateOf(ManagerTab.COMPANY) }
 
@@ -226,7 +230,8 @@ private fun ManagerShell(
                 }
                 ManagerTab.PROFILE -> ProfileScreen(
                     user = user,
-                    onLogout = onLogout
+                    onLogout = onLogout,
+                    onDeleteAccount = onDeleteAccount
                 )
             }
         }
@@ -413,13 +418,19 @@ private fun ProfileScreen(
             Spacer(Modifier.height(4.dp))
 
             // ── Info cards ────────────────────────────────────────────────────
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                ProfileInfoCard(label = "Full name", value = user.name, modifier = Modifier.weight(1f))
-                ProfileInfoCard(label = "Email", value = user.email, modifier = Modifier.weight(1f))
+            Row(
+                Modifier.fillMaxWidth().height(IntrinsicSize.Max),
+                horizontalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                ProfileInfoCard(label = "Full name", value = user.name, modifier = Modifier.weight(1f).fillMaxHeight())
+                ProfileInfoCard(label = "Email", value = user.email, modifier = Modifier.weight(1f).fillMaxHeight())
             }
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                ProfileInfoCard(label = "User ID", value = user.id, monospace = true, modifier = Modifier.weight(1f))
-                ProfileInfoCard(label = "Role", value = user.role.title, modifier = Modifier.weight(1f))
+            Row(
+                Modifier.fillMaxWidth().height(IntrinsicSize.Max),
+                horizontalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                ProfileInfoCard(label = "User ID", value = user.id, monospace = true, modifier = Modifier.weight(1f).fillMaxHeight())
+                ProfileInfoCard(label = "Role", value = user.role.title, modifier = Modifier.weight(1f).fillMaxHeight())
             }
             user.company?.let { company ->
                 ProfileInfoCard(label = "Company", value = company.name, modifier = Modifier.fillMaxWidth())
@@ -563,9 +574,10 @@ private fun ProfileInfoCard(
         Column(
             modifier = Modifier
                 .fillMaxWidth()
+                .fillMaxHeight()
                 .padding(horizontal = 16.dp, vertical = 14.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.spacedBy(4.dp)
+            verticalArrangement = Arrangement.Center
         ) {
             Text(
                 label,
