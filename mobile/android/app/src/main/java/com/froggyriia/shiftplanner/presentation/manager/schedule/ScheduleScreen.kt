@@ -98,8 +98,8 @@ import java.util.Locale
 private val DAY_LABELS = listOf("Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun")
 
 // Calendar layout constants
-private val HOUR_HEIGHT = 60.dp
-private val TIME_COL_WIDTH = 40.dp
+private val HOUR_HEIGHT = 44.dp
+private val TIME_COL_WIDTH = 36.dp
 private val CAL_START_HOUR = 6
 private val CAL_END_HOUR = 23
 
@@ -514,26 +514,18 @@ private fun ScheduleListView(
         state.weekDates.forEachIndexed { index, date ->
             val shifts = viewModel.shiftsForDate(date)
             val unfilled = viewModel.unfilledForDate(date)
-            val isEmpty = shifts.isEmpty() && unfilled.isEmpty()
+            val itemCount = shifts.size + unfilled.size
+            // In draft show all days (need + button); published — skip empty
+            if (itemCount == 0 && !isDraft) return@forEachIndexed
 
             item(key = "header_$date") {
                 ScheduleDayHeader(
                     dayLabel = DAY_LABELS[index],
                     date = date,
+                    itemCount = itemCount,
                     showAddButton = isDraft,
                     onAddClick = { onAddShift(date) }
                 )
-            }
-
-            if (isEmpty) {
-                item(key = "empty_$date") {
-                    Text(
-                        "No shifts",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp)
-                    )
-                }
             }
 
             items(shifts, key = { "shift_${it.id}" }) { shift ->
@@ -576,23 +568,18 @@ private fun ScheduleCalendarView(
     val totalHours = CAL_END_HOUR - CAL_START_HOUR
     val totalHeight = HOUR_HEIGHT * totalHours
     val vertScroll = rememberScrollState()
-    val horzScroll = rememberScrollState()
     val dateFmt = remember { SimpleDateFormat("d", Locale.US) }
     val parseFmt = remember { SimpleDateFormat("yyyy-MM-dd", Locale.US) }
 
     Column(Modifier.fillMaxSize()) {
-        // Day headers — scroll together with content
-        Row(
-            Modifier
-                .fillMaxWidth()
-                .horizontalScroll(horzScroll)
-        ) {
+        // Day headers — all 7 days fit in screen width, no horizontal scroll
+        Row(Modifier.fillMaxWidth()) {
             Spacer(Modifier.width(TIME_COL_WIDTH))
             VerticalDivider(Modifier.height(40.dp))
             state.weekDates.forEachIndexed { i, date ->
                 val dayNum = runCatching { dateFmt.format(parseFmt.parse(date)!!) }.getOrDefault("?")
                 Column(
-                    Modifier.width(HOUR_HEIGHT), // reuse same unit for square-ish column
+                    Modifier.weight(1f),
                     horizontalAlignment = Alignment.CenterHorizontally
                 ) {
                     Text(
@@ -611,13 +598,8 @@ private fun ScheduleCalendarView(
 
         HorizontalDivider()
 
-        // Scrollable grid body
-        Row(
-            Modifier
-                .fillMaxSize()
-                .horizontalScroll(horzScroll)
-                .verticalScroll(vertScroll)
-        ) {
+        // Scrollable grid — vertical only, columns fill width
+        Row(Modifier.fillMaxWidth().verticalScroll(vertScroll)) {
             // Time labels
             Box(Modifier.width(TIME_COL_WIDTH).height(totalHeight)) {
                 for (h in CAL_START_HOUR until CAL_END_HOUR) {
@@ -634,30 +616,23 @@ private fun ScheduleCalendarView(
 
             VerticalDivider(Modifier.height(totalHeight))
 
-            // Day columns
+            // Day columns — weight(1f) distributes remaining width equally
             state.weekDates.forEach { date ->
                 val shifts = viewModel.shiftsForDate(date)
                 val unfilled = viewModel.unfilledForDate(date)
 
-                Box(
-                    Modifier
-                        .width(HOUR_HEIGHT) // square-ish column
-                        .height(totalHeight)
-                ) {
+                Box(Modifier.weight(1f).height(totalHeight)) {
                     // Hour grid lines
                     for (h in 0..totalHours) {
                         HorizontalDivider(
-                            Modifier
-                                .fillMaxWidth()
-                                .offset(y = HOUR_HEIGHT * h),
+                            Modifier.fillMaxWidth().offset(y = HOUR_HEIGHT * h),
                             color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f)
                         )
                     }
 
-                    // Assigned / unassigned shifts
                     shifts.forEach { shift ->
                         val topDp = HOUR_HEIGHT * (shift.startMinutes / 60f - CAL_START_HOUR)
-                        val heightDp = (HOUR_HEIGHT * (shift.endMinutes - shift.startMinutes) / 60f).coerceAtLeast(20.dp)
+                        val heightDp = (HOUR_HEIGHT * (shift.endMinutes - shift.startMinutes) / 60f).coerceAtLeast(16.dp)
                         CalendarShiftBlock(
                             shift = shift,
                             isDraft = isDraft,
@@ -671,10 +646,9 @@ private fun ScheduleCalendarView(
                         )
                     }
 
-                    // Unfilled requirements
                     unfilled.forEach { req ->
                         val topDp = HOUR_HEIGHT * (req.startMinutes / 60f - CAL_START_HOUR)
-                        val heightDp = (HOUR_HEIGHT * (req.endMinutes - req.startMinutes) / 60f).coerceAtLeast(20.dp)
+                        val heightDp = (HOUR_HEIGHT * (req.endMinutes - req.startMinutes) / 60f).coerceAtLeast(16.dp)
                         CalendarUnfilledBlock(
                             req = req,
                             isDraft = isDraft,
@@ -780,20 +754,30 @@ private fun CalendarUnfilledBlock(
 private fun ScheduleDayHeader(
     dayLabel: String,
     date: String,
+    itemCount: Int,
     showAddButton: Boolean,
     onAddClick: () -> Unit
 ) {
     val display = remember(date) {
         runCatching {
-            "$dayLabel, ${SimpleDateFormat("MMM d", Locale.US).format(SimpleDateFormat("yyyy-MM-dd", Locale.US).parse(date)!!)}"
+            "$dayLabel, ${SimpleDateFormat("d MMM", Locale("ru")).format(SimpleDateFormat("yyyy-MM-dd", Locale.US).parse(date)!!)}"
         }.getOrDefault(dayLabel)
     }
     Row(
-        Modifier.fillMaxWidth().padding(start = 16.dp, end = 4.dp, top = 12.dp, bottom = 2.dp),
+        Modifier.fillMaxWidth().padding(start = 16.dp, end = 8.dp, top = 16.dp, bottom = 4.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.SpaceBetween
     ) {
-        Text(display, style = MaterialTheme.typography.titleSmall)
+        Column {
+            Text(display, style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.primary)
+            if (itemCount > 0) {
+                Text(
+                    "$itemCount ${if (itemCount == 1) "смена" else "смен"}",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        }
         if (showAddButton) {
             IconButton(onClick = onAddClick) { Icon(Icons.Default.Add, "Add shift") }
         }
@@ -1213,22 +1197,28 @@ private fun saveScheduleCsv(context: Context, csv: String): String? {
         val timestamp = java.text.SimpleDateFormat("yyyyMMdd_HHmm", Locale.US)
             .format(java.util.Date())
         val fileName = "schedule_$timestamp.csv"
-        val resolver = context.contentResolver
-        val values = ContentValues().apply {
-            put(MediaStore.Downloads.DISPLAY_NAME, fileName)
-            put(MediaStore.Downloads.MIME_TYPE, "text/csv")
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            val resolver = context.contentResolver
+            val values = ContentValues().apply {
+                put(MediaStore.Downloads.DISPLAY_NAME, fileName)
+                put(MediaStore.Downloads.MIME_TYPE, "text/csv")
                 put(MediaStore.Downloads.IS_PENDING, 1)
             }
-        }
-        val uri = resolver.insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, values) ?: return null
-        resolver.openOutputStream(uri)?.use { it.write(csv.toByteArray()) }
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            val uri = resolver.insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, values) ?: return null
+            resolver.openOutputStream(uri)?.use { it.write(csv.toByteArray()) }
             values.clear()
             values.put(MediaStore.Downloads.IS_PENDING, 0)
             resolver.update(uri, values, null, null)
+            uri.toString()
+        } else {
+            @Suppress("DEPRECATION")
+            val downloadsDir = android.os.Environment.getExternalStoragePublicDirectory(
+                android.os.Environment.DIRECTORY_DOWNLOADS
+            )
+            val file = java.io.File(downloadsDir, fileName)
+            file.writeText(csv)
+            file.absolutePath
         }
-        uri.toString()
     } catch (_: Exception) { null }
 }
 
