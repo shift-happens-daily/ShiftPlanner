@@ -280,13 +280,13 @@ export default function DashboardTabs({ userRole, language, title, rightSlot }) 
               ...(isMobile ? styles.brandLogoMobile : {}),
             }}
           />
-          <h1 style={{
-            ...styles.brand,
-            ...(isMobile ? styles.brandMobile : {}),
-          }}
-          >
-            {title || 'ShiftPlanner'}
-          </h1>
+          {isMobile ? (
+            <span style={styles.brandSrOnly}>{title || 'ShiftPlanner'}</span>
+          ) : (
+            <h1 style={styles.brand}>
+              {title || 'ShiftPlanner'}
+            </h1>
+          )}
         </div>
 
         {!isMobile && (
@@ -401,7 +401,7 @@ const styles = {
   },
 
   brandWrapMobile: {
-    flex: '1 1 auto',
+    flex: '0 0 auto',
   },
 
   brandLogo: {
@@ -425,13 +425,16 @@ const styles = {
     whiteSpace: 'nowrap',
   },
 
-  brandMobile: {
-    fontSize: '18px',
+  brandSrOnly: {
+    position: 'absolute',
+    width: '1px',
+    height: '1px',
+    padding: 0,
+    margin: '-1px',
     overflow: 'hidden',
-    textOverflow: 'ellipsis',
+    clip: 'rect(0, 0, 0, 0)',
     whiteSpace: 'nowrap',
-    minWidth: 0,
-    flex: '1 1 auto',
+    border: 0,
   },
 
   tabsContainer: {

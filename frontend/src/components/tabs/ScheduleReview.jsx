@@ -23,6 +23,8 @@ import {
   resolveScheduleIdForDate,
   snapToMonday,
   assignRequirement,
+  listAvailableEmployees,
+  updateShift,
 } from '../../services/scheduleService';
 import { listBranches } from '../../services/companyService';
 import ManagerScheduleCalendar from '../schedule/ManagerScheduleCalendar';
@@ -839,6 +841,10 @@ function buildDayScheduleEntries(dateKey, displaySchedule, unfilledNotFoundRequi
     .map((shift) => ({
       key: `shift-${shift.id}`,
       kind: 'shift',
+      shiftId: shift.id,
+      positionId: shift.position_id,
+      date: formatDate(shift.date),
+      employeeId: shift.employee_id,
       sortTime: parseTimeToHours(shift.start_time),
       position: getShiftPositionTitle(shift),
       employee: shift.employee_name || '—',
@@ -1207,6 +1213,8 @@ export default function ScheduleReview({ language }) {
   const [activeVersion, setActiveVersion] = useState('draft');
   const [coverageByDate, setCoverageByDate] = useState({});
   const [assignEmployeeIds, setAssignEmployeeIds] = useState({});
+  const [reassignEmployeeIds, setReassignEmployeeIds] = useState({});
+  const [availableByShiftId, setAvailableByShiftId] = useState({});
   const [manualEmployees, setManualEmployees] = useState([]);
   const [manualEmployeesLoaded, setManualEmployeesLoaded] = useState(false);
   const [employeesLoaded, setEmployeesLoaded] = useState(false);
@@ -1281,6 +1289,11 @@ export default function ScheduleReview({ language }) {
       closeDetail: 'Закрыть',
       legendNoShift: 'Нет смен',
       calendarTitle: 'Расписание',
+      reassign: 'Переназначить',
+      unassign: 'Снять сотрудника',
+      shiftUpdated: 'Смена обновлена.',
+      shiftUpdateError: 'Не удалось обновить смену.',
+      loadEmployees: 'Показать доступных',
     },
     en: {
       title: 'Schedule',
@@ -1345,6 +1358,11 @@ export default function ScheduleReview({ language }) {
       closeDetail: 'Close',
       legendNoShift: 'No shift',
       calendarTitle: 'Schedule',
+      reassign: 'Reassign',
+      unassign: 'Remove employee',
+      shiftUpdated: 'Shift updated.',
+      shiftUpdateError: 'Failed to update shift.',
+      loadEmployees: 'Load available',
     },
   };
 
@@ -1846,6 +1864,76 @@ export default function ScheduleReview({ language }) {
     };
   }, [canEditDraft, language, schedule?.id, t.assignError, unfilledRequirements.length]);
 
+  const resolveShiftScheduleId = (entry) => (
+    resolveScheduleIdForDate(schedule, entry.date) || schedule?.id
+  );
+
+  const handleLoadAvailableForShift = async (entry) => {
+    const scheduleId = resolveShiftScheduleId(entry);
+    if (!scheduleId || !entry?.shiftId || !entry?.positionId) return;
+
+    try {
+      const employees = await listAvailableEmployees(scheduleId, {
+        date: entry.date,
+        start_time: formatTimeForApi(entry.startTime),
+        end_time: formatTimeForApi(entry.endTime),
+        position_id: entry.positionId,
+      });
+      setAvailableByShiftId((prev) => ({
+        ...prev,
+        [entry.shiftId]: normalizeArray(employees),
+      }));
+    } catch (e) {
+      setError(extractApiErrorMessage(e, t.shiftUpdateError, language));
+    }
+  };
+
+  const handleReassignShift = async (entry) => {
+    const scheduleId = resolveShiftScheduleId(entry);
+    const employeeId = reassignEmployeeIds[entry.shiftId];
+    if (!scheduleId || !entry?.shiftId || !employeeId) return;
+
+    setIsSubmitting(true);
+    setError('');
+    setSuccess('');
+
+    try {
+      await updateShift(scheduleId, entry.shiftId, {
+        action: 'reassign',
+        employee_id: Number(employeeId),
+      });
+      await reloadScheduleVersions('draft');
+      setReassignEmployeeIds((prev) => ({ ...prev, [entry.shiftId]: '' }));
+      setSuccess(t.shiftUpdated);
+    } catch (e) {
+      setError(extractApiErrorMessage(e, t.shiftUpdateError, language));
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const handleUnassignShift = async (entry) => {
+    const scheduleId = resolveShiftScheduleId(entry);
+    if (!scheduleId || !entry?.shiftId) return;
+
+    setIsSubmitting(true);
+    setError('');
+    setSuccess('');
+
+    try {
+      await updateShift(scheduleId, entry.shiftId, {
+        employee_id: null,
+      });
+      await reloadScheduleVersions('draft');
+      setReassignEmployeeIds((prev) => ({ ...prev, [entry.shiftId]: '' }));
+      setSuccess(t.shiftUpdated);
+    } catch (e) {
+      setError(extractApiErrorMessage(e, t.shiftUpdateError, language));
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
   const handleAssignRequirement = async (requirementId) => {
     const employeeId = assignEmployeeIds[requirementId];
     if (!schedule?.id || !requirementId || !employeeId) return;
@@ -1891,12 +1979,10 @@ export default function ScheduleReview({ language }) {
   };
 
   const hasShifts = normalizeArray(schedule?.shifts).some((shift) => Boolean(shift?.employee_id));
-  const hasGridContent = hasShifts || unfilledNotFoundRequirements.length > 0;
   const versionOptions = [
     { id: 'draft', label: t.viewDraft, schedule: scheduleVersions.draft },
     { id: 'published', label: t.viewPublished, schedule: scheduleVersions.published },
   ];
-  const actionButtonStyle = isMobile ? { flex: '1 1 calc(50% - 6px)', minWidth: '140px' } : {};
 
   if (isLoading || isAuthLoading) {
     return (
@@ -1985,32 +2071,32 @@ export default function ScheduleReview({ language }) {
             />
           </label>
 
-          {[1, 2, 4].map((weeks) => (
-            <button
-              key={weeks}
-              type="button"
-              onClick={() => runGenerate(weeks)}
-              disabled={isSubmitting || !selectedBranchId}
-              className="st-btn st-btn--primary"
-              style={actionButtonStyle}
-            >
-              {isSubmitting ? t.generating : (weeks === 1 ? t.oneWeek : weeks === 2 ? t.twoWeeks : t.fourWeeks)}
-            </button>
-          ))}
+          <div className="st-week-btn-group">
+            {[1, 2, 4].map((weeks) => (
+              <button
+                key={weeks}
+                type="button"
+                onClick={() => runGenerate(weeks)}
+                disabled={isSubmitting || !selectedBranchId}
+                className="st-btn st-btn--primary st-btn--compact"
+              >
+                {isSubmitting ? t.generating : (weeks === 1 ? t.oneWeek : weeks === 2 ? t.twoWeeks : t.fourWeeks)}
+              </button>
+            ))}
+          </div>
 
           {canEditDraft && schedule?.id && (
             <button
               onClick={handlePublish}
               disabled={isSubmitting || !hasShifts}
-              className="st-btn st-btn--secondary"
-              style={actionButtonStyle}
+              className="st-btn st-btn--secondary st-btn--panel-action"
             >
               {t.publish}
             </button>
           )}
         </div>
 
-        <div className="st-control-panel">
+        <div className="st-control-panel st-control-panel--delete">
           <label className="st-field">
             <span className="st-field-label">{t.deleteWeekStart}</span>
             <DateField
@@ -2025,8 +2111,7 @@ export default function ScheduleReview({ language }) {
             type="button"
             onClick={handleDeleteWeek}
             disabled={isSubmitting || !selectedBranchId}
-            className="st-btn st-btn--danger"
-            style={actionButtonStyle}
+            className="st-btn st-btn--danger st-btn--panel-action"
           >
             {t.deleteWeek}
           </button>
@@ -2094,12 +2179,11 @@ export default function ScheduleReview({ language }) {
           </div>
         )}
 
-        <div className="st-control-panel" style={{ justifyContent: 'flex-end' }}>
+        <div className="st-control-panel st-control-panel--export">
           <button
             onClick={exportCSV}
             disabled={!hasShifts}
-            className="st-btn st-btn--primary"
-            style={isMobile ? { width: '100%' } : {}}
+            className="st-btn st-btn--primary st-btn--panel-action"
           >
             {t.exportCSV}
           </button>
@@ -2119,6 +2203,16 @@ export default function ScheduleReview({ language }) {
             scheduleStartDate={scheduleStartDate}
             scheduleEndDate={scheduleEndDate}
             selectedDayEntries={calendarSelectedDayEntries}
+            canEditDraft={canEditDraft}
+            isSubmitting={isSubmitting}
+            availableByShiftId={availableByShiftId}
+            reassignEmployeeIds={reassignEmployeeIds}
+            onReassignEmployeeChange={(shiftId, value) => {
+              setReassignEmployeeIds((prev) => ({ ...prev, [shiftId]: value }));
+            }}
+            onLoadAvailableEmployees={handleLoadAvailableForShift}
+            onReassignShift={handleReassignShift}
+            onUnassignShift={handleUnassignShift}
           />
         ) : (
           <div className="st-detail-empty">
