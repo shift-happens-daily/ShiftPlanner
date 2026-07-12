@@ -85,8 +85,24 @@ function getDayIndicator(dayCounts, scheduleStatus) {
   return { total, color };
 }
 
-function ManagerShiftDetail({ entry, texts, scheduleStatus }) {
+function ManagerShiftDetail({
+  entry,
+  texts,
+  scheduleStatus,
+  canEditDraft = false,
+  isSubmitting = false,
+  availableEmployees = [],
+  reassignEmployeeId = '',
+  onReassignEmployeeChange,
+  onLoadAvailableEmployees,
+  onReassignShift,
+  onUnassignShift,
+}) {
   const isUnfilled = entry.kind === 'unfilled';
+  const canEditShift = canEditDraft
+    && entry.kind === 'shift'
+    && entry.shiftId
+    && entry.employeeId;
   const timeLabel = `${formatTimeLabel(entry.startTime)} – ${formatTimeLabel(entry.endTime)}`;
 
   return (
@@ -126,6 +142,55 @@ function ManagerShiftDetail({ entry, texts, scheduleStatus }) {
           <p className="st-detail-section-value">{entry.branch}</p>
         </div>
       ) : null}
+
+      {canEditShift ? (
+        <div className="st-shift-edit">
+          <button
+            type="button"
+            className="st-btn st-btn--secondary"
+            onClick={() => onLoadAvailableEmployees?.(entry)}
+            disabled={isSubmitting}
+          >
+            {texts.loadEmployees}
+          </button>
+
+          <select
+            className="st-select"
+            value={reassignEmployeeId}
+            onChange={(event) => onReassignEmployeeChange?.(entry.shiftId, event.target.value)}
+            onFocus={() => onLoadAvailableEmployees?.(entry)}
+            disabled={isSubmitting}
+          >
+            <option value="">
+              {availableEmployees.length ? texts.chooseEmployee : texts.noEmployeesAvailable}
+            </option>
+            {availableEmployees.map((employee) => (
+              <option key={employee.id} value={employee.id}>
+                {employee.full_name}
+              </option>
+            ))}
+          </select>
+
+          <div className="st-shift-edit-actions">
+            <button
+              type="button"
+              className="st-btn st-btn--primary"
+              onClick={() => onReassignShift?.(entry)}
+              disabled={!reassignEmployeeId || isSubmitting}
+            >
+              {texts.reassign}
+            </button>
+            <button
+              type="button"
+              className="st-btn st-btn--danger"
+              onClick={() => onUnassignShift?.(entry)}
+              disabled={isSubmitting}
+            >
+              {texts.unassign}
+            </button>
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }
@@ -143,6 +208,14 @@ export default function ManagerScheduleCalendar({
   scheduleStartDate,
   scheduleEndDate,
   selectedDayEntries,
+  canEditDraft = false,
+  isSubmitting = false,
+  availableByShiftId = {},
+  reassignEmployeeIds = {},
+  onReassignEmployeeChange,
+  onLoadAvailableEmployees,
+  onReassignShift,
+  onUnassignShift,
 }) {
   const calendarGrid = useMemo(
     () => buildCalendarGrid(calendarMonth),
@@ -331,6 +404,14 @@ export default function ManagerScheduleCalendar({
                   entry={entry}
                   texts={texts}
                   scheduleStatus={scheduleStatus}
+                  canEditDraft={canEditDraft}
+                  isSubmitting={isSubmitting}
+                  availableEmployees={availableByShiftId[entry.shiftId] || []}
+                  reassignEmployeeId={reassignEmployeeIds[entry.shiftId] || ''}
+                  onReassignEmployeeChange={onReassignEmployeeChange}
+                  onLoadAvailableEmployees={onLoadAvailableEmployees}
+                  onReassignShift={onReassignShift}
+                  onUnassignShift={onUnassignShift}
                 />
               ))}
             </div>

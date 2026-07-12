@@ -23,6 +23,8 @@ import {
   resolveScheduleIdForDate,
   snapToMonday,
   assignRequirement,
+  listAvailableEmployees,
+  updateShift,
 } from '../../services/scheduleService';
 import { listBranches } from '../../services/companyService';
 import ManagerScheduleCalendar from '../schedule/ManagerScheduleCalendar';
@@ -839,6 +841,10 @@ function buildDayScheduleEntries(dateKey, displaySchedule, unfilledNotFoundRequi
     .map((shift) => ({
       key: `shift-${shift.id}`,
       kind: 'shift',
+      shiftId: shift.id,
+      positionId: shift.position_id,
+      date: formatDate(shift.date),
+      employeeId: shift.employee_id,
       sortTime: parseTimeToHours(shift.start_time),
       position: getShiftPositionTitle(shift),
       employee: shift.employee_name || '—',
@@ -1207,6 +1213,8 @@ export default function ScheduleReview({ language }) {
   const [activeVersion, setActiveVersion] = useState('draft');
   const [coverageByDate, setCoverageByDate] = useState({});
   const [assignEmployeeIds, setAssignEmployeeIds] = useState({});
+  const [reassignEmployeeIds, setReassignEmployeeIds] = useState({});
+  const [availableByShiftId, setAvailableByShiftId] = useState({});
   const [manualEmployees, setManualEmployees] = useState([]);
   const [manualEmployeesLoaded, setManualEmployeesLoaded] = useState(false);
   const [employeesLoaded, setEmployeesLoaded] = useState(false);
@@ -1281,6 +1289,11 @@ export default function ScheduleReview({ language }) {
       closeDetail: 'Закрыть',
       legendNoShift: 'Нет смен',
       calendarTitle: 'Расписание',
+      reassign: 'Переназначить',
+      unassign: 'Снять сотрудника',
+      shiftUpdated: 'Смена обновлена.',
+      shiftUpdateError: 'Не удалось обновить смену.',
+      loadEmployees: 'Показать доступных',
     },
     en: {
       title: 'Schedule',
@@ -1345,6 +1358,11 @@ export default function ScheduleReview({ language }) {
       closeDetail: 'Close',
       legendNoShift: 'No shift',
       calendarTitle: 'Schedule',
+      reassign: 'Reassign',
+      unassign: 'Remove employee',
+      shiftUpdated: 'Shift updated.',
+      shiftUpdateError: 'Failed to update shift.',
+      loadEmployees: 'Load available',
     },
   };
 
@@ -1846,6 +1864,76 @@ export default function ScheduleReview({ language }) {
     };
   }, [canEditDraft, language, schedule?.id, t.assignError, unfilledRequirements.length]);
 
+  const resolveShiftScheduleId = (entry) => (
+    resolveScheduleIdForDate(schedule, entry.date) || schedule?.id
+  );
+
+  const handleLoadAvailableForShift = async (entry) => {
+    const scheduleId = resolveShiftScheduleId(entry);
+    if (!scheduleId || !entry?.shiftId || !entry?.positionId) return;
+
+    try {
+      const employees = await listAvailableEmployees(scheduleId, {
+        date: entry.date,
+        start_time: formatTimeForApi(entry.startTime),
+        end_time: formatTimeForApi(entry.endTime),
+        position_id: entry.positionId,
+      });
+      setAvailableByShiftId((prev) => ({
+        ...prev,
+        [entry.shiftId]: normalizeArray(employees),
+      }));
+    } catch (e) {
+      setError(extractApiErrorMessage(e, t.shiftUpdateError, language));
+    }
+  };
+
+  const handleReassignShift = async (entry) => {
+    const scheduleId = resolveShiftScheduleId(entry);
+    const employeeId = reassignEmployeeIds[entry.shiftId];
+    if (!scheduleId || !entry?.shiftId || !employeeId) return;
+
+    setIsSubmitting(true);
+    setError('');
+    setSuccess('');
+
+    try {
+      await updateShift(scheduleId, entry.shiftId, {
+        action: 'reassign',
+        employee_id: Number(employeeId),
+      });
+      await reloadScheduleVersions('draft');
+      setReassignEmployeeIds((prev) => ({ ...prev, [entry.shiftId]: '' }));
+      setSuccess(t.shiftUpdated);
+    } catch (e) {
+      setError(extractApiErrorMessage(e, t.shiftUpdateError, language));
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const handleUnassignShift = async (entry) => {
+    const scheduleId = resolveShiftScheduleId(entry);
+    if (!scheduleId || !entry?.shiftId) return;
+
+    setIsSubmitting(true);
+    setError('');
+    setSuccess('');
+
+    try {
+      await updateShift(scheduleId, entry.shiftId, {
+        employee_id: null,
+      });
+      await reloadScheduleVersions('draft');
+      setReassignEmployeeIds((prev) => ({ ...prev, [entry.shiftId]: '' }));
+      setSuccess(t.shiftUpdated);
+    } catch (e) {
+      setError(extractApiErrorMessage(e, t.shiftUpdateError, language));
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
   const handleAssignRequirement = async (requirementId) => {
     const employeeId = assignEmployeeIds[requirementId];
     if (!schedule?.id || !requirementId || !employeeId) return;
@@ -2119,6 +2207,16 @@ export default function ScheduleReview({ language }) {
             scheduleStartDate={scheduleStartDate}
             scheduleEndDate={scheduleEndDate}
             selectedDayEntries={calendarSelectedDayEntries}
+            canEditDraft={canEditDraft}
+            isSubmitting={isSubmitting}
+            availableByShiftId={availableByShiftId}
+            reassignEmployeeIds={reassignEmployeeIds}
+            onReassignEmployeeChange={(shiftId, value) => {
+              setReassignEmployeeIds((prev) => ({ ...prev, [shiftId]: value }));
+            }}
+            onLoadAvailableEmployees={handleLoadAvailableForShift}
+            onReassignShift={handleReassignShift}
+            onUnassignShift={handleUnassignShift}
           />
         ) : (
           <div className="st-detail-empty">
