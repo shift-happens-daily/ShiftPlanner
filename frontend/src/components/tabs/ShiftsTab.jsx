@@ -2547,7 +2547,7 @@ export default function ShiftsTab({ language, userRole, user }) {
                           ...mobileStyles?.mobileBrushButton,
                           background: option.color,
                           color: option.textColor,
-                          border: brushMode === option.id ? '2px solid #002642' : '2px solid rgba(79, 100, 111, 0.12)',
+                          border: 'none',
                           boxShadow: brushMode === option.id ? '0 4px 12px rgba(0, 38, 66, 0.14)' : 'none',
                         }}
                       >
@@ -2654,9 +2654,7 @@ export default function ShiftsTab({ language, userRole, user }) {
                             ? '0 8px 22px rgba(0,38,66,.22)'
                             : '0 3px 10px rgba(0,38,66,.08)',
 
-                          outline: brushMode === option.id
-                            ? '2px solid #002642'
-                            : 'none',
+                          outline: 'none',
 
                           zIndex: brushMode === option.id ? 2 : 1,
                         }}
