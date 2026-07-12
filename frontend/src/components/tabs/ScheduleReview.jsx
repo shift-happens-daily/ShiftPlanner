@@ -1979,12 +1979,10 @@ export default function ScheduleReview({ language }) {
   };
 
   const hasShifts = normalizeArray(schedule?.shifts).some((shift) => Boolean(shift?.employee_id));
-  const hasGridContent = hasShifts || unfilledNotFoundRequirements.length > 0;
   const versionOptions = [
     { id: 'draft', label: t.viewDraft, schedule: scheduleVersions.draft },
     { id: 'published', label: t.viewPublished, schedule: scheduleVersions.published },
   ];
-  const actionButtonStyle = isMobile ? { flex: '1 1 calc(50% - 6px)', minWidth: '140px' } : {};
 
   if (isLoading || isAuthLoading) {
     return (
@@ -2073,32 +2071,32 @@ export default function ScheduleReview({ language }) {
             />
           </label>
 
-          {[1, 2, 4].map((weeks) => (
-            <button
-              key={weeks}
-              type="button"
-              onClick={() => runGenerate(weeks)}
-              disabled={isSubmitting || !selectedBranchId}
-              className="st-btn st-btn--primary"
-              style={actionButtonStyle}
-            >
-              {isSubmitting ? t.generating : (weeks === 1 ? t.oneWeek : weeks === 2 ? t.twoWeeks : t.fourWeeks)}
-            </button>
-          ))}
+          <div className="st-week-btn-group">
+            {[1, 2, 4].map((weeks) => (
+              <button
+                key={weeks}
+                type="button"
+                onClick={() => runGenerate(weeks)}
+                disabled={isSubmitting || !selectedBranchId}
+                className="st-btn st-btn--primary st-btn--compact"
+              >
+                {isSubmitting ? t.generating : (weeks === 1 ? t.oneWeek : weeks === 2 ? t.twoWeeks : t.fourWeeks)}
+              </button>
+            ))}
+          </div>
 
           {canEditDraft && schedule?.id && (
             <button
               onClick={handlePublish}
               disabled={isSubmitting || !hasShifts}
-              className="st-btn st-btn--secondary"
-              style={actionButtonStyle}
+              className="st-btn st-btn--secondary st-btn--panel-action"
             >
               {t.publish}
             </button>
           )}
         </div>
 
-        <div className="st-control-panel">
+        <div className="st-control-panel st-control-panel--delete">
           <label className="st-field">
             <span className="st-field-label">{t.deleteWeekStart}</span>
             <DateField
@@ -2113,8 +2111,7 @@ export default function ScheduleReview({ language }) {
             type="button"
             onClick={handleDeleteWeek}
             disabled={isSubmitting || !selectedBranchId}
-            className="st-btn st-btn--danger"
-            style={actionButtonStyle}
+            className="st-btn st-btn--danger st-btn--panel-action"
           >
             {t.deleteWeek}
           </button>
@@ -2182,12 +2179,11 @@ export default function ScheduleReview({ language }) {
           </div>
         )}
 
-        <div className="st-control-panel" style={{ justifyContent: 'flex-end' }}>
+        <div className="st-control-panel st-control-panel--export">
           <button
             onClick={exportCSV}
             disabled={!hasShifts}
-            className="st-btn st-btn--primary"
-            style={isMobile ? { width: '100%' } : {}}
+            className="st-btn st-btn--primary st-btn--panel-action"
           >
             {t.exportCSV}
           </button>
