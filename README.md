@@ -161,9 +161,9 @@ Once the containers are running, the application will be available at:
 
 | Service | URL |
 |---------|-----|
-| Web Application | http://localhost:5173 |
-| Backend API | http://localhost:8000 |
-| Swagger Documentation | http://localhost:8000/docs |
+| Web Application | http://localhost |
+| Backend API | http://localhost/api |
+| Swagger Documentation | http://localhost/api/docs |
 
 ### 5. Stop the application
 
@@ -172,6 +172,129 @@ To stop all running containers:
 ```bash
 docker compose down
 ```
+
+## Reproducibility Guide
+
+This section describes how to reproduce the application from a clean checkout and verify that the main services are working.
+
+### Requirements
+
+- Git
+- Docker Desktop with Docker Compose
+- At least 4 GB of free memory for the application containers
+
+### Reproduce the application with Docker Compose
+
+1. Clone the repository and enter the project directory:
+
+```bash
+git clone https://github.com/shift-happens-daily/ShiftPlanner.git
+cd ShiftPlanner
+```
+
+2. Build and start all services:
+
+```bash
+docker compose up --build -d
+```
+
+The compose file starts PostgreSQL, the FastAPI backend, the React frontend, and the Nginx reverse proxy. On the first database startup, `backend/db/schema.sql` and `backend/db/seed.sql` are applied automatically.
+
+3. Check the container status:
+
+```bash
+docker compose ps
+```
+
+All services should have a running or healthy status.
+
+4. Check the health endpoints:
+
+```text
+http://localhost/api/health
+http://localhost/api/health/db
+```
+
+Both endpoints should return a successful response with `"status": "ok"`.
+
+5. Open the following URLs:
+
+| Resource | URL |
+|----------|-----|
+| Web application | http://localhost |
+| Swagger UI | http://localhost/api/docs |
+| OpenAPI schema | http://localhost/api/openapi.json |
+| Backend health | http://localhost/api/health |
+| Detailed API reference | [backend/api_documentation.md](backend/api_documentation.md) |
+
+### Demo accounts
+
+The seed data provides the following accounts:
+
+| Role | Email | Password |
+|------|-------|----------|
+| Manager | `manager@example.com` | `manager123` |
+| Employee | `ivan@example.com` | `employee123` |
+
+The seeded company is `Coffee Bar Barnaul` and its invite code is `COFFEE123`.
+
+### Basic verification scenario
+
+The following scenario confirms that authentication, company data, schedules, and reports are connected:
+
+1. Sign in as the manager using the seeded manager account.
+2. Open the manager dashboard and verify the company, employees, positions, and branches.
+3. Create or load schedule requirements for a date range.
+4. Generate a schedule, review its shifts, and publish it.
+5. Open the Reports page and verify the employee workload.
+6. Sign in as the employee.
+7. Open the personal schedule and verify the published shifts.
+8. Open the personal report and verify the total shifts and total hours.
+
+### Recreate the database from scratch
+
+The schema and seed scripts are executed automatically only when PostgreSQL starts with an empty data volume. To remove the existing local database and recreate it:
+
+```bash
+docker compose down -v
+docker compose up --build -d
+```
+
+The `-v` option deletes the local PostgreSQL volume and all data stored in it. After the second command, the database is initialized again from `backend/db/schema.sql` and `backend/db/seed.sql`.
+
+### Backend verification
+
+For a local Python verification outside the backend container, run the following commands from the repository root. The backend tests require a running PostgreSQL instance and a `DATABASE_URL` that points to it:
+
+```bash
+cd backend
+python -m compileall app
+python -m pytest
+```
+
+### Frontend verification
+
+To verify that the frontend can be built independently:
+
+```bash
+cd frontend
+npm ci
+npm run build
+npm run lint
+```
+
+The expected result is a successful production build and no ESLint errors.
+
+### Collecting evidence of reproducibility
+
+For a reproducibility report, record the following information:
+
+- Git commit or tag used for the run: `git rev-parse HEAD`
+- Docker and Docker Compose versions: `docker version` and `docker compose version`
+- Output of `docker compose ps`
+- Responses from `/api/health` and `/api/health/db`
+- Result of the manager and employee verification scenario
+- Results of `python -m pytest`, `npm run build`, and `npm run lint`
 
 ## 🌐 Live Demo
 
