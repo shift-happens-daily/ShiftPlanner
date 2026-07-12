@@ -659,23 +659,39 @@ def create_exchange_request(
     return exchange_request
 
 
+def _exchange_request_select():
+    return (
+        select(
+            ShiftExchangeRequest.id,
+            Shift.id.label("shift_id"),
+            Employee.id.label("employee_id"),
+            User.full_name.label("employee_name"),
+            ShiftExchangeRequest.note,
+            ShiftExchangeRequest.status,
+            Shift.shift_date,
+            Shift.start_time,
+            Shift.end_time,
+            Schedule.branch_id,
+            Branch.name.label("branch_name"),
+            Position.id.label("position_id"),
+            Position.name.label("position_name"),
+            ShiftExchangeRequest.created_at,
+            ShiftExchangeRequest.updated_at,
+        )
+        .join(ShiftAssignment, ShiftAssignment.id == ShiftExchangeRequest.shift_assignment_id)
+        .join(Shift, Shift.id == ShiftAssignment.shift_id)
+        .join(Position, Position.id == Shift.position_id)
+        .outerjoin(Schedule, Schedule.id == Shift.schedule_id)
+        .outerjoin(Branch, Branch.id == Schedule.branch_id)
+        .join(Employee, Employee.id == ShiftExchangeRequest.requested_by_employee_id)
+        .join(User, User.id == Employee.user_id)
+    )
+
+
 def list_pending_exchange_requests(db: Session) -> list[dict]:
     return list(
         db.execute(
-            select(
-                ShiftExchangeRequest.id,
-                Shift.id.label("shift_id"),
-                Employee.id.label("employee_id"),
-                User.full_name.label("employee_name"),
-                ShiftExchangeRequest.note,
-                ShiftExchangeRequest.status,
-                ShiftExchangeRequest.created_at,
-                ShiftExchangeRequest.updated_at,
-            )
-            .join(ShiftAssignment, ShiftAssignment.id == ShiftExchangeRequest.shift_assignment_id)
-            .join(Shift, Shift.id == ShiftAssignment.shift_id)
-            .join(Employee, Employee.id == ShiftExchangeRequest.requested_by_employee_id)
-            .join(User, User.id == Employee.user_id)
+            _exchange_request_select()
             .where(ShiftExchangeRequest.status == "pending")
             .order_by(ShiftExchangeRequest.id)
         ).mappings()
@@ -688,20 +704,7 @@ def get_exchange_request(db: Session, exchange_request_id: int) -> ShiftExchange
 
 def build_exchange_request_read_row(db: Session, exchange_request_id: int) -> dict | None:
     row = db.execute(
-        select(
-            ShiftExchangeRequest.id,
-            Shift.id.label("shift_id"),
-            Employee.id.label("employee_id"),
-            User.full_name.label("employee_name"),
-            ShiftExchangeRequest.note,
-            ShiftExchangeRequest.status,
-            ShiftExchangeRequest.created_at,
-            ShiftExchangeRequest.updated_at,
-        )
-        .join(ShiftAssignment, ShiftAssignment.id == ShiftExchangeRequest.shift_assignment_id)
-        .join(Shift, Shift.id == ShiftAssignment.shift_id)
-        .join(Employee, Employee.id == ShiftExchangeRequest.requested_by_employee_id)
-        .join(User, User.id == Employee.user_id)
+        _exchange_request_select()
         .where(ShiftExchangeRequest.id == exchange_request_id)
     ).mappings().first()
     return None if row is None else dict(row)

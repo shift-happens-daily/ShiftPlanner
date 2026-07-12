@@ -1,0 +1,258 @@
+.mei-root {
+  position: relative;
+  flex-shrink: 0;
+}
+
+.mei-trigger {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 42px;
+  height: 42px;
+  padding: 0;
+  border: 1px solid rgba(79, 100, 111, 0.16);
+  border-radius: 50%;
+  background: #f4faff;
+  color: #002642;
+  cursor: pointer;
+  transition: background 0.15s ease, border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.mei-trigger:hover,
+.mei-trigger--active {
+  background: #ffffff;
+  border-color: rgba(0, 38, 66, 0.2);
+  box-shadow: 0 4px 14px rgba(0, 38, 66, 0.08);
+}
+
+.mei-badge {
+  position: absolute;
+  top: -2px;
+  right: -2px;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  border-radius: 999px;
+  background: #dc2626;
+  color: #ffffff;
+  font-size: 10px;
+  font-weight: 800;
+  line-height: 18px;
+  text-align: center;
+  box-shadow: 0 0 0 2px #dee7e7;
+}
+
+.mei-panel {
+  position: absolute;
+  top: calc(100% + 10px);
+  right: 0;
+  z-index: 120;
+  width: min(380px, calc(100vw - 24px));
+  max-height: min(70vh, 520px);
+  display: flex;
+  flex-direction: column;
+  border-radius: 16px;
+  background: #ffffff;
+  border: 1px solid rgba(79, 100, 111, 0.14);
+  box-shadow: 0 18px 40px rgba(0, 38, 66, 0.18);
+  overflow: hidden;
+}
+
+.mei-panel-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 14px 16px 12px;
+  border-bottom: 1px solid rgba(79, 100, 111, 0.1);
+  background: #f8fafc;
+}
+
+.mei-panel-title {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 800;
+  color: #002642;
+}
+
+.mei-panel-hint {
+  margin: 4px 0 0;
+  font-size: 12px;
+  color: #4f646f;
+  line-height: 1.4;
+}
+
+.mei-close {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  color: #4f646f;
+  cursor: pointer;
+}
+
+.mei-close:hover {
+  background: rgba(79, 100, 111, 0.08);
+}
+
+.mei-close-icon {
+  display: block;
+  position: relative;
+  width: 12px;
+  height: 12px;
+}
+
+.mei-close-icon::before,
+.mei-close-icon::after {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 0;
+  width: 100%;
+  height: 2px;
+  background: currentColor;
+  border-radius: 1px;
+}
+
+.mei-close-icon::before {
+  transform: translateY(-50%) rotate(45deg);
+}
+
+.mei-close-icon::after {
+  transform: translateY(-50%) rotate(-45deg);
+}
+
+.mei-feedback {
+  margin: 10px 14px 0;
+  padding: 8px 10px;
+  border-radius: 10px;
+  background: #ecfdf5;
+  border: 1px solid #a7f3d0;
+  color: #047857;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.mei-empty {
+  margin: 0;
+  padding: 28px 16px;
+  text-align: center;
+  color: #4f646f;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.mei-list {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 12px 14px 14px;
+  overflow-y: auto;
+}
+
+.mei-section {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.mei-section-title {
+  margin: 0;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: #4f646f;
+}
+
+.mei-section-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.mei-item {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 12px;
+  border-radius: 12px;
+  background: #f4faff;
+  border: 1px solid rgba(79, 100, 111, 0.1);
+}
+
+.mei-employee {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 800;
+  color: #002642;
+}
+
+.mei-meta {
+  margin: 3px 0 0;
+  font-size: 11px;
+  font-weight: 700;
+  color: #4f646f;
+}
+
+.mei-note {
+  margin: 8px 0 0;
+  font-size: 12px;
+  line-height: 1.45;
+  color: #002642;
+  word-break: break-word;
+}
+
+.mei-note-label {
+  font-weight: 800;
+  color: #4f646f;
+}
+
+.mei-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.mei-btn {
+  flex: 1;
+  min-height: 34px;
+  padding: 0 10px;
+  border-radius: 10px;
+  border: 1px solid transparent;
+  font-size: 12px;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.mei-btn:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+
+.mei-btn--approve {
+  background: #002642;
+  color: #f4faff;
+}
+
+.mei-btn--reject {
+  background: #ffffff;
+  color: #002642;
+  border-color: rgba(79, 100, 111, 0.18);
+}
+
+@media (max-width: 768px) {
+  .mei-panel {
+    position: fixed;
+    top: 58px;
+    right: 10px;
+    left: 10px;
+    width: auto;
+    max-height: calc(100vh - 140px);
+  }
+}

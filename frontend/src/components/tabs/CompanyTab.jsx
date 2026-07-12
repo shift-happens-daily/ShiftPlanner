@@ -3,18 +3,12 @@
 import { useEffect, useState } from 'react';
 import { useAuth } from '../../context/useAuth';
 import {
-  acceptEmployeeRequest,
-  acceptManagerRequest,
   createBranch,
   createCompany,
-  declineEmployeeRequest,
-  declineManagerRequest,
   deleteBranch,
   joinCompany,
   joinCompanyAsManager,
   listBranches,
-  listEmployeeRequests,
-  listManagerRequests,
   listCompanyManagers,
   previewInviteCode,
   regenerateInviteCode,
@@ -108,8 +102,6 @@ export default function CompanyTab({ language, userRole, user }) {
   const [branchName, setBranchName] = useState('');
 
   const [companyName, setCompanyName] = useState('');
-  const [employeeRequests, setEmployeeRequests] = useState([]);
-  const [managerRequests, setManagerRequests] = useState([]);
   const [companyManagers, setCompanyManagers] = useState([]);
 
   const [errorMessage, setErrorMessage] = useState('');
@@ -150,9 +142,6 @@ export default function CompanyTab({ language, userRole, user }) {
       managerJoinSuccess: 'Вы присоединились к компании как менеджер.',
       managerPendingTitle: 'Заявка менеджера на рассмотрении',
       managerPendingText: 'Владелец компании должен принять вашу заявку. После этого откроется доступ к управлению.',
-      managerRequests: 'Заявки менеджеров',
-      managerRequestsHint: 'Примите или отклоните заявки других менеджеров на вступление в компанию.',
-      noManagerRequests: 'Нет ожидающих заявок менеджеров.',
       companyManagers: 'Менеджеры компании',
       companyManagersHint: 'Активные менеджеры с доступом к управлению компанией.',
       noCompanyManagers: 'Пока нет других активных менеджеров.',
@@ -197,16 +186,6 @@ export default function CompanyTab({ language, userRole, user }) {
       joinPending: 'Заявка отправлена. Дождитесь подтверждения менеджера во вкладке «Компания».',
       pendingTitle: 'Заявка на рассмотрении',
       pendingText: 'Менеджер компании должен принять вашу заявку. После этого здесь появятся филиал и позиция.',
-      employeeRequests: 'Заявки сотрудников',
-      employeeRequestsHint: 'Примите или отклоните заявки на вступление в компанию.',
-      noEmployeeRequests: 'Нет ожидающих заявок.',
-      acceptRequest: 'Принять',
-      declineRequest: 'Отклонить',
-      requestAccepted: 'Сотрудник принят.',
-      requestDeclined: 'Заявка отклонена.',
-      requestActionError: 'Не удалось обработать заявку.',
-      requestBranches: 'Филиал в заявке',
-      requestPosition: 'Позиция в заявке',
     },
     en: {
       title: 'Company',
@@ -241,9 +220,6 @@ export default function CompanyTab({ language, userRole, user }) {
       managerJoinSuccess: 'You have joined the company as a manager.',
       managerPendingTitle: 'Manager request pending',
       managerPendingText: 'The company owner must approve your request. Management access will unlock after approval.',
-      managerRequests: 'Manager requests',
-      managerRequestsHint: 'Approve or decline requests from other managers to join your company.',
-      noManagerRequests: 'No pending manager requests.',
       companyManagers: 'Company managers',
       companyManagersHint: 'Active managers with access to manage this company.',
       noCompanyManagers: 'No other active managers yet.',
@@ -288,16 +264,6 @@ export default function CompanyTab({ language, userRole, user }) {
       joinPending: 'Request submitted. Wait for manager approval in the Company tab.',
       pendingTitle: 'Request pending',
       pendingText: 'A company manager must approve your request. Branch and position will appear here after approval.',
-      employeeRequests: 'Employee requests',
-      employeeRequestsHint: 'Approve or decline join requests.',
-      noEmployeeRequests: 'No pending requests.',
-      acceptRequest: 'Accept',
-      declineRequest: 'Decline',
-      requestAccepted: 'Employee accepted.',
-      requestDeclined: 'Request declined.',
-      requestActionError: 'Failed to process the request.',
-      requestBranches: 'Requested branch',
-      requestPosition: 'Requested position',
     },
   };
 
@@ -340,34 +306,6 @@ export default function CompanyTab({ language, userRole, user }) {
     }
   };
 
-  const loadEmployeeRequests = async () => {
-    if (!isManager || !currentCompanyId) {
-      setEmployeeRequests([]);
-      return;
-    }
-
-    try {
-      const data = await listEmployeeRequests();
-      setEmployeeRequests(normalizeArray(data));
-    } catch {
-      setEmployeeRequests([]);
-    }
-  };
-
-  const loadManagerRequests = async () => {
-    if (!isManager || !currentCompanyId) {
-      setManagerRequests([]);
-      return;
-    }
-
-    try {
-      const data = await listManagerRequests();
-      setManagerRequests(normalizeArray(data));
-    } catch {
-      setManagerRequests([]);
-    }
-  };
-
   const loadCompanyManagers = async () => {
     if (!isManager || !currentCompanyId || isPendingManager) {
       setCompanyManagers([]);
@@ -389,14 +327,6 @@ export default function CompanyTab({ language, userRole, user }) {
     }
 
     void loadBranches(currentCompanyId);
-  }, [isManager, currentCompanyId]);
-
-  useEffect(() => {
-    void loadEmployeeRequests();
-  }, [isManager, currentCompanyId]);
-
-  useEffect(() => {
-    void loadManagerRequests();
   }, [isManager, currentCompanyId]);
 
   useEffect(() => {
@@ -587,75 +517,6 @@ export default function CompanyTab({ language, userRole, user }) {
       setSuccessMessage(t.copied);
     } catch {
       setSuccessMessage('');
-    }
-  };
-
-  const getRequestBranchesLabel = (request) => {
-    const [branch] = normalizeArray(request?.branches);
-    return branch?.name || branch?.title || '\u2014';
-  };
-
-  const handleAcceptEmployeeRequest = async (requestId) => {
-    clearMessages();
-    setIsSubmitting(true);
-
-    try {
-      await acceptEmployeeRequest(requestId);
-      await loadEmployeeRequests();
-      setSuccessMessage(t.requestAccepted);
-    } catch (error) {
-      setErrorMessage(extractApiErrorMessage(error, t.requestActionError, language));
-    } finally {
-      setIsSubmitting(false);
-    }
-  };
-
-  const handleDeclineEmployeeRequest = async (requestId) => {
-    if (!window.confirm(language === 'en' ? 'Decline this request?' : 'Отклонить заявку?')) return;
-
-    clearMessages();
-    setIsSubmitting(true);
-
-    try {
-      await declineEmployeeRequest(requestId);
-      await loadEmployeeRequests();
-      setSuccessMessage(t.requestDeclined);
-    } catch (error) {
-      setErrorMessage(extractApiErrorMessage(error, t.requestActionError, language));
-    } finally {
-      setIsSubmitting(false);
-    }
-  };
-
-  const handleAcceptManagerRequest = async (requestId) => {
-    clearMessages();
-    setIsSubmitting(true);
-
-    try {
-      await acceptManagerRequest(requestId);
-      await Promise.all([loadManagerRequests(), loadCompanyManagers()]);
-      setSuccessMessage(t.requestAccepted);
-    } catch (error) {
-      setErrorMessage(extractApiErrorMessage(error, t.requestActionError, language));
-    } finally {
-      setIsSubmitting(false);
-    }
-  };
-
-  const handleDeclineManagerRequest = async (requestId) => {
-    if (!window.confirm(language === 'en' ? 'Decline this manager request?' : 'Отклонить заявку менеджера?')) return;
-
-    clearMessages();
-    setIsSubmitting(true);
-
-    try {
-      await declineManagerRequest(requestId);
-      await loadManagerRequests();
-      setSuccessMessage(t.requestDeclined);
-    } catch (error) {
-      setErrorMessage(extractApiErrorMessage(error, t.requestActionError, language));
-    } finally {
-      setIsSubmitting(false);
     }
   };
 
@@ -921,97 +782,6 @@ export default function CompanyTab({ language, userRole, user }) {
               </section>
             )}
 
-            <section style={{
-              ...styles.requestsCard,
-              gridColumn: r.isMobile ? 'auto' : '1 / -1',
-            }}>
-              <div style={styles.requestsHeader}>
-                <h3 style={styles.sectionTitle}>{t.managerRequests}</h3>
-                <p style={styles.hint}>{t.managerRequestsHint}</p>
-              </div>
-
-              <div style={styles.requestList}>
-                {managerRequests.length === 0 ? (
-                  <div style={styles.emptyRequests}>{t.noManagerRequests}</div>
-                ) : (
-                  managerRequests.map((request) => (
-                    <div key={request.id} style={styles.requestItem}>
-                      <div style={styles.requestMain}>
-                        <strong style={styles.requestName}>{request.full_name || request.email}</strong>
-                        <span style={styles.requestMeta}>{request.email}</span>
-                      </div>
-                      <div style={styles.requestActions}>
-                        <button
-                          type="button"
-                          onClick={() => handleAcceptManagerRequest(request.id)}
-                          style={isSubmitting ? styles.primaryButtonDisabled : styles.primaryButton}
-                          disabled={isSubmitting}
-                        >
-                          {t.acceptRequest}
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => handleDeclineManagerRequest(request.id)}
-                          style={isSubmitting ? styles.secondaryButtonDisabled : styles.secondaryButton}
-                          disabled={isSubmitting}
-                        >
-                          {t.declineRequest}
-                        </button>
-                      </div>
-                    </div>
-                  ))
-                )}
-              </div>
-            </section>
-
-            <section style={{
-              ...styles.requestsCard,
-              gridColumn: r.isMobile ? 'auto' : '1 / -1',
-            }}>
-              <div style={styles.requestsHeader}>
-                <h3 style={styles.sectionTitle}>{t.employeeRequests}</h3>
-                <p style={styles.hint}>{t.employeeRequestsHint}</p>
-              </div>
-
-              <div style={styles.requestList}>
-                {employeeRequests.length === 0 ? (
-                  <div style={styles.emptyRequests}>{t.noEmployeeRequests}</div>
-                ) : (
-                  employeeRequests.map((request) => (
-                    <div key={request.id} style={styles.requestItem}>
-                      <div style={styles.requestMain}>
-                        <strong style={styles.requestName}>{request.full_name || request.email}</strong>
-                        <span style={styles.requestMeta}>{request.email}</span>
-                        <span style={styles.requestMeta}>
-                          {t.requestBranches}: {getRequestBranchesLabel(request)}
-                        </span>
-                        <span style={styles.requestMeta}>
-                          {t.requestPosition}: {getPositionLabel(request.position, '—')}
-                        </span>
-                      </div>
-                      <div style={styles.requestActions}>
-                        <button
-                          type="button"
-                          onClick={() => handleAcceptEmployeeRequest(request.id)}
-                          style={isSubmitting ? styles.primaryButtonDisabled : styles.primaryButton}
-                          disabled={isSubmitting}
-                        >
-                          {t.acceptRequest}
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => handleDeclineEmployeeRequest(request.id)}
-                          style={isSubmitting ? styles.secondaryButtonDisabled : styles.secondaryButton}
-                          disabled={isSubmitting}
-                        >
-                          {t.declineRequest}
-                        </button>
-                      </div>
-                    </div>
-                  ))
-                )}
-              </div>
-            </section>
           </div>
         ) : (
           <div style={{

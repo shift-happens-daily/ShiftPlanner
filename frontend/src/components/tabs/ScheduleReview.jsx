@@ -12,7 +12,7 @@ import {
   deriveSchedulePeriod,
   fetchScheduleCoverage,
   fetchScheduleVersions,
-  findOverlappingSchedules,
+  findGenerationConflicts,
   formatLocalDate,
   generateScheduleWeeks,
   getWeekPeriodRange,
@@ -321,6 +321,25 @@ function scheduleCoversPeriod(schedule, period) {
     period.start_date,
     period.end_date,
   );
+}
+
+function formatGenerationConflictMessage(conflicts, branchLabel, t) {
+  if (conflicts.legacySchedules?.length > 0) {
+    const item = conflicts.legacySchedules[0];
+    return t.legacyConflictError
+      .replace('{start}', item.start_date)
+      .replace('{end}', item.end_date);
+  }
+
+  if (conflicts.branchSchedules?.length > 0) {
+    const item = conflicts.branchSchedules[0];
+    return t.branchConflictError
+      .replace('{branch}', branchLabel || t.branch)
+      .replace('{start}', item.start_date)
+      .replace('{end}', item.end_date);
+  }
+
+  return t.conflictError;
 }
 
 function applyLoadedScheduleState({
@@ -1229,11 +1248,13 @@ export default function ScheduleReview({ language }) {
       loading: 'Загрузка...',
       generated: 'Черновик расписания создан.',
       generatedRecovered: 'Расписание сохранено на сервере. Данные подгружены автоматически.',
-      publishedDone: 'Расписание опубликовано.',
+      publishedDone: 'Расписание для «{branch}» опубликовано.',
       weekDeleted: 'Неделя расписания удалена.',
       deleteWeekError: 'Не удалось удалить неделю расписания.',
       confirmDeleteWeek: 'Удалить расписание за неделю с {start} по {end}?',
       conflictError: 'На выбранные даты уже есть расписание. Сначала удалите старое.',
+      branchConflictError: 'Для филиала «{branch}» уже есть расписание на {start}–{end}. Нажмите «Удалить неделю» для этого филиала.',
+      legacyConflictError: 'Есть старое общее расписание компании на {start}–{end}. Удалите его перед генерацией по филиалам.',
       mondayRequired: 'Дата начала должна быть понедельником.',
       unfilledTitle: 'Незаполненные смены',
       assign: 'Назначить',
@@ -1291,11 +1312,13 @@ export default function ScheduleReview({ language }) {
       loading: 'Loading...',
       generated: 'Draft schedule generated.',
       generatedRecovered: 'Schedule was saved on the server. Data loaded automatically.',
-      publishedDone: 'Schedule published.',
+      publishedDone: 'Schedule published for {branch}.',
       weekDeleted: 'Schedule week deleted.',
       deleteWeekError: 'Failed to delete schedule week.',
       confirmDeleteWeek: 'Delete schedule for week {start} to {end}?',
       conflictError: 'A schedule already exists for these dates. Delete the old one first.',
+      branchConflictError: 'Branch "{branch}" already has a schedule for {start}–{end}. Use "Delete week" for this branch.',
+      legacyConflictError: 'A legacy company-wide schedule exists for {start}–{end}. Delete it before generating per branch.',
       mondayRequired: 'Start date must be a Monday.',
       unfilledTitle: 'Unfilled shifts',
       assign: 'Assign',
@@ -1484,14 +1507,14 @@ export default function ScheduleReview({ language }) {
     };
 
     try {
-      const conflicts = await findOverlappingSchedules({
+      const conflicts = await findGenerationConflicts({
         branch_id: selectedBranchId,
         start_date: period.start_date,
         end_date: period.end_date,
       });
 
-      if (conflicts.length > 0) {
-        setError(t.conflictError);
+      if (conflicts.branchSchedules.length > 0 || conflicts.legacySchedules.length > 0) {
+        setError(formatGenerationConflictMessage(conflicts, selectedBranchLabel, t));
         return;
       }
 
@@ -1539,7 +1562,10 @@ export default function ScheduleReview({ language }) {
     reloadCoverage,
     scheduleVersions,
     selectedBranchId,
+    selectedBranchLabel,
+    t.branchConflictError,
     t.conflictError,
+    t.legacyConflictError,
     t.generated,
     t.generatedRecovered,
     t.mondayRequired,
@@ -1769,7 +1795,7 @@ export default function ScheduleReview({ language }) {
       const published = await publishScheduleForPeriod({
         ...schedule,
         branch_id: schedule.branch_id || selectedBranchId,
-      });
+      }, selectedBranchId);
       setScheduleVersions({
         draft: null,
         published,
@@ -1777,7 +1803,7 @@ export default function ScheduleReview({ language }) {
       setActiveVersion('published');
       markSaved(SCHEDULE_DRAFT_SCOPE);
       await reloadCoverage(selectedBranchId, calendarMonth);
-      setSuccess(t.publishedDone);
+      setSuccess(t.publishedDone.replace('{branch}', selectedBranchLabel || t.branch));
     } catch (e) {
       setError(extractApiErrorMessage(e, null, language));
     } finally {
@@ -1892,6 +1918,7 @@ export default function ScheduleReview({ language }) {
           </div>
 
           <span className={`st-status-badge ${scheduleStatus === 'published' ? 'st-status-badge--published' : 'st-status-badge--draft'}`}>
+            {selectedBranchLabel ? `${selectedBranchLabel} · ` : ''}
             {t.status}: {getStatusLabel(scheduleStatus, t)}
           </span>
         </div>
@@ -1933,6 +1960,8 @@ export default function ScheduleReview({ language }) {
                 setSelectedBranchId(branchId);
                 setScheduleVersions(EMPTY_SCHEDULE_VERSIONS);
                 setActiveVersion('draft');
+                setError('');
+                setSuccess('');
               }}
               disabled={!branches.length || isSubmitting}
             >
