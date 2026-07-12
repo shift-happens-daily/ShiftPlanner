@@ -1,5 +1,11 @@
 import { useMemo } from 'react';
 import { formatLocalDate } from '../../services/scheduleService';
+import {
+  formatApiDateRange,
+  formatDisplayDateWithWeekday,
+  formatLocalizedDate,
+  getDateLocale,
+} from '../../utils/dateDisplay';
 import '../../styles/schedule-tab.css';
 
 const INDICATOR_COLORS = {
@@ -56,14 +62,7 @@ function isSameDateKey(left, right) {
 }
 
 function formatDisplayDate(value, language = 'ru') {
-  const date = parseDateKey(value);
-  if (!date) return value;
-
-  return date.toLocaleDateString(language === 'ru' ? 'ru-RU' : 'en-US', {
-    weekday: 'short',
-    month: 'short',
-    day: 'numeric',
-  });
+  return formatDisplayDateWithWeekday(value, language);
 }
 
 function formatTimeLabel(value) {
@@ -152,7 +151,7 @@ export default function ManagerScheduleCalendar({
 
   const calendarMonthLabel = useMemo(() => {
     const date = startOfMonthDate(calendarMonth);
-    return date.toLocaleDateString(language === 'ru' ? 'ru-RU' : 'en-US', {
+    return date.toLocaleDateString(getDateLocale(language), {
       month: 'long',
       year: 'numeric',
     });
@@ -163,7 +162,7 @@ export default function ManagerScheduleCalendar({
     return Array.from({ length: 7 }, (_, index) => {
       const day = new Date(base);
       day.setDate(day.getDate() - ((day.getDay() + 6) % 7) + index);
-      return day.toLocaleDateString(language === 'ru' ? 'ru-RU' : 'en-US', { weekday: 'short' });
+      return day.toLocaleDateString(getDateLocale(language), { weekday: 'short' });
     });
   }, [calendarMonth, language]);
 
@@ -215,7 +214,7 @@ export default function ManagerScheduleCalendar({
 
         {scheduleStartDate && scheduleEndDate ? (
           <p className="st-page-subtitle" style={{ marginBottom: 14 }}>
-            {texts.loadedPeriod}: {scheduleStartDate} — {scheduleEndDate}
+            {texts.loadedPeriod}: {formatApiDateRange(scheduleStartDate, scheduleEndDate)}
           </p>
         ) : null}
 

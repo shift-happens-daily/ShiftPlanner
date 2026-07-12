@@ -19,6 +19,7 @@ import {
   resolveEmployeeBranches,
 } from '../../utils/employeeBranches';
 import { useTabResponsive } from '../../utils/tabResponsive';
+import { formatApiDateRange, formatShortDisplayDate } from '../../utils/dateDisplay';
 import { formatLocalDate } from '../../services/scheduleService';
 import { getEmployeePositionLabel, getPositionLabel } from '../../utils/employeeDisplay';
 import { CHECK_MARK, CLOSE_MARK } from '../../utils/textSymbols';
@@ -118,19 +119,12 @@ function getDateValue(value) {
   return Number.isNaN(timestamp) ? 0 : timestamp;
 }
 
-function formatShortDate(value) {
-  if (!value) return '';
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return value;
-  return date.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+function formatShortDate(value, language = 'ru') {
+  return formatShortDisplayDate(value, language);
 }
 
-function formatDateRange(startDate, endDate) {
-  const start = formatShortDate(startDate);
-  const end = formatShortDate(endDate);
-  if (!start && !end) return '';
-  if (!end || start === end) return start;
-  return `${start} - ${end}`;
+function formatDateRange(startDate, endDate, language = 'ru') {
+  return formatApiDateRange(startDate, endDate, '');
 }
 
 const MOBILE_EMPLOYEES_STYLES = {
@@ -1885,7 +1879,7 @@ export default function EmployeesTab({ language, userRole, user }) {
                       <div style={{ ...styles.absenceText, ...mobileStyles?.absenceText }}>
                         <strong>{absenceEmployeeName}</strong>
                         <span>{t[absence.absence_type] || absence.absence_type || t.absences}</span>
-                        <span>{formatDateRange(absence.start_date, absence.end_date)}</span>
+                        <span>{formatDateRange(absence.start_date, absence.end_date, language)}</span>
                       </div>
                     </div>
                   );
