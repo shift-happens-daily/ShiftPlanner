@@ -25,6 +25,13 @@ import { useUnsavedChanges } from '../../context/useUnsavedChanges';
 import { useAuth } from '../../context/useAuth';
 import '../../styles/schedule-tab.css';
 import { CHECK_MARK } from '../../utils/textSymbols';
+import {
+  formatApiDateAsDisplay,
+  formatDisplayDateWithWeekday,
+  formatLocalizedDate,
+  getDateLocale,
+} from '../../utils/dateDisplay';
+import DateField from '../ui/DateField';
 
 const EXCHANGE_NOTE_SCOPE = 'schedule-exchange-note';
 
@@ -83,17 +90,8 @@ function formatDate(value) {
   return formatLocalDate(date);
 }
 
-function formatDisplayDate(value) {
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) {
-    return value;
-  }
-
-  return date.toLocaleDateString('en-US', {
-    weekday: 'short',
-    month: 'short',
-    day: 'numeric',
-  });
+function formatDisplayDate(value, language = 'en') {
+  return formatDisplayDateWithWeekday(value, language);
 }
 
 function parseDateKey(value) {
@@ -178,7 +176,7 @@ function getShiftCompany(shift) {
 function formatLongDisplayDate(value, language) {
   const date = parseDateKey(value);
   if (!date) return value;
-  return date.toLocaleDateString(language === 'ru' ? 'ru-RU' : 'en-US', {
+  return date.toLocaleDateString(getDateLocale(language), {
     month: 'long',
     day: 'numeric',
     year: 'numeric',
@@ -643,7 +641,7 @@ export default function ScheduleTab({ language, userRole }) {
 
   const employeeCalendarMonthLabel = useMemo(() => {
     const date = startOfMonthDate(employeeCalendarMonth);
-    return date.toLocaleDateString(language === 'ru' ? 'ru-RU' : 'en-US', {
+    return date.toLocaleDateString(getDateLocale(language), {
       month: 'long',
       year: 'numeric',
     });
@@ -659,7 +657,7 @@ export default function ScheduleTab({ language, userRole }) {
     return Array.from({ length: 7 }, (_, index) => {
       const date = new Date(monday);
       date.setDate(monday.getDate() + index);
-      return date.toLocaleDateString(language === 'ru' ? 'ru-RU' : 'en-US', { weekday: 'short' });
+      return date.toLocaleDateString(getDateLocale(language), { weekday: 'short' });
     });
   }, [language]);
 
@@ -1086,12 +1084,16 @@ export default function ScheduleTab({ language, userRole }) {
                         </span>
 
                         {shiftsForDate.length > 0 ? (
-                          <div className="st-day-indicator">
+                          <div
+                            className="st-day-indicator"
+                            title={`${shiftsForDate.length} ${shiftsForDate.length === 1 ? t.shiftSingular : t.shiftPlural}`}
+                          >
                             <span className="st-day-indicator-dot" style={{ background: '#3b82f6' }} />
                             <span className="st-day-indicator-text">
                               {shiftsForDate.length}{' '}
                               {shiftsForDate.length === 1 ? t.shiftSingular : t.shiftPlural}
                             </span>
+                            <span className="st-day-indicator-count">{shiftsForDate.length}</span>
                           </div>
                         ) : null}
                       </button>
@@ -1218,22 +1220,22 @@ export default function ScheduleTab({ language, userRole }) {
 
                 <div style={styles.stack}>
                   <Field label={t.startDate}>
-                    <input
-                      type="date"
+                    <DateField
+                      language={language}
                       value={periodForm.start_date}
-                      onChange={(event) =>
-                        setPeriodForm((prev) => ({ ...prev, start_date: event.target.value }))
+                      onChange={(nextValue) =>
+                        setPeriodForm((prev) => ({ ...prev, start_date: nextValue }))
                       }
                       style={styles.dateInput}
                     />
                   </Field>
 
                   <Field label={t.endDate}>
-                    <input
-                      type="date"
+                    <DateField
+                      language={language}
                       value={periodForm.end_date}
-                      onChange={(event) =>
-                        setPeriodForm((prev) => ({ ...prev, end_date: event.target.value }))
+                      onChange={(nextValue) =>
+                        setPeriodForm((prev) => ({ ...prev, end_date: nextValue }))
                       }
                       style={styles.dateInput}
                     />
@@ -1367,7 +1369,7 @@ export default function ScheduleTab({ language, userRole }) {
                               <div style={styles.shiftMain}>
                                 <strong style={styles.itemTitle}>{getShiftEmployeeName(shift)}</strong>
                                 <span style={styles.itemMeta}>{getShiftPosition(shift)}</span>
-                                <span style={styles.itemMeta}>{shift.date}</span>
+                                <span style={styles.itemMeta}>{formatApiDateAsDisplay(shift.date)}</span>
                                 <span style={styles.timeBadge}>
                                   {formatTime(shift.start_time)} — {formatTime(shift.end_time)}
                                 </span>
@@ -1448,7 +1450,7 @@ export default function ScheduleTab({ language, userRole }) {
                                   position_title: item.position_title || item.position,
                                 }, item.position_title || '—')}
                               </strong>
-                              <span style={styles.itemMeta}>{item.date}</span>
+                              <span style={styles.itemMeta}>{formatApiDateAsDisplay(item.date)}</span>
                               <span style={styles.itemMeta}>
                                 {formatTime(item.start_time)} — {formatTime(item.end_time)}
                               </span>
@@ -1505,7 +1507,7 @@ export default function ScheduleTab({ language, userRole }) {
                           {conflicts.map((conflict) => (
                             <div key={`${conflict.employee_id}-${conflict.date}`} style={styles.compactItem}>
                               <strong style={styles.itemTitle}>{conflict.employee_name}</strong>
-                              <span style={styles.itemMeta}>{conflict.date}</span>
+                              <span style={styles.itemMeta}>{formatApiDateAsDisplay(conflict.date)}</span>
                               <span style={styles.itemMeta}>
                                 {localizeBackendMessage(conflict.message, language)}
                               </span>

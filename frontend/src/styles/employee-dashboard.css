@@ -411,11 +411,179 @@
 
 @media (max-width: 640px) {
   .employee-dashboard {
-    padding: 16px;
+    padding: 12px;
+  }
+
+  .ed-page {
+    gap: 14px;
   }
 
   .ed-greeting-title {
+    font-size: 1.125rem;
+  }
+
+  .ed-greeting-sub {
+    font-size: 0.8125rem;
+  }
+
+  .ed-stats-grid {
+    gap: 8px;
+  }
+
+  .ed-stat-card {
+    padding: 10px 12px;
+    border-radius: 10px;
+  }
+
+  .ed-stat-icon {
+    width: 26px;
+    height: 26px;
+    margin-bottom: 6px;
+  }
+
+  .ed-stat-value {
+    font-size: 1.125rem;
+  }
+
+  .ed-stat-label,
+  .ed-stat-sub {
+    font-size: 0.6875rem;
+  }
+
+  .ed-main-grid {
+    gap: 14px;
+  }
+
+  .ed-card-header {
+    padding: 10px 12px;
+    gap: 8px;
+  }
+
+  .ed-card-title {
+    font-size: 0.8125rem;
+  }
+
+  .ed-period-range {
+    font-size: 0.6875rem;
+  }
+
+  .ed-period-tab {
+    padding: 3px 8px;
+    font-size: 0.6875rem;
+  }
+
+  .ed-shift-row {
+    padding: 10px 12px;
+    gap: 10px;
+  }
+
+  .ed-shift-dot {
+    margin-top: 5px;
+    width: 6px;
+    height: 6px;
+  }
+
+  .ed-shift-meta-top {
+    gap: 6px;
+    margin-bottom: 4px;
+  }
+
+  .ed-date-badge {
+    font-size: 0.6875rem;
+    padding: 1px 6px;
+  }
+
+  .ed-shift-time {
+    font-size: 0.8125rem;
+  }
+
+  .ed-shift-details {
+    gap: 4px 10px;
+  }
+
+  .ed-shift-detail {
+    font-size: 0.6875rem;
+    gap: 3px;
+  }
+
+  .ed-side-col {
+    gap: 10px;
+  }
+
+  .ed-today-card {
+    padding: 14px;
+    border-radius: 10px;
+  }
+
+  .ed-today-label {
+    font-size: 0.6875rem;
+  }
+
+  .ed-today-time {
     font-size: 1.25rem;
+  }
+
+  .ed-today-sub,
+  .ed-today-empty {
+    font-size: 0.6875rem;
+  }
+
+  .ed-quick-actions {
+    padding: 12px;
+  }
+
+  .ed-quick-title {
+    margin-bottom: 8px;
+    font-size: 0.6875rem;
+  }
+
+  .ed-quick-list {
+    gap: 4px;
+  }
+
+  .ed-quick-btn {
+    padding: 7px 10px;
+    gap: 8px;
+    border-radius: 6px;
+  }
+
+  .ed-quick-btn-label {
+    font-size: 0.8125rem;
+  }
+
+  .ed-empty {
+    padding: 32px 16px;
+  }
+
+  .ed-empty-icon {
+    width: 44px;
+    height: 44px;
+    margin-bottom: 12px;
+    border-radius: 12px;
+  }
+
+  .ed-manager-card {
+    padding: 12px;
+    gap: 10px;
+    border-radius: 10px;
+  }
+
+  .ed-managers-section {
+    padding: 14px;
+  }
+
+  .ed-managers-section-header {
+    margin-bottom: 12px;
+    padding-bottom: 10px;
+    gap: 10px;
+  }
+
+  .ed-company-hero-card {
+    padding: 14px;
+  }
+
+  .ed-side-card {
+    padding: 16px;
   }
 }
 

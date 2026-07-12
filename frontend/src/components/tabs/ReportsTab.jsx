@@ -11,6 +11,8 @@ import { POSITION_TITLES_CHANGED_EVENT } from '../../services/positionService';
 import { useIsMobile } from '../../hooks/useMediaQuery';
 import { formatLocalDate } from '../../services/scheduleService';
 import { CHECK_MARK, CLOSE_MARK, EM_DASH, formatDateRange } from '../../utils/textSymbols';
+import { formatApiDateAsDisplay } from '../../utils/dateDisplay';
+import DateField from '../ui/DateField';
 import '../../styles/reports-tab.css';
 
 function defaultRange() {
@@ -562,8 +564,8 @@ export default function ReportsTab({ language, userRole, user }) {
       { metric: t.totalHours, value: totals.total_hours },
       { metric: t.totalShifts, value: totals.total_shifts },
       { metric: t.employees, value: totals.employees },
-      { metric: t.startDate, value: appliedRange.start_date },
-      { metric: t.endDate, value: appliedRange.end_date },
+      { metric: t.startDate, value: formatApiDateAsDisplay(appliedRange.start_date) },
+      { metric: t.endDate, value: formatApiDateAsDisplay(appliedRange.end_date) },
     ];
 
     const workbook = XLSX.utils.book_new();
@@ -604,24 +606,24 @@ export default function ReportsTab({ language, userRole, user }) {
     <div className={`rt-filters-grid ${isManager ? 'rt-filters-grid--manager' : 'rt-filters-grid--employee'}`}>
       <label className="rt-field">
         <span className="rt-label">{t.startDate}</span>
-        <input
-          type="date"
+        <DateField
+          language={language}
           className="rt-input"
           value={filterForm.start_date}
-          onChange={(event) =>
-            setFilterForm((prev) => ({ ...prev, start_date: event.target.value }))
+          onChange={(nextValue) =>
+            setFilterForm((prev) => ({ ...prev, start_date: nextValue }))
           }
         />
       </label>
 
       <label className="rt-field">
         <span className="rt-label">{t.endDate}</span>
-        <input
-          type="date"
+        <DateField
+          language={language}
           className="rt-input"
           value={filterForm.end_date}
-          onChange={(event) =>
-            setFilterForm((prev) => ({ ...prev, end_date: event.target.value }))
+          onChange={(nextValue) =>
+            setFilterForm((prev) => ({ ...prev, end_date: nextValue }))
           }
         />
       </label>

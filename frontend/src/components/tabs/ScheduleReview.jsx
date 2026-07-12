@@ -1,6 +1,12 @@
 ﻿import { useCallback, useEffect, useMemo, useState } from 'react';
 import '../../styles/schedule-tab.css';
 import {
+  formatApiDateAsDisplay,
+  formatDisplayDateWithWeekday,
+  getDateLocale,
+} from '../../utils/dateDisplay';
+import DateField from '../ui/DateField';
+import {
   defaultSchedulePeriod,
   deleteScheduleWeek,
   deriveSchedulePeriod,
@@ -288,16 +294,7 @@ function isSameDateKey(left, right) {
 }
 
 function formatDisplayDate(value, language = 'ru') {
-  const date = parseDateKey(formatDate(value));
-  if (!date) {
-    return value;
-  }
-
-  return date.toLocaleDateString(language === 'ru' ? 'ru-RU' : 'en-US', {
-    weekday: 'short',
-    month: 'short',
-    day: 'numeric',
-  });
+  return formatDisplayDateWithWeekday(value, language);
 }
 
 function isDateWithinRange(dateKey, startDate, endDate) {
@@ -1951,11 +1948,11 @@ export default function ScheduleReview({ language }) {
 
           <label className="st-field">
             <span className="st-field-label">{t.startDate}</span>
-            <input
-              type="date"
+            <DateField
+              language={language}
               className="st-input"
               value={generationStartMonday}
-              onChange={(e) => setGenerationStartMonday(snapToMonday(e.target.value))}
+              onChange={(nextValue) => setGenerationStartMonday(snapToMonday(nextValue))}
             />
           </label>
 
@@ -1987,11 +1984,11 @@ export default function ScheduleReview({ language }) {
         <div className="st-control-panel">
           <label className="st-field">
             <span className="st-field-label">{t.deleteWeekStart}</span>
-            <input
-              type="date"
+            <DateField
+              language={language}
               className="st-input"
               value={deleteWeekMonday}
-              onChange={(e) => setDeleteWeekMonday(snapToMonday(e.target.value))}
+              onChange={(nextValue) => setDeleteWeekMonday(snapToMonday(nextValue))}
             />
           </label>
 
@@ -2022,7 +2019,7 @@ export default function ScheduleReview({ language }) {
                       }, item.position_title || '—')}
                     </strong>
                     <div className="st-unfilled-meta">
-                      {formatDate(item.date)} · {String(item.start_time || '').slice(0, 5)}–{String(item.end_time || '').slice(0, 5)}
+                      {formatApiDateAsDisplay(item.date)} · {String(item.start_time || '').slice(0, 5)}–{String(item.end_time || '').slice(0, 5)}
                     </div>
                     {unfilledNotFoundRequirements.some((entry) => entry.requirement_id === requirementId) && (
                       <div className="st-unfilled-warning">{t.notFound}</div>

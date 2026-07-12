@@ -31,12 +31,20 @@ import {
 import { CHECK_MARK, CLOSE_MARK } from '../../utils/textSymbols';
 import WorkingHoursPanel from '../requirements/WorkingHoursPanel';
 import RequirementTimeFields from '../requirements/RequirementTimeFields';
+import DateField from '../ui/DateField';
+import {
+  formatApiDateAsDisplay,
+  formatApiDateRange,
+  getDateLocale,
+  normalizeToApiDate,
+  parseApiDate,
+} from '../../utils/dateDisplay';
 import {
   clampRequirementTimes,
   dateKeyToWeekday,
+  fetchWorkingHoursStore,
   formatWorkingHoursRange,
   getWorkingHoursForWeekday,
-  getWorkingHoursForWeekdays,
   setWorkingHoursStoreFromApi,
   validateRequirementTimes,
 } from '../../utils/workingHours';
@@ -736,88 +744,20 @@ const MOBILE_SHIFTS_STYLES = {
   },
 };
 
-function toBackendDate(date) {
-  if (!date) return '';
-
-  if (date.includes('-')) return date;
-
-  const [day, month, year] = date.split('/');
-  return `${year}-${month}-${day}`;
+function isApiDateValid(value) {
+  return Boolean(normalizeToApiDate(value));
 }
 
-function formatDisplayDateInput(value) {
-  const digits = String(value).replace(/\D/g, '').slice(0, 8);
-
-  let day = digits.slice(0, 2);
-  let month = digits.slice(2, 4);
-  const year = digits.slice(4);
-
-  if (day.length === 1 && Number(day) > 3) {
-    day = `0${day}`;
-  }
-
-  if (day.length === 2 && Number(day) > 31) {
-    day = '31';
-  }
-
-  if (month.length === 1 && Number(month) > 1) {
-    month = `0${month}`;
-  }
-
-  if (month.length === 2 && Number(month) > 12) {
-    month = '12';
-  }
-
-  if (digits.length <= 2) return day;
-  if (digits.length <= 4) return `${day}/${month}`;
-
-  return `${day}/${month}/${year}`;
+function isApiDateNotPast(value) {
+  const apiDate = normalizeToApiDate(value);
+  if (!apiDate) return false;
+  return !isPastDateKey(apiDate);
 }
 
-
-function displayDateToDate(value) {
-  if (!/^(0[1-9]|[12][0-9]|3[01])\/(0[1-9]|1[0-2])\/\d{4}$/.test(value)) return null;
-
-  const [day, month, year] = value.split('/').map(Number);
-  const date = new Date(year, month - 1, day);
-
-  if (
-    date.getFullYear() !== year ||
-    date.getMonth() !== month - 1 ||
-    date.getDate() !== day
-  ) return null;
-
-  return date;
-}
-
-function isDisplayDateValid(value) {
-  const match = value.match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
-  if (!match) return false;
-
-  const [, dayStr, monthStr, yearStr] = match;
-
-  const day = Number(dayStr);
-  const month = Number(monthStr);
-  const year = Number(yearStr);
-
-  if (month < 1 || month > 12) return false;
-  if (day < 1 || day > 31) return false;
-
-  const date = new Date(year, month - 1, day);
-
-  return (
-    date.getFullYear() === year &&
-    date.getMonth() === month - 1 &&
-    date.getDate() === day
-  );
-}
-
-function isDisplayDateNotPast(value) {
-  const date = displayDateToDate(value);
-  if (!date) return false;
-
-  date.setHours(0, 0, 0, 0);
-  return date.getTime() >= startOfToday().getTime();
+function apiDateToDate(value) {
+  const apiDate = normalizeToApiDate(value);
+  if (!apiDate) return null;
+  return parseApiDate(apiDate);
 }
 
 export default function ShiftsTab({ language, userRole, user }) {
@@ -834,6 +774,16 @@ export default function ShiftsTab({ language, userRole, user }) {
   const [branches, setBranches] = useState([]);
   const [workingHoursRevision, setWorkingHoursRevision] = useState(0);
   const [workingHoursBranchId, setWorkingHoursBranchId] = useState('');
+
+  const applyBranchWorkingHours = useCallback((branchId) => {
+    if (!companyId || !branchId) return;
+
+    const branch = branches.find((item) => String(item.id) === String(branchId));
+    if (branch?.working_hours_by_weekday) {
+      setWorkingHoursStoreFromApi(companyId, Number(branchId), branch.working_hours_by_weekday);
+      setWorkingHoursRevision((value) => value + 1);
+    }
+  }, [branches, companyId]);
   const [requirements, setRequirements] = useState([]);
   const [singleRequirement, setSingleRequirement] = useState(defaultSingleRequirement);
   const [bulkRequirement, setBulkRequirement] = useState(defaultBulkRequirement);
@@ -987,7 +937,7 @@ export default function ShiftsTab({ language, userRole, user }) {
       nextWeek: 'Следующая неделя',
       locked: 'Прошедшие даты изменить нельзя',
 
-      invalidDateFormat: 'Введите дату в формате dd/mm/yyyy',
+      invalidDateFormat: 'Введите дату в формате дд/мм/гггг',
       absencePastDate: 'Нельзя поставить отсутствие раньше сегодняшнего дня',
       absenceEndBeforeStart: 'Конец периода не может быть раньше начала',
       outsideWorkingHours: 'Смена должна быть в пределах рабочих часов ({range}).',
@@ -1109,7 +1059,7 @@ export default function ShiftsTab({ language, userRole, user }) {
   };
 
   const weekRangeLabel = useMemo(() => {
-    const locale = language === 'ru' ? 'ru-RU' : 'en-US';
+    const locale = getDateLocale(language);
     const start = weekDates[0]?.toLocaleDateString(locale, { day: 'numeric', month: 'short' }) || '';
     const end = weekDates[6]?.toLocaleDateString(locale, { day: 'numeric', month: 'short' }) || '';
     return `${start} — ${end}`;
@@ -1133,12 +1083,12 @@ export default function ShiftsTab({ language, userRole, user }) {
 
   const bulkWorkingHours = useMemo(() => {
     if (!companyId || !bulkRequirement.branch_id) return null;
-    return getWorkingHoursForWeekdays(
+    return getWorkingHoursForWeekday(
       companyId,
       Number(bulkRequirement.branch_id),
-      bulkRequirement.weekdays,
+      dateKeyToWeekday(bulkRequirement.start_date),
     );
-  }, [bulkRequirement.branch_id, bulkRequirement.weekdays, companyId, workingHoursRevision]);
+  }, [companyId, bulkRequirement.branch_id, bulkRequirement.start_date, workingHoursRevision]);
 
   useEffect(() => {
     if (!singleWorkingHours) return;
@@ -1166,6 +1116,42 @@ export default function ShiftsTab({ language, userRole, user }) {
       }),
     }));
   }, [bulkWorkingHours]);
+
+  useEffect(() => {
+    if (!companyId || !bulkRequirement.branch_id) return undefined;
+
+    let cancelled = false;
+
+    void fetchWorkingHoursStore(companyId, Number(bulkRequirement.branch_id))
+      .then(() => {
+        if (!cancelled) {
+          setWorkingHoursRevision((value) => value + 1);
+        }
+      })
+      .catch(() => {});
+
+    return () => {
+      cancelled = true;
+    };
+  }, [bulkRequirement.branch_id, companyId]);
+
+  useEffect(() => {
+    if (!companyId || !singleRequirement.branch_id) return undefined;
+
+    let cancelled = false;
+
+    void fetchWorkingHoursStore(companyId, Number(singleRequirement.branch_id))
+      .then(() => {
+        if (!cancelled) {
+          setWorkingHoursRevision((value) => value + 1);
+        }
+      })
+      .catch(() => {});
+
+    return () => {
+      cancelled = true;
+    };
+  }, [companyId, singleRequirement.branch_id]);
 
   useEffect(() => {
     if (!isManager || !companyId) {
@@ -1501,7 +1487,7 @@ export default function ShiftsTab({ language, userRole, user }) {
   </span>
   <span style={styles.dateHeaderDate}>
     {rowDate?.toLocaleDateString?.(
-      language === 'ru' ? 'ru-RU' : 'en-US',
+      getDateLocale(language),
       { day: 'numeric', month: 'short' }
     ) || ''}
   </span>
@@ -1641,26 +1627,23 @@ export default function ShiftsTab({ language, userRole, user }) {
       return;
     }
 
-    if (!bulkWorkingHours) {
-      setErrorMessage(t.bulkWorkingHoursConflict);
-      return;
-    }
-
     const template = bulkRequirement.requirements[0];
-    const validationError = validateRequirementTimes(
-      template.start_time,
-      template.end_time,
-      bulkWorkingHours,
-      {
-        outsideWorkingHours: t.outsideWorkingHours.replace(
-          '{range}',
-          formatWorkingHoursRange(bulkWorkingHours),
-        ),
-      },
-    );
-    if (validationError) {
-      setErrorMessage(validationError);
-      return;
+    if (bulkWorkingHours) {
+      const validationError = validateRequirementTimes(
+        template.start_time,
+        template.end_time,
+        bulkWorkingHours,
+        {
+          outsideWorkingHours: t.outsideWorkingHours.replace(
+            '{range}',
+            formatWorkingHoursRange(bulkWorkingHours),
+          ),
+        },
+      );
+      if (validationError) {
+        setErrorMessage(validationError);
+        return;
+      }
     }
 
     clearMessages();
@@ -1766,18 +1749,18 @@ export default function ShiftsTab({ language, userRole, user }) {
       setErrorMessage(t.addAbsence);
       return;
     }
-    if (!isDisplayDateValid(absenceForm.start_date) || !isDisplayDateValid(absenceForm.end_date)) {
+    if (!isApiDateValid(absenceForm.start_date) || !isApiDateValid(absenceForm.end_date)) {
       setErrorMessage(t.invalidDateFormat);
       return;
     }
-    
-    if (!isDisplayDateNotPast(absenceForm.start_date) || !isDisplayDateNotPast(absenceForm.end_date)) {
+
+    if (!isApiDateNotPast(absenceForm.start_date) || !isApiDateNotPast(absenceForm.end_date)) {
       setErrorMessage(t.absencePastDate);
       return;
     }
 
-    const start = displayDateToDate(absenceForm.start_date);
-    const end = displayDateToDate(absenceForm.end_date);
+    const start = apiDateToDate(absenceForm.start_date);
+    const end = apiDateToDate(absenceForm.end_date);
 
     if (end.getTime() < start.getTime()) {
       setErrorMessage(t.absenceEndBeforeStart);
@@ -1789,8 +1772,8 @@ export default function ShiftsTab({ language, userRole, user }) {
     try {
       await createMyAbsence({
         ...absenceForm,
-        start_date: toBackendDate(absenceForm.start_date),
-        end_date: toBackendDate(absenceForm.end_date),
+        start_date: normalizeToApiDate(absenceForm.start_date),
+        end_date: normalizeToApiDate(absenceForm.end_date),
     });
       setAbsenceForm({absence_type: 'vacation', start_date: '', end_date: '', comment: '',});
       await loadEmployeeData();
@@ -1919,33 +1902,34 @@ export default function ShiftsTab({ language, userRole, user }) {
                   </select>
 
                   <label style={{ ...styles.label, ...mobileStyles?.label }}>{t.filterDate}</label>
-                  <input
-                    type="date"
+                  <DateField
+                    language={language}
                     value={filterForm.date}
-                    onChange={(event) => setFilterForm((prev) => ({ ...prev, date: event.target.value }))}
+                    onChange={(value) => setFilterForm((prev) => ({ ...prev, date: value }))}
                     style={{ ...styles.dateInput, ...mobileStyles?.dateInput }}
                   />
 
                   <label style={{ ...styles.label, ...mobileStyles?.label }}>{t.startDate}</label>
-                  <input
-                    type="date"
+                  <DateField
+                    language={language}
                     value={filterForm.start_date}
-                    onChange={(event) => {
-                      setFilterForm((prev) => ({ ...prev, start_date: event.target.value }));
+                    onChange={(value) => {
+                      setFilterForm((prev) => ({ ...prev, start_date: value }));
                       markUnsaved(ABSENCE_SCOPE);
                     }}
-                   style={{ ...styles.dateInput, ...mobileStyles?.dateInput }}
+                    style={{ ...styles.dateInput, ...mobileStyles?.dateInput }}
                     disabled={Boolean(filterForm.date)}
                   />
 
                   <label style={{ ...styles.label, ...mobileStyles?.label }}>{t.endDate}</label>
-                  <input
-                    type="date"
+                  <DateField
+                    language={language}
                     value={filterForm.end_date}
-                    onChange={(event) => {
-                      setFilterForm((prev) => ({ ...prev, end_date: event.target.value }));
+                    onChange={(value) => {
+                      setFilterForm((prev) => ({ ...prev, end_date: value }));
                       markUnsaved(ABSENCE_SCOPE);
-                    }}                    style={{ ...styles.dateInput, ...mobileStyles?.dateInput }}
+                    }}
+                    style={{ ...styles.dateInput, ...mobileStyles?.dateInput }}
                     disabled={Boolean(filterForm.date)}
                   />
 
@@ -2055,7 +2039,9 @@ export default function ShiftsTab({ language, userRole, user }) {
                       <select
                         value={singleRequirement.branch_id}
                         onChange={(event) => {
-                          setSingleRequirement((prev) => ({ ...prev, branch_id: event.target.value }));
+                          const branchId = event.target.value;
+                          setSingleRequirement((prev) => ({ ...prev, branch_id: branchId }));
+                          applyBranchWorkingHours(branchId);
                           markUnsaved(SINGLE_REQUIREMENT_SCOPE);
                         }}
                         style={{ ...styles.input, ...mobileStyles?.input }}
@@ -2088,11 +2074,11 @@ export default function ShiftsTab({ language, userRole, user }) {
                     </Field>
 
                     <Field label={t.date} labelStyle={mobileStyles?.label}>
-                      <input
-                        type="date"
+                      <DateField
+                        language={language}
                         value={singleRequirement.date}
-                        onChange={(event) => {
-                          setSingleRequirement((prev) => ({ ...prev, date: event.target.value }));
+                        onChange={(value) => {
+                          setSingleRequirement((prev) => ({ ...prev, date: value }));
                           markUnsaved(SINGLE_REQUIREMENT_SCOPE);
                         }}
                         style={{ ...styles.dateInput, ...mobileStyles?.dateInput }}
@@ -2159,7 +2145,9 @@ export default function ShiftsTab({ language, userRole, user }) {
                       <select
                         value={bulkRequirement.branch_id}
                         onChange={(event) => {
-                          setBulkRequirement((prev) => ({ ...prev, branch_id: event.target.value }));
+                          const branchId = event.target.value;
+                          setBulkRequirement((prev) => ({ ...prev, branch_id: branchId }));
+                          applyBranchWorkingHours(branchId);
                           markUnsaved(BULK_REQUIREMENT_SCOPE);
                         }}
                         style={{ ...styles.input, ...mobileStyles?.input }}
@@ -2174,11 +2162,11 @@ export default function ShiftsTab({ language, userRole, user }) {
                     </Field>
 
                     <Field label={t.startDate} labelStyle={mobileStyles?.label}>
-                      <input
-                        type="date"
+                      <DateField
+                        language={language}
                         value={bulkRequirement.start_date}
-                        onChange={(event) => {
-                          setBulkRequirement((prev) => ({ ...prev, start_date: event.target.value }));
+                        onChange={(value) => {
+                          setBulkRequirement((prev) => ({ ...prev, start_date: value }));
                           markUnsaved(BULK_REQUIREMENT_SCOPE);
                         }}
                         style={{ ...styles.dateInput, ...mobileStyles?.dateInput }}
@@ -2186,11 +2174,11 @@ export default function ShiftsTab({ language, userRole, user }) {
                     </Field>
 
                     <Field label={t.endDate} labelStyle={mobileStyles?.label}>
-                      <input
-                        type="date"
+                      <DateField
+                        language={language}
                         value={bulkRequirement.end_date}
-                        onChange={(event) => {
-                          setBulkRequirement((prev) => ({ ...prev, end_date: event.target.value }));
+                        onChange={(value) => {
+                          setBulkRequirement((prev) => ({ ...prev, end_date: value }));
                           markUnsaved(BULK_REQUIREMENT_SCOPE);
                         }}
                         style={{ ...styles.dateInput, ...mobileStyles?.dateInput }}
@@ -2260,13 +2248,9 @@ export default function ShiftsTab({ language, userRole, user }) {
                     />
                   </div>
 
-                  {bulkWorkingHours ? (
+                  {bulkWorkingHours && (
                     <p style={{ ...styles.panelHint, ...mobileStyles?.panelHint, marginTop: 8 }}>
                       {t.workingHoursRange.replace('{range}', formatWorkingHoursRange(bulkWorkingHours))}
-                    </p>
-                  ) : (
-                    <p style={{ ...styles.panelHint, ...mobileStyles?.panelHint, marginTop: 8, color: '#b42318' }}>
-                      {t.bulkWorkingHoursConflict}
                     </p>
                   )}
 
@@ -2302,7 +2286,7 @@ export default function ShiftsTab({ language, userRole, user }) {
                     style={isSubmitting
                       ? { ...styles.primaryButtonDisabled, ...mobileStyles?.primaryButtonDisabled }
                       : { ...styles.primaryButton, ...mobileStyles?.primaryButton }}
-                    disabled={isSubmitting || positions.length === 0 || branches.length === 0 || !bulkWorkingHours}
+                    disabled={isSubmitting || positions.length === 0 || branches.length === 0}
                   >
                     {t.create}
                   </button>
@@ -2352,10 +2336,10 @@ export default function ShiftsTab({ language, userRole, user }) {
                     </Field>
 
                     <Field label={t.filterDate} labelStyle={mobileStyles?.label}>
-                      <input
-                        type="date"
+                      <DateField
+                        language={language}
                         value={filterForm.date}
-                        onChange={(event) => setFilterForm((prev) => ({ ...prev, date: event.target.value }))}
+                        onChange={(value) => setFilterForm((prev) => ({ ...prev, date: value }))}
                         style={{
                           ...styles.dateInput,
                           ...(r.isMobile ? { height: 32, fontSize: 12, padding: '0 10px', borderRadius: 8 } : {}),
@@ -2364,13 +2348,14 @@ export default function ShiftsTab({ language, userRole, user }) {
                     </Field>
 
                     <Field label={t.startDate} labelStyle={mobileStyles?.label}>
-                      <input
-                        type="date"
+                      <DateField
+                        language={language}
                         value={filterForm.start_date}
-                        onChange={(event) => {
-                          setFilterForm((prev) => ({ ...prev, start_date: event.target.value }))
+                        onChange={(value) => {
+                          setFilterForm((prev) => ({ ...prev, start_date: value }));
                           markUnsaved(ABSENCE_SCOPE);
-                        }}                        style={{
+                        }}
+                        style={{
                           ...styles.dateInput,
                           ...(r.isMobile ? { height: 32, fontSize: 12, padding: '0 10px', borderRadius: 8 } : {}),
                         }}
@@ -2379,11 +2364,11 @@ export default function ShiftsTab({ language, userRole, user }) {
                     </Field>
 
                     <Field label={t.endDate} labelStyle={mobileStyles?.label}>
-                      <input
-                        type="date"
+                      <DateField
+                        language={language}
                         value={filterForm.end_date}
-                        onChange={(event) => {
-                          setFilterForm((prev) => ({ ...prev, end_date: event.target.value }))
+                        onChange={(value) => {
+                          setFilterForm((prev) => ({ ...prev, end_date: value }));
                           markUnsaved(ABSENCE_SCOPE);
                         }}
                         style={{
@@ -2433,7 +2418,7 @@ export default function ShiftsTab({ language, userRole, user }) {
                             </span>
                           </div>
                           <div style={mobileStyles?.requirementMetaRow}>
-                            <span style={{ ...styles.itemMeta, ...mobileStyles?.itemMeta }}>{requirement.date}</span>
+                            <span style={{ ...styles.itemMeta, ...mobileStyles?.itemMeta }}>{formatApiDateAsDisplay(requirement.date)}</span>
                             <span style={{ ...styles.itemMeta, ...mobileStyles?.itemMeta }}>
                               {resolveBranchName(requirement.branch_id, branches)}
                             </span>
@@ -2458,7 +2443,7 @@ export default function ShiftsTab({ language, userRole, user }) {
                         <div>
                           <strong style={styles.itemTitle}>{requirement.position_title}</strong>
                           <div style={styles.itemMeta}>
-                            {requirement.date}
+                            {formatApiDateAsDisplay(requirement.date)}
                           </div>
                         </div>
 
@@ -2532,10 +2517,10 @@ export default function ShiftsTab({ language, userRole, user }) {
                     </button>
                     <div style={styles.mobileWeekCenter}>
                       <div style={{ ...styles.mobileWeekLabel, ...mobileStyles?.mobileWeekLabel }}>{weekRangeLabel}</div>
-                      <input
-                        type="date"
+                      <DateField
+                        language={language}
                         value={selectedDate}
-                        onChange={(e) => handleSelectedDateChange(e.target.value)}
+                        onChange={handleSelectedDateChange}
                         style={{ ...styles.mobileWeekDateInput, ...mobileStyles?.mobileWeekDateInput }}
                       />
                     </div>
@@ -2562,7 +2547,7 @@ export default function ShiftsTab({ language, userRole, user }) {
                           ...mobileStyles?.mobileBrushButton,
                           background: option.color,
                           color: option.textColor,
-                          border: brushMode === option.id ? '2px solid #002642' : '2px solid rgba(79, 100, 111, 0.12)',
+                          border: 'none',
                           boxShadow: brushMode === option.id ? '0 4px 12px rgba(0, 38, 66, 0.14)' : 'none',
                         }}
                       >
@@ -2669,9 +2654,7 @@ export default function ShiftsTab({ language, userRole, user }) {
                             ? '0 8px 22px rgba(0,38,66,.22)'
                             : '0 3px 10px rgba(0,38,66,.08)',
 
-                          outline: brushMode === option.id
-                            ? '2px solid #002642'
-                            : 'none',
+                          outline: 'none',
 
                           zIndex: brushMode === option.id ? 2 : 1,
                         }}
@@ -2700,10 +2683,10 @@ export default function ShiftsTab({ language, userRole, user }) {
                   >
                     {'\u2190'}
                   </button>
-                  <input
-                    type="date"
+                  <DateField
+                    language={language}
                     value={selectedDate}
-                    onChange={(e) => handleSelectedDateChange(e.target.value)}
+                    onChange={handleSelectedDateChange}
                     style={{ ...styles.dateInput, width: 'auto' }}
                   />
                   <button
@@ -2764,12 +2747,12 @@ export default function ShiftsTab({ language, userRole, user }) {
 
       <div style={styles.absenceDatesRow}>
         <Field label={t.startDate} labelStyle={mobileStyles?.label}>
-          <input
-            type="text"
-            placeholder="dd/mm/yyyy"
+          <DateField
+            language={language}
+            minDate={formatLocalDate(new Date())}
             value={absenceForm.start_date}
-            onChange={(event) => {
-              setAbsenceForm((prev) => ({ ...prev, start_date: formatDisplayDateInput(event.target.value) }));
+            onChange={(value) => {
+              setAbsenceForm((prev) => ({ ...prev, start_date: value }));
               markUnsaved(ABSENCE_SCOPE);
             }}
             style={{ ...styles.dateInput, ...mobileStyles?.dateInput }}
@@ -2777,12 +2760,12 @@ export default function ShiftsTab({ language, userRole, user }) {
         </Field>
 
         <Field label={t.endDate} labelStyle={mobileStyles?.label}>
-          <input
-            type="text"
-            placeholder="dd/mm/yyyy"
+          <DateField
+            language={language}
+            minDate={formatLocalDate(new Date())}
             value={absenceForm.end_date}
-            onChange={(event) => {
-              setAbsenceForm((prev) => ({ ...prev, end_date: formatDisplayDateInput(event.target.value) }));
+            onChange={(value) => {
+              setAbsenceForm((prev) => ({ ...prev, end_date: value }));
               markUnsaved(ABSENCE_SCOPE);
             }}
             style={{ ...styles.dateInput, ...mobileStyles?.dateInput }}
@@ -2830,7 +2813,7 @@ export default function ShiftsTab({ language, userRole, user }) {
                 {t[absence.absence_type] || absence.absence_type}
               </strong>
               <div style={styles.itemMeta}>
-                {absence.start_date} — {absence.end_date}
+                {formatApiDateRange(absence.start_date, absence.end_date)}
               </div>
               {absence.comment && (
                 <div style={styles.itemMeta}>{absence.comment}</div>

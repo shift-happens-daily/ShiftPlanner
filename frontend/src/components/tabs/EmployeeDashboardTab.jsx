@@ -9,6 +9,11 @@ import {
   snapToMonday,
 } from '../../services/scheduleService';
 import { getBranchLabel, getPositionLabel, getEmployeePositionLabel } from '../../utils/employeeDisplay';
+import {
+  formatApiDateRange,
+  formatLocalizedDate,
+  getDateLocale,
+} from '../../utils/dateDisplay';
 import '../../styles/employee-dashboard.css';
 
 const PERIOD_WEEKS = [1, 2, 4];
@@ -78,7 +83,7 @@ function getGreeting(language) {
 function formatLongDate(dateKey, language) {
   const date = new Date(`${dateKey}T12:00:00`);
   if (Number.isNaN(date.getTime())) return dateKey;
-  return date.toLocaleDateString(language === 'ru' ? 'ru-RU' : 'en-US', {
+  return formatLocalizedDate(dateKey, language, {
     weekday: 'long',
     day: 'numeric',
     month: 'long',
@@ -101,7 +106,7 @@ function formatShiftDateLabel(dateKey, language) {
 
   const date = new Date(`${dateKey}T12:00:00`);
   if (Number.isNaN(date.getTime())) return dateKey;
-  return date.toLocaleDateString(language === 'ru' ? 'ru-RU' : 'en-US', {
+  return formatLocalizedDate(dateKey, language, {
     weekday: 'short',
     day: 'numeric',
     month: 'short',
@@ -123,16 +128,8 @@ function isDateWithinPeriod(dateKey, period) {
   return dateKey >= period.start_date && dateKey <= period.end_date;
 }
 
-function formatPeriodRange(period, language) {
-  const start = new Date(`${period.start_date}T12:00:00`);
-  const end = new Date(`${period.end_date}T12:00:00`);
-  if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) {
-    return `${period.start_date} – ${period.end_date}`;
-  }
-  const locale = language === 'ru' ? 'ru-RU' : 'en-US';
-  const startLabel = start.toLocaleDateString(locale, { day: 'numeric', month: 'short' });
-  const endLabel = end.toLocaleDateString(locale, { day: 'numeric', month: 'short', year: 'numeric' });
-  return `${startLabel} – ${endLabel}`;
+function formatPeriodRange(period) {
+  return formatApiDateRange(period.start_date, period.end_date);
 }
 
 function IconClock() {
@@ -419,7 +416,7 @@ export default function EmployeeDashboardTab({ language = 'ru', user, onNavigate
             <div className="ed-card-header">
               <div className="ed-card-header-main">
                 <h2 className="ed-card-title">{t.upcomingShifts}</h2>
-                <p className="ed-period-range">{formatPeriodRange(period, language)}</p>
+                <p className="ed-period-range">{formatPeriodRange(period)}</p>
               </div>
               <div className="ed-period-tabs" role="tablist" aria-label={t.upcomingShifts}>
                 {PERIOD_WEEKS.map((value) => (

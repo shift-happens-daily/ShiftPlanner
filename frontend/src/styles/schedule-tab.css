@@ -399,6 +399,8 @@
 
 .st-day-cell {
   height: 80px;
+  min-height: 80px;
+  max-height: 80px;
   padding: 10px;
   border: none;
   border-bottom: 1px solid var(--st-border);
@@ -410,6 +412,7 @@
   display: flex;
   flex-direction: column;
   align-items: flex-start;
+  overflow: hidden;
 }
 
 .st-day-cell:nth-child(7n) {
@@ -481,6 +484,14 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.st-day-indicator-count {
+  display: none;
+  font-size: 0.625rem;
+  font-weight: 700;
+  color: var(--st-muted);
+  line-height: 1;
 }
 
 .st-detail-panel {
@@ -754,8 +765,8 @@
   }
 
   .st-day-cell {
-    height: 64px;
-    padding: 6px;
+    padding: 8px 4px;
+    overflow: hidden;
   }
 
   .st-control-panel {
@@ -776,5 +787,75 @@
   .st-unfilled-item {
     flex-direction: column;
     align-items: stretch;
+  }
+}
+
+@media (max-width: 600px) {
+  .st-page {
+    padding: 10px 10px 16px;
+    gap: 12px;
+  }
+
+  .st-calendar-header {
+    margin-bottom: 10px;
+  }
+
+  .st-month-label {
+    min-width: 0;
+    padding: 0 6px;
+    font-size: 0.8125rem;
+  }
+
+  .st-legend {
+    gap: 10px;
+    margin-bottom: 10px;
+  }
+
+  .st-legend-label {
+    font-size: 0.6875rem;
+  }
+
+  .st-calendar-weekday {
+    padding: 6px 0;
+    font-size: 0.625rem;
+  }
+
+  .st-day-cell {
+    padding: 8px 4px;
+  }
+
+  .st-day-indicator {
+    margin-top: 2px;
+    justify-content: center;
+    gap: 2px;
+  }
+
+  .st-day-indicator-dot {
+    width: 6px;
+    height: 6px;
+  }
+
+  .st-day-indicator-text {
+    display: none;
+  }
+
+  .st-day-indicator-count {
+    display: inline;
+  }
+
+  .st-detail-content {
+    padding: 14px;
+    max-height: min(52vh, 420px);
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .st-detail-shift-card {
+    padding-bottom: 12px;
+    margin-bottom: 12px;
+  }
+
+  .st-shift-time-value {
+    font-size: 1.05rem;
   }
 }
