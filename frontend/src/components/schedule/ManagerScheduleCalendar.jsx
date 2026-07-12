@@ -280,7 +280,10 @@ export default function ManagerScheduleCalendar({
                   </span>
 
                   {indicator ? (
-                    <div className="st-day-indicator">
+                    <div
+                      className="st-day-indicator"
+                      title={`${indicator.total} ${indicator.total === 1 ? (texts.shiftSingular || 'shift') : (texts.shiftPlural || 'shifts')}`}
+                    >
                       <span
                         className="st-day-indicator-dot"
                         style={{ background: indicator.color }}
@@ -288,6 +291,7 @@ export default function ManagerScheduleCalendar({
                       <span className="st-day-indicator-text">
                         {indicator.total} {indicator.total === 1 ? (texts.shiftSingular || 'shift') : (texts.shiftPlural || 'shifts')}
                       </span>
+                      <span className="st-day-indicator-count">{indicator.total}</span>
                     </div>
                   ) : null}
                 </button>

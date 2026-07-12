@@ -1084,12 +1084,16 @@ export default function ScheduleTab({ language, userRole }) {
                         </span>
 
                         {shiftsForDate.length > 0 ? (
-                          <div className="st-day-indicator">
+                          <div
+                            className="st-day-indicator"
+                            title={`${shiftsForDate.length} ${shiftsForDate.length === 1 ? t.shiftSingular : t.shiftPlural}`}
+                          >
                             <span className="st-day-indicator-dot" style={{ background: '#3b82f6' }} />
                             <span className="st-day-indicator-text">
                               {shiftsForDate.length}{' '}
                               {shiftsForDate.length === 1 ? t.shiftSingular : t.shiftPlural}
                             </span>
+                            <span className="st-day-indicator-count">{shiftsForDate.length}</span>
                           </div>
                         ) : null}
                       </button>
