@@ -31,6 +31,7 @@ import {
   formatLocalizedDate,
   getDateLocale,
 } from '../../utils/dateDisplay';
+import { formatExchangeRequestShiftLine } from '../../utils/exchangeRequestDisplay';
 import DateField from '../ui/DateField';
 
 const EXCHANGE_NOTE_SCOPE = 'schedule-exchange-note';
@@ -430,6 +431,7 @@ export default function ScheduleTab({ language, userRole }) {
   const [selectedEmployeeDate, setSelectedEmployeeDate] = useState(() => formatLocalDate(new Date()));
   const [employeeCalendarMonth, setEmployeeCalendarMonth] = useState(() => formatLocalDate(new Date()));
   const [exchangeNotes, setExchangeNotes] = useState({});
+  const [exchangeSubmittedShiftIds, setExchangeSubmittedShiftIds] = useState({});
   const [exchangeRequests, setExchangeRequests] = useState([]);
   const [reassignEmployeeIds, setReassignEmployeeIds] = useState({});
   const [availableByShift, setAvailableByShift] = useState({});
@@ -500,9 +502,11 @@ export default function ScheduleTab({ language, userRole }) {
       exchangeNotePlaceholder: 'Причина обмена',
       requestExchange: 'Запросить обмен',
       exchangeRequested: 'Запрос на обмен отправлен.',
+      exchangePending: 'Запрос отправлен. Ожидайте решения менеджера.',
       exchangeNoteRequired: 'Укажите причину обмена.',
       exchangeApprove: 'Одобрить',
       exchangeReject: 'Отклонить',
+      shift: 'Смена',
       exchangeApproved: 'Запрос на обмен одобрен.',
       exchangeRejected: 'Запрос на обмен отклонён.',
       noExchangeRequests: 'Нет ожидающих запросов на обмен.',
@@ -578,9 +582,11 @@ export default function ScheduleTab({ language, userRole }) {
       exchangeNotePlaceholder: 'Reason for exchange',
       requestExchange: 'Request exchange',
       exchangeRequested: 'Exchange request submitted.',
+      exchangePending: 'Request sent. Waiting for your manager to review it.',
       exchangeNoteRequired: 'Enter a reason for the exchange.',
       exchangeApprove: 'Approve',
       exchangeReject: 'Reject',
+      shift: 'Shift',
       exchangeApproved: 'Exchange request approved.',
       exchangeRejected: 'Exchange request rejected.',
       noExchangeRequests: 'No pending exchange requests.',
@@ -894,6 +900,7 @@ export default function ScheduleTab({ language, userRole }) {
         note,
       });
       setExchangeNotes((prev) => ({ ...prev, [shiftId]: '' }));
+      setExchangeSubmittedShiftIds((prev) => ({ ...prev, [shiftId]: true }));
       markSaved(EXCHANGE_NOTE_SCOPE);
       setSuccessMessage(t.exchangeRequested);
     } catch (error) {
@@ -1144,28 +1151,34 @@ export default function ScheduleTab({ language, userRole }) {
                           </div>
 
                           <div className="st-exchange-row">
-                            <textarea
-                              className="st-exchange-input"
-                              value={exchangeNotes[shiftId] || ''}
-                              onChange={(event) => {
-                                setExchangeNotes((prev) => ({
-                                  ...prev,
-                                  [shiftId]: event.target.value,
-                                }));
-                                markUnsaved(EXCHANGE_NOTE_SCOPE);
-                              }}
-                              placeholder={t.exchangeNotePlaceholder}
-                              disabled={isSubmitting}
-                            />
+                            {exchangeSubmittedShiftIds[shiftId] ? (
+                              <p className="st-exchange-sent">{t.exchangePending}</p>
+                            ) : (
+                              <>
+                                <textarea
+                                  className="st-exchange-input"
+                                  value={exchangeNotes[shiftId] || ''}
+                                  onChange={(event) => {
+                                    setExchangeNotes((prev) => ({
+                                      ...prev,
+                                      [shiftId]: event.target.value,
+                                    }));
+                                    markUnsaved(EXCHANGE_NOTE_SCOPE);
+                                  }}
+                                  placeholder={t.exchangeNotePlaceholder}
+                                  disabled={isSubmitting}
+                                />
 
-                            <button
-                              type="button"
-                              onClick={() => handleCreateExchangeRequest(shiftId)}
-                              className="st-btn st-btn--secondary"
-                              disabled={isSubmitting}
-                            >
-                              {t.requestExchange}
-                            </button>
+                                <button
+                                  type="button"
+                                  onClick={() => handleCreateExchangeRequest(shiftId)}
+                                  className="st-btn st-btn--secondary"
+                                  disabled={isSubmitting}
+                                >
+                                  {t.requestExchange}
+                                </button>
+                              </>
+                            )}
                           </div>
                         </div>
                       );
@@ -1302,6 +1315,9 @@ export default function ScheduleTab({ language, userRole }) {
                     {exchangeRequests.map((request) => (
                       <div key={request.id} style={styles.compactItem}>
                         <strong style={styles.itemTitle}>{request.employee_name}</strong>
+                        <span style={styles.itemMeta}>
+                          {formatExchangeRequestShiftLine(request, t)}
+                        </span>
                         <span style={styles.itemMeta}>
                           {t.note}: {request.note}
                         </span>

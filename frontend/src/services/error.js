@@ -38,6 +38,7 @@ const translations = {
     noAccessEmployee: 'У вас нет доступа к данным этого сотрудника.',
     invalidToken: 'Сессия истекла. Войдите снова.',
     loggedOut: 'Вы вышли из системы.',
+    schedulePeriodConflict: 'На эти даты уже есть расписание. Удалите неделю для выбранного филиала.',
   },
   en: {
     requestFailed: 'Request failed.',
@@ -76,6 +77,7 @@ const translations = {
     noAccessEmployee: 'You do not have access to this employee resource.',
     invalidToken: 'Session expired. Please log in again.',
     loggedOut: 'Logged out successfully.',
+    schedulePeriodConflict: 'A schedule already exists for these dates. Delete the week for the selected branch.',
   },
 };
 
@@ -123,6 +125,10 @@ function translatePattern(detail, language) {
 
   if (/^The '.+' role is required for this action\.$/.test(detail)) {
     return messages.permissionRequired;
+  }
+
+  if (/^Schedule already exists for this period\./.test(detail)) {
+    return messages.schedulePeriodConflict;
   }
 
   return null;

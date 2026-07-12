@@ -13,6 +13,7 @@ import ShiftsTab from './tabs/ShiftsTab';
 import { getPositionLabel } from '../utils/employeeDisplay';
 import { usePositionTitleRevision } from '../hooks/usePositionTitleRevision';
 import { useUnsavedChanges } from '../context/useUnsavedChanges';
+import ManagerExchangeInbox from './ManagerExchangeInbox';
 
 const APP_ICON_SRC = '/v2-Photoroom.png';
 
@@ -299,6 +300,10 @@ export default function DashboardTabs({ userRole, language, title, rightSlot }) 
           ...(isMobile ? styles.headerRightMobile : {}),
         }}
         >
+          {userRole === 'manager' ? (
+            <ManagerExchangeInbox language={language} isMobile={isMobile} />
+          ) : null}
+
           <button
             type="button"
             onClick={() => handleTabClick('profile')}
