@@ -220,6 +220,11 @@ jobs:
             echo "Nginx will start in HTTP-only mode until the certificate exists on the host."
           fi
 
+          $COMPOSE up -d postgres --wait --wait-timeout 180
+          docker exec -i shiftplanner_postgres \
+            psql -v ON_ERROR_STOP=1 -U shiftplanner_user -d shiftplanner \
+            < backend/db/migrations/005_branch_working_hours.sql
+
           if $COMPOSE up -d --build --force-recreate --remove-orphans --wait --wait-timeout 180; then
             docker exec shiftplanner_frontend sh -c '! grep -R "localhost:8000" -n /usr/share/nginx/html'
             install -D -m 755 \

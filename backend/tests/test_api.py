@@ -1745,6 +1745,38 @@ def test_manager_can_create_and_list_branches_with_address(client: TestClient) -
     assert legacy_created.json() in legacy_listed.json()
 
 
+def test_manager_can_update_branch_working_hours_and_read_them_back(client: TestClient) -> None:
+    manager_headers = login_json(client, "manager@example.com", "manager123")
+    payload = {
+        "0": {"start_slot": 16, "end_slot": 36},
+        "1": {"start_slot": 18, "end_slot": 34},
+        "2": {"start_slot": 16, "end_slot": 36},
+        "3": {"start_slot": 16, "end_slot": 36},
+        "4": {"start_slot": 16, "end_slot": 36},
+        "5": {"start_slot": 20, "end_slot": 30},
+    }
+
+    updated = client.patch(
+        "/companies/1/branches/1/working-hours",
+        headers=manager_headers,
+        json=payload,
+    )
+    assert updated.status_code == 200, updated.text
+    assert updated.json() == payload
+
+    fetched = client.get(
+        "/companies/1/branches/1/working-hours",
+        headers=manager_headers,
+    )
+    assert fetched.status_code == 200, fetched.text
+    assert fetched.json() == payload
+
+    with psycopg.connect(PSYCOPG_DSN) as connection:
+        with connection.cursor() as cursor:
+            cursor.execute("SELECT working_hours_by_weekday FROM branches WHERE id = 1")
+            assert cursor.fetchone()[0] == payload
+
+
 def test_manager_can_update_and_delete_own_branch(client: TestClient) -> None:
     manager_headers = login_json(client, "manager@example.com", "manager123")
     created = client.post(
