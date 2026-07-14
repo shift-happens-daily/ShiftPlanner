@@ -594,6 +594,27 @@ def list_manager_requests(db: Session, current_user: UserRead) -> list[ManagerRe
     ]
 
 
+def list_company_managers(db: Session, current_user: UserRead) -> list[ManagerRequestRead]:
+    company_id = _manager_company_id(current_user)
+    return [
+        _build_manager_request_read(db, membership)
+        for membership in company_repository.list_active_manager_memberships(db, company_id)
+    ]
+
+
+def list_employee_company_managers(db: Session, current_user: UserRead) -> list[ManagerRequestRead]:
+    if current_user.company_id is None:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Employee is not linked to a company.",
+        )
+
+    return [
+        _build_manager_request_read(db, membership)
+        for membership in company_repository.list_active_manager_memberships(db, current_user.company_id)
+    ]
+
+
 def accept_manager_request(db: Session, request_id: int, current_user: UserRead) -> ManagerRequestRead:
     company_id = _owner_company_id(db, current_user)
     membership = company_repository.get_manager_membership(db, request_id)

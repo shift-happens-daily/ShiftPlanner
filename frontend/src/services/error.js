@@ -13,6 +13,9 @@ const translations = {
     employeeProfileMissing: 'Аккаунт сотрудника не привязан к профилю сотрудника.',
     inviteCodeNotFound: 'Компания с таким инвайт-кодом не найдена.',
     invalidCredentials: 'Неверный email или пароль.',
+    invalidCurrentPassword: 'Неверный текущий пароль.',
+    invalidPasswordResetToken: 'Ссылка для сброса пароля недействительна.',
+    passwordResetExpired: 'Ссылка для сброса пароля истекла.',
     emailNotVerified: 'Подтвердите email по ссылке из письма, затем войдите.',
     userExists: 'Пользователь с таким email уже существует.',
     branchMismatch: 'Выбранный филиал не относится к компании.',
@@ -35,6 +38,7 @@ const translations = {
     noAccessEmployee: 'У вас нет доступа к данным этого сотрудника.',
     invalidToken: 'Сессия истекла. Войдите снова.',
     loggedOut: 'Вы вышли из системы.',
+    schedulePeriodConflict: 'На эти даты уже есть расписание. Удалите неделю для выбранного филиала.',
   },
   en: {
     requestFailed: 'Request failed.',
@@ -48,6 +52,9 @@ const translations = {
     employeeProfileMissing: 'This employee account is not linked to an employee profile.',
     inviteCodeNotFound: 'Company with this invite code was not found.',
     invalidCredentials: 'Invalid email or password.',
+    invalidCurrentPassword: 'Invalid current password.',
+    invalidPasswordResetToken: 'Invalid password reset link.',
+    passwordResetExpired: 'Password reset link has expired.',
     emailNotVerified: 'Confirm your email from the message we sent, then log in.',
     userExists: 'A user with this email already exists.',
     branchMismatch: 'The selected branch does not belong to this company.',
@@ -70,11 +77,15 @@ const translations = {
     noAccessEmployee: 'You do not have access to this employee resource.',
     invalidToken: 'Session expired. Please log in again.',
     loggedOut: 'Logged out successfully.',
+    schedulePeriodConflict: 'A schedule already exists for these dates. Delete the week for the selected branch.',
   },
 };
 
 const directDetailMap = {
   'Invalid email or password.': 'invalidCredentials',
+  'Invalid current password.': 'invalidCurrentPassword',
+  'Invalid password reset token.': 'invalidPasswordResetToken',
+  'Password reset token has expired.': 'passwordResetExpired',
   'Email is not verified.': 'emailNotVerified',
   'A user with this email already exists.': 'userExists',
   'Token is not active.': 'invalidToken',
@@ -114,6 +125,10 @@ function translatePattern(detail, language) {
 
   if (/^The '.+' role is required for this action\.$/.test(detail)) {
     return messages.permissionRequired;
+  }
+
+  if (/^Schedule already exists for this period\./.test(detail)) {
+    return messages.schedulePeriodConflict;
   }
 
   return null;

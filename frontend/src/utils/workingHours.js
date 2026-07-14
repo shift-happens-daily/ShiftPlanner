@@ -63,6 +63,13 @@ export function defaultDayWorkingHours() {
   });
 }
 
+export function isFactoryDefaultWorkingHours(value) {
+  const startSlot = Number(value?.startSlot ?? value?.start_slot);
+  const endSlot = Number(value?.endSlot ?? value?.end_slot);
+  if (Number.isNaN(startSlot) || Number.isNaN(endSlot)) return true;
+  return startSlot <= MIN_SLOT && endSlot >= MAX_SLOT;
+}
+
 export function parseWorkingHoursPayload(data) {
   if (!data || typeof data !== 'object') {
     return {};
@@ -71,7 +78,7 @@ export function parseWorkingHoursPayload(data) {
   const source = data.root && typeof data.root === 'object' ? data.root : data;
 
   return Object.entries(source).reduce((result, [weekday, hours]) => {
-    if (hours && typeof hours === 'object') {
+    if (hours && typeof hours === 'object' && !isFactoryDefaultWorkingHours(hours)) {
       result[String(weekday)] = normalizeDayWorkingHours(hours);
     }
     return result;
@@ -113,7 +120,10 @@ export async function fetchWorkingHoursStore(companyId, branchId) {
 export function getWorkingHoursForWeekday(companyId, branchId, weekday) {
   const store = getCachedWorkingHoursStore(companyId, branchId);
   const saved = store[String(weekday)];
-  return saved ? normalizeDayWorkingHours(saved) : defaultDayWorkingHours();
+  if (!saved) {
+    return defaultDayWorkingHours();
+  }
+  return normalizeDayWorkingHours(saved);
 }
 
 export async function updateWorkingHoursForWeekday(companyId, branchId, weekday, startSlot, endSlot) {
@@ -143,7 +153,10 @@ export function getWorkingHoursForWeekdays(companyId, branchId, weekdays = []) {
     return defaultDayWorkingHours();
   }
 
-  const ranges = uniqueWeekdays.map((weekday) => getWorkingHoursForWeekday(companyId, branchId, weekday));
+  const ranges = uniqueWeekdays.map((weekday) =>
+    getWorkingHoursForWeekday(companyId, branchId, weekday),
+  );
+
   const startSlot = Math.max(...ranges.map((range) => range.startSlot));
   const endSlot = Math.min(...ranges.map((range) => range.endSlot));
 

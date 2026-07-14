@@ -19,8 +19,10 @@ import {
   resolveEmployeeBranches,
 } from '../../utils/employeeBranches';
 import { useTabResponsive } from '../../utils/tabResponsive';
+import { formatApiDateRange, formatShortDisplayDate } from '../../utils/dateDisplay';
 import { formatLocalDate } from '../../services/scheduleService';
 import { getEmployeePositionLabel, getPositionLabel } from '../../utils/employeeDisplay';
+import { CHECK_MARK, CLOSE_MARK } from '../../utils/textSymbols';
 import { usePositionTitleRevision } from '../../hooks/usePositionTitleRevision';
 import { useUnsavedChanges } from '../../context/useUnsavedChanges';
 
@@ -63,9 +65,9 @@ function getInitials(value) {
 }
 
 function getBranchLabel(employee, branches, fallback) {
-  const employeeBranches = resolveEmployeeBranches(employee, branches);
-  if (employeeBranches.length > 0) {
-    return employeeBranches.map((branch) => branch.name || branch.title || `#${branch.id}`).join(', ');
+  const [branch] = resolveEmployeeBranches(employee, branches);
+  if (branch) {
+    return branch.name || branch.title || `#${branch.id}`;
   }
 
   return employee?.branch?.name || employee?.branch_name || fallback;
@@ -117,19 +119,12 @@ function getDateValue(value) {
   return Number.isNaN(timestamp) ? 0 : timestamp;
 }
 
-function formatShortDate(value) {
-  if (!value) return '';
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return value;
-  return date.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+function formatShortDate(value, language = 'ru') {
+  return formatShortDisplayDate(value, language);
 }
 
-function formatDateRange(startDate, endDate) {
-  const start = formatShortDate(startDate);
-  const end = formatShortDate(endDate);
-  if (!start && !end) return '';
-  if (!end || start === end) return start;
-  return `${start} - ${end}`;
+function formatDateRange(startDate, endDate, language = 'ru') {
+  return formatApiDateRange(startDate, endDate, '');
 }
 
 const MOBILE_EMPLOYEES_STYLES = {
@@ -276,30 +271,32 @@ const MOBILE_EMPLOYEES_STYLES = {
     fontSize: 13,
   },
   mobileEmployeeList: {
-    gap: 6,
+    gap: 4,
   },
   mobileEmployeeCard: {
-    padding: '8px 10px',
-    borderRadius: 10,
-    gap: 5,
+    padding: '6px 8px',
+    borderRadius: 8,
+    gap: 3,
   },
   mobileEmployeeCardMeta: {
-    fontSize: 11,
-    gap: 2,
+    fontSize: 10,
+    gap: 1,
+    lineHeight: 1.25,
   },
   mobileEmployeeChevron: {
-    fontSize: 16,
+    fontSize: 14,
   },
   avatar: {
-    width: 28,
-    height: 28,
-    fontSize: 11,
+    width: 24,
+    height: 24,
+    fontSize: 10,
   },
   employeeName: {
-    fontSize: 13,
+    fontSize: 12,
+    lineHeight: 1.2,
   },
   employeeIdentity: {
-    gap: 8,
+    gap: 6,
   },
   positionsPanel: {
     minHeight: 0,
@@ -362,49 +359,51 @@ const MOBILE_EMPLOYEES_STYLES = {
     borderRadius: 8,
   },
   modalOverlay: {
-    padding: 0,
+    padding: '12px 10px',
+    alignItems: 'center',
   },
   modalContent: {
     width: '100%',
-    maxHeight: '100%',
-    borderRadius: 0,
-    padding: 12,
+    maxHeight: 'min(82vh, 620px)',
+    borderRadius: 14,
+    padding: 10,
   },
   actionBar: {
-    marginBottom: 8,
+    marginBottom: 6,
   },
   employeeCard: {
-    gap: 8,
-  },
-  cardLabel: {
-    fontSize: 11,
-    marginBottom: 4,
-  },
-  cardValue: {
-    fontSize: 14,
-  },
-  innerSection: {
-    padding: 10,
-    gap: 8,
-    borderRadius: 12,
-  },
-  innerHeader: {
     gap: 6,
   },
-  subTitle: {
-    fontSize: 15,
+  cardLabel: {
+    fontSize: 10,
+    marginBottom: 2,
   },
-  label: {
-    fontSize: 11,
-  },
-  select: {
-    height: 36,
-    borderRadius: 10,
+  cardValue: {
     fontSize: 13,
   },
+  innerSection: {
+    padding: 8,
+    gap: 6,
+    borderRadius: 10,
+  },
+  innerHeader: {
+    gap: 4,
+  },
+  subTitle: {
+    fontSize: 13,
+  },
+  label: {
+    fontSize: 10,
+  },
+  select: {
+    height: 32,
+    borderRadius: 8,
+    fontSize: 12,
+  },
   panelHint: {
-    fontSize: 11,
-    margin: '0 0 4px',
+    fontSize: 10,
+    margin: '0 0 2px',
+    lineHeight: 1.3,
   },
   branchPills: {
     gap: 6,
@@ -420,10 +419,10 @@ const MOBILE_EMPLOYEES_STYLES = {
     fontSize: 13,
   },
   deleteButton: {
-    height: 36,
-    borderRadius: 10,
-    padding: '0 12px',
-    fontSize: 12,
+    height: 32,
+    borderRadius: 8,
+    padding: '0 10px',
+    fontSize: 11,
   },
   availabilityPanel: {
     marginTop: 8,
@@ -505,8 +504,7 @@ export default function EmployeesTab({ language, userRole, user }) {
     max_hours_per_week: DEFAULT_WEEKLY_HOURS,
     max_hours_per_day: DEFAULT_DAILY_HOURS,
   });
-  const [selectedEmployeeBranchIds, setSelectedEmployeeBranchIds] = useState([]);
-  const [branchToAddId, setBranchToAddId] = useState('');
+  const [selectedEmployeeBranchId, setSelectedEmployeeBranchId] = useState('');
   const [branchAssignmentsRevision, setBranchAssignmentsRevision] = useState(0);
 
   const [selectedBranchId, setSelectedBranchId] = useState('');
@@ -585,7 +583,6 @@ export default function EmployeesTab({ language, userRole, user }) {
       assignmentsError: 'Не удалось обновить данные сотрудника.',
       branch: 'Филиал',
       selectBranch: 'Выберите филиал',
-      assignBranch: 'Назначить филиал',
       assignPosition: 'Назначить позицию',
       backToList: 'Назад к списку',
       edit: 'Редактировать',
@@ -614,9 +611,7 @@ export default function EmployeesTab({ language, userRole, user }) {
       employeeRemoved: 'Сотрудник удалён из компании.',
       removeEmployeeError: 'Не удалось удалить сотрудника.',
       branches: 'Филиалы',
-      addBranch: 'Добавить филиал',
-      removeBranch: 'Убрать',
-      noBranchesAssigned: 'Филиалы не назначены',
+      noBranchAssigned: 'Филиал не назначен',
       workLimits: 'Ограничения рабочего времени',
       weeklyHours: 'Часов в неделю',
       weeklyHoursHint: 'Сколько часов сотрудник должен отработать за неделю',
@@ -684,7 +679,6 @@ export default function EmployeesTab({ language, userRole, user }) {
       assignmentsError: 'Failed to update employee details.',
       branch: 'Branch',
       selectBranch: 'Select branch',
-      assignBranch: 'Assign branch',
       assignPosition: 'Assign position',
       backToList: 'Back to list',
       edit: 'Edit',
@@ -713,9 +707,7 @@ export default function EmployeesTab({ language, userRole, user }) {
       employeeRemoved: 'Employee removed from company.',
       removeEmployeeError: 'Failed to remove employee.',
       branches: 'Branches',
-      addBranch: 'Add branch',
-      removeBranch: 'Remove',
-      noBranchesAssigned: 'No branches assigned',
+      noBranchAssigned: 'No branch assigned',
       workLimits: 'Work time limits',
       weeklyHours: 'Hours per week',
       weeklyHoursHint: 'How many hours the employee should work per week',
@@ -761,14 +753,6 @@ export default function EmployeesTab({ language, userRole, user }) {
   );
 
   const selectedEmployeePosition = getEmployeePositionLabel(selectedEmployee);
-  const selectedEmployeeBranches = useMemo(() => {
-    if (!selectedEmployee) return [];
-
-    return mergeBranchLists(
-      resolveEmployeeBranches(selectedEmployee, branches),
-      resolveBranchesFromIds(selectedEmployeeBranchIds, branches)
-    );
-  }, [selectedEmployee, branches, selectedEmployeeBranchIds]);
 
   const filteredEmployees = useMemo(() => {
     const query = searchQuery.trim().toLowerCase();
@@ -803,14 +787,6 @@ export default function EmployeesTab({ language, userRole, user }) {
       .slice(0, 3);
   }, [employeeAbsences]);
 
-  const availableBranchesToAdd = useMemo(() => {
-    const assigned = new Set(selectedEmployeeBranches.map(getBranchId).filter(Boolean));
-    return branches.filter((branch) => {
-      const branchId = getBranchId(branch);
-      return branchId && !assigned.has(branchId);
-    });
-  }, [branches, selectedEmployeeBranches]);
-
   useEffect(() => {
     if (filteredEmployees.some((employee) => String(employee.id) === String(selectedEmployeeId))) return;
 
@@ -820,18 +796,16 @@ export default function EmployeesTab({ language, userRole, user }) {
   useEffect(() => {
     if (!selectedEmployee) {
       setSelectedEmployeeDetails({ position_id: '' });
-      setSelectedEmployeeBranchIds([]);
+      setSelectedEmployeeBranchId('');
       setSelectedEmployeeWorkLimits({
         max_hours_per_week: DEFAULT_WEEKLY_HOURS,
         max_hours_per_day: DEFAULT_DAILY_HOURS,
       });
-      setBranchToAddId('');
       return;
     }
 
-    const resolvedBranchIds = resolveEmployeeBranches(selectedEmployee, branches)
-      .map(getBranchId)
-      .filter(Boolean);
+    const [assignedBranch] = resolveEmployeeBranches(selectedEmployee, branches);
+    const assignedBranchId = getPrimaryBranchId(selectedEmployee) || getBranchId(assignedBranch) || '';
 
     setSelectedEmployeeDetails({
       position_id: selectedEmployee.position_id || selectedEmployee.position?.id || selectedEmployee.position?.position_id || '',
@@ -840,8 +814,7 @@ export default function EmployeesTab({ language, userRole, user }) {
       max_hours_per_week: selectedEmployee.max_hours_per_week ?? DEFAULT_WEEKLY_HOURS,
       max_hours_per_day: selectedEmployee.max_hours_per_day ?? DEFAULT_DAILY_HOURS,
     });
-    setSelectedEmployeeBranchIds(uniqueBranchIds([...getEmployeeBranchIds(selectedEmployee), ...resolvedBranchIds]));
-    setBranchToAddId('');
+    setSelectedEmployeeBranchId(assignedBranchId ? String(assignedBranchId) : '');
   }, [selectedEmployee?.id, branches]);
 
   useEffect(() => {
@@ -996,7 +969,7 @@ export default function EmployeesTab({ language, userRole, user }) {
   };
 
   const persistEmployeeBranches = async (employee, branchIds, primaryBranchId = null) => {
-    const normalizedIds = uniqueBranchIds(branchIds);
+    const normalizedIds = uniqueBranchIds(branchIds).slice(0, 1);
     const currentPrimary = normalizeBranchId(primaryBranchId ?? getPrimaryBranchId(employee));
     const primaryId = currentPrimary && normalizedIds.includes(currentPrimary)
       ? currentPrimary
@@ -1014,7 +987,7 @@ export default function EmployeesTab({ language, userRole, user }) {
   };
 
   const patchEmployeeBranchesLocally = (employeeId, branchIds) => {
-    const normalizedIds = uniqueBranchIds(branchIds);
+    const normalizedIds = uniqueBranchIds(branchIds).slice(0, 1);
     const branchObjects = resolveBranchesFromIds(normalizedIds, branches);
     const primaryBranch = branchObjects[0] || null;
 
@@ -1034,64 +1007,7 @@ export default function EmployeesTab({ language, userRole, user }) {
     );
   };
 
-  const handleAddEmployeeBranch = async () => {
-    if (!selectedEmployee || !branchToAddId) return;
-
-    clearMessages();
-    setIsSubmitting(true);
-
-    const currentIds = uniqueBranchIds([
-      ...getEmployeeBranchIds(selectedEmployee),
-      ...selectedEmployeeBranchIds,
-      ...selectedEmployeeBranches.map(getBranchId),
-    ]);
-    const nextIds = uniqueBranchIds([...currentIds, branchToAddId]);
-
-    try {
-      await persistEmployeeBranches(selectedEmployee, nextIds);
-      await reloadEmployees(selectedEmployee.id);
-      setSelectedEmployeeBranchIds(nextIds);
-      patchEmployeeBranchesLocally(selectedEmployee.id, nextIds);
-      bumpBranchAssignments();
-      setBranchToAddId('');
-      markSaved(EMPLOYEE_BRANCH_SCOPE);
-      setSuccessMessage(t.assignmentsSaved);
-    } catch (error) {
-      setErrorMessage(getFriendlyError(error, t.assignmentsError));
-    } finally {
-      setIsSubmitting(false);
-    }
-  };
-
-  const handleRemoveEmployeeBranch = async (branchId) => {
-    if (!selectedEmployee) return;
-
-    clearMessages();
-    const currentIds = uniqueBranchIds([
-      ...getEmployeeBranchIds(selectedEmployee),
-      ...selectedEmployeeBranchIds,
-      ...selectedEmployeeBranches.map(getBranchId),
-    ]);
-    const nextIds = currentIds.filter((id) => String(id) !== String(branchId));
-
-    setIsSubmitting(true);
-
-    try {
-      await persistEmployeeBranches(selectedEmployee, nextIds);
-      await reloadEmployees(selectedEmployee.id);
-      setSelectedEmployeeBranchIds(nextIds);
-      patchEmployeeBranchesLocally(selectedEmployee.id, nextIds);
-      bumpBranchAssignments();
-      markSaved(EMPLOYEE_BRANCH_SCOPE);
-      setSuccessMessage(t.assignmentsSaved);
-    } catch (error) {
-      setErrorMessage(getFriendlyError(error, t.assignmentsError));
-    } finally {
-      setIsSubmitting(false);
-    }
-  };
-
-  const handleSaveWorkLimits = async () => {
+  const handleSaveEmployeeDetails = async () => {
     if (!selectedEmployee) return;
 
     const weekly = Number(selectedEmployeeWorkLimits.max_hours_per_week);
@@ -1110,45 +1026,36 @@ export default function EmployeesTab({ language, userRole, user }) {
     clearMessages();
     setIsSubmitting(true);
 
-    try {
-      const saved = await updateEmployeeWorkLimits(selectedEmployee.id, {
-        max_hours_per_week: Math.round(weekly),
-        max_hours_per_day: Math.round(daily),
-      });
+    const branchIds = selectedEmployeeBranchId ? [selectedEmployeeBranchId] : [];
 
-      setSelectedEmployeeWorkLimits(saved);
+    try {
+      const [savedLimits] = await Promise.all([
+        updateEmployeeWorkLimits(selectedEmployee.id, {
+          max_hours_per_week: Math.round(weekly),
+          max_hours_per_day: Math.round(daily),
+        }),
+        updateEmployeePosition(selectedEmployee.id, {
+          position_id: selectedEmployeeDetails.position_id
+            ? Number(selectedEmployeeDetails.position_id)
+            : null,
+        }),
+        persistEmployeeBranches(selectedEmployee, branchIds, selectedEmployeeBranchId),
+      ]);
+
+      patchEmployeeBranchesLocally(selectedEmployee.id, branchIds);
+      setSelectedEmployeeWorkLimits(savedLimits);
       setEmployees((currentEmployees) =>
         currentEmployees.map((employee) => (
           String(employee.id) === String(selectedEmployee.id)
-            ? { ...employee, ...saved }
+            ? { ...employee, ...savedLimits }
             : employee
         ))
       );
-      markSaved(EMPLOYEE_WORK_LIMITS_SCOPE);
-      setSuccessMessage(t.workLimitsSaved);
-    } catch (error) {
-      setErrorMessage(getFriendlyError(error, t.workLimitsError));
-    } finally {
-      setIsSubmitting(false);
-    }
-  };
-
-  const handleAssignDetails = async () => {
-    if (!selectedEmployee) return;
-
-    clearMessages();
-    setIsSubmitting(true);
-
-    try {
-      await updateEmployeePosition(selectedEmployee.id, {
-        position_id: selectedEmployeeDetails.position_id
-          ? Number(selectedEmployeeDetails.position_id)
-          : null,
-      });
-
       await reloadEmployees(selectedEmployee.id);
       bumpBranchAssignments();
       markSaved(EMPLOYEE_POSITION_SCOPE);
+      markSaved(EMPLOYEE_BRANCH_SCOPE);
+      markSaved(EMPLOYEE_WORK_LIMITS_SCOPE);
       setSuccessMessage(t.assignmentsSaved);
     } catch (error) {
       setErrorMessage(getFriendlyError(error, t.assignmentsError));
@@ -1373,7 +1280,7 @@ export default function EmployeesTab({ language, userRole, user }) {
           <div style={{ ...styles.toastLayer, ...mobileStyles?.toastLayer }}>
             <div style={errorMessage ? styles.toastError : styles.toastSuccess}>
               <span style={errorMessage ? styles.toastIconError : styles.toastIconSuccess}>
-                {errorMessage ? '!' : '✓'}
+                {errorMessage ? '!' : CHECK_MARK}
               </span>
 
               <span style={styles.toastText}>{errorMessage || successMessage}</span>
@@ -1387,7 +1294,7 @@ export default function EmployeesTab({ language, userRole, user }) {
                 style={styles.toastClose}
                 aria-label="Close notification"
               >
-                ×
+                {CLOSE_MARK}
               </button>
             </div>
           </div>
@@ -1584,9 +1491,17 @@ export default function EmployeesTab({ language, userRole, user }) {
                         <span style={{ ...styles.mobileEmployeeChevron, ...mobileStyles?.mobileEmployeeChevron }}>›</span>
                       </div>
 
-                      <div style={{ ...styles.mobileEmployeeCardMeta, ...mobileStyles?.mobileEmployeeCardMeta }}>
-                        <span>{getBranchLabel(employee, branches, t.empty)}</span>
-                        <span>{getEmployeePositionLabel(employee) || t.empty}</span>
+                      <div style={{
+                        ...styles.mobileEmployeeCardMeta,
+                        ...mobileStyles?.mobileEmployeeCardMeta,
+                        ...styles.mobileEmployeeCardMetaFooter,
+                      }}
+                      >
+                        <span>
+                          {getBranchLabel(employee, branches, t.empty)}
+                          {' · '}
+                          {getEmployeePositionLabel(employee) || t.empty}
+                        </span>
                       </div>
                     </button>
                   );
@@ -1771,8 +1686,8 @@ export default function EmployeesTab({ language, userRole, user }) {
 
               <div style={{
                 ...styles.employeeCard,
-                gridTemplateColumns: r.gridCols(r.isMobile ? '1fr' : 'repeat(3, minmax(0, 1fr))'),
-                gap: r.isMobile ? 8 : 12,
+                gridTemplateColumns: r.isMobile ? 'repeat(2, minmax(0, 1fr))' : 'repeat(3, minmax(0, 1fr))',
+                gap: r.isMobile ? 6 : 12,
                 ...mobileStyles?.employeeCard,
               }}>
                 <Info
@@ -1789,13 +1704,15 @@ export default function EmployeesTab({ language, userRole, user }) {
                   labelStyle={mobileStyles?.cardLabel}
                   valueStyle={mobileStyles?.cardValue}
                 />
-                <Info
-                  isMobile={r.isMobile}
-                  label={t.position}
-                  value={selectedEmployeePosition || t.empty}
-                  labelStyle={mobileStyles?.cardLabel}
-                  valueStyle={mobileStyles?.cardValue}
-                />
+                <div style={r.isMobile ? { gridColumn: '1 / -1' } : undefined}>
+                  <Info
+                    isMobile={r.isMobile}
+                    label={t.position}
+                    value={selectedEmployeePosition || t.empty}
+                    labelStyle={mobileStyles?.cardLabel}
+                    valueStyle={mobileStyles?.cardValue}
+                  />
+                </div>
               </div>
 
               <div style={{
@@ -1806,8 +1723,8 @@ export default function EmployeesTab({ language, userRole, user }) {
                   <h4 style={{ ...styles.subTitle, ...mobileStyles?.subTitle }}>{t.assignPosition}</h4>
                 </div>
 
-                <div style={{ ...(r.isMobile ? { display: 'flex', flexDirection: 'column', gap: 6 } : styles.stack) }}>
-                  <label style={{ ...styles.label, ...mobileStyles?.label, marginBottom: r.isMobile ? 4 : 8 }}>{t.position}</label>
+                <div style={{ ...(r.isMobile ? { display: 'flex', flexDirection: 'column', gap: 4 } : styles.stack) }}>
+                  <label style={{ ...styles.label, ...mobileStyles?.label, marginBottom: r.isMobile ? 2 : 8 }}>{t.position}</label>
                   <select
                     value={selectedEmployeeDetails.position_id}
                     onChange={(event) => {
@@ -1825,82 +1742,25 @@ export default function EmployeesTab({ language, userRole, user }) {
                   </select>
                 </div>
 
-                <div style={{ ...(r.isMobile ? { display: 'flex', flexDirection: 'column', gap: 6 } : styles.stack) }}>
-                  <label style={{ ...styles.label, ...mobileStyles?.label, marginBottom: r.isMobile ? 4 : 8 }}>{t.branches}</label>
-                  <p style={{ ...styles.panelHint, ...mobileStyles?.panelHint }}>{t.branchesPreviewHint}</p>
-
-                  {selectedEmployeeBranches.length === 0 ? (
-                    <div style={{ ...styles.emptyBox, ...mobileStyles?.emptyBox }}>{t.noBranchesAssigned}</div>
-                  ) : (
-                    <div style={{ ...styles.branchPills, ...mobileStyles?.branchPills }}>
-                      {selectedEmployeeBranches.map((branch) => (
-                        <span key={branch.id} style={{ ...styles.branchPill, ...mobileStyles?.branchPill }}>
-                          <span style={{ flex: 1, minWidth: 0, overflowWrap: 'anywhere' }}>
-                            {branch.name || branch.title || `#${branch.id}`}
-                          </span>
-                          <button
-                            type="button"
-                            onClick={() => handleRemoveEmployeeBranch(branch.id)}
-                            style={{ ...styles.branchPillRemove, ...mobileStyles?.branchPillRemove }}
-                            aria-label={`${t.removeBranch} ${branch.name || branch.id}`}
-                            disabled={isSubmitting}
-                          >
-                            x
-                          </button>
-                        </span>
-                      ))}
-                    </div>
-                  )}
-
-                  <div style={{
-                    display: 'grid',
-                    gridTemplateColumns: r.gridCols(r.isMobile ? '1fr' : '1fr auto'),
-                    gap: r.isMobile ? 8 : 10,
-                    alignItems: 'center',
-                  }}>
-                    <select
-                      value={branchToAddId}
-                      onChange={(event) => {
-                        setBranchToAddId(event.target.value);
-                        markUnsaved(EMPLOYEE_BRANCH_SCOPE);
-                      }}
-                      style={{ ...styles.select, ...mobileStyles?.select }}
-                      disabled={availableBranchesToAdd.length === 0 || isSubmitting}
-                    >
-                      <option value="">{t.selectBranch}</option>
-                      {availableBranchesToAdd.map((branch) => (
-                        <option key={branch.id} value={branch.id}>
-                          {branch.name}
-                        </option>
-                      ))}
-                    </select>
-                    <button
-                      type="button"
-                      onClick={handleAddEmployeeBranch}
-                      style={{
-                        ...styles.secondaryButton,
-                        ...mobileStyles?.secondaryButton,
-                        ...(r.isMobile ? r.fullWidth : {}),
-                        ...((!branchToAddId || isSubmitting) ? { opacity: 0.65, cursor: 'default' } : {}),
-                      }}
-                      disabled={!branchToAddId || isSubmitting}
-                    >
-                      {t.addBranch}
-                    </button>
-                  </div>
+                <div style={{ ...(r.isMobile ? { display: 'flex', flexDirection: 'column', gap: 4 } : styles.stack) }}>
+                  <label style={{ ...styles.label, ...mobileStyles?.label, marginBottom: r.isMobile ? 2 : 8 }}>{t.branch}</label>
+                  <select
+                    value={selectedEmployeeBranchId}
+                    onChange={(event) => {
+                      setSelectedEmployeeBranchId(event.target.value);
+                      markUnsaved(EMPLOYEE_BRANCH_SCOPE);
+                    }}
+                    style={{ ...styles.select, ...mobileStyles?.select }}
+                    disabled={isSubmitting}
+                  >
+                    <option value="">{t.noBranchSelected}</option>
+                    {branches.map((branch) => (
+                      <option key={branch.id} value={branch.id}>
+                        {branch.name}
+                      </option>
+                    ))}
+                  </select>
                 </div>
-
-                <button
-                  type="button"
-                  onClick={handleAssignDetails}
-                  style={{
-                    ...styles.primaryButton,
-                    ...mobileStyles?.primaryButton,
-                    ...(r.isMobile ? r.fullWidth : {}),
-                  }}
-                >
-                  {t.save}
-                </button>
 
                 <div style={{
                   ...styles.innerSection,
@@ -1914,10 +1774,10 @@ export default function EmployeesTab({ language, userRole, user }) {
                   <div style={{
                     display: 'grid',
                     gridTemplateColumns: r.gridCols(r.isMobile ? '1fr' : '1fr 1fr'),
-                    gap: r.isMobile ? 8 : 12,
+                    gap: r.isMobile ? 6 : 12,
                   }}>
-                    <div style={{ ...(r.isMobile ? { display: 'flex', flexDirection: 'column', gap: 6 } : styles.stack) }}>
-                      <label style={{ ...styles.label, ...mobileStyles?.label, marginBottom: r.isMobile ? 4 : 8 }}>
+                    <div style={{ ...(r.isMobile ? { display: 'flex', flexDirection: 'column', gap: 4 } : styles.stack) }}>
+                      <label style={{ ...styles.label, ...mobileStyles?.label, marginBottom: r.isMobile ? 2 : 8 }}>
                         {t.weeklyHours}
                       </label>
                       <p style={{ ...styles.panelHint, ...mobileStyles?.panelHint }}>{t.weeklyHoursHint}</p>
@@ -1941,8 +1801,8 @@ export default function EmployeesTab({ language, userRole, user }) {
                       </div>
                     </div>
 
-                    <div style={{ ...(r.isMobile ? { display: 'flex', flexDirection: 'column', gap: 6 } : styles.stack) }}>
-                      <label style={{ ...styles.label, ...mobileStyles?.label, marginBottom: r.isMobile ? 4 : 8 }}>
+                    <div style={{ ...(r.isMobile ? { display: 'flex', flexDirection: 'column', gap: 4 } : styles.stack) }}>
+                      <label style={{ ...styles.label, ...mobileStyles?.label, marginBottom: r.isMobile ? 2 : 8 }}>
                         {t.maxDailyHours}
                       </label>
                       <p style={{ ...styles.panelHint, ...mobileStyles?.panelHint }}>{t.maxDailyHoursHint}</p>
@@ -1969,7 +1829,7 @@ export default function EmployeesTab({ language, userRole, user }) {
 
                   <button
                     type="button"
-                    onClick={handleSaveWorkLimits}
+                    onClick={handleSaveEmployeeDetails}
                     style={{
                       ...styles.primaryButton,
                       ...mobileStyles?.primaryButton,
@@ -2033,7 +1893,7 @@ export default function EmployeesTab({ language, userRole, user }) {
                       <div style={{ ...styles.absenceText, ...mobileStyles?.absenceText }}>
                         <strong>{absenceEmployeeName}</strong>
                         <span>{t[absence.absence_type] || absence.absence_type || t.absences}</span>
-                        <span>{formatDateRange(absence.start_date, absence.end_date)}</span>
+                        <span>{formatDateRange(absence.start_date, absence.end_date, language)}</span>
                       </div>
                     </div>
                   );
@@ -2079,12 +1939,12 @@ function Info({ label, value, isMobile, labelStyle, valueStyle }) {
     <div>
       <span style={{
         ...styles.cardLabel,
-        ...(isMobile ? { fontSize: 11, marginBottom: 4 } : {}),
+        ...(isMobile ? { fontSize: 10, marginBottom: 2 } : {}),
         ...labelStyle,
       }}>{label}</span>
       <strong style={{
         ...styles.cardValue,
-        ...(isMobile ? { fontSize: 14 } : {}),
+        ...(isMobile ? { fontSize: 13 } : {}),
         ...valueStyle,
       }}>{value}</strong>
     </div>
@@ -2439,33 +2299,33 @@ const styles = {
   employeeCard: {
     display: 'grid',
     gridTemplateColumns: 'repeat(3, minmax(0, 1fr))',
-    gap: '12px',
+    gap: '10px',
   },
 
   cardLabel: {
     display: 'block',
     color: '#4f646f',
-    fontSize: '12px',
+    fontSize: '11px',
     fontWeight: '850',
-    marginBottom: '5px',
+    marginBottom: '4px',
   },
 
   cardValue: {
     display: 'block',
     color: '#002642',
-    fontSize: '16px',
+    fontSize: '15px',
     fontWeight: '850',
     overflowWrap: 'anywhere',
   },
 
   innerSection: {
-    padding: '16px',
-    borderRadius: '20px',
+    padding: '14px',
+    borderRadius: '16px',
     background: '#f4faff',
     border: '1px solid rgba(79, 100, 111, 0.1)',
     display: 'flex',
     flexDirection: 'column',
-    gap: '12px',
+    gap: '10px',
   },
 
   innerHeader: {
@@ -2478,8 +2338,8 @@ const styles = {
   actionBar: {
     display: 'flex',
     justifyContent: 'flex-start',
-    gap: '10px',
-    marginBottom: '14px',
+    gap: '8px',
+    marginBottom: '10px',
   },
 
   listPanel: {
@@ -2658,7 +2518,7 @@ const styles = {
   subTitle: {
     margin: 0,
     color: '#002642',
-    fontSize: '17px',
+    fontSize: '15px',
     fontWeight: '850',
   },
 
@@ -2965,18 +2825,18 @@ const styles = {
   mobileEmployeeList: {
     display: 'flex',
     flexDirection: 'column',
-    gap: '8px',
+    gap: '6px',
   },
 
   mobileEmployeeCard: {
     width: '100%',
     border: '1px solid #dee7e7',
-    borderRadius: '14px',
+    borderRadius: '12px',
     background: '#ffffff',
-    padding: '12px',
+    padding: '10px',
     display: 'flex',
     flexDirection: 'column',
-    gap: '8px',
+    gap: '6px',
     alignItems: 'flex-start',
     textAlign: 'left',
     cursor: 'pointer',
@@ -2993,10 +2853,18 @@ const styles = {
   mobileEmployeeCardMeta: {
     display: 'flex',
     flexDirection: 'column',
-    gap: '3px',
+    gap: '2px',
     color: '#4f646f',
-    fontSize: '12px',
+    fontSize: '11px',
     fontWeight: '700',
+    minWidth: 0,
+  },
+
+  mobileEmployeeCardMetaFooter: {
+    width: '100%',
+    overflow: 'hidden',
+    textOverflow: 'ellipsis',
+    whiteSpace: 'nowrap',
   },
 
   mobileEmployeeChevron: {
@@ -3254,17 +3122,17 @@ const styles = {
     alignItems: 'center',
     justifyContent: 'center',
     background: 'rgba(0, 0, 0, 0.35)',
-    padding: '20px',
+    padding: '16px',
   },
 
   modalContent: {
-    width: 'min(760px, 100%)',
-    maxHeight: '90vh',
+    width: 'min(520px, 100%)',
+    maxHeight: '85vh',
     overflowY: 'auto',
-    padding: '24px',
-    borderRadius: '24px',
+    padding: '16px',
+    borderRadius: '16px',
     background: '#ffffff',
-    boxShadow: '0 24px 64px rgba(0, 38, 66, 0.24)',
+    boxShadow: '0 20px 48px rgba(0, 38, 66, 0.2)',
     position: 'relative',
   },
 

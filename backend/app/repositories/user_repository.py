@@ -44,6 +44,14 @@ def get_user_by_email_verification_token(db: Session, token: str) -> User | None
     ).first()
 
 
+def get_user_by_password_reset_token(db: Session, token: str) -> User | None:
+    return db.scalars(
+        select(User)
+        .options(joinedload(User.employee))
+        .where(User.password_reset_token == token)
+    ).first()
+
+
 def create_user(
     db: Session,
     *,
@@ -99,6 +107,30 @@ def set_email_verification_token(
     return user
 
 
+def set_password_reset_token(
+    db: Session,
+    *,
+    user: User,
+    token: str,
+    expires_at: datetime,
+) -> User:
+    user.password_reset_token = token
+    user.password_reset_expires_at = expires_at
+    db.add(user)
+    db.flush()
+    return user
+
+
+def update_password_hash(db: Session, user: User, password_hash: str) -> User:
+    user.password_hash = password_hash
+    user.password_reset_token = None
+    user.password_reset_expires_at = None
+    db.add(user)
+    db.commit()
+    db.refresh(user)
+    return user
+
+
 def mark_email_verified(db: Session, user: User) -> User:
     user.email_verified = True
     user.email_verification_token = None
@@ -107,6 +139,23 @@ def mark_email_verified(db: Session, user: User) -> User:
     db.commit()
     db.refresh(user)
     return user
+
+
+def delete_expired_unverified_users(db: Session, now: datetime) -> int:
+    users = list(
+        db.scalars(
+            select(User)
+            .where(User.email_verified.is_(False))
+            .where(User.is_registration_complete.is_(True))
+            .where(User.email_verification_expires_at.is_not(None))
+            .where(User.email_verification_expires_at < now)
+        )
+    )
+    for user in users:
+        db.delete(user)
+    if users:
+        db.flush()
+    return len(users)
 
 
 def delete_user(db: Session, user: User) -> None:

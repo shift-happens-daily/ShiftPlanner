@@ -143,6 +143,18 @@ def list_manager_requests(
     return company_service.list_manager_requests(db, current_user)
 
 
+@router.get(
+    "/me/managers",
+    response_model=list[ManagerRequestRead],
+    responses={**UNAUTHORIZED_RESPONSE, **FORBIDDEN_RESPONSE},
+)
+def list_my_company_managers(
+    current_user: UserRead = Depends(require_active_manager),
+    db: Session = Depends(get_db),
+) -> list[ManagerRequestRead]:
+    return company_service.list_company_managers(db, current_user)
+
+
 @router.post(
     "/me/manager-requests/{request_id}/accept",
     response_model=ManagerRequestRead,

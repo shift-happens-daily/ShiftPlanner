@@ -30,3 +30,9 @@ NOT_FOUND_RESPONSE = {
         "description": "Resource was not found.",
     }
 }
+CONFLICT_RESPONSE = {
+    409: {
+        "model": MessageResponse,
+        "description": "Request conflicts with an existing resource.",
+    }
+}
