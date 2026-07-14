@@ -12,6 +12,8 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.res.stringResource
+import com.froggyriia.shiftplanner.R
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.input.PasswordVisualTransformation
@@ -33,14 +35,14 @@ fun LoginScreen(
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
         Text("ShiftPlanner")
-        Text("Sign in to your account")
+        Text(stringResource(R.string.auth_sign_in_subtitle))
 
         Spacer(modifier = Modifier.padding(8.dp))
 
         OutlinedTextField(
             value = uiState.email,
             onValueChange = onEmailChange,
-            label = { Text("Email") },
+            label = { Text(stringResource(R.string.email_label)) },
             singleLine = true,
             modifier = Modifier.fillMaxWidth()
         )
@@ -50,15 +52,16 @@ fun LoginScreen(
         OutlinedTextField(
             value = uiState.password,
             onValueChange = onPasswordChange,
-            label = { Text("Password") },
+            label = { Text(stringResource(R.string.password_label)) },
             singleLine = true,
             visualTransformation = PasswordVisualTransformation(),
             modifier = Modifier.fillMaxWidth()
         )
 
-        if (uiState.errorMessage != null) {
+        val errorText = uiState.errorMessage ?: uiState.errorMessageRes?.let { stringResource(it) }
+        if (errorText != null) {
             Spacer(modifier = Modifier.padding(4.dp))
-            Text(uiState.errorMessage)
+            Text(errorText)
         }
 
         Spacer(modifier = Modifier.padding(8.dp))
@@ -71,7 +74,7 @@ fun LoginScreen(
             if (uiState.isLoading) {
                 CircularProgressIndicator()
             } else {
-                Text("Login")
+                Text(stringResource(R.string.login_button))
             }
         }
 
@@ -79,7 +82,7 @@ fun LoginScreen(
             onClick = onShowSignUp,
             enabled = !uiState.isLoading
         ) {
-            Text("Create account")
+            Text(stringResource(R.string.auth_create_account))
         }
     }
 }

@@ -34,6 +34,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import com.froggyriia.shiftplanner.domain.model.AppCompany
+import androidx.compose.ui.res.stringResource
+import com.froggyriia.shiftplanner.R
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -51,10 +53,10 @@ fun CompanySetupScreen(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Create Company") },
+                title = { Text(stringResource(R.string.company_create)) },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
-                        Icon(Icons.Default.ArrowBack, contentDescription = "Back")
+                        Icon(Icons.Default.ArrowBack, contentDescription = stringResource(R.string.common_back))
                     }
                 }
             )
@@ -70,7 +72,7 @@ fun CompanySetupScreen(
             OutlinedTextField(
                 value = state.companyName,
                 onValueChange = viewModel::onNameChange,
-                label = { Text("Company name") },
+                label = { Text(stringResource(R.string.company_name_label)) },
                 singleLine = true,
                 modifier = Modifier.fillMaxWidth()
             )
@@ -80,12 +82,12 @@ fun CompanySetupScreen(
                 horizontalArrangement = Arrangement.SpaceBetween,
                 modifier = Modifier.fillMaxWidth()
             ) {
-                Text("Has branches?", style = MaterialTheme.typography.bodyLarge)
+                Text(stringResource(R.string.company_has_branches), style = MaterialTheme.typography.bodyLarge)
                 Switch(checked = state.hasBranches, onCheckedChange = viewModel::onHasBranchesChange)
             }
 
             if (state.hasBranches) {
-                Text("Branches", style = MaterialTheme.typography.titleSmall)
+                Text(stringResource(R.string.company_branches), style = MaterialTheme.typography.titleSmall)
                 state.branches.forEachIndexed { index, draft ->
                     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                         if (index > 0) HorizontalDivider()
@@ -95,26 +97,26 @@ fun CompanySetupScreen(
                             modifier = Modifier.fillMaxWidth()
                         ) {
                             Text(
-                                "Branch ${index + 1}",
+                                stringResource(R.string.company_branch_n, index + 1),
                                 style = MaterialTheme.typography.labelLarge
                             )
                             if (state.branches.size > 1) {
                                 IconButton(onClick = { viewModel.removeBranch(draft.localId) }) {
-                                    Icon(Icons.Default.Delete, contentDescription = "Remove branch")
+                                    Icon(Icons.Default.Delete, contentDescription = stringResource(R.string.company_remove_branch))
                                 }
                             }
                         }
                         OutlinedTextField(
                             value = draft.name,
                             onValueChange = { viewModel.updateBranchName(draft.localId, it) },
-                            label = { Text("Branch name") },
+                            label = { Text(stringResource(R.string.company_branch_name)) },
                             singleLine = true,
                             modifier = Modifier.fillMaxWidth()
                         )
                         OutlinedTextField(
                             value = draft.address,
                             onValueChange = { viewModel.updateBranchAddress(draft.localId, it) },
-                            label = { Text("Address (optional)") },
+                            label = { Text(stringResource(R.string.company_address_optional)) },
                             modifier = Modifier.fillMaxWidth()
                         )
                     }
@@ -124,18 +126,18 @@ fun CompanySetupScreen(
                     modifier = Modifier.fillMaxWidth()
                 ) {
                     Icon(Icons.Default.Add, contentDescription = null)
-                    Text("Add branch")
+                    Text(stringResource(R.string.company_add_branch))
                 }
             } else {
                 OutlinedTextField(
                     value = state.companyAddress,
                     onValueChange = viewModel::onAddressChange,
-                    label = { Text("Address (optional)") },
+                    label = { Text(stringResource(R.string.company_address_optional)) },
                     modifier = Modifier.fillMaxWidth()
                 )
             }
 
-            state.errorMessage?.let { msg ->
+            (state.errorMessage ?: state.errorMessageRes?.let { stringResource(it) })?.let { msg ->
                 Text(msg, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
             }
 
@@ -149,7 +151,7 @@ fun CompanySetupScreen(
                 if (state.isSaving) {
                     CircularProgressIndicator(modifier = Modifier.height(18.dp))
                 } else {
-                    Text("Create Company")
+                    Text(stringResource(R.string.company_create))
                 }
             }
         }

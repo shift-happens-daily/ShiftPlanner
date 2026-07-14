@@ -8,10 +8,12 @@ import com.froggyriia.shiftplanner.domain.model.ManagedEmployee
 import com.froggyriia.shiftplanner.domain.model.ManagedPosition
 import com.froggyriia.shiftplanner.domain.model.PendingEmployeeRequest
 import com.froggyriia.shiftplanner.domain.model.PendingManagerRequest
+import com.froggyriia.shiftplanner.domain.model.WorkLimits
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import com.froggyriia.shiftplanner.R
 
 data class EmployeesUiState(
     val employees: List<ManagedEmployee> = emptyList(),
@@ -21,7 +23,11 @@ data class EmployeesUiState(
     val pendingEmployeeRequests: List<PendingEmployeeRequest> = emptyList(),
     val isLoading: Boolean = false,
     val errorMessage: String? = null,
-    val statusMessage: String? = null
+    val statusMessage: String? = null,
+    // App-generated messages as string resources (localizable)
+    val errorMessageRes: Int? = null,
+    val statusMessageRes: Int? = null,
+    val statusMessageArgs: List<Any> = emptyList()
 )
 
 data class EmployeeCreationDraft(
@@ -83,7 +89,10 @@ class EmployeesViewModel(
     }
 
     fun clearMessages() {
-        _uiState.value = _uiState.value.copy(errorMessage = null, statusMessage = null)
+        _uiState.value = _uiState.value.copy(
+            errorMessage = null, statusMessage = null,
+            errorMessageRes = null, statusMessageRes = null, statusMessageArgs = emptyList()
+        )
     }
 
     // ── Employees ─────────────────────────────────────────────────────────────
@@ -91,9 +100,9 @@ class EmployeesViewModel(
     fun createEmployee(draft: EmployeeCreationDraft, onDone: (Boolean) -> Unit) {
         val name = draft.fullName.trim()
         val email = draft.email.trim()
-        if (name.isEmpty()) { error("Employee name is required"); onDone(false); return }
-        if (email.isEmpty()) { error("Employee email is required"); onDone(false); return }
-        val positionId = draft.positionId ?: run { error("Position is required"); onDone(false); return }
+        if (name.isEmpty()) { errorRes(R.string.emp_err_name_required); onDone(false); return }
+        if (email.isEmpty()) { errorRes(R.string.emp_err_email_required); onDone(false); return }
+        val positionId = draft.positionId ?: run { errorRes(R.string.emp_err_position_required); onDone(false); return }
 
         viewModelScope.launch {
             try {
@@ -106,7 +115,7 @@ class EmployeesViewModel(
                 val updated = (_uiState.value.employees + created).sortedBy { it.fullName }
                 _uiState.value = _uiState.value.copy(
                     employees = updated,
-                    statusMessage = "Employee added.",
+                    statusMessageRes = R.string.emp_msg_added,
                     errorMessage = null
                 )
                 onDone(true)
@@ -124,7 +133,7 @@ class EmployeesViewModel(
                 val updated = _uiState.value.employees.filter { it.id != employee.id }
                 _uiState.value = _uiState.value.copy(
                     employees = updated,
-                    statusMessage = "Employee removed.",
+                    statusMessageRes = R.string.emp_msg_removed,
                     errorMessage = null
                 )
             } catch (e: Exception) {
@@ -140,7 +149,7 @@ class EmployeesViewModel(
                 val employees = _uiState.value.employees.map { if (it.id == employee.id) updated else it }
                 _uiState.value = _uiState.value.copy(
                     employees = employees,
-                    statusMessage = "Position updated.",
+                    statusMessageRes = R.string.emp_msg_position_updated,
                     errorMessage = null
                 )
             } catch (e: Exception) {
@@ -156,7 +165,7 @@ class EmployeesViewModel(
                 val employees = _uiState.value.employees.map { if (it.id == employee.id) updated else it }
                 _uiState.value = _uiState.value.copy(
                     employees = employees,
-                    statusMessage = "Branch updated.",
+                    statusMessageRes = R.string.emp_msg_branch_updated,
                     errorMessage = null
                 )
             } catch (e: Exception) {
@@ -169,11 +178,11 @@ class EmployeesViewModel(
 
     fun createPosition(title: String) {
         val trimmed = title.trim()
-        if (trimmed.isEmpty()) { error("Title cannot be empty"); return }
+        if (trimmed.isEmpty()) { errorRes(R.string.emp_err_title_empty); return }
         if (_uiState.value.positions.any { it.title.equals(trimmed, ignoreCase = true) }) {
-            error("Position already exists"); return
+            errorRes(R.string.emp_err_position_exists); return
         }
-        val cId = companyId ?: run { error("No company context"); return }
+        val cId = companyId ?: run { errorRes(R.string.emp_err_no_company); return }
 
         viewModelScope.launch {
             try {
@@ -181,7 +190,7 @@ class EmployeesViewModel(
                 val positions = (_uiState.value.positions + created).sortedBy { it.title }
                 _uiState.value = _uiState.value.copy(
                     positions = positions,
-                    statusMessage = "Position created.",
+                    statusMessageRes = R.string.emp_msg_position_created,
                     errorMessage = null
                 )
             } catch (e: Exception) {
@@ -197,7 +206,7 @@ class EmployeesViewModel(
                 val positions = _uiState.value.positions.filter { it.id != position.id }
                 _uiState.value = _uiState.value.copy(
                     positions = positions,
-                    statusMessage = "Position removed.",
+                    statusMessageRes = R.string.emp_msg_position_removed,
                     errorMessage = null
                 )
             } catch (e: Exception) {
@@ -216,7 +225,7 @@ class EmployeesViewModel(
     ) {
         val trimmed = publicId.trim()
         if (trimmed.length != 16) {
-            error("ID должен быть 16 символов")
+            errorRes(R.string.emp_err_id_16)
             onDone(false)
             return
         }
@@ -231,7 +240,8 @@ class EmployeesViewModel(
                 }
                 _uiState.value = _uiState.value.copy(
                     employees = updated,
-                    statusMessage = "${linked.fullName} привязан к компании.",
+                    statusMessageRes = R.string.emp_msg_linked,
+                    statusMessageArgs = listOf(linked.fullName),
                     errorMessage = null
                 )
                 onDone(true)
@@ -251,7 +261,8 @@ class EmployeesViewModel(
                 val updated = _uiState.value.pendingManagerRequests.filter { it.id != req.id }
                 _uiState.value = _uiState.value.copy(
                     pendingManagerRequests = updated,
-                    statusMessage = "${req.fullName} принят как менеджер."
+                    statusMessageRes = R.string.emp_msg_manager_accepted,
+                    statusMessageArgs = listOf(req.fullName)
                 )
                 loadData(force = true)
             } catch (e: Exception) { error(e.message ?: "Ошибка") }
@@ -265,7 +276,8 @@ class EmployeesViewModel(
                 val updated = _uiState.value.pendingManagerRequests.filter { it.id != req.id }
                 _uiState.value = _uiState.value.copy(
                     pendingManagerRequests = updated,
-                    statusMessage = "Заявка ${req.fullName} отклонена."
+                    statusMessageRes = R.string.emp_msg_request_declined,
+                    statusMessageArgs = listOf(req.fullName)
                 )
             } catch (e: Exception) { error(e.message ?: "Ошибка") }
         }
@@ -278,7 +290,8 @@ class EmployeesViewModel(
                 val updated = _uiState.value.pendingEmployeeRequests.filter { it.id != req.id }
                 _uiState.value = _uiState.value.copy(
                     pendingEmployeeRequests = updated,
-                    statusMessage = "${req.fullName} принят как сотрудник."
+                    statusMessageRes = R.string.emp_msg_employee_accepted,
+                    statusMessageArgs = listOf(req.fullName)
                 )
                 loadData(force = true)
             } catch (e: Exception) { error(e.message ?: "Ошибка") }
@@ -292,7 +305,8 @@ class EmployeesViewModel(
                 val updated = _uiState.value.pendingEmployeeRequests.filter { it.id != req.id }
                 _uiState.value = _uiState.value.copy(
                     pendingEmployeeRequests = updated,
-                    statusMessage = "Заявка ${req.fullName} отклонена."
+                    statusMessageRes = R.string.emp_msg_request_declined,
+                    statusMessageArgs = listOf(req.fullName)
                 )
             } catch (e: Exception) { error(e.message ?: "Ошибка") }
         }
@@ -314,5 +328,33 @@ class EmployeesViewModel(
 
     private fun error(msg: String) {
         _uiState.value = _uiState.value.copy(errorMessage = msg, statusMessage = null)
+    }
+
+    // ── Work-hours limits ─────────────────────────────────────────────────────
+
+    fun loadWorkLimits(employeeId: Int, onResult: (WorkLimits?) -> Unit) {
+        viewModelScope.launch {
+            val limits = runCatching { repository.fetchWorkLimits(employeeId) }.getOrNull()
+            onResult(limits)
+        }
+    }
+
+    fun saveWorkLimits(employeeId: Int, maxPerWeek: Int, maxPerDay: Int, onDone: (Boolean) -> Unit) {
+        viewModelScope.launch {
+            try {
+                repository.updateWorkLimits(employeeId, maxPerWeek, maxPerDay)
+                _uiState.value = _uiState.value.copy(statusMessageRes = R.string.emp_msg_limits_saved)
+                onDone(true)
+            } catch (e: Exception) {
+                _uiState.value = _uiState.value.copy(errorMessage = e.message)
+                onDone(false)
+            }
+        }
+    }
+
+    private fun errorRes(res: Int) {
+        _uiState.value = _uiState.value.copy(
+            errorMessageRes = res, errorMessage = null, statusMessage = null, statusMessageRes = null
+        )
     }
 }

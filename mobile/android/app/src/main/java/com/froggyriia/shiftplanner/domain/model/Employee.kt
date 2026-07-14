@@ -36,3 +36,9 @@ data class PendingEmployeeRequest(
     val positionId: Int?,
     val branchId: Int?
 )
+
+/** Employee work-hours limits (per week / per day). */
+data class WorkLimits(
+    val maxHoursPerWeek: Int,
+    val maxHoursPerDay: Int
+)

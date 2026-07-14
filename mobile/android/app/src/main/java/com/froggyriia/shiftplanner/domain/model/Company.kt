@@ -54,3 +54,9 @@ fun AppCompanySummary.asAppCompany(): AppCompany = AppCompany(
     inviteCodeExpiresAt = inviteCodeExpiresAt,
     branches = emptyList()
 )
+
+/** Branch working hours for one weekday, in 30-minute slots (0..48). */
+data class WorkingHoursRange(
+    val startSlot: Int,
+    val endSlot: Int
+)

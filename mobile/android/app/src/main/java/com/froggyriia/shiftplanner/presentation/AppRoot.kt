@@ -21,6 +21,7 @@ import androidx.compose.material.icons.filled.Business
 import androidx.compose.material.icons.filled.CalendarMonth
 import androidx.compose.material.icons.filled.CalendarToday
 import androidx.compose.material.icons.filled.EventAvailable
+import androidx.compose.material.icons.filled.EventBusy
 import androidx.compose.material.icons.filled.Group
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material3.Button
@@ -65,8 +66,12 @@ import com.froggyriia.shiftplanner.ui.theme.AppThemePreference
 import com.froggyriia.shiftplanner.ui.theme.ThemeStore
 import com.froggyriia.shiftplanner.presentation.auth.AuthScreen
 import com.froggyriia.shiftplanner.presentation.auth.AuthViewModel
+import com.froggyriia.shiftplanner.presentation.employee.absence.AbsencesScreen
+import com.froggyriia.shiftplanner.presentation.employee.absence.AbsencesViewModel
 import com.froggyriia.shiftplanner.presentation.employee.availability.AvailabilityScreen
 import com.froggyriia.shiftplanner.presentation.employee.availability.AvailabilityViewModel
+import com.froggyriia.shiftplanner.presentation.employee.reports.MyReportScreen
+import com.froggyriia.shiftplanner.presentation.employee.reports.MyReportViewModel
 import com.froggyriia.shiftplanner.presentation.employee.schedule.MyScheduleScreen
 import com.froggyriia.shiftplanner.presentation.employee.schedule.MyScheduleViewModel
 import com.froggyriia.shiftplanner.presentation.manager.company.CompanyInviteSheet
@@ -148,8 +153,8 @@ private fun ManagerShell(
                     NavigationBarItem(
                         selected = tab == selectedTab,
                         onClick = { selectedTab = tab },
-                        icon = { Icon(tab.icon, contentDescription = label) },
-                        label = { Text(label) }
+                        // Icons only: five tabs don't leave room for labels.
+                        icon = { Icon(tab.icon, contentDescription = label) }
                     )
                 }
             }
@@ -206,7 +211,9 @@ private fun ManagerShell(
                                     @Suppress("UNCHECKED_CAST")
                                     return ScheduleViewModel(
                                         appContainer.scheduleRepository,
-                                        appContainer.requirementsRepository
+                                        appContainer.requirementsRepository,
+                                        appContainer.companyRepository,
+                                        appContainer.employeeManagementRepository(user.company?.id)
                                     ) as T
                                 }
                             }
@@ -243,6 +250,8 @@ private fun ManagerShell(
 private enum class EmployeeTab(@StringRes val labelRes: Int, val icon: ImageVector) {
     AVAILABILITY(R.string.nav_availability, Icons.Default.EventAvailable),
     SCHEDULE(R.string.nav_schedule, Icons.Default.CalendarToday),
+    ABSENCES(R.string.nav_absences, Icons.Default.EventBusy),
+    REPORT(R.string.nav_reports, Icons.Default.Assessment),
     PROFILE(R.string.nav_profile, Icons.Default.Person)
 }
 
@@ -274,8 +283,8 @@ private fun EmployeeShell(
                     NavigationBarItem(
                         selected = tab == selectedTab,
                         onClick = { selectedTab = tab },
-                        icon = { Icon(tab.icon, contentDescription = label) },
-                        label = { Text(label) }
+                        // Icons only: five tabs don't leave room for labels.
+                        icon = { Icon(tab.icon, contentDescription = label) }
                     )
                 }
             }
@@ -330,6 +339,53 @@ private fun EmployeeShell(
                         MyScheduleScreen(user = user, viewModel = myScheduleVm)
                     }
                 }
+                EmployeeTab.ABSENCES -> {
+                    if (!user.hasCompany || user.employeeId == null) {
+                        PlaceholderWithJoin(
+                            user = user,
+                            screenName = "Absences",
+                            onJoinClick = { showInviteSheet = true }
+                        )
+                    } else {
+                        val absencesVm: AbsencesViewModel = viewModel(
+                            key = "absences_${user.employeeId}",
+                            factory = remember(user.employeeId) {
+                                object : ViewModelProvider.Factory {
+                                    override fun <T : ViewModel> create(modelClass: Class<T>): T {
+                                        @Suppress("UNCHECKED_CAST")
+                                        return AbsencesViewModel(
+                                            appContainer.absenceRepository,
+                                            user.employeeId
+                                        ) as T
+                                    }
+                                }
+                            }
+                        )
+                        AbsencesScreen(viewModel = absencesVm)
+                    }
+                }
+                EmployeeTab.REPORT -> {
+                    if (!user.hasCompany) {
+                        PlaceholderWithJoin(
+                            user = user,
+                            screenName = "Report",
+                            onJoinClick = { showInviteSheet = true }
+                        )
+                    } else {
+                        val myReportVm: MyReportViewModel = viewModel(
+                            key = "my_report",
+                            factory = remember {
+                                object : ViewModelProvider.Factory {
+                                    override fun <T : ViewModel> create(modelClass: Class<T>): T {
+                                        @Suppress("UNCHECKED_CAST")
+                                        return MyReportViewModel(appContainer.reportsRepository) as T
+                                    }
+                                }
+                            }
+                        )
+                        MyReportScreen(viewModel = myReportVm)
+                    }
+                }
                 EmployeeTab.PROFILE -> ProfileScreen(
                     user = user,
                     reportsRepository = appContainer.reportsRepository,
@@ -357,7 +413,7 @@ private fun EmployeeShell(
 @Composable
 private fun PlaceholderScreen(name: String) {
     Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-        Text("$name — coming soon")
+        Text(stringResource(R.string.placeholder_coming_soon, name))
     }
 }
 
@@ -370,11 +426,11 @@ private fun PlaceholderWithJoin(
     if (!user.hasCompany) {
         Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
             Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                Text("Join a company to access $screenName")
+                Text(stringResource(R.string.placeholder_join, screenName))
                 Button(
                     onClick = onJoinClick,
                     modifier = Modifier.padding(top = 16.dp)
-                ) { Text("Enter invite code") }
+                ) { Text(stringResource(R.string.invite_enter_code)) }
             }
         }
     } else {
@@ -422,22 +478,22 @@ private fun ProfileScreen(
                 Modifier.fillMaxWidth().height(IntrinsicSize.Max),
                 horizontalArrangement = Arrangement.spacedBy(12.dp)
             ) {
-                ProfileInfoCard(label = "Full name", value = user.name, modifier = Modifier.weight(1f).fillMaxHeight())
-                ProfileInfoCard(label = "Email", value = user.email, modifier = Modifier.weight(1f).fillMaxHeight())
+                ProfileInfoCard(label = stringResource(R.string.profile_full_name), value = user.name, modifier = Modifier.weight(1f).fillMaxHeight())
+                ProfileInfoCard(label = stringResource(R.string.email_label), value = user.email, modifier = Modifier.weight(1f).fillMaxHeight())
             }
             Row(
                 Modifier.fillMaxWidth().height(IntrinsicSize.Max),
                 horizontalArrangement = Arrangement.spacedBy(12.dp)
             ) {
-                ProfileInfoCard(label = "User ID", value = user.publicId.ifEmpty { user.id }, monospace = true, modifier = Modifier.weight(1f).fillMaxHeight())
-                ProfileInfoCard(label = "Role", value = user.role.title, modifier = Modifier.weight(1f).fillMaxHeight())
+                ProfileInfoCard(label = stringResource(R.string.profile_user_id), value = user.publicId.ifEmpty { user.id }, monospace = true, modifier = Modifier.weight(1f).fillMaxHeight())
+                ProfileInfoCard(label = stringResource(R.string.profile_role), value = user.role.title, modifier = Modifier.weight(1f).fillMaxHeight())
             }
             user.company?.let { company ->
-                ProfileInfoCard(label = "Company", value = company.name, modifier = Modifier.fillMaxWidth())
+                ProfileInfoCard(label = stringResource(R.string.profile_company), value = company.name, modifier = Modifier.fillMaxWidth())
             }
             if (user.role == UserRole.EMPLOYEE) {
                 user.position?.let { pos ->
-                    ProfileInfoCard(label = "Position", value = pos.name, modifier = Modifier.fillMaxWidth())
+                    ProfileInfoCard(label = stringResource(R.string.profile_position), value = pos.name, modifier = Modifier.fillMaxWidth())
                 }
             }
 
@@ -445,18 +501,18 @@ private fun ProfileScreen(
             myReport?.let { report ->
                 HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
                 Text(
-                    "My Stats (all time)",
+                    stringResource(R.string.profile_stats),
                     style = MaterialTheme.typography.titleSmall,
                     fontWeight = FontWeight.SemiBold
                 )
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                     ProfileInfoCard(
-                        label = "Hours",
+                        label = stringResource(R.string.profile_hours),
                         value = "${"%.1f".format(report.totalHours)} ч",
                         modifier = Modifier.weight(1f)
                     )
                     ProfileInfoCard(
-                        label = "Shifts",
+                        label = stringResource(R.string.profile_shifts),
                         value = "${report.totalShifts}",
                         modifier = Modifier.weight(1f)
                     )
@@ -466,7 +522,7 @@ private fun ProfileScreen(
             // ── Theme picker ──────────────────────────────────────────────
             HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
             Text(
-                "App Theme",
+                stringResource(R.string.profile_theme),
                 style = MaterialTheme.typography.titleSmall,
                 fontWeight = FontWeight.SemiBold
             )
@@ -556,7 +612,7 @@ private fun ProfileScreen(
                     onClick = onDeleteAccount,
                     modifier = Modifier.fillMaxWidth(),
                     colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.error)
-                ) { Text("Delete account") }
+                ) { Text(stringResource(R.string.profile_delete_account)) }
             }
             Spacer(Modifier.height(16.dp))
         }

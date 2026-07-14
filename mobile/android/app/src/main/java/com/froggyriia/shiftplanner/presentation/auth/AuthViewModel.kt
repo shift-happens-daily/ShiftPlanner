@@ -9,6 +9,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import com.froggyriia.shiftplanner.R
 
 class AuthViewModel(
     private val repository: AuthRepository
@@ -83,7 +84,7 @@ class AuthViewModel(
 
         if (state.password != state.confirmPassword) {
             _uiState.value = state.copy(
-                errorMessage = "Passwords do not match"
+                errorMessageRes = R.string.authm_passwords_mismatch
             )
             return
         }
@@ -165,6 +166,8 @@ data class AuthUiState(
     val currentUser: AppUser? = null,
     val isLoading: Boolean = false,
     val errorMessage: String? = null,
+    val errorMessageRes: Int? = null,
+    val statusMessageRes: Int? = null,
     val emailVerificationPending: Boolean = false
 ) {
     val passwordsMatch: Boolean

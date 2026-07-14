@@ -6,7 +6,9 @@ data class ScheduleGenerateRequestDto(
     @SerializedName("start_date")
     val startDate: String,
     @SerializedName("end_date")
-    val endDate: String
+    val endDate: String,
+    @SerializedName("branch_id")
+    val branchId: Int? = null
 )
 
 data class RequirementAssignRequestDto(
@@ -43,10 +45,28 @@ data class ScheduleResponseDto(
     val id: Int,
     @SerializedName("branch_id")
     val branchId: Int?,
+    // Schedule period as returned by the backend (ScheduleRead). Nullable for
+    // resilience against older deployments that might omit them.
+    @SerializedName("start_date")
+    val startDate: String?,
+    @SerializedName("end_date")
+    val endDate: String?,
     val status: String,
     val shifts: List<ScheduleShiftResponseDto>,
     @SerializedName("unfilled_requirements")
     val unfilledRequirements: List<ScheduleUnfilledRequirementResponseDto>
+)
+
+/** Item of GET /schedule — used to detect schedules that overlap a period. */
+data class ScheduleListItemResponseDto(
+    val id: Int,
+    @SerializedName("branch_id")
+    val branchId: Int?,
+    @SerializedName("start_date")
+    val startDate: String,
+    @SerializedName("end_date")
+    val endDate: String,
+    val status: String
 )
 
 data class ScheduleShiftResponseDto(
@@ -117,6 +137,38 @@ data class ScheduleRequirementInScheduleUpdateDto(
     val startTime: String,
     @SerializedName("end_time")
     val endTime: String
+)
+
+// ── Employee calendar summary (shifts across ALL published schedules) ────────
+
+data class EmployeeCalendarPositionDto(
+    val id: Int,
+    val name: String
+)
+
+data class EmployeeCalendarEmployeeDto(
+    val id: Int,
+    @SerializedName("full_name")
+    val fullName: String,
+    val position: EmployeeCalendarPositionDto?
+)
+
+data class EmployeeCalendarShiftDto(
+    @SerializedName("shift_id")
+    val shiftId: Int,
+    @SerializedName("schedule_id")
+    val scheduleId: Int,
+    val date: String,
+    @SerializedName("start_time")
+    val startTime: String,
+    @SerializedName("end_time")
+    val endTime: String,
+    val status: String?
+)
+
+data class EmployeeCalendarSummaryDto(
+    val employee: EmployeeCalendarEmployeeDto,
+    val shifts: List<EmployeeCalendarShiftDto>
 )
 
 // ── Absences ──────────────────────────────────────────────────────────────────

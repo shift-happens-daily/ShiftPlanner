@@ -9,6 +9,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import com.froggyriia.shiftplanner.R
 
 data class CompanyInviteUiState(
     val inviteCode: String = "",
@@ -17,6 +18,8 @@ data class CompanyInviteUiState(
     val selectedPositionId: Int? = null,
     val isLoading: Boolean = false,
     val errorMessage: String? = null,
+    val errorMessageRes: Int? = null,
+    val statusMessageRes: Int? = null,
     val joinedUser: AppUser? = null
 ) {
     val canJoin: Boolean get() = !isLoading && preview != null
@@ -37,7 +40,7 @@ class CompanyInviteViewModel(
     fun previewCompany() {
         val code = _uiState.value.inviteCode.trim().uppercase()
         if (code.isEmpty()) {
-            _uiState.value = _uiState.value.copy(errorMessage = "Enter invite code")
+            _uiState.value = _uiState.value.copy(errorMessageRes = R.string.invite_enter_code)
             return
         }
         viewModelScope.launch {
@@ -64,7 +67,7 @@ class CompanyInviteViewModel(
         val state = _uiState.value
         val code = state.inviteCode.trim().uppercase()
         if (code.isEmpty()) {
-            _uiState.value = state.copy(errorMessage = "Enter invite code")
+            _uiState.value = state.copy(errorMessageRes = R.string.invite_enter_code)
             return
         }
         viewModelScope.launch {

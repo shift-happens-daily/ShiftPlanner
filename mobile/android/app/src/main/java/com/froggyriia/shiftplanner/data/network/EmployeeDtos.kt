@@ -124,3 +124,31 @@ data class EmployeeRequestDto(
         positionId = positionId, branchId = branchId
     )
 }
+
+data class LinkUserRequestDto(
+    @SerializedName("user_public_id") val userPublicId: String,
+    @SerializedName("branch_id") val branchId: Int? = null,
+    @SerializedName("position_id") val positionId: Int? = null
+)
+
+data class LinkedEmployeeResponseDto(
+    val id: Int,
+    @SerializedName("public_id") val publicId: String,
+    @SerializedName("full_name") val fullName: String,
+    val email: String,
+    @SerializedName("branch_id") val branchId: Int?,
+    @SerializedName("position_id") val positionId: Int?
+) {
+    fun toDomain() = ManagedEmployee(
+        id = id, publicId = publicId, fullName = fullName, email = email,
+        branchId = branchId, positionId = positionId
+    )
+}
+
+/** GET/PATCH /employees/{id}/work-limits */
+data class EmployeeWorkLimitsDto(
+    @SerializedName("max_hours_per_week")
+    val maxHoursPerWeek: Int,
+    @SerializedName("max_hours_per_day")
+    val maxHoursPerDay: Int
+)

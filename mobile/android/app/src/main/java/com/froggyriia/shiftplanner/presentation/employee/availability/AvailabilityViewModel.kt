@@ -10,6 +10,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import com.froggyriia.shiftplanner.R
 
 data class AvailabilityUiState(
     /** weekday (0=Mon … 6=Sun) → slot (0..47) → state; absent key means UNAVAILABLE */
@@ -18,6 +19,8 @@ data class AvailabilityUiState(
     val isSaving: Boolean = false,
     val hasChanges: Boolean = false,
     val errorMessage: String? = null,
+    val errorMessageRes: Int? = null,
+    val statusMessageRes: Int? = null,
     val statusMessage: String? = null
 )
 
@@ -115,7 +118,7 @@ class AvailabilityViewModel(
                 _uiState.value = _uiState.value.copy(
                     isSaving = false,
                     hasChanges = false,
-                    statusMessage = "Availability saved."
+                    statusMessageRes = R.string.avail_saved
                 )
             } catch (e: Exception) {
                 _uiState.value = _uiState.value.copy(isSaving = false, errorMessage = e.message)
