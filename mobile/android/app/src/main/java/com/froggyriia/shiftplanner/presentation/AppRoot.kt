@@ -3,12 +3,17 @@ package com.froggyriia.shiftplanner.presentation
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Assessment
 import androidx.compose.material.icons.filled.Assignment
@@ -16,6 +21,7 @@ import androidx.compose.material.icons.filled.Business
 import androidx.compose.material.icons.filled.CalendarMonth
 import androidx.compose.material.icons.filled.CalendarToday
 import androidx.compose.material.icons.filled.EventAvailable
+import androidx.compose.material.icons.filled.EventBusy
 import androidx.compose.material.icons.filled.Group
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material3.Button
@@ -40,12 +46,17 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.appcompat.app.AppCompatDelegate
+import androidx.annotation.StringRes
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.core.os.LocaleListCompat
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.froggyriia.shiftplanner.R
 import com.froggyriia.shiftplanner.AppContainer
 import com.froggyriia.shiftplanner.data.reports.ReportsRepository
 import com.froggyriia.shiftplanner.domain.model.AppUser
@@ -55,8 +66,12 @@ import com.froggyriia.shiftplanner.ui.theme.AppThemePreference
 import com.froggyriia.shiftplanner.ui.theme.ThemeStore
 import com.froggyriia.shiftplanner.presentation.auth.AuthScreen
 import com.froggyriia.shiftplanner.presentation.auth.AuthViewModel
+import com.froggyriia.shiftplanner.presentation.employee.absence.AbsencesScreen
+import com.froggyriia.shiftplanner.presentation.employee.absence.AbsencesViewModel
 import com.froggyriia.shiftplanner.presentation.employee.availability.AvailabilityScreen
 import com.froggyriia.shiftplanner.presentation.employee.availability.AvailabilityViewModel
+import com.froggyriia.shiftplanner.presentation.employee.reports.MyReportScreen
+import com.froggyriia.shiftplanner.presentation.employee.reports.MyReportViewModel
 import com.froggyriia.shiftplanner.presentation.employee.schedule.MyScheduleScreen
 import com.froggyriia.shiftplanner.presentation.employee.schedule.MyScheduleViewModel
 import com.froggyriia.shiftplanner.presentation.manager.company.CompanyInviteSheet
@@ -96,7 +111,8 @@ fun AppRoot(
             user = currentUser,
             appContainer = appContainer,
             onUserUpdated = authViewModel::updateUser,
-            onLogout = authViewModel::logout
+            onLogout = authViewModel::logout,
+            onDeleteAccount = authViewModel::deleteAccount
         )
         UserRole.EMPLOYEE -> EmployeeShell(
             user = currentUser,
@@ -110,13 +126,13 @@ fun AppRoot(
 
 // ── Manager ───────────────────────────────────────────────────────────────────
 
-private enum class ManagerTab(val label: String, val icon: ImageVector) {
-    COMPANY("Company", Icons.Default.Business),
-    EMPLOYEES("Employees", Icons.Default.Group),
-    REQUIREMENTS("Reqs", Icons.Default.Assignment),
-    SCHEDULE("Schedule", Icons.Default.CalendarMonth),
-    REPORTS("Reports", Icons.Default.Assessment),
-    PROFILE("Profile", Icons.Default.Person)
+private enum class ManagerTab(@StringRes val labelRes: Int, val icon: ImageVector) {
+    COMPANY(R.string.nav_company, Icons.Default.Business),
+    EMPLOYEES(R.string.nav_employees, Icons.Default.Group),
+    REQUIREMENTS(R.string.nav_reqs, Icons.Default.Assignment),
+    SCHEDULE(R.string.nav_schedule, Icons.Default.CalendarMonth),
+    REPORTS(R.string.nav_reports, Icons.Default.Assessment),
+    PROFILE(R.string.nav_profile, Icons.Default.Person)
 }
 
 @Composable
@@ -124,7 +140,8 @@ private fun ManagerShell(
     user: AppUser,
     appContainer: AppContainer,
     onUserUpdated: (AppUser) -> Unit,
-    onLogout: () -> Unit
+    onLogout: () -> Unit,
+    onDeleteAccount: () -> Unit
 ) {
     var selectedTab by rememberSaveable { mutableStateOf(ManagerTab.COMPANY) }
 
@@ -132,11 +149,12 @@ private fun ManagerShell(
         bottomBar = {
             NavigationBar {
                 ManagerTab.entries.forEach { tab ->
+                    val label = stringResource(tab.labelRes)
                     NavigationBarItem(
                         selected = tab == selectedTab,
                         onClick = { selectedTab = tab },
-                        icon = { Icon(tab.icon, contentDescription = tab.label) },
-                        label = { Text(tab.label) }
+                        // Icons only: five tabs don't leave room for labels.
+                        icon = { Icon(tab.icon, contentDescription = label) }
                     )
                 }
             }
@@ -175,6 +193,7 @@ private fun ManagerShell(
                                     @Suppress("UNCHECKED_CAST")
                                     return RequirementsViewModel(
                                         appContainer.requirementsRepository,
+                                        appContainer.companyRepository,
                                         user.company?.id
                                     ) as T
                                 }
@@ -192,7 +211,9 @@ private fun ManagerShell(
                                     @Suppress("UNCHECKED_CAST")
                                     return ScheduleViewModel(
                                         appContainer.scheduleRepository,
-                                        appContainer.requirementsRepository
+                                        appContainer.requirementsRepository,
+                                        appContainer.companyRepository,
+                                        appContainer.employeeManagementRepository(user.company?.id)
                                     ) as T
                                 }
                             }
@@ -216,7 +237,8 @@ private fun ManagerShell(
                 }
                 ManagerTab.PROFILE -> ProfileScreen(
                     user = user,
-                    onLogout = onLogout
+                    onLogout = onLogout,
+                    onDeleteAccount = onDeleteAccount
                 )
             }
         }
@@ -225,10 +247,12 @@ private fun ManagerShell(
 
 // ── Employee ──────────────────────────────────────────────────────────────────
 
-private enum class EmployeeTab(val label: String, val icon: ImageVector) {
-    AVAILABILITY("Availability", Icons.Default.EventAvailable),
-    SCHEDULE("Schedule", Icons.Default.CalendarToday),
-    PROFILE("Profile", Icons.Default.Person)
+private enum class EmployeeTab(@StringRes val labelRes: Int, val icon: ImageVector) {
+    AVAILABILITY(R.string.nav_availability, Icons.Default.EventAvailable),
+    SCHEDULE(R.string.nav_schedule, Icons.Default.CalendarToday),
+    ABSENCES(R.string.nav_absences, Icons.Default.EventBusy),
+    REPORT(R.string.nav_reports, Icons.Default.Assessment),
+    PROFILE(R.string.nav_profile, Icons.Default.Person)
 }
 
 @Composable
@@ -255,11 +279,12 @@ private fun EmployeeShell(
         bottomBar = {
             NavigationBar {
                 EmployeeTab.entries.forEach { tab ->
+                    val label = stringResource(tab.labelRes)
                     NavigationBarItem(
                         selected = tab == selectedTab,
                         onClick = { selectedTab = tab },
-                        icon = { Icon(tab.icon, contentDescription = tab.label) },
-                        label = { Text(tab.label) }
+                        // Icons only: five tabs don't leave room for labels.
+                        icon = { Icon(tab.icon, contentDescription = label) }
                     )
                 }
             }
@@ -314,6 +339,53 @@ private fun EmployeeShell(
                         MyScheduleScreen(user = user, viewModel = myScheduleVm)
                     }
                 }
+                EmployeeTab.ABSENCES -> {
+                    if (!user.hasCompany || user.employeeId == null) {
+                        PlaceholderWithJoin(
+                            user = user,
+                            screenName = "Absences",
+                            onJoinClick = { showInviteSheet = true }
+                        )
+                    } else {
+                        val absencesVm: AbsencesViewModel = viewModel(
+                            key = "absences_${user.employeeId}",
+                            factory = remember(user.employeeId) {
+                                object : ViewModelProvider.Factory {
+                                    override fun <T : ViewModel> create(modelClass: Class<T>): T {
+                                        @Suppress("UNCHECKED_CAST")
+                                        return AbsencesViewModel(
+                                            appContainer.absenceRepository,
+                                            user.employeeId
+                                        ) as T
+                                    }
+                                }
+                            }
+                        )
+                        AbsencesScreen(viewModel = absencesVm)
+                    }
+                }
+                EmployeeTab.REPORT -> {
+                    if (!user.hasCompany) {
+                        PlaceholderWithJoin(
+                            user = user,
+                            screenName = "Report",
+                            onJoinClick = { showInviteSheet = true }
+                        )
+                    } else {
+                        val myReportVm: MyReportViewModel = viewModel(
+                            key = "my_report",
+                            factory = remember {
+                                object : ViewModelProvider.Factory {
+                                    override fun <T : ViewModel> create(modelClass: Class<T>): T {
+                                        @Suppress("UNCHECKED_CAST")
+                                        return MyReportViewModel(appContainer.reportsRepository) as T
+                                    }
+                                }
+                            }
+                        )
+                        MyReportScreen(viewModel = myReportVm)
+                    }
+                }
                 EmployeeTab.PROFILE -> ProfileScreen(
                     user = user,
                     reportsRepository = appContainer.reportsRepository,
@@ -341,7 +413,7 @@ private fun EmployeeShell(
 @Composable
 private fun PlaceholderScreen(name: String) {
     Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-        Text("$name — coming soon")
+        Text(stringResource(R.string.placeholder_coming_soon, name))
     }
 }
 
@@ -354,11 +426,11 @@ private fun PlaceholderWithJoin(
     if (!user.hasCompany) {
         Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
             Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                Text("Join a company to access $screenName")
+                Text(stringResource(R.string.placeholder_join, screenName))
                 Button(
                     onClick = onJoinClick,
                     modifier = Modifier.padding(top = 16.dp)
-                ) { Text("Enter invite code") }
+                ) { Text(stringResource(R.string.invite_enter_code)) }
             }
         }
     } else {
@@ -366,6 +438,7 @@ private fun PlaceholderWithJoin(
     }
 }
 
+@OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
 @Composable
 private fun ProfileScreen(
     user: AppUser,
@@ -380,71 +453,78 @@ private fun ProfileScreen(
         if (reportsRepository != null) {
             try {
                 myReport = reportsRepository.fetchMyReport(startDate = null, endDate = null)
-            } catch (_: Exception) { /* stats optional */ }
+            } catch (_: Exception) { }
         }
     }
 
-    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+    Scaffold(
+        topBar = {
+            androidx.compose.material3.TopAppBar(
+                title = { Text(stringResource(R.string.profile_title), style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold) }
+            )
+        }
+    ) { padding ->
         Column(
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.spacedBy(12.dp),
-            modifier = Modifier.padding(24.dp)
+            modifier = Modifier
+                .padding(padding)
+                .padding(horizontal = 16.dp)
+                .verticalScroll(rememberScrollState()),
+            verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
-            Icon(
-                Icons.Default.Person,
-                contentDescription = null,
-                modifier = Modifier.padding(bottom = 4.dp),
-                tint = MaterialTheme.colorScheme.primary
-            )
-            Text(user.name, style = MaterialTheme.typography.headlineSmall)
-            Text(
-                user.email,
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
+            Spacer(Modifier.height(4.dp))
 
-            // Stats (employees only)
-            myReport?.let { report ->
-                Spacer(Modifier.height(4.dp))
-                HorizontalDivider()
-                Spacer(Modifier.height(4.dp))
-                Text(
-                    "My Stats (all time)",
-                    style = MaterialTheme.typography.labelMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-                Column(
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                    verticalArrangement = Arrangement.spacedBy(4.dp)
-                ) {
-                    Text(
-                        "${"%.1f".format(report.totalHours)} hours",
-                        style = MaterialTheme.typography.titleLarge,
-                        fontWeight = FontWeight.Bold
-                    )
-                    Text(
-                        "${report.totalShifts} shifts",
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
+            // ── Info cards ────────────────────────────────────────────────────
+            Row(
+                Modifier.fillMaxWidth().height(IntrinsicSize.Max),
+                horizontalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                ProfileInfoCard(label = stringResource(R.string.profile_full_name), value = user.name, modifier = Modifier.weight(1f).fillMaxHeight())
+                ProfileInfoCard(label = stringResource(R.string.email_label), value = user.email, modifier = Modifier.weight(1f).fillMaxHeight())
+            }
+            Row(
+                Modifier.fillMaxWidth().height(IntrinsicSize.Max),
+                horizontalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                ProfileInfoCard(label = stringResource(R.string.profile_user_id), value = user.publicId.ifEmpty { user.id }, monospace = true, modifier = Modifier.weight(1f).fillMaxHeight())
+                ProfileInfoCard(label = stringResource(R.string.profile_role), value = user.role.title, modifier = Modifier.weight(1f).fillMaxHeight())
+            }
+            user.company?.let { company ->
+                ProfileInfoCard(label = stringResource(R.string.profile_company), value = company.name, modifier = Modifier.fillMaxWidth())
+            }
+            if (user.role == UserRole.EMPLOYEE) {
+                user.position?.let { pos ->
+                    ProfileInfoCard(label = stringResource(R.string.profile_position), value = pos.name, modifier = Modifier.fillMaxWidth())
                 }
-                Spacer(Modifier.height(4.dp))
-                HorizontalDivider()
             }
 
-            // Theme picker
-            Spacer(Modifier.height(4.dp))
-            HorizontalDivider()
-            Spacer(Modifier.height(4.dp))
+            // ── Stats (employees only) ─────────────────────────────────────
+            myReport?.let { report ->
+                HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
+                Text(
+                    stringResource(R.string.profile_stats),
+                    style = MaterialTheme.typography.titleSmall,
+                    fontWeight = FontWeight.SemiBold
+                )
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    ProfileInfoCard(
+                        label = stringResource(R.string.profile_hours),
+                        value = "${"%.1f".format(report.totalHours)} ч",
+                        modifier = Modifier.weight(1f)
+                    )
+                    ProfileInfoCard(
+                        label = stringResource(R.string.profile_shifts),
+                        value = "${report.totalShifts}",
+                        modifier = Modifier.weight(1f)
+                    )
+                }
+            }
+
+            // ── Theme picker ──────────────────────────────────────────────
+            HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
             Text(
-                "App Theme",
+                stringResource(R.string.profile_theme),
                 style = MaterialTheme.typography.titleSmall,
                 fontWeight = FontWeight.SemiBold
-            )
-            Text(
-                "Current: ${currentTheme.title}",
-                style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.primary
             )
             Row(
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -463,9 +543,7 @@ private fun ProfileScreen(
                         )
                     ) {
                         Box(
-                            Modifier
-                                .fillMaxWidth()
-                                .padding(vertical = 12.dp),
+                            Modifier.fillMaxWidth().padding(vertical = 12.dp),
                             contentAlignment = Alignment.Center
                         ) {
                             Text(
@@ -482,16 +560,96 @@ private fun ProfileScreen(
                 }
             }
 
-            Spacer(Modifier.height(4.dp))
-            Button(onClick = onLogout) { Text("Log out") }
+            // ── Language picker ───────────────────────────────────────────
+            HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
+            Text(
+                stringResource(R.string.language_label),
+                style = MaterialTheme.typography.titleSmall,
+                fontWeight = FontWeight.SemiBold
+            )
+            val currentLocale = AppCompatDelegate.getApplicationLocales().toLanguageTags()
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                listOf("en" to stringResource(R.string.language_en), "ru" to stringResource(R.string.language_ru)).forEach { (tag, label) ->
+                    val selected = if (tag == "en") !currentLocale.startsWith("ru") else currentLocale.startsWith("ru")
+                    Card(
+                        onClick = { AppCompatDelegate.setApplicationLocales(LocaleListCompat.forLanguageTags(tag)) },
+                        modifier = Modifier.weight(1f),
+                        colors = androidx.compose.material3.CardDefaults.cardColors(
+                            containerColor = if (selected)
+                                MaterialTheme.colorScheme.primaryContainer
+                            else
+                                MaterialTheme.colorScheme.surfaceVariant
+                        )
+                    ) {
+                        Box(
+                            Modifier.fillMaxWidth().padding(vertical = 12.dp),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text(
+                                label,
+                                style = MaterialTheme.typography.labelMedium,
+                                fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal,
+                                color = if (selected)
+                                    MaterialTheme.colorScheme.onPrimaryContainer
+                                else
+                                    MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    }
+                }
+            }
+
+            // ── Actions ───────────────────────────────────────────────────
+            HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
+            Button(onClick = onLogout, modifier = Modifier.fillMaxWidth()) {
+                Text(stringResource(R.string.logout_button))
+            }
             if (onDeleteAccount != null) {
                 OutlinedButton(
                     onClick = onDeleteAccount,
-                    colors = ButtonDefaults.outlinedButtonColors(
-                        contentColor = MaterialTheme.colorScheme.error
-                    )
-                ) { Text("Delete account") }
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.error)
+                ) { Text(stringResource(R.string.profile_delete_account)) }
             }
+            Spacer(Modifier.height(16.dp))
+        }
+    }
+}
+
+@Composable
+private fun ProfileInfoCard(
+    label: String,
+    value: String,
+    modifier: Modifier = Modifier,
+    monospace: Boolean = false
+) {
+    Card(modifier = modifier) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .fillMaxHeight()
+                .padding(horizontal = 16.dp, vertical = 14.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.Center
+        ) {
+            Text(
+                label,
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            Text(
+                value,
+                style = if (monospace)
+                    MaterialTheme.typography.titleSmall.copy(fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace)
+                else
+                    MaterialTheme.typography.titleSmall,
+                fontWeight = FontWeight.Bold,
+                textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                modifier = Modifier.fillMaxWidth()
+            )
         }
     }
 }

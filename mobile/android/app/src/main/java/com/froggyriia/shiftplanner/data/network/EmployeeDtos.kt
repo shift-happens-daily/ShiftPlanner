@@ -92,3 +92,63 @@ data class EmployeeBranchResponseDto(
 ) {
     fun toDomain(): ManagedBranch = ManagedBranch(id = id, name = name)
 }
+
+data class ManagerRequestDto(
+    val id: Int,
+    @SerializedName("company_id") val companyId: Int,
+    @SerializedName("user_id") val userId: Int,
+    @SerializedName("public_id") val publicId: String,
+    @SerializedName("full_name") val fullName: String,
+    val email: String,
+    @SerializedName("manager_role") val managerRole: String,
+    @SerializedName("membership_status") val membershipStatus: String
+) {
+    fun toDomain() = com.froggyriia.shiftplanner.domain.model.PendingManagerRequest(
+        id = id, fullName = fullName, email = email, managerRole = managerRole
+    )
+}
+
+data class EmployeeRequestDto(
+    val id: Int,
+    @SerializedName("company_id") val companyId: Int,
+    @SerializedName("user_id") val userId: Int,
+    @SerializedName("public_id") val publicId: String,
+    @SerializedName("full_name") val fullName: String,
+    val email: String,
+    @SerializedName("branch_id") val branchId: Int?,
+    @SerializedName("position_id") val positionId: Int?,
+    @SerializedName("is_active") val isActive: Boolean
+) {
+    fun toDomain() = com.froggyriia.shiftplanner.domain.model.PendingEmployeeRequest(
+        id = id, fullName = fullName, email = email,
+        positionId = positionId, branchId = branchId
+    )
+}
+
+data class LinkUserRequestDto(
+    @SerializedName("user_public_id") val userPublicId: String,
+    @SerializedName("branch_id") val branchId: Int? = null,
+    @SerializedName("position_id") val positionId: Int? = null
+)
+
+data class LinkedEmployeeResponseDto(
+    val id: Int,
+    @SerializedName("public_id") val publicId: String,
+    @SerializedName("full_name") val fullName: String,
+    val email: String,
+    @SerializedName("branch_id") val branchId: Int?,
+    @SerializedName("position_id") val positionId: Int?
+) {
+    fun toDomain() = ManagedEmployee(
+        id = id, publicId = publicId, fullName = fullName, email = email,
+        branchId = branchId, positionId = positionId
+    )
+}
+
+/** GET/PATCH /employees/{id}/work-limits */
+data class EmployeeWorkLimitsDto(
+    @SerializedName("max_hours_per_week")
+    val maxHoursPerWeek: Int,
+    @SerializedName("max_hours_per_day")
+    val maxHoursPerDay: Int
+)

@@ -49,6 +49,8 @@ import androidx.core.net.toUri
 import com.froggyriia.shiftplanner.domain.model.EmployeeReport
 import java.text.SimpleDateFormat
 import java.util.Locale
+import androidx.compose.ui.res.stringResource
+import com.froggyriia.shiftplanner.R
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -59,6 +61,8 @@ fun ReportsScreen(
     val snackbarHostState = remember { SnackbarHostState() }
     val context = LocalContext.current
 
+    LaunchedEffect(Unit) { viewModel.load() }
+
     LaunchedEffect(state.errorMessage) {
         state.errorMessage?.let { snackbarHostState.showSnackbar(it) }
     }
@@ -66,10 +70,10 @@ fun ReportsScreen(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Reports") },
+                title = { Text(stringResource(R.string.rep_title)) },
                 actions = {
                     IconButton(onClick = viewModel::load) {
-                        Icon(Icons.Default.Refresh, "Refresh")
+                        Icon(Icons.Default.Refresh, stringResource(R.string.common_refresh))
                     }
                     IconButton(
                         onClick = {
@@ -81,7 +85,7 @@ fun ReportsScreen(
                         },
                         enabled = state.reports.isNotEmpty()
                     ) {
-                        Icon(Icons.Default.Download, "Export CSV")
+                        Icon(Icons.Default.Download, stringResource(R.string.common_export_csv))
                     }
                 }
             )
@@ -104,7 +108,7 @@ fun ReportsScreen(
                 OutlinedTextField(
                     value = state.startDate,
                     onValueChange = viewModel::setStartDate,
-                    label = { Text("From") },
+                    label = { Text(stringResource(R.string.common_from)) },
                     placeholder = { Text("yyyy-MM-dd") },
                     singleLine = true,
                     modifier = Modifier.weight(1f)
@@ -112,12 +116,12 @@ fun ReportsScreen(
                 OutlinedTextField(
                     value = state.endDate,
                     onValueChange = viewModel::setEndDate,
-                    label = { Text("To") },
+                    label = { Text(stringResource(R.string.common_to)) },
                     placeholder = { Text("yyyy-MM-dd") },
                     singleLine = true,
                     modifier = Modifier.weight(1f)
                 )
-                Button(onClick = viewModel::load) { Text("Apply") }
+                Button(onClick = viewModel::load) { Text(stringResource(R.string.common_apply)) }
             }
 
             HorizontalDivider()
@@ -133,7 +137,7 @@ fun ReportsScreen(
                     contentAlignment = Alignment.Center
                 ) {
                     Text(
-                        "No report data for selected period.",
+                        stringResource(R.string.rep_no_data),
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
@@ -148,8 +152,8 @@ fun ReportsScreen(
                             .padding(horizontal = 16.dp, vertical = 8.dp),
                         horizontalArrangement = Arrangement.spacedBy(24.dp)
                     ) {
-                        SummaryChip("Employees", "${state.reports.size}")
-                        SummaryChip("Total shifts", "$totalShifts")
+                        SummaryChip(stringResource(R.string.rep_employees), "${state.reports.size}")
+                        SummaryChip(stringResource(R.string.rep_total_shifts), "$totalShifts")
                         SummaryChip("Total hours", "${"%.1f".format(totalHours)}h")
                     }
 
@@ -200,7 +204,7 @@ private fun ReportRow(report: EmployeeReport) {
                 fontWeight = FontWeight.SemiBold
             )
             Text(
-                "${report.totalShifts} shifts",
+                stringResource(R.string.rep_shifts_n, report.totalShifts),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
@@ -243,7 +247,7 @@ private fun shareFile(context: Context, uriString: String, mimeType: String) {
         setDataAndType(uriString.toUri(), mimeType)
         addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_ACTIVITY_NEW_TASK)
     }
-    context.startActivity(Intent.createChooser(intent, "Open report").apply {
+    context.startActivity(Intent.createChooser(intent, context.getString(R.string.rep_open_report)).apply {
         addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
     })
 }

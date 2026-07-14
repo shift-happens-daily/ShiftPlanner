@@ -11,6 +11,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import com.froggyriia.shiftplanner.R
 
 data class CompanySetupUiState(
     val companyName: String = "",
@@ -19,6 +20,8 @@ data class CompanySetupUiState(
     val branches: List<CompanyBranchDraft> = listOf(CompanyBranchDraft()),
     val isSaving: Boolean = false,
     val errorMessage: String? = null,
+    val errorMessageRes: Int? = null,
+    val statusMessageRes: Int? = null,
     val createdCompany: AppCompany? = null
 ) {
     val canCreate: Boolean
@@ -69,11 +72,11 @@ class CompanySetupViewModel(
         val state = _uiState.value
         val trimmedName = state.companyName.trim()
         if (trimmedName.isEmpty()) {
-            _uiState.value = state.copy(errorMessage = "Company name is required")
+            _uiState.value = state.copy(errorMessageRes = R.string.company_name_required)
             return
         }
         if (state.hasBranches && state.branches.all { it.name.isBlank() }) {
-            _uiState.value = state.copy(errorMessage = "Add at least one branch")
+            _uiState.value = state.copy(errorMessageRes = R.string.company_add_one_branch)
             return
         }
 

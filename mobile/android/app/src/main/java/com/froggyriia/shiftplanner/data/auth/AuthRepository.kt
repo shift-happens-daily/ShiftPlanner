@@ -9,12 +9,13 @@ interface AuthRepository {
         password: String
     ): AppUser
 
+    // Returns null if email verification is required (user must check inbox before logging in)
     suspend fun signUp(
         email: String,
         password: String,
         name: String,
         role: UserRole
-    ): AppUser
+    ): AppUser?
 
     suspend fun logout()
 
