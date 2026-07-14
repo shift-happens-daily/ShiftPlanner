@@ -576,8 +576,6 @@ export default function CompanyTab({ language, userRole, user }) {
               </div>
 
               <div style={styles.section}>
-                <h3 style={styles.sectionTitle}>{t.currentCompany}</h3>
-
                 <div style={styles.companyPanel}>
                   <strong style={styles.companyTitle}>{currentCompany.name || t.empty}</strong>
 
@@ -798,8 +796,6 @@ export default function CompanyTab({ language, userRole, user }) {
               </div>
 
               <div style={isEmployee && currentCompany ? styles.employeeSection : styles.section}>
-                <h3 style={styles.sectionTitle}>{t.currentCompany}</h3>
-
                 {isPendingEmployee ? (
                   <div style={styles.pendingPanel}>
                     <strong style={styles.pendingTitle}>{t.pendingTitle}</strong>
