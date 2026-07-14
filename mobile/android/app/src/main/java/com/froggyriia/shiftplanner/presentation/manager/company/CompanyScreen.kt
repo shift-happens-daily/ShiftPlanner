@@ -531,7 +531,7 @@ private fun WhSlotDropdown(
             textStyle = MaterialTheme.typography.bodySmall,
             modifier = Modifier.fillMaxWidth().menuAnchor()
         )
-        androidx.compose.material3.ExposedDropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
+        ExposedDropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
             options.forEach { (slot, label) ->
                 androidx.compose.material3.DropdownMenuItem(
                     text = { Text(label) },
