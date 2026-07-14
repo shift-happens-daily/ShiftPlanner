@@ -58,6 +58,20 @@ interface ShiftPlannerApi {
     @DELETE("companies/branches/{branchId}")
     suspend fun deleteBranch(@Path("branchId") branchId: Int): Response<Unit>
 
+    // Branch working hours: weekday ("0".."6") -> slot range
+    @GET("companies/{companyId}/branches/{branchId}/working-hours")
+    suspend fun getBranchWorkingHours(
+        @Path("companyId") companyId: Int,
+        @Path("branchId") branchId: Int
+    ): Map<String, WorkingHoursRangeDto>
+
+    @PATCH("companies/{companyId}/branches/{branchId}/working-hours")
+    suspend fun updateBranchWorkingHours(
+        @Path("companyId") companyId: Int,
+        @Path("branchId") branchId: Int,
+        @Body request: Map<String, WorkingHoursRangeDto>
+    ): Map<String, WorkingHoursRangeDto>
+
     @GET("companies/invite/{code}")
     suspend fun previewInvite(@Path("code") code: String): CompanyInvitePreviewResponseDto
 
@@ -107,6 +121,15 @@ interface ShiftPlannerApi {
         @Path("id") id: Int,
         @Body request: EmployeeBranchUpdateRequestDto
     ): EmployeeResponseDto
+
+    @GET("employees/{id}/work-limits")
+    suspend fun getEmployeeWorkLimits(@Path("id") id: Int): EmployeeWorkLimitsDto
+
+    @PATCH("employees/{id}/work-limits")
+    suspend fun updateEmployeeWorkLimits(
+        @Path("id") id: Int,
+        @Body request: EmployeeWorkLimitsDto
+    ): EmployeeWorkLimitsDto
 
     // ── Positions ─────────────────────────────────────────────────────────────
 
@@ -162,6 +185,16 @@ interface ShiftPlannerApi {
     @GET("schedule/latest")
     suspend fun getLatestSchedule(@Query("status") status: String? = null): Response<ScheduleResponseDto>
 
+    // List of schedules (id + branch + period + status). Used to detect
+    // existing schedules that overlap a period before generating a new one.
+    @GET("schedule")
+    suspend fun getSchedules(
+        @Query("branch_id") branchId: Int? = null,
+        @Query("start_date") startDate: String? = null,
+        @Query("end_date") endDate: String? = null,
+        @Query("status") status: String? = null
+    ): List<ScheduleListItemResponseDto>
+
     @GET("schedule/{id}")
     suspend fun getSchedule(@Path("id") id: Int): ScheduleResponseDto
 
@@ -169,10 +202,19 @@ interface ShiftPlannerApi {
     suspend fun publishSchedule(@Path("id") id: Int): ScheduleResponseDto
 
     @DELETE("schedule/{id}")
-    suspend fun deleteSchedule(@Path("id") id: Int): Response<Unit>
+    suspend fun deleteSchedule(@Path("id") id: Int)
 
     @GET("schedule/my")
     suspend fun getMySchedule(): List<ScheduleShiftResponseDto>
+
+    // Employee's shifts across ALL published schedules for a period.
+    // /schedule/my only returns the LATEST published schedule, which hides
+    // shifts that live in older schedules (e.g. last week's).
+    @GET("employees/me/calendar-summary")
+    suspend fun getMyCalendarSummary(
+        @Query("start_date") startDate: String? = null,
+        @Query("end_date") endDate: String? = null
+    ): EmployeeCalendarSummaryDto
 
     @POST("schedule/{scheduleId}/shifts")
     suspend fun createShift(

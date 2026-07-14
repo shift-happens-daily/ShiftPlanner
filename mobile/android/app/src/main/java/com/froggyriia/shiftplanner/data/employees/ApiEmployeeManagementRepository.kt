@@ -5,12 +5,14 @@ import com.froggyriia.shiftplanner.data.network.EmployeeBranchUpdateRequestDto
 import com.froggyriia.shiftplanner.data.network.EmployeeCreateRequestDto
 import com.froggyriia.shiftplanner.data.network.EmployeePositionUpdateRequestDto
 import com.froggyriia.shiftplanner.data.network.LinkUserRequestDto
+import com.froggyriia.shiftplanner.data.network.EmployeeWorkLimitsDto
 import com.froggyriia.shiftplanner.data.network.PositionCreateRequestDto
 import com.froggyriia.shiftplanner.domain.model.ManagedBranch
 import com.froggyriia.shiftplanner.domain.model.ManagedEmployee
 import com.froggyriia.shiftplanner.domain.model.ManagedPosition
 import com.froggyriia.shiftplanner.domain.model.PendingEmployeeRequest
 import com.froggyriia.shiftplanner.domain.model.PendingManagerRequest
+import com.froggyriia.shiftplanner.domain.model.WorkLimits
 
 class ApiEmployeeManagementRepository(
     private val apiClient: ApiClient,
@@ -91,6 +93,26 @@ class ApiEmployeeManagementRepository(
         apiClient.api.linkUserToCompany(
             LinkUserRequestDto(userPublicId = publicId, branchId = branchId, positionId = positionId)
         ).toDomain()
+    }
+
+    override suspend fun fetchWorkLimits(employeeId: Int): WorkLimits = wrap {
+        apiClient.api.getEmployeeWorkLimits(employeeId).let {
+            WorkLimits(maxHoursPerWeek = it.maxHoursPerWeek, maxHoursPerDay = it.maxHoursPerDay)
+        }
+    }
+
+    override suspend fun updateWorkLimits(
+        employeeId: Int,
+        maxHoursPerWeek: Int,
+        maxHoursPerDay: Int
+    ): WorkLimits = wrap {
+        apiClient.api.updateEmployeeWorkLimits(
+            id = employeeId,
+            request = EmployeeWorkLimitsDto(
+                maxHoursPerWeek = maxHoursPerWeek,
+                maxHoursPerDay = maxHoursPerDay
+            )
+        ).let { WorkLimits(maxHoursPerWeek = it.maxHoursPerWeek, maxHoursPerDay = it.maxHoursPerDay) }
     }
 
     // ── Pending join requests ─────────────────────────────────────────────────

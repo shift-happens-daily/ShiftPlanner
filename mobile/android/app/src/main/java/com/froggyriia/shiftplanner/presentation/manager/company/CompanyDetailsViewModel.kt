@@ -3,6 +3,7 @@ package com.froggyriia.shiftplanner.presentation.manager.company
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.froggyriia.shiftplanner.data.company.CompanyRepository
+import com.froggyriia.shiftplanner.domain.model.WorkingHoursRange
 import com.froggyriia.shiftplanner.domain.model.AppBranchOption
 import com.froggyriia.shiftplanner.domain.model.AppCompany
 import com.froggyriia.shiftplanner.domain.model.CompanyBranchDraft
@@ -11,6 +12,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import com.froggyriia.shiftplanner.R
 
 data class CompanyDetailsUiState(
     val company: AppCompany? = null,
@@ -22,7 +24,9 @@ data class CompanyDetailsUiState(
     val isLoading: Boolean = false,
     val isSaving: Boolean = false,
     val isRegeneratingCode: Boolean = false,
-    val errorMessage: String? = null
+    val errorMessage: String? = null,
+    val errorMessageRes: Int? = null,
+    val statusMessageRes: Int? = null
 ) {
     val canSave: Boolean get() = companyName.isNotBlank() && !isSaving
     val showAddressField: Boolean get() = branchDrafts.isEmpty()
@@ -71,7 +75,9 @@ class CompanyDetailsViewModel(
 
     fun onNameChange(value: String) { _uiState.value = _uiState.value.copy(companyName = value) }
     fun onAddressChange(value: String) { _uiState.value = _uiState.value.copy(companyAddress = value) }
-    fun clearError() { _uiState.value = _uiState.value.copy(errorMessage = null) }
+    fun clearError() {
+        _uiState.value = _uiState.value.copy(errorMessage = null, errorMessageRes = null, statusMessageRes = null)
+    }
 
     fun addBranchDraft() {
         val drafts = _uiState.value.branchDrafts + CompanyBranchDraft()
@@ -117,12 +123,12 @@ class CompanyDetailsViewModel(
         val state = _uiState.value
         val trimmedName = state.companyName.trim()
         if (trimmedName.isEmpty()) {
-            _uiState.value = state.copy(errorMessage = "Company name is required")
+            _uiState.value = state.copy(errorMessageRes = R.string.company_name_required)
             return
         }
         for (draft in state.branchDrafts) {
             if ((draft.remoteId != null || draft.name.isNotBlank()) && draft.name.isBlank()) {
-                _uiState.value = state.copy(errorMessage = "Branch name is required")
+                _uiState.value = state.copy(errorMessageRes = R.string.company_branch_name_required)
                 return
             }
         }
@@ -180,5 +186,38 @@ class CompanyDetailsViewModel(
             isLoading = false,
             isSaving = false
         )
+    }
+
+    // ── Branch working hours ──────────────────────────────────────────────────
+
+    fun loadBranchWorkingHours(
+        companyId: Int,
+        branchId: Int,
+        onResult: (Map<Int, WorkingHoursRange>?) -> Unit
+    ) {
+        viewModelScope.launch {
+            val hours = runCatching {
+                repository.fetchBranchWorkingHours(companyId, branchId)
+            }.getOrNull()
+            onResult(hours)
+        }
+    }
+
+    fun saveBranchWorkingHours(
+        companyId: Int,
+        branchId: Int,
+        hours: Map<Int, WorkingHoursRange>,
+        onDone: (Boolean) -> Unit
+    ) {
+        viewModelScope.launch {
+            try {
+                repository.updateBranchWorkingHours(companyId, branchId, hours)
+                _uiState.value = _uiState.value.copy(statusMessageRes = R.string.company_wh_saved)
+                onDone(true)
+            } catch (e: Exception) {
+                _uiState.value = _uiState.value.copy(errorMessage = e.message)
+                onDone(false)
+            }
+        }
     }
 }

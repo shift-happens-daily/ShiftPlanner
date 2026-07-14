@@ -31,6 +31,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.unit.dp
 import com.froggyriia.shiftplanner.domain.model.AppUser
+import androidx.compose.ui.res.stringResource
+import com.froggyriia.shiftplanner.R
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -53,12 +55,12 @@ fun CompanyInviteSheet(
                 .verticalScroll(rememberScrollState()),
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
-            Text("Join Company", style = MaterialTheme.typography.headlineSmall)
+            Text(stringResource(R.string.invite_join_company), style = MaterialTheme.typography.headlineSmall)
 
             OutlinedTextField(
                 value = state.inviteCode,
                 onValueChange = viewModel::onCodeChange,
-                label = { Text("Invite code") },
+                label = { Text(stringResource(R.string.invite_code_label)) },
                 singleLine = true,
                 modifier = Modifier.fillMaxWidth()
             )
@@ -71,7 +73,7 @@ fun CompanyInviteSheet(
                 if (state.isLoading && state.preview == null) {
                     CircularProgressIndicator(modifier = Modifier.height(18.dp))
                 } else {
-                    Text("Preview company")
+                    Text(stringResource(R.string.invite_preview))
                 }
             }
 
@@ -81,19 +83,19 @@ fun CompanyInviteSheet(
                 Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                     Text(preview.name, style = MaterialTheme.typography.titleMedium)
                     Text(
-                        "Code: ${preview.inviteCode}",
+                        stringResource(R.string.invite_code_line, preview.inviteCode),
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                     if (preview.branches.isNotEmpty()) {
                         Text(
-                            "Branches: ${preview.branches.joinToString { it.name }}",
+                            stringResource(R.string.invite_branches_line, preview.branches.joinToString { it.name }),
                             style = MaterialTheme.typography.bodySmall
                         )
                     }
                     if (preview.positions.isNotEmpty()) {
                         Text(
-                            "Positions: ${preview.positions.joinToString { it.name }}",
+                            stringResource(R.string.invite_positions_line, preview.positions.joinToString { it.name }),
                             style = MaterialTheme.typography.bodySmall
                         )
                     }
@@ -101,7 +103,7 @@ fun CompanyInviteSheet(
 
                 if (preview.branches.isNotEmpty()) {
                     NullableDropdown(
-                        label = "Branch (optional)",
+                        label = stringResource(R.string.invite_branch_optional),
                         options = preview.branches.map { it.id to it.name },
                         selected = state.selectedBranchId,
                         onSelect = viewModel::onBranchSelect
@@ -110,7 +112,7 @@ fun CompanyInviteSheet(
 
                 if (preview.positions.isNotEmpty()) {
                     NullableDropdown(
-                        label = "Position (optional)",
+                        label = stringResource(R.string.invite_position_optional),
                         options = preview.positions.map { it.id to it.name },
                         selected = state.selectedPositionId,
                         onSelect = viewModel::onPositionSelect
@@ -125,12 +127,12 @@ fun CompanyInviteSheet(
                     if (state.isLoading) {
                         CircularProgressIndicator(modifier = Modifier.height(18.dp))
                     } else {
-                        Text("Join company")
+                        Text(stringResource(R.string.invite_join_button))
                     }
                 }
             }
 
-            state.errorMessage?.let { msg ->
+            (state.errorMessage ?: state.errorMessageRes?.let { stringResource(it) })?.let { msg ->
                 Text(
                     msg,
                     color = MaterialTheme.colorScheme.error,
@@ -152,7 +154,7 @@ private fun NullableDropdown(
     onSelect: (Int?) -> Unit
 ) {
     var expanded by remember { mutableStateOf(false) }
-    val selectedLabel = options.firstOrNull { it.first == selected }?.second ?: "None"
+    val selectedLabel = options.firstOrNull { it.first == selected }?.second ?: stringResource(R.string.common_none)
 
     ExposedDropdownMenuBox(expanded = expanded, onExpandedChange = { expanded = it }) {
         OutlinedTextField(
@@ -167,7 +169,7 @@ private fun NullableDropdown(
         )
         ExposedDropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
             DropdownMenuItem(
-                text = { Text("None") },
+                text = { Text(stringResource(R.string.common_none)) },
                 onClick = { onSelect(null); expanded = false }
             )
             options.forEach { (id, name) ->

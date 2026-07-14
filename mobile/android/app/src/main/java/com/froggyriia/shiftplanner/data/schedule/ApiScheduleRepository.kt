@@ -5,6 +5,7 @@ import com.froggyriia.shiftplanner.data.network.AvailableEmployeeResponseDto
 import com.froggyriia.shiftplanner.data.network.ManualShiftCreateRequestDto
 import com.froggyriia.shiftplanner.data.network.RequirementAssignRequestDto
 import com.froggyriia.shiftplanner.data.network.ScheduleGenerateRequestDto
+import com.froggyriia.shiftplanner.data.network.ScheduleListItemResponseDto
 import com.froggyriia.shiftplanner.data.network.ScheduleRequirementInScheduleUpdateDto
 import com.froggyriia.shiftplanner.data.network.ScheduleResponseDto
 import com.froggyriia.shiftplanner.data.network.ScheduleShiftResponseDto
@@ -15,6 +16,7 @@ import com.google.gson.reflect.TypeToken
 import com.froggyriia.shiftplanner.domain.model.AppAvailableEmployee
 import com.froggyriia.shiftplanner.domain.model.AppEmployeeAvailabilityStatus
 import com.froggyriia.shiftplanner.domain.model.AppSchedule
+import com.froggyriia.shiftplanner.domain.model.AppScheduleListItem
 import com.froggyriia.shiftplanner.domain.model.AppScheduleStatus
 import com.froggyriia.shiftplanner.domain.model.AppScheduledShift
 import com.froggyriia.shiftplanner.domain.model.AppUnfilledRequirement
@@ -30,9 +32,9 @@ class ApiScheduleRepository(
     private val gson = Gson()
 
 
-    override suspend fun generateSchedule(startDate: String, endDate: String): List<AppSchedule> = wrap {
+    override suspend fun generateSchedule(startDate: String, endDate: String, branchId: Int?): List<AppSchedule> = wrap {
         val element = apiClient.api.generateSchedule(
-            ScheduleGenerateRequestDto(startDate = startDate, endDate = endDate)
+            ScheduleGenerateRequestDto(startDate = startDate, endDate = endDate, branchId = branchId)
         )
         // Deployed backend (old) returns a single object {}; algorithm2 returns an array [].
         // Handle both transparently.
@@ -59,12 +61,47 @@ class ApiScheduleRepository(
         response.body()?.toDomain()
     }
 
+    override suspend fun fetchSchedules(
+        startDate: String?,
+        endDate: String?,
+        branchId: Int?,
+        status: String?
+    ): List<AppScheduleListItem> = wrap {
+        apiClient.api.getSchedules(
+            branchId = branchId,
+            startDate = startDate,
+            endDate = endDate,
+            status = status
+        ).mapNotNull { it.toListItem() }
+    }
+
     override suspend fun publishSchedule(scheduleId: Int): AppSchedule = wrap {
         apiClient.api.publishSchedule(scheduleId).toDomain()
     }
 
-    override suspend fun fetchMySchedule(): List<AppScheduledShift> = wrap {
-        apiClient.api.getMySchedule().map { it.toShift() }
+    override suspend fun fetchMySchedule(
+        startDate: String?,
+        endDate: String?
+    ): List<AppScheduledShift> = wrap {
+        // calendar-summary aggregates shifts across ALL published schedules;
+        // /schedule/my only sees the latest one. Fall back for old backends.
+        try {
+            val summary = apiClient.api.getMyCalendarSummary(startDate, endDate)
+            summary.shifts.map { shift ->
+                AppScheduledShift(
+                    id = shift.shiftId,
+                    employeeId = summary.employee.id,
+                    employeeName = summary.employee.fullName,
+                    positionId = summary.employee.position?.id ?: 0,
+                    positionName = summary.employee.position?.name ?: "",
+                    date = dateFormatter.parse(shift.date) ?: Date(),
+                    startMinutes = timeToMinutes(shift.startTime),
+                    endMinutes = timeToMinutes(shift.endTime)
+                )
+            }
+        } catch (_: Throwable) {
+            apiClient.api.getMySchedule().map { it.toShift() }
+        }
     }
 
     override suspend fun fetchAvailableEmployees(
@@ -118,10 +155,11 @@ class ApiScheduleRepository(
         mutation: ScheduleShiftMutation
     ): AppSchedule = wrap {
         val resolvedEmployeeId = mutation.employeeId?.takeIf { it > 0 }
-        val action = when {
-            resolvedEmployeeId != null -> "reassign"
-            else -> "remove"
-        }
+        // "reassign" replaces the shift's assignment with employee_id (Gson omits
+        // the field when null, which the backend treats as "unassign").
+        // Never send "remove" here: on the backend it deletes the shift entirely,
+        // which used to make editing an unassigned shift silently delete it.
+        val action = "reassign"
         apiClient.api.updateShift(
             scheduleId = scheduleId,
             shiftId = shiftId,
@@ -175,9 +213,24 @@ class ApiScheduleRepository(
         return AppSchedule(
             id = id,
             branchId = branchId,
+            startDate = startDate?.let { runCatching { dateFormatter.parse(it) }.getOrNull() },
+            endDate = endDate?.let { runCatching { dateFormatter.parse(it) }.getOrNull() },
             status = scheduleStatus,
             shifts = shifts.map { it.toShift() },
             unfilledRequirements = unfilledRequirements.map { it.toUnfilled() }
+        )
+    }
+
+    private fun ScheduleListItemResponseDto.toListItem(): AppScheduleListItem? {
+        val scheduleStatus = AppScheduleStatus.fromApiValue(status) ?: return null
+        val start = runCatching { dateFormatter.parse(startDate) }.getOrNull() ?: return null
+        val end = runCatching { dateFormatter.parse(endDate) }.getOrNull() ?: return null
+        return AppScheduleListItem(
+            id = id,
+            branchId = branchId,
+            startDate = start,
+            endDate = end,
+            status = scheduleStatus
         )
     }
 
@@ -214,6 +267,7 @@ class ApiScheduleRepository(
             id = id,
             fullName = fullName,
             positionName = position.name,
+            branchId = branch?.id,
             branchName = branch?.name,
             availabilityStatus = status,
             assignedHours = assignedHours

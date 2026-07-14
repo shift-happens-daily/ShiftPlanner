@@ -2,15 +2,30 @@ package com.froggyriia.shiftplanner.data.schedule
 
 import com.froggyriia.shiftplanner.domain.model.AppAvailableEmployee
 import com.froggyriia.shiftplanner.domain.model.AppSchedule
+import com.froggyriia.shiftplanner.domain.model.AppScheduleListItem
 import com.froggyriia.shiftplanner.domain.model.AppScheduledShift
 import com.froggyriia.shiftplanner.domain.model.ScheduleShiftMutation
 
 interface ScheduleRepository {
-    suspend fun generateSchedule(startDate: String, endDate: String): List<AppSchedule>
+    suspend fun generateSchedule(startDate: String, endDate: String, branchId: Int? = null): List<AppSchedule>
     suspend fun fetchSchedule(scheduleId: Int): AppSchedule
     suspend fun fetchLatestSchedule(status: String? = null): AppSchedule?
+    /** Schedules (any status) that overlap the given period, optionally for one branch. */
+    suspend fun fetchSchedules(
+        startDate: String? = null,
+        endDate: String? = null,
+        branchId: Int? = null,
+        status: String? = null
+    ): List<AppScheduleListItem>
     suspend fun publishSchedule(scheduleId: Int): AppSchedule
-    suspend fun fetchMySchedule(): List<AppScheduledShift>
+    /**
+     * The employee's own shifts. With a period given, shifts come from ALL
+     * published schedules overlapping it (not just the latest one).
+     */
+    suspend fun fetchMySchedule(
+        startDate: String? = null,
+        endDate: String? = null
+    ): List<AppScheduledShift>
     suspend fun fetchAvailableEmployees(
         scheduleId: Int,
         shift: AppScheduledShift,

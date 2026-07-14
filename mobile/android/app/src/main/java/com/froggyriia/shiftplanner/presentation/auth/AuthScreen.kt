@@ -9,6 +9,8 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.res.stringResource
+import com.froggyriia.shiftplanner.R
 
 private enum class AuthScreenMode {
     LOGIN,
@@ -59,14 +61,14 @@ fun AuthScreen(
                 viewModel.dismissEmailVerification()
                 screenMode = AuthScreenMode.LOGIN
             },
-            title = { Text("Check your email") },
-            text = { Text("We sent a confirmation link to ${uiState.email}. Click it to verify your account, then log in.") },
+            title = { Text(stringResource(R.string.auth_check_email_title)) },
+            text = { Text(stringResource(R.string.auth_check_email_text, uiState.email)) },
             confirmButton = {
                 TextButton(onClick = {
                     viewModel.dismissEmailVerification()
                     screenMode = AuthScreenMode.LOGIN
                 }) {
-                    Text("Got it")
+                    Text(stringResource(R.string.auth_got_it))
                 }
             }
         )
