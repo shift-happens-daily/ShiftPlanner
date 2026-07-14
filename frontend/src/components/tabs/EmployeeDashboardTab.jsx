@@ -1,5 +1,8 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { getMyAbsences } from '../../services/employeeService';
+import {
+  getEmployeeAvailability,
+  getMyAbsences,
+} from '../../services/employeeService';
 import { extractApiErrorMessage } from '../../services/error';
 import { getMyReport } from '../../services/reportService';
 import {
@@ -131,6 +134,235 @@ function isDateWithinPeriod(dateKey, period) {
 function formatPeriodRange(period) {
   return formatApiDateRange(period.start_date, period.end_date);
 }
+function getAvailabilityIntervals(value) {
+  if (Array.isArray(value)) return value;
+
+  const weekly = Array.isArray(value?.weekly_availability)
+    ? value.weekly_availability
+    : [];
+
+  const daily = Array.isArray(value?.daily_availability)
+    ? value.daily_availability
+    : [];
+
+  if (weekly.length > 0 || daily.length > 0) {
+    return [...daily, ...weekly];
+  }
+
+  if (Array.isArray(value?.availability)) return value.availability;
+  if (Array.isArray(value?.items)) return value.items;
+  if (Array.isArray(value?.data)) return value.data;
+
+  return [];
+}
+
+function timeToMinutes(value) {
+  if (typeof value === 'number') {
+    return value * 30;
+  }
+
+  const [hours, minutes] = String(value || '')
+    .slice(0, 5)
+    .split(':')
+    .map(Number);
+
+  if (!Number.isFinite(hours)) return null;
+
+  return (hours * 60) + (Number.isFinite(minutes) ? minutes : 0);
+}
+
+function getIntervalStartMinutes(interval) {
+  if (interval?.start_slot != null) {
+    return Number(interval.start_slot) * 30;
+  }
+
+  return timeToMinutes(
+    interval?.start_time
+    ?? interval?.start
+    ?? interval?.from,
+  );
+}
+
+function getIntervalEndMinutes(interval) {
+  if (interval?.end_slot != null) {
+    return Number(interval.end_slot) * 30;
+  }
+
+  return timeToMinutes(
+    interval?.end_time
+    ?? interval?.end
+    ?? interval?.to,
+  );
+}
+
+function getIntervalDateKey(interval) {
+  return String(
+    interval?.date
+    ?? interval?.availability_date
+    ?? interval?.day_date
+    ?? '',
+  ).slice(0, 10);
+}
+
+function getIntervalWeekday(interval) {
+  const value = interval?.weekday
+    ?? interval?.day_of_week
+    ?? interval?.week_day
+    ?? interval?.day;
+
+  const numericValue = Number(value);
+
+  if (Number.isInteger(numericValue)) {
+    return numericValue;
+  }
+
+  return null;
+}
+
+function normalizeAvailabilityStatus(interval) {
+  const value = String(
+    interval?.status
+    ?? interval?.availability_status
+    ?? interval?.type
+    ?? '',
+  ).toLowerCase();
+
+  if (
+    value === 'if_needed'
+    || value === 'maybe'
+    || value === 'possible'
+  ) {
+    return 'if_needed';
+  }
+
+  if (
+    value === 'unavailable'
+    || value === 'not_available'
+    || interval?.is_available === false
+  ) {
+    return 'unavailable';
+  }
+
+  return 'available';
+}
+
+function formatAvailabilityRange(interval) {
+  const startMinutes = getIntervalStartMinutes(interval);
+  const endMinutes = getIntervalEndMinutes(interval);
+
+  if (startMinutes == null || endMinutes == null) {
+    return '';
+  }
+
+  const formatMinutes = (minutes) => {
+    const hours = String(Math.floor(minutes / 60)).padStart(2, '0');
+    const mins = String(minutes % 60).padStart(2, '0');
+    return `${hours}:${mins}`;
+  };
+
+  return `${formatMinutes(startMinutes)}–${formatMinutes(endMinutes)}`;
+}
+
+function getCurrentAvailabilityStatus(availability, now, language) {
+  const intervals = getAvailabilityIntervals(availability);
+
+  const mondayBasedWeekday = (now.getDay() + 6) % 7;
+  const currentMinutes = (now.getHours() * 60) + now.getMinutes();
+
+  // Если доступность вообще не заполнена — по условию считаем сотрудника доступным.
+  if (intervals.length === 0) {
+    return {
+      key: 'available',
+      value: language === 'ru' ? 'Доступен' : 'Available',
+      sub: language === 'ru'
+        ? 'Доступность не задана'
+        : 'Availability is not set',
+      tone: 'green',
+      icon: IconCheck,
+    };
+  }
+
+  const todayKey = formatLocalDate(now);
+
+  const todayIntervals = intervals.filter((interval) => {
+    const dateKey = getIntervalDateKey(interval);
+
+    if (dateKey) {
+      return dateKey === todayKey;
+    }
+
+    const weekday = getIntervalWeekday(interval);
+    return weekday == null || weekday === mondayBasedWeekday;
+  });
+
+  // Если на сегодня доступность вообще не задана, по умолчанию считаем сотрудника доступным.
+  if (todayIntervals.length === 0) {
+    return {
+      key: 'available',
+      value: language === 'ru' ? 'Доступен' : 'Available',
+      sub: language === 'ru'
+        ? 'На сегодня доступность не задана'
+        : 'Availability is not set for today',
+      tone: 'green',
+      icon: IconCheck,
+    };
+  }
+
+  const currentInterval = todayIntervals.find((interval) => {
+    const startMinutes = getIntervalStartMinutes(interval);
+    const endMinutes = getIntervalEndMinutes(interval);
+
+    if (startMinutes == null || endMinutes == null) {
+      return false;
+    }
+
+    return currentMinutes >= startMinutes && currentMinutes < endMinutes;
+  });
+
+  // На сегодня интервалы есть, но текущее время не входит ни в один из них.
+  if (!currentInterval) {
+    return {
+      key: 'unavailable',
+      value: language === 'ru' ? 'Недоступен' : 'Unavailable',
+      sub: language === 'ru'
+        ? 'Сейчас вне доступных интервалов'
+        : 'Currently outside available intervals',
+      tone: 'red',
+      icon: IconX,
+    };
+  }
+
+  const status = normalizeAvailabilityStatus(currentInterval);
+  const range = formatAvailabilityRange(currentInterval);
+
+  if (status === 'if_needed') {
+    return {
+      key: 'if_needed',
+      value: language === 'ru' ? 'Возможно' : 'If needed',
+      sub: range,
+      tone: 'amber',
+      icon: IconAlert,
+    };
+  }
+
+  if (status === 'unavailable') {
+    return {
+      key: 'unavailable',
+      value: language === 'ru' ? 'Недоступен' : 'Unavailable',
+      sub: range,
+      tone: 'red',
+      icon: IconX,
+    };
+  }
+
+  return {
+    key: 'available',
+    value: language === 'ru' ? 'Доступен' : 'Available',
+    sub: range,
+    tone: 'green',
+    icon: IconCheck,
+  };
+}
 
 function IconClock() {
   return (
@@ -168,6 +400,30 @@ function IconCheck() {
   );
 }
 
+function IconAlert() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <circle cx="12" cy="12" r="8" stroke="currentColor" strokeWidth="2" />
+      <path d="M12 8V12" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+      <circle cx="12" cy="16" r="1" fill="currentColor" />
+    </svg>
+  );
+}
+
+function IconX() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <circle cx="12" cy="12" r="8" stroke="currentColor" strokeWidth="2" />
+      <path
+        d="M9 9L15 15M15 9L9 15"
+        stroke="currentColor"
+        strokeWidth="2"
+        strokeLinecap="round"
+      />
+    </svg>
+  );
+}
+
 function IconMapPin() {
   return (
     <svg width="12" height="12" viewBox="0 0 24 24" fill="none" aria-hidden="true">
@@ -199,6 +455,8 @@ export default function EmployeeDashboardTab({ language = 'ru', user, onNavigate
   const [shifts, setShifts] = useState([]);
   const [reportHours, setReportHours] = useState(null);
   const [absences, setAbsences] = useState([]);
+  const [availability, setAvailability] = useState([]);
+  const [now, setNow] = useState(() => new Date());
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState('');
 
@@ -224,7 +482,9 @@ export default function EmployeeDashboardTab({ language = 'ru', user, onNavigate
       upcomingAbsences: 'Предст. отсутствия',
       requests: 'заявок',
       status: 'Статус',
-      connected: 'Подключён',
+      available: 'Доступен',
+      ifNeeded: 'Возможно',
+      unavailable: 'Недоступен',
       waitingApproval: 'Ожидает подтверждения',
       loading: 'Загрузка…',
       salaryEstimate: 'Оценка зарплаты',
@@ -251,7 +511,9 @@ export default function EmployeeDashboardTab({ language = 'ru', user, onNavigate
       upcomingAbsences: 'Upcoming absences',
       requests: 'requests',
       status: 'Status',
-      connected: 'Connected',
+      available: 'Available',
+      ifNeeded: 'If needed',
+      unavailable: 'Unavailable',
       waitingApproval: 'Waiting for approval',
       loading: 'Loading…',
       salaryEstimate: 'Salary estimate',
@@ -274,17 +536,25 @@ export default function EmployeeDashboardTab({ language = 'ru', user, onNavigate
     setShifts([]);
     setReportHours(null);
     try {
-      const [shiftsData, reportData, absencesData] = await Promise.all([
-        getMySchedule({
-          date_from: period.start_date,
-          date_to: period.end_date,
-        }),
-        getMyReport({
-          start_date: period.start_date,
-          end_date: period.end_date,
-        }).catch(() => null),
-        getMyAbsences().catch(() => []),
-      ]);
+      const employeeId = user?.employeeId
+        ?? user?.employee_id
+        ?? user?.employee?.id;
+
+      const [shiftsData, reportData, absencesData, availabilityData] =
+        await Promise.all([
+          getMySchedule({
+            date_from: period.start_date,
+            date_to: period.end_date,
+          }),
+          getMyReport({
+            start_date: period.start_date,
+            end_date: period.end_date,
+          }).catch(() => null),
+          getMyAbsences().catch(() => []),
+          employeeId
+            ? getEmployeeAvailability(employeeId).catch(() => [])
+            : Promise.resolve([])
+        ]);
 
       const normalizedShifts = normalizeArray(shiftsData).filter((shift) => (
         isDateWithinPeriod(getShiftDateKey(shift), period)
@@ -292,17 +562,34 @@ export default function EmployeeDashboardTab({ language = 'ru', user, onNavigate
       setShifts(normalizedShifts);
       setReportHours(reportData?.total_hours ?? null);
       setAbsences(normalizeArray(absencesData));
+      setAvailability(availabilityData || []);
     } catch (loadError) {
       setError(extractApiErrorMessage(loadError, t.loading, language));
       setShifts([]);
     } finally {
       setIsLoading(false);
     }
-  }, [language, period, t.loading]);
+  }, [
+    language,
+    period,
+    t.loading,
+    user?.employeeId,
+    user?.employee_id,
+    user?.employee?.id,
+  ]);
 
   useEffect(() => {
     void loadData();
   }, [loadData]);
+  useEffect(() => {
+    const timerId = window.setInterval(() => {
+      setNow(new Date());
+    }, 60_000);
+
+    return () => {
+      window.clearInterval(timerId);
+    };
+  }, []);
 
   const periodShifts = useMemo(() => (
     shifts
@@ -328,6 +615,11 @@ export default function EmployeeDashboardTab({ language = 'ru', user, onNavigate
   const upcomingAbsencesCount = countUpcomingAbsences(absences, period);
   const isPending = user?.employeeStatus === 'pending';
   const periodLabel = weeks === 1 ? t.oneWeek : weeks === 2 ? t.twoWeeks : t.fourWeeks;
+
+  const currentAvailabilityStatus = useMemo(
+    () => getCurrentAvailabilityStatus(availability, now, language),
+    [availability, language, now],
+  );
 
   const stats = [
     {
@@ -356,18 +648,37 @@ export default function EmployeeDashboardTab({ language = 'ru', user, onNavigate
     },
     {
       key: 'status',
-      value: isPending ? '…' : (language === 'ru' ? 'Ок' : 'OK'),
+      value: isPending ? '…' : currentAvailabilityStatus.value,
       label: t.status,
-      sub: isPending ? t.waitingApproval : t.connected,
-      icon: IconCheck,
-      tone: 'green',
+      sub: isPending
+        ? t.waitingApproval
+        : currentAvailabilityStatus.sub,
+      icon: isPending
+        ? IconAlert
+        : currentAvailabilityStatus.icon,
+      tone: isPending
+        ? 'amber'
+        : currentAvailabilityStatus.tone,
     },
   ];
 
   const toneStyles = {
-    blue: { background: '#eff6ff', color: '#2563eb' },
-    green: { background: '#ecfdf5', color: '#059669' },
-    amber: { background: '#fffbeb', color: '#d97706' },
+    blue: {
+      background: '#eff6ff',
+      color: '#2563eb',
+    },
+    green: {
+      background: '#ecfdf5',
+      color: '#059669',
+    },
+    amber: {
+      background: '#fffbeb',
+      color: '#d97706',
+    },
+    red: {
+      background: '#fef2f2',
+      color: '#dc2626',
+    },
   };
 
   const periodTabLabel = (value) => {
