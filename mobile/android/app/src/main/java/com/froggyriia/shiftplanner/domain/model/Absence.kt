@@ -6,7 +6,7 @@ enum class AppAbsenceType(val apiValue: String, val displayName: String) {
     OTHER("other", "Other");
 
     companion object {
-        fun fromApiValue(value: String): AppAbsenceType =
+        fun fromApiValue(value: String?): AppAbsenceType =
             entries.firstOrNull { it.apiValue == value } ?: OTHER
     }
 }
@@ -17,8 +17,9 @@ enum class AppAbsenceStatus(val apiValue: String) {
     REJECTED("rejected");
 
     companion object {
-        fun fromApiValue(value: String): AppAbsenceStatus =
-            entries.firstOrNull { it.apiValue == value } ?: PENDING
+        /** Returns null when the backend omits status (no approval workflow) or sends an unknown value. */
+        fun fromApiValue(value: String?): AppAbsenceStatus? =
+            value?.let { v -> entries.firstOrNull { it.apiValue == v } }
     }
 }
 
@@ -28,7 +29,7 @@ data class AppAbsence(
     val startDate: String,
     val endDate: String,
     val comment: String?,
-    val status: AppAbsenceStatus,
+    val status: AppAbsenceStatus?,
     val employeeId: Int
 )
 
