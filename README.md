@@ -414,7 +414,7 @@ ShiftPlanner is publicly available and can be accessed using the links below.
 | Service | Link |
 |---------|------|
 | 🌍 **Web Application** | https://shiftplanner.online |
-| 📱 **Mobile Application** | In progress |
+| 📱 **Mobile Application** | [Android](https://github.com/shift-happens-daily/ShiftPlanner/releases/download/v1.0.0-debug/app-debug.apk) |
 
 You can explore the application directly in your browser without setting up a local development environment.
 
