@@ -923,30 +923,42 @@ def _build_schedule_read(
 
     if unfilled_override is None:
         for requirement in requirements:
-            assigned_count = sum(
-                1
+            position = position_repository.get_position_by_id(
+                db,
+                requirement.position_id,
+            )
+
+            relevant_shifts = [
+                row
                 for row in rows
                 if row["position_id"] == requirement.position_id
+                and row["employee_id"] is not None
+                and row["shift_date"] == requirement.shift_date
                 and _matches_requirement_branch(
                     row["employee_branch_id"],
                     requirement.branch_id,
                 )
-                and row["employee_id"] is not None
-                and row["shift_date"] == requirement.shift_date
-                and row["start_time"] == requirement.start_time
-                and row["end_time"] == requirement.end_time
+                and row["start_time"] < requirement.end_time
+                and row["end_time"] > requirement.start_time
+            ]
+
+            uncovered_segments = _calculate_uncovered_requirement_segments(
+                requirement_start=requirement.start_time,
+                requirement_end=requirement.end_time,
+                required_staff=requirement.required_employees,
+                assigned_shifts=relevant_shifts,
             )
-            if assigned_count < requirement.required_employees:
-                position = position_repository.get_position_by_id(db, requirement.position_id)
+
+            for segment in uncovered_segments:
                 unfilled.append(
                     {
                         "requirement_id": requirement.id,
                         "position_id": requirement.position_id,
                         "position_title": position.name if position else "",
                         "date": requirement.shift_date,
-                        "start_time": requirement.start_time,
-                        "end_time": requirement.end_time,
-                        "missing_staff": requirement.required_employees - assigned_count,
+                        "start_time": segment["start_time"],
+                        "end_time": segment["end_time"],
+                        "missing_staff": segment["missing_staff"],
                     }
                 )
     return ScheduleRead(
@@ -978,6 +990,96 @@ def _matches_requirement_branch(
     requirement_branch_id: int | None,
 ) -> bool:
     return employee_branch_id == requirement_branch_id
+
+def _calculate_uncovered_requirement_segments(
+    *,
+    requirement_start: time,
+    requirement_end: time,
+    required_staff: int,
+    assigned_shifts: list[dict],
+) -> list[dict]:
+    """
+    Calculate uncovered parts of a staffing requirement.
+
+    The calculation uses 30-minute slots because schedule generation
+    also works with 30-minute slots.
+
+    Example:
+        Requirement: 09:00-18:00, required_staff=1
+        Assigned:    12:30-18:00
+
+        Result:
+        [
+            {
+                "start_time": 09:00,
+                "end_time": 12:30,
+                "missing_staff": 1,
+            }
+        ]
+    """
+    requirement_slots = _time_slots_30_minutes(
+        requirement_start,
+        requirement_end,
+    )
+
+    if not requirement_slots:
+        return []
+
+    missing_by_slot: list[tuple[time, int]] = []
+
+    for slot_start in requirement_slots:
+        slot_end = _add_minutes(slot_start, 30)
+
+        assigned_count = sum(
+            1
+            for shift in assigned_shifts
+            if shift["start_time"] < slot_end
+            and shift["end_time"] > slot_start
+        )
+
+        missing_staff = max(
+            required_staff - assigned_count,
+            0,
+        )
+
+        missing_by_slot.append(
+            (slot_start, missing_staff)
+        )
+
+    segments: list[dict] = []
+    current_start: time | None = None
+    current_missing_staff = 0
+
+    for slot_start, missing_staff in missing_by_slot:
+        if missing_staff == current_missing_staff:
+            continue
+
+        if current_start is not None and current_missing_staff > 0:
+            segments.append(
+                {
+                    "start_time": current_start,
+                    "end_time": slot_start,
+                    "missing_staff": current_missing_staff,
+                }
+            )
+
+        if missing_staff > 0:
+            current_start = slot_start
+        else:
+            current_start = None
+
+        current_missing_staff = missing_staff
+
+    if current_start is not None and current_missing_staff > 0:
+        segments.append(
+            {
+                "start_time": current_start,
+                "end_time": requirement_end,
+                "missing_staff": current_missing_staff,
+            }
+        )
+
+    return segments
 
 
 def _get_manager_schedule(db: Session, schedule_id: int, current_user: UserRead):
@@ -1249,6 +1351,19 @@ def _get_employee_availability_status_for_date(
 
 def _add_minutes(value, minutes: int):
     return (datetime.combine(date.min, value) + timedelta(minutes=minutes)).time()
+
+def _time_slots_30_minutes(
+    start_time: time,
+    end_time: time,
+) -> list[time]:
+    slots: list[time] = []
+    current = start_time
+
+    while current < end_time:
+        slots.append(current)
+        current = _add_minutes(current, 30)
+
+    return slots
 
 
 def _build_requirement_read(db: Session, requirement) -> ScheduleRequirementRead:
