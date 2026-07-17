@@ -897,6 +897,67 @@
   font-weight: 500;
 }
 
+@media (max-width: 768px) {
+  .schedule-tab--employee .st-page {
+    max-width: none;
+    width: 100%;
+    padding: 10px 8px 16px;
+    gap: 12px;
+  }
+
+  .schedule-tab--employee .st-page-subtitle--desktop {
+    display: none;
+  }
+
+  .schedule-tab--employee .st-layout {
+    flex-direction: column;
+    gap: 12px;
+  }
+
+  .schedule-tab--employee .st-main,
+  .schedule-tab--employee .st-sidebar,
+  .schedule-tab--employee .st-calendar {
+    width: 100%;
+    min-width: 0;
+  }
+
+  .schedule-tab--employee .st-sidebar {
+    flex-shrink: 0;
+  }
+
+  .schedule-tab--employee .st-detail-panel {
+    position: static;
+    top: auto;
+  }
+
+  .schedule-tab--employee .st-calendar {
+    border-radius: 10px;
+  }
+
+  .schedule-tab--employee .st-calendar-grid {
+    width: 100%;
+  }
+
+  .schedule-tab--employee .st-day-cell {
+    height: 80px;
+    min-height: 80px;
+    max-height: 80px;
+    padding: 8px 2px;
+    align-items: center;
+  }
+
+  .schedule-tab--employee .st-day-number {
+    width: 28px;
+    height: 28px;
+    font-size: 0.8125rem;
+  }
+
+  .schedule-tab--employee .st-day-indicator {
+    justify-content: center;
+    width: 100%;
+  }
+}
+
 @media (max-width: 900px) {
   .st-page {
     padding: 12px 14px 20px;
