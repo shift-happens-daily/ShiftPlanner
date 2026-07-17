@@ -41,7 +41,7 @@ def login(db: Session, payload: LoginRequest) -> LoginResponse:
     _delete_expired_unverified_users(db)
     user = user_repository.get_user_by_email(db, payload.email)
 
-    if user is None or not verify_password(payload.password, user.password_hash) or not user.is_registration_complete:
+    if user is None or not user.password_hash or not verify_password(payload.password, user.password_hash) or not user.is_registration_complete:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid email or password.",
@@ -535,3 +535,5 @@ def _as_aware_utc(value: datetime) -> datetime:
     if value.tzinfo is None:
         return value.replace(tzinfo=timezone.utc)
     return value.astimezone(timezone.utc)
+
+

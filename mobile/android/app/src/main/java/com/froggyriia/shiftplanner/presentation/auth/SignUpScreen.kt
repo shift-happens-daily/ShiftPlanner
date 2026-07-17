@@ -14,6 +14,8 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.res.stringResource
+import com.froggyriia.shiftplanner.R
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.input.PasswordVisualTransformation
@@ -39,7 +41,7 @@ fun SignUpScreen(
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
         Text("ShiftPlanner")
-        Text("Create account")
+        Text(stringResource(R.string.auth_create_account))
 
         Spacer(modifier = Modifier.padding(8.dp))
 
@@ -60,7 +62,7 @@ fun SignUpScreen(
         OutlinedTextField(
             value = uiState.name,
             onValueChange = onNameChange,
-            label = { Text("Name") },
+            label = { Text(stringResource(R.string.auth_name_label)) },
             singleLine = true,
             modifier = Modifier.fillMaxWidth()
         )
@@ -70,7 +72,7 @@ fun SignUpScreen(
         OutlinedTextField(
             value = uiState.email,
             onValueChange = onEmailChange,
-            label = { Text("Email") },
+            label = { Text(stringResource(R.string.email_label)) },
             singleLine = true,
             modifier = Modifier.fillMaxWidth()
         )
@@ -80,7 +82,7 @@ fun SignUpScreen(
         OutlinedTextField(
             value = uiState.password,
             onValueChange = onPasswordChange,
-            label = { Text("Password") },
+            label = { Text(stringResource(R.string.password_label)) },
             singleLine = true,
             visualTransformation = PasswordVisualTransformation(),
             modifier = Modifier.fillMaxWidth()
@@ -91,7 +93,7 @@ fun SignUpScreen(
         OutlinedTextField(
             value = uiState.confirmPassword,
             onValueChange = onConfirmPasswordChange,
-            label = { Text("Repeat password") },
+            label = { Text(stringResource(R.string.auth_repeat_password)) },
             singleLine = true,
             visualTransformation = PasswordVisualTransformation(),
             isError = uiState.confirmPassword.isNotEmpty() && !uiState.passwordsMatch,
@@ -99,12 +101,13 @@ fun SignUpScreen(
         )
 
         if (uiState.confirmPassword.isNotEmpty() && !uiState.passwordsMatch) {
-            Text("Passwords do not match")
+            Text(stringResource(R.string.auth_passwords_mismatch))
         }
 
-        if (uiState.errorMessage != null) {
+        val errorText = uiState.errorMessage ?: uiState.errorMessageRes?.let { stringResource(it) }
+        if (errorText != null) {
             Spacer(modifier = Modifier.padding(4.dp))
-            Text(uiState.errorMessage)
+            Text(errorText)
         }
 
         Spacer(modifier = Modifier.padding(8.dp))
@@ -117,7 +120,7 @@ fun SignUpScreen(
             if (uiState.isLoading) {
                 CircularProgressIndicator()
             } else {
-                Text("Sign up")
+                Text(stringResource(R.string.signup_button))
             }
         }
 
@@ -125,7 +128,7 @@ fun SignUpScreen(
             onClick = onShowLogin,
             enabled = !uiState.isLoading
         ) {
-            Text("Already have an account?")
+            Text(stringResource(R.string.auth_have_account))
         }
     }
 }

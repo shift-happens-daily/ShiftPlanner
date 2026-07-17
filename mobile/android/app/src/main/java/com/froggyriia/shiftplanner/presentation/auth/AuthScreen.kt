@@ -1,11 +1,16 @@
 package com.froggyriia.shiftplanner.presentation.auth
 
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.res.stringResource
+import com.froggyriia.shiftplanner.R
 
 private enum class AuthScreenMode {
     LOGIN,
@@ -48,5 +53,24 @@ fun AuthScreen(
                 }
             )
         }
+    }
+
+    if (uiState.emailVerificationPending) {
+        AlertDialog(
+            onDismissRequest = {
+                viewModel.dismissEmailVerification()
+                screenMode = AuthScreenMode.LOGIN
+            },
+            title = { Text(stringResource(R.string.auth_check_email_title)) },
+            text = { Text(stringResource(R.string.auth_check_email_text, uiState.email)) },
+            confirmButton = {
+                TextButton(onClick = {
+                    viewModel.dismissEmailVerification()
+                    screenMode = AuthScreenMode.LOGIN
+                }) {
+                    Text(stringResource(R.string.auth_got_it))
+                }
+            }
+        )
     }
 }

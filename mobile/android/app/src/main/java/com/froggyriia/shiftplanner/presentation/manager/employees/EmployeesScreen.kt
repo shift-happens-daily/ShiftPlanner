@@ -16,6 +16,8 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Link
+import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
@@ -53,6 +55,14 @@ import androidx.compose.ui.unit.dp
 import com.froggyriia.shiftplanner.domain.model.AppUser
 import com.froggyriia.shiftplanner.domain.model.ManagedEmployee
 import com.froggyriia.shiftplanner.domain.model.ManagedPosition
+import com.froggyriia.shiftplanner.domain.model.PendingEmployeeRequest
+import com.froggyriia.shiftplanner.domain.model.PendingManagerRequest
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
+import com.froggyriia.shiftplanner.R
+import androidx.compose.material.icons.filled.Schedule
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.ui.text.input.KeyboardType
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -65,21 +75,38 @@ fun EmployeesScreen(
     val state by viewModel.uiState.collectAsState()
     val snackbar = remember { SnackbarHostState() }
 
+    val context = LocalContext.current
     LaunchedEffect(state.statusMessage) {
         state.statusMessage?.let { snackbar.showSnackbar(it); viewModel.clearMessages() }
     }
+    LaunchedEffect(state.statusMessageRes) {
+        state.statusMessageRes?.let {
+            snackbar.showSnackbar(context.getString(it, *state.statusMessageArgs.toTypedArray()))
+            viewModel.clearMessages()
+        }
+    }
 
     var tabIndex by rememberSaveable { mutableIntStateOf(0) }
-    var showAddEmployeeSheet by remember { mutableStateOf(false) }
+    var showLinkByIdSheet by remember { mutableStateOf(false) }
     var showAddPositionDialog by remember { mutableStateOf(false) }
     var employeeToDelete by remember { mutableStateOf<ManagedEmployee?>(null) }
+    var workLimitsTarget by remember { mutableStateOf<ManagedEmployee?>(null) }
+    workLimitsTarget?.let { emp ->
+        WorkLimitsSheet(
+            employee = emp,
+            load = { onResult -> viewModel.loadWorkLimits(emp.id, onResult) },
+            save = { week, day, onDone -> viewModel.saveWorkLimits(emp.id, week, day, onDone) },
+            onDismiss = { workLimitsTarget = null }
+        )
+    }
+
     var positionToDelete by remember { mutableStateOf<ManagedPosition?>(null) }
     var positionPickerEmployee by remember { mutableStateOf<ManagedEmployee?>(null) }
     var branchPickerEmployee by remember { mutableStateOf<ManagedEmployee?>(null) }
 
     if (!user.hasCompany) {
         Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-            Text("Join a company to manage employees")
+            Text(stringResource(R.string.emp_join_hint))
         }
         return
     }
@@ -87,15 +114,17 @@ fun EmployeesScreen(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Employees") },
+                title = { Text(stringResource(R.string.emp_title)) },
                 actions = {
                     when (tabIndex) {
-                        0 -> IconButton(
-                            onClick = { showAddEmployeeSheet = true },
-                            enabled = state.positions.isNotEmpty()
-                        ) { Icon(Icons.Default.Add, contentDescription = "Add employee") }
+                        0 -> IconButton(onClick = { showLinkByIdSheet = true }) {
+                            Icon(Icons.Default.Link, contentDescription = stringResource(R.string.emp_link_by_id))
+                        }
                         1 -> IconButton(onClick = { showAddPositionDialog = true }) {
-                            Icon(Icons.Default.Add, contentDescription = "Add position")
+                            Icon(Icons.Default.Add, contentDescription = stringResource(R.string.emp_add_position))
+                        }
+                        2 -> IconButton(onClick = { viewModel.loadPendingRequests() }) {
+                            Icon(Icons.Default.Refresh, contentDescription = stringResource(R.string.emp_refresh_requests))
                         }
                     }
                 }
@@ -104,9 +133,14 @@ fun EmployeesScreen(
         snackbarHost = { SnackbarHost(snackbar) }
     ) { padding ->
         Column(modifier = Modifier.padding(padding)) {
+            val pendingCount = state.pendingManagerRequests.size + state.pendingEmployeeRequests.size
             TabRow(selectedTabIndex = tabIndex) {
-                Tab(selected = tabIndex == 0, onClick = { tabIndex = 0 }) { Text("Employees", modifier = Modifier.padding(vertical = 12.dp)) }
-                Tab(selected = tabIndex == 1, onClick = { tabIndex = 1 }) { Text("Positions", modifier = Modifier.padding(vertical = 12.dp)) }
+                Tab(selected = tabIndex == 0, onClick = { tabIndex = 0 }) { Text(stringResource(R.string.emp_tab_employees), modifier = Modifier.padding(vertical = 12.dp)) }
+                Tab(selected = tabIndex == 1, onClick = { tabIndex = 1 }) { Text(stringResource(R.string.emp_tab_positions), modifier = Modifier.padding(vertical = 12.dp)) }
+                Tab(selected = tabIndex == 2, onClick = { tabIndex = 2 }) {
+                    val label = if (pendingCount > 0) stringResource(R.string.emp_tab_requests_n, pendingCount) else stringResource(R.string.emp_tab_requests)
+                    Text(label, modifier = Modifier.padding(vertical = 12.dp))
+                }
             }
 
             if (state.isLoading) {
@@ -117,7 +151,7 @@ fun EmployeesScreen(
                 0 -> EmployeeListTab(
                     employees = state.employees,
                     viewModel = viewModel,
-                    onAddClick = { showAddEmployeeSheet = true },
+                    onEditLimits = { workLimitsTarget = it },
                     onDeleteEmployee = { employeeToDelete = it },
                     onPickPosition = { positionPickerEmployee = it },
                     onPickBranch = if (state.branches.isNotEmpty()) { { branchPickerEmployee = it } } else null
@@ -127,9 +161,17 @@ fun EmployeesScreen(
                     onAddClick = { showAddPositionDialog = true },
                     onDeletePosition = { positionToDelete = it }
                 )
+                2 -> PendingRequestsTab(
+                    managerRequests = state.pendingManagerRequests,
+                    employeeRequests = state.pendingEmployeeRequests,
+                    onAcceptManager = { viewModel.acceptManagerRequest(it) },
+                    onDeclineManager = { viewModel.declineManagerRequest(it) },
+                    onAcceptEmployee = { viewModel.acceptEmployeeRequest(it) },
+                    onDeclineEmployee = { viewModel.declineEmployeeRequest(it) }
+                )
             }
 
-            state.errorMessage?.let { msg ->
+            (state.errorMessage ?: state.errorMessageRes?.let { stringResource(it) })?.let { msg ->
                 Text(
                     msg,
                     color = MaterialTheme.colorScheme.error,
@@ -140,16 +182,13 @@ fun EmployeesScreen(
         }
     }
 
-    // ── Add Employee Sheet ────────────────────────────────────────────────────
+    // ── Link by Public ID Sheet ───────────────────────────────────────────────
 
-    if (showAddEmployeeSheet) {
-        var draft by remember { mutableStateOf(
-            EmployeeCreationDraft(
-                positionId = state.positions.firstOrNull()?.id,
-                branchId = state.branches.firstOrNull()?.id
-            )
-        ) }
-        ModalBottomSheet(onDismissRequest = { showAddEmployeeSheet = false }) {
+    if (showLinkByIdSheet) {
+        var publicId by remember { mutableStateOf("") }
+        var linkBranchId by remember { mutableStateOf<Int?>(null) }
+        var linkPositionId by remember { mutableStateOf<Int?>(null) }
+        ModalBottomSheet(onDismissRequest = { showLinkByIdSheet = false }) {
             Column(
                 modifier = Modifier
                     .padding(horizontal = 20.dp)
@@ -157,44 +196,41 @@ fun EmployeesScreen(
                     .verticalScroll(rememberScrollState()),
                 verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
-                Text("Add Employee", style = MaterialTheme.typography.headlineSmall)
+                Text(stringResource(R.string.emp_add_by_id), style = MaterialTheme.typography.headlineSmall)
                 OutlinedTextField(
-                    value = draft.fullName,
-                    onValueChange = { draft = draft.copy(fullName = it) },
-                    label = { Text("Full name") },
+                    value = publicId,
+                    onValueChange = { if (it.length <= 16) publicId = it },
+                    label = { Text(stringResource(R.string.emp_public_id_label)) },
                     singleLine = true,
-                    modifier = Modifier.fillMaxWidth()
-                )
-                OutlinedTextField(
-                    value = draft.email,
-                    onValueChange = { draft = draft.copy(email = it) },
-                    label = { Text("Email") },
-                    singleLine = true,
-                    modifier = Modifier.fillMaxWidth()
-                )
-                NullableDropdown(
-                    label = "Position",
-                    options = state.positions.map { it.id to it.title },
-                    selected = draft.positionId,
-                    onSelect = { draft = draft.copy(positionId = it) }
+                    modifier = Modifier.fillMaxWidth(),
+                    supportingText = { Text("${publicId.length}/16") }
                 )
                 if (state.branches.isNotEmpty()) {
                     NullableDropdown(
-                        label = "Branch (optional)",
+                        label = stringResource(R.string.invite_branch_optional),
                         options = state.branches.map { it.id to it.name },
-                        selected = draft.branchId,
-                        onSelect = { draft = draft.copy(branchId = it) }
+                        selected = linkBranchId,
+                        onSelect = { linkBranchId = it }
+                    )
+                }
+                if (state.positions.isNotEmpty()) {
+                    NullableDropdown(
+                        label = stringResource(R.string.invite_position_optional),
+                        options = state.positions.map { it.id to it.title },
+                        selected = linkPositionId,
+                        onSelect = { linkPositionId = it }
                     )
                 }
                 Spacer(Modifier.height(8.dp))
                 Button(
                     onClick = {
-                        viewModel.createEmployee(draft) { success ->
-                            if (success) showAddEmployeeSheet = false
+                        viewModel.linkEmployeeByPublicId(publicId, linkBranchId, linkPositionId) { success ->
+                            if (success) showLinkByIdSheet = false
                         }
                     },
-                    modifier = Modifier.fillMaxWidth()
-                ) { Text("Add") }
+                    modifier = Modifier.fillMaxWidth(),
+                    enabled = publicId.length == 16
+                ) { Text(stringResource(R.string.emp_link_button)) }
             }
         }
     }
@@ -205,12 +241,12 @@ fun EmployeesScreen(
         var positionName by remember { mutableStateOf("") }
         AlertDialog(
             onDismissRequest = { showAddPositionDialog = false },
-            title = { Text("Add position") },
+            title = { Text(stringResource(R.string.emp_add_position)) },
             text = {
                 OutlinedTextField(
                     value = positionName,
                     onValueChange = { positionName = it },
-                    label = { Text("Position title") },
+                    label = { Text(stringResource(R.string.emp_position_title)) },
                     singleLine = true
                 )
             },
@@ -218,10 +254,10 @@ fun EmployeesScreen(
                 TextButton(onClick = {
                     viewModel.createPosition(positionName)
                     showAddPositionDialog = false
-                }) { Text("Add") }
+                }) { Text(stringResource(R.string.add)) }
             },
             dismissButton = {
-                TextButton(onClick = { showAddPositionDialog = false }) { Text("Cancel") }
+                TextButton(onClick = { showAddPositionDialog = false }) { Text(stringResource(R.string.cancel)) }
             }
         )
     }
@@ -231,15 +267,15 @@ fun EmployeesScreen(
     employeeToDelete?.let { emp ->
         AlertDialog(
             onDismissRequest = { employeeToDelete = null },
-            title = { Text("Remove employee?") },
-            text = { Text("${emp.fullName} will be removed from the company.") },
+            title = { Text(stringResource(R.string.emp_remove_employee_title)) },
+            text = { Text(stringResource(R.string.emp_remove_employee_text, emp.fullName)) },
             confirmButton = {
                 TextButton(
                     onClick = { viewModel.deleteEmployee(emp); employeeToDelete = null },
-                ) { Text("Remove", color = MaterialTheme.colorScheme.error) }
+                ) { Text(stringResource(R.string.common_remove), color = MaterialTheme.colorScheme.error) }
             },
             dismissButton = {
-                TextButton(onClick = { employeeToDelete = null }) { Text("Cancel") }
+                TextButton(onClick = { employeeToDelete = null }) { Text(stringResource(R.string.cancel)) }
             }
         )
     }
@@ -249,15 +285,15 @@ fun EmployeesScreen(
     positionToDelete?.let { pos ->
         AlertDialog(
             onDismissRequest = { positionToDelete = null },
-            title = { Text("Delete position?") },
-            text = { Text("\"${pos.title}\" will be deleted. This will fail if it is still in use.") },
+            title = { Text(stringResource(R.string.emp_delete_position_title)) },
+            text = { Text(stringResource(R.string.emp_delete_position_text, pos.title)) },
             confirmButton = {
                 TextButton(
                     onClick = { viewModel.deletePosition(pos); positionToDelete = null }
-                ) { Text("Delete", color = MaterialTheme.colorScheme.error) }
+                ) { Text(stringResource(R.string.delete), color = MaterialTheme.colorScheme.error) }
             },
             dismissButton = {
-                TextButton(onClick = { positionToDelete = null }) { Text("Cancel") }
+                TextButton(onClick = { positionToDelete = null }) { Text(stringResource(R.string.cancel)) }
             }
         )
     }
@@ -270,7 +306,7 @@ fun EmployeesScreen(
                 modifier = Modifier.padding(horizontal = 20.dp).padding(bottom = 32.dp),
                 verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                Text("Set position for ${emp.fullName}", style = MaterialTheme.typography.titleMedium)
+                Text(stringResource(R.string.emp_set_position_for, emp.fullName), style = MaterialTheme.typography.titleMedium)
                 state.positions.forEach { pos ->
                     val isSelected = emp.positionId == pos.id
                     TextButton(
@@ -292,7 +328,7 @@ fun EmployeesScreen(
                         positionPickerEmployee = null
                     },
                     modifier = Modifier.fillMaxWidth()
-                ) { Text("Remove position", color = MaterialTheme.colorScheme.error) }
+                ) { Text(stringResource(R.string.emp_remove_position), color = MaterialTheme.colorScheme.error) }
             }
         }
     }
@@ -305,14 +341,14 @@ fun EmployeesScreen(
                 modifier = Modifier.padding(horizontal = 20.dp).padding(bottom = 32.dp),
                 verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                Text("Set branch for ${emp.fullName}", style = MaterialTheme.typography.titleMedium)
+                Text(stringResource(R.string.emp_set_branch_for, emp.fullName), style = MaterialTheme.typography.titleMedium)
                 TextButton(
                     onClick = {
                         viewModel.assignBranch(emp, null)
                         branchPickerEmployee = null
                     },
                     modifier = Modifier.fillMaxWidth()
-                ) { Text("No branch") }
+                ) { Text(stringResource(R.string.emp_no_branch)) }
                 state.branches.forEach { branch ->
                     val isSelected = emp.branchId == branch.id
                     TextButton(
@@ -339,18 +375,14 @@ fun EmployeesScreen(
 private fun EmployeeListTab(
     employees: List<ManagedEmployee>,
     viewModel: EmployeesViewModel,
-    onAddClick: () -> Unit,
+    onEditLimits: (ManagedEmployee) -> Unit,
     onDeleteEmployee: (ManagedEmployee) -> Unit,
     onPickPosition: (ManagedEmployee) -> Unit,
     onPickBranch: ((ManagedEmployee) -> Unit)?
 ) {
     if (employees.isEmpty()) {
         Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-            Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                Text("No employees yet", color = MaterialTheme.colorScheme.onSurfaceVariant)
-                Spacer(Modifier.height(8.dp))
-                Button(onClick = onAddClick) { Text("Add employee") }
-            }
+            Text(stringResource(R.string.emp_none), color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
         return
     }
@@ -367,6 +399,7 @@ private fun EmployeeListTab(
                 branchTitle = viewModel.branchTitle(emp),
                 onPickPosition = { onPickPosition(emp) },
                 onPickBranch = onPickBranch?.let { { it(emp) } },
+                onEditLimits = { onEditLimits(emp) },
                 onDelete = { onDeleteEmployee(emp) }
             )
         }
@@ -380,6 +413,7 @@ private fun EmployeeCard(
     branchTitle: String,
     onPickPosition: () -> Unit,
     onPickBranch: (() -> Unit)?,
+    onEditLimits: () -> Unit,
     onDelete: () -> Unit
 ) {
     Card(modifier = Modifier.fillMaxWidth()) {
@@ -393,6 +427,9 @@ private fun EmployeeCard(
                     Text(employee.fullName, style = MaterialTheme.typography.titleMedium)
                     Text(employee.email, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
+                IconButton(onClick = onEditLimits) {
+                    Icon(Icons.Default.Schedule, contentDescription = stringResource(R.string.emp_edit_limits))
+                }
                 IconButton(onClick = onDelete) {
                     Icon(Icons.Default.Delete, contentDescription = "Delete", tint = MaterialTheme.colorScheme.error)
                 }
@@ -402,11 +439,11 @@ private fun EmployeeCard(
 
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 TextButton(onClick = onPickPosition) {
-                    Text("Position: $positionTitle", style = MaterialTheme.typography.bodySmall)
+                    Text(stringResource(R.string.emp_position_line, positionTitle), style = MaterialTheme.typography.bodySmall)
                 }
                 if (onPickBranch != null) {
                     TextButton(onClick = onPickBranch) {
-                        Text("Branch: $branchTitle", style = MaterialTheme.typography.bodySmall)
+                        Text(stringResource(R.string.emp_branch_line, branchTitle), style = MaterialTheme.typography.bodySmall)
                     }
                 }
             }
@@ -425,9 +462,9 @@ private fun PositionListTab(
     if (positions.isEmpty()) {
         Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
             Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                Text("No positions yet", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text(stringResource(R.string.emp_no_positions), color = MaterialTheme.colorScheme.onSurfaceVariant)
                 Spacer(Modifier.height(8.dp))
-                Button(onClick = onAddClick) { Text("Add position") }
+                Button(onClick = onAddClick) { Text(stringResource(R.string.emp_add_position)) }
             }
         }
         return
@@ -455,6 +492,106 @@ private fun PositionListTab(
     }
 }
 
+// ── Pending Requests Tab ───────────────────────────────────────────────────────
+
+@Composable
+private fun PendingRequestsTab(
+    managerRequests: List<PendingManagerRequest>,
+    employeeRequests: List<PendingEmployeeRequest>,
+    onAcceptManager: (PendingManagerRequest) -> Unit,
+    onDeclineManager: (PendingManagerRequest) -> Unit,
+    onAcceptEmployee: (PendingEmployeeRequest) -> Unit,
+    onDeclineEmployee: (PendingEmployeeRequest) -> Unit
+) {
+    if (managerRequests.isEmpty() && employeeRequests.isEmpty()) {
+        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+            Text(stringResource(R.string.emp_no_requests), color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+        return
+    }
+
+    LazyColumn(
+        modifier = Modifier.fillMaxSize(),
+        contentPadding = androidx.compose.foundation.layout.PaddingValues(16.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+        if (managerRequests.isNotEmpty()) {
+            item {
+                Text(
+                    stringResource(R.string.emp_manager_requests),
+                    style = MaterialTheme.typography.titleSmall,
+                    color = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.padding(vertical = 4.dp)
+                )
+            }
+            items(managerRequests, key = { "mgr_${it.id}" }) { req ->
+                PendingRequestCard(
+                    fullName = req.fullName,
+                    email = req.email,
+                    subtitle = if (req.managerRole == "owner") stringResource(R.string.emp_owner) else stringResource(R.string.emp_manager),
+                    onAccept = { onAcceptManager(req) },
+                    onDecline = { onDeclineManager(req) }
+                )
+            }
+        }
+
+        if (employeeRequests.isNotEmpty()) {
+            item {
+                if (managerRequests.isNotEmpty()) Spacer(Modifier.height(8.dp))
+                Text(
+                    stringResource(R.string.emp_employee_requests),
+                    style = MaterialTheme.typography.titleSmall,
+                    color = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.padding(vertical = 4.dp)
+                )
+            }
+            items(employeeRequests, key = { "emp_${it.id}" }) { req ->
+                PendingRequestCard(
+                    fullName = req.fullName,
+                    email = req.email,
+                    subtitle = null,
+                    onAccept = { onAcceptEmployee(req) },
+                    onDecline = { onDeclineEmployee(req) }
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun PendingRequestCard(
+    fullName: String,
+    email: String,
+    subtitle: String?,
+    onAccept: () -> Unit,
+    onDecline: () -> Unit
+) {
+    Card(modifier = Modifier.fillMaxWidth()) {
+        Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(fullName, style = MaterialTheme.typography.titleMedium)
+                    Text(email, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    if (subtitle != null) {
+                        Text(subtitle, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.secondary)
+                    }
+                }
+            }
+            HorizontalDivider()
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Button(onClick = onAccept, modifier = Modifier.weight(1f)) { Text(stringResource(R.string.emp_accept)) }
+                TextButton(
+                    onClick = onDecline,
+                    modifier = Modifier.weight(1f)
+                ) { Text(stringResource(R.string.emp_decline), color = MaterialTheme.colorScheme.error) }
+            }
+        }
+    }
+}
+
 // ── Dropdown helper ───────────────────────────────────────────────────────────
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -466,7 +603,7 @@ private fun NullableDropdown(
     onSelect: (Int?) -> Unit
 ) {
     var expanded by remember { mutableStateOf(false) }
-    val label2 = options.firstOrNull { it.first == selected }?.second ?: "None"
+    val label2 = options.firstOrNull { it.first == selected }?.second ?: stringResource(R.string.common_none)
 
     ExposedDropdownMenuBox(expanded = expanded, onExpandedChange = { expanded = it }) {
         OutlinedTextField(
@@ -478,9 +615,88 @@ private fun NullableDropdown(
             modifier = Modifier.fillMaxWidth().menuAnchor()
         )
         ExposedDropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
-            DropdownMenuItem(text = { Text("None") }, onClick = { onSelect(null); expanded = false })
+            DropdownMenuItem(text = { Text(stringResource(R.string.common_none)) }, onClick = { onSelect(null); expanded = false })
             options.forEach { (id, name) ->
                 DropdownMenuItem(text = { Text(name) }, onClick = { onSelect(id); expanded = false })
+            }
+        }
+    }
+}
+
+
+// ── Work-hours limits sheet ─────────────────────────────────────────────────────
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun WorkLimitsSheet(
+    employee: ManagedEmployee,
+    load: ((com.froggyriia.shiftplanner.domain.model.WorkLimits?) -> Unit) -> Unit,
+    save: (Int, Int, (Boolean) -> Unit) -> Unit,
+    onDismiss: () -> Unit
+) {
+    var loading by remember { mutableStateOf(true) }
+    var saving by remember { mutableStateOf(false) }
+    var maxWeek by remember { mutableStateOf("40") }
+    var maxDay by remember { mutableStateOf("12") }
+
+    LaunchedEffect(Unit) {
+        load { limits ->
+            if (limits != null) {
+                maxWeek = limits.maxHoursPerWeek.toString()
+                maxDay = limits.maxHoursPerDay.toString()
+            }
+            loading = false
+        }
+    }
+
+    ModalBottomSheet(onDismissRequest = onDismiss) {
+        Column(
+            Modifier.fillMaxWidth().padding(horizontal = 16.dp).padding(bottom = 32.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            Text(
+                "${stringResource(R.string.emp_work_limits_title)} — ${employee.fullName}",
+                style = MaterialTheme.typography.titleMedium
+            )
+            if (loading) {
+                Box(Modifier.fillMaxWidth().padding(24.dp), contentAlignment = Alignment.Center) {
+                    CircularProgressIndicator()
+                }
+            } else {
+                OutlinedTextField(
+                    value = maxWeek,
+                    onValueChange = { v -> if (v.all { it.isDigit() } && v.length <= 3) maxWeek = v },
+                    label = { Text(stringResource(R.string.emp_max_week)) },
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
+                )
+                OutlinedTextField(
+                    value = maxDay,
+                    onValueChange = { v -> if (v.all { it.isDigit() } && v.length <= 2) maxDay = v },
+                    label = { Text(stringResource(R.string.emp_max_day)) },
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
+                )
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    TextButton(onClick = onDismiss, modifier = Modifier.weight(1f)) {
+                        Text(stringResource(R.string.cancel))
+                    }
+                    Button(
+                        onClick = {
+                            val week = maxWeek.toIntOrNull() ?: return@Button
+                            val day = (maxDay.toIntOrNull() ?: return@Button).coerceIn(1, 24)
+                            saving = true
+                            save(week.coerceAtLeast(1), day) { ok -> saving = false; if (ok) onDismiss() }
+                        },
+                        enabled = !saving && maxWeek.isNotBlank() && maxDay.isNotBlank(),
+                        modifier = Modifier.weight(1f)
+                    ) {
+                        if (saving) CircularProgressIndicator(Modifier.height(18.dp))
+                        else Text(stringResource(R.string.save))
+                    }
+                }
             }
         }
     }

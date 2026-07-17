@@ -992,7 +992,7 @@ export default function ScheduleTab({ language, userRole }) {
   if (isLoading) {
     if (!isManager) {
       return (
-        <section className="schedule-tab">
+        <section className="schedule-tab schedule-tab--employee">
           <div className="st-page">
             <div className="st-loading">{t.loading}</div>
           </div>
@@ -1011,14 +1011,14 @@ export default function ScheduleTab({ language, userRole }) {
 
   if (!isManager) {
     return (
-      <section className="schedule-tab">
+      <section className="schedule-tab schedule-tab--employee">
         <div className="st-page">
           {renderToast()}
 
           <header className="st-page-header">
             <div>
               <h1 className="st-page-title">{t.titleEmployee}</h1>
-              <p className="st-page-subtitle">{t.subtitleEmployee}</p>
+              <p className="st-page-subtitle st-page-subtitle--desktop">{t.subtitleEmployee}</p>
             </div>
           </header>
 

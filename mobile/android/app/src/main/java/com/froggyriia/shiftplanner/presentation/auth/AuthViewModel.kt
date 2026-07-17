@@ -9,6 +9,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import com.froggyriia.shiftplanner.R
 
 class AuthViewModel(
     private val repository: AuthRepository
@@ -45,6 +46,10 @@ class AuthViewModel(
         _uiState.value = _uiState.value.copy(errorMessage = null)
     }
 
+    fun dismissEmailVerification() {
+        _uiState.value = _uiState.value.copy(emailVerificationPending = false)
+    }
+
     fun login() {
         viewModelScope.launch {
             _uiState.value = _uiState.value.copy(
@@ -79,7 +84,7 @@ class AuthViewModel(
 
         if (state.password != state.confirmPassword) {
             _uiState.value = state.copy(
-                errorMessage = "Passwords do not match"
+                errorMessageRes = R.string.authm_passwords_mismatch
             )
             return
         }
@@ -100,10 +105,18 @@ class AuthViewModel(
                     role = currentState.selectedRole
                 )
 
-                _uiState.value = _uiState.value.copy(
-                    currentUser = user,
-                    isLoading = false
-                )
+                if (user == null) {
+                    // Email verification required — stay on auth screen, show message
+                    _uiState.value = _uiState.value.copy(
+                        emailVerificationPending = true,
+                        isLoading = false
+                    )
+                } else {
+                    _uiState.value = _uiState.value.copy(
+                        currentUser = user,
+                        isLoading = false
+                    )
+                }
             } catch (error: Exception) {
                 _uiState.value = _uiState.value.copy(
                     errorMessage = error.message ?: "Failed to sign up",
@@ -152,7 +165,10 @@ data class AuthUiState(
     val selectedRole: UserRole = UserRole.EMPLOYEE,
     val currentUser: AppUser? = null,
     val isLoading: Boolean = false,
-    val errorMessage: String? = null
+    val errorMessage: String? = null,
+    val errorMessageRes: Int? = null,
+    val statusMessageRes: Int? = null,
+    val emailVerificationPending: Boolean = false
 ) {
     val passwordsMatch: Boolean
         get() = password == confirmPassword

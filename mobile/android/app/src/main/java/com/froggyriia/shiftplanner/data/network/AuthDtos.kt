@@ -35,11 +35,15 @@ data class RegisterResponseDto(
     val email: String,
     val role: UserRole,
     @SerializedName("employee_id")
-    val employeeId: Int?
+    val employeeId: Int?,
+    @SerializedName("email_verification_required")
+    val emailVerificationRequired: Boolean = false
 )
 
 data class CurrentUserResponseDto(
     val id: Int,
+    @SerializedName("public_id")
+    val publicId: String = "",
     @SerializedName("full_name")
     val fullName: String,
     val email: String,
@@ -53,6 +57,7 @@ data class CurrentUserResponseDto(
     fun toAppUser(): AppUser {
         return AppUser(
             id = id.toString(),
+            publicId = publicId,
             email = email,
             name = fullName,
             role = role,

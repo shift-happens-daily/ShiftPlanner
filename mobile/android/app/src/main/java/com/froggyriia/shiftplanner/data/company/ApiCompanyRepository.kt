@@ -6,10 +6,12 @@ import com.froggyriia.shiftplanner.data.network.CompanyBranchUpdateRequestDto
 import com.froggyriia.shiftplanner.data.network.CompanyCreateRequestDto
 import com.froggyriia.shiftplanner.data.network.CompanyJoinRequestDto
 import com.froggyriia.shiftplanner.data.network.CompanyUpdateRequestDto
+import com.froggyriia.shiftplanner.data.network.WorkingHoursRangeDto
 import com.froggyriia.shiftplanner.domain.model.AppBranchOption
 import com.froggyriia.shiftplanner.domain.model.AppCompany
 import com.froggyriia.shiftplanner.domain.model.AppCompanyInvitePreview
 import com.froggyriia.shiftplanner.domain.model.AppUser
+import com.froggyriia.shiftplanner.domain.model.WorkingHoursRange
 
 class ApiCompanyRepository(
     private val apiClient: ApiClient
@@ -56,6 +58,33 @@ class ApiCompanyRepository(
             branchId = branchId,
             request = CompanyBranchUpdateRequestDto(name = name, address = address)
         ).toDomain()
+    }
+
+    override suspend fun fetchBranchWorkingHours(
+        companyId: Int,
+        branchId: Int
+    ): Map<Int, WorkingHoursRange> = wrap {
+        apiClient.api.getBranchWorkingHours(companyId, branchId)
+            .mapNotNull { (day, range) ->
+                day.toIntOrNull()?.let { it to WorkingHoursRange(range.startSlot, range.endSlot) }
+            }
+            .toMap()
+    }
+
+    override suspend fun updateBranchWorkingHours(
+        companyId: Int,
+        branchId: Int,
+        hours: Map<Int, WorkingHoursRange>
+    ): Map<Int, WorkingHoursRange> = wrap {
+        apiClient.api.updateBranchWorkingHours(
+            companyId = companyId,
+            branchId = branchId,
+            request = hours.entries.associate { (day, range) ->
+                day.toString() to WorkingHoursRangeDto(range.startSlot, range.endSlot)
+            }
+        ).mapNotNull { (day, range) ->
+            day.toIntOrNull()?.let { it to WorkingHoursRange(range.startSlot, range.endSlot) }
+        }.toMap()
     }
 
     override suspend fun deleteBranch(branchId: Int) = wrap {

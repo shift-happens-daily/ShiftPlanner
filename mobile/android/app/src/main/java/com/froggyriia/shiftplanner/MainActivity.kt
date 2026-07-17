@@ -1,8 +1,10 @@
 package com.froggyriia.shiftplanner
 
 import android.os.Bundle
-import androidx.activity.ComponentActivity
+import androidx.appcompat.app.AppCompatActivity
 import androidx.activity.compose.setContent
+import androidx.core.os.LocaleListCompat
+import androidx.appcompat.app.AppCompatDelegate
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -11,7 +13,7 @@ import com.froggyriia.shiftplanner.presentation.auth.AuthViewModel
 import com.froggyriia.shiftplanner.ui.theme.ShiftPlannerTheme
 import com.froggyriia.shiftplanner.ui.theme.ThemeStore
 
-class MainActivity : ComponentActivity() {
+class MainActivity : AppCompatActivity() {
     private val appContainer by lazy {
         AppContainer(applicationContext)
     }
@@ -29,6 +31,13 @@ class MainActivity : ComponentActivity() {
                 )
                 AppRoot(authViewModel = authViewModel, appContainer = appContainer)
             }
+        }
+    }
+
+    companion object {
+        /** Switch app language. Call from UI (e.g. Profile screen). */
+        fun setLanguage(tag: String) {
+            AppCompatDelegate.setApplicationLocales(LocaleListCompat.forLanguageTags(tag))
         }
     }
 }
