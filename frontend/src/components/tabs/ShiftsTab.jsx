@@ -812,6 +812,7 @@ export default function ShiftsTab({ language, userRole, user }) {
     appliedKeys: new Set(),
     lastCell: null,
     touchIdentifier: null,
+    status: null,
   });
 
   const weekDates = useMemo(() => {
@@ -1338,9 +1339,10 @@ export default function ShiftsTab({ language, userRole, user }) {
     }));
   }, [brushMode, markUnsaved]);
 
-  const applyAvailabilityDragCell = useCallback((dayIndex, slotIndex) => {
+  const applyAvailabilityDragCell = useCallback((dayIndex, slotIndex, status = null) => {
     const dragState = dragSelectionRef.current;
     const lastCell = dragState.lastCell;
+    const dragStatus = status || dragState.status || brushMode;
     const steps = lastCell
       ? Math.max(Math.abs(dayIndex - lastCell.dayIndex), Math.abs(slotIndex - lastCell.slotIndex))
       : 0;
@@ -1360,21 +1362,28 @@ export default function ShiftsTab({ language, userRole, user }) {
       const cellKey = `${dateKey}-${slot}`;
       if (dragState.appliedKeys.has(cellKey)) continue;
       dragState.appliedKeys.add(cellKey);
-      applyAvailabilityStatus(dateKey, slot, brushMode);
+      applyAvailabilityStatus(dateKey, slot, dragStatus);
     }
 
     dragState.lastCell = { dayIndex, slotIndex };
   }, [applyAvailabilityStatus, brushMode, weekDates]);
 
   const startAvailabilityDrag = useCallback((dayIndex, slotIndex, touchIdentifier = null) => {
+    const date = weekDates[dayIndex];
+    const slot = TIME_SLOTS[slotIndex];
+    const dateKey = toDateKey(date);
+    const currentStatus = normalizeAvailabilityStatus(availabilityByDate?.[dateKey]?.[slot]);
+    const nextStatus = currentStatus === brushMode ? 'unavailable' : brushMode;
+
     dragSelectionRef.current = {
       active: true,
       appliedKeys: new Set(),
       lastCell: null,
       touchIdentifier,
+      status: nextStatus,
     };
-    applyAvailabilityDragCell(dayIndex, slotIndex);
-  }, [applyAvailabilityDragCell]);
+    applyAvailabilityDragCell(dayIndex, slotIndex, nextStatus);
+  }, [applyAvailabilityDragCell, availabilityByDate, brushMode, weekDates]);
 
 
   const endAvailabilityDrag = useCallback(() => {
@@ -1385,6 +1394,7 @@ export default function ShiftsTab({ language, userRole, user }) {
     dragState.appliedKeys?.clear?.();
     dragState.lastCell = null;
     dragState.touchIdentifier = null;
+    dragState.status = null;
   }, []);
   const fillAvailabilityDay = useCallback(
     (dateKey, status = brushMode) => {
