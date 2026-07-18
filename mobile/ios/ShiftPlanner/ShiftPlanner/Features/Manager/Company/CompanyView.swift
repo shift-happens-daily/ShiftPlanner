@@ -25,7 +25,7 @@ struct CompanyView: View {
                                 .bold()
 
                             VStack(alignment: .leading, spacing: 8) {
-                                Text("Invite code")
+                                Text(localized("Invite code", "Код приглашения"))
                                     .font(.subheadline)
                                     .foregroundStyle(.secondary)
 
@@ -35,7 +35,9 @@ struct CompanyView: View {
                             }
 
                             HStack(spacing: 12) {
-                                Button(didCopyInviteCode ? "Copied" : "Copy code") {
+                                Button(didCopyInviteCode
+                                    ? localized("Copied", "Скопировано")
+                                    : localized("Copy code", "Копировать код")) {
                                     UIPasteboard.general.string = company.inviteCode
                                     didCopyInviteCode = true
                                 }
@@ -43,41 +45,66 @@ struct CompanyView: View {
                                 .themeSecondaryAction()
 
                                 ShareLink(
-                                    item: "Join \(company.name) in ShiftPlanner with invite code: \(company.inviteCode)",
+                                    item: localized(
+                                        "Join \(company.name) in ShiftPlanner with invite code: \(company.inviteCode)",
+                                        "Присоединяйтесь к «\(company.name)» в ShiftPlanner по коду приглашения: \(company.inviteCode)"
+                                    ),
                                     subject: Text("ShiftPlanner invite")
                                 ) {
-                                    Label("Share", systemImage: "square.and.arrow.up")
+                                    Label(localized("Share", "Поделиться"), systemImage: "square.and.arrow.up")
                                 }
                                 .buttonStyle(.borderedProminent)
                                 .tint(themeManager.selectedTheme.primaryActionFillColor)
                             }
 
-                            Text("Share this code with employees so they can join the company.")
+                            Text(localized(
+                                "Share this code with employees so they can join the company.",
+                                "Поделитесь этим кодом с сотрудниками, чтобы они присоединились к компании."
+                            ))
                                 .font(.footnote)
                                 .foregroundStyle(themeManager.selectedTheme.secondaryTextColor)
                         }
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .padding()
                         .themeCard()
+
+                        NavigationLink {
+                            CompanyManageView(onCompanyUpdated: { updated in
+                                companyOverride = updated
+                            })
+                        } label: {
+                            Label(
+                                localized("Manage company & branches", "Компания и филиалы"),
+                                systemImage: "building.2.crop.circle"
+                            )
+                        }
+                        .buttonStyle(.plain)
+                        .themeSecondaryAction()
                     } else {
                         VStack(alignment: .leading, spacing: 16) {
-                            Text("You are not attached to a company yet.")
+                            Text(localized("You are not attached to a company yet.", "Вы ещё не привязаны к компании."))
                                 .font(.title3)
                                 .bold()
                                 .foregroundStyle(themeManager.selectedTheme.primaryTextColor)
 
-                            Text("You can enter an invite code if your company already exists, or create a new company.")
+                            Text(localized(
+                                "You can enter an invite code if your company already exists, or create a new company.",
+                                "Вы можете ввести код приглашения, если компания уже существует, или создать новую."
+                            ))
                                 .foregroundStyle(themeManager.selectedTheme.secondaryTextColor)
                         }
 
                         VStack(alignment: .leading, spacing: 12) {
-                            Text("Join by invite code")
+                            Text(localized("Join by invite code", "Присоединиться по коду"))
                                 .font(.headline)
                                 .foregroundStyle(themeManager.selectedTheme.primaryTextColor)
-                            Text("Useful when your company already exists or when multiple managers will be supported.")
+                            Text(localized(
+                                "Useful when your company already exists or when multiple managers will be supported.",
+                                "Полезно, если компания уже существует или будет поддержка нескольких менеджеров."
+                            ))
                                 .foregroundStyle(themeManager.selectedTheme.secondaryTextColor)
 
-                            Button("Enter invite code") {
+                            Button(localized("Enter invite code", "Ввести код приглашения")) {
                                 isShowingInviteSheet = true
                             }
                             .buttonStyle(.plain)
@@ -88,13 +115,16 @@ struct CompanyView: View {
                         .themeCard()
 
                         VStack(alignment: .leading, spacing: 12) {
-                            Text("Create a company")
+                            Text(localized("Create a company", "Создать компанию"))
                                 .font(.headline)
                                 .foregroundStyle(themeManager.selectedTheme.primaryTextColor)
-                            Text("Set up the company name now and prepare branch data for the upcoming backend expansion.")
+                            Text(localized(
+                                "Set up the company name now and prepare branch data for the upcoming backend expansion.",
+                                "Задайте название компании и подготовьте данные о филиалах."
+                            ))
                                 .foregroundStyle(themeManager.selectedTheme.secondaryTextColor)
 
-                            NavigationLink("Open company setup") {
+                            NavigationLink(localized("Open company setup", "Открыть настройку компании")) {
                                 CompanySetupView { createdCompany in
                                     companyOverride = createdCompany
                                 }
@@ -110,7 +140,7 @@ struct CompanyView: View {
                 .padding()
             }
             .background(themeManager.selectedTheme.screenBackground)
-            .navigationTitle("Company")
+            .navigationTitle(localized("Company", "Компания"))
             .navigationBarTitleDisplayMode(.inline)
             .onChange(of: user.company?.inviteCode) { _, _ in
                 if let company = user.company?.asAppCompany() {
