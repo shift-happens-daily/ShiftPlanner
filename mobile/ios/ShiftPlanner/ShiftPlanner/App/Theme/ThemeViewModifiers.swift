@@ -69,6 +69,27 @@ struct ThemeSecondaryActionModifier: ViewModifier {
     }
 }
 
+/// Compact pill for inline card actions (Edit / Duplicate / Delete).
+struct ThemeCompactSecondaryActionModifier: ViewModifier {
+    @EnvironmentObject private var themeManager: ThemeManager
+
+    func body(content: Content) -> some View {
+        content
+            .font(.footnote.weight(.semibold))
+            .padding(.horizontal, 14)
+            .padding(.vertical, 8)
+            .foregroundStyle(themeManager.selectedTheme.accentColor)
+            .background(
+                Capsule(style: .continuous)
+                    .fill(themeManager.selectedTheme.cardTint)
+            )
+            .overlay {
+                Capsule(style: .continuous)
+                    .stroke(themeManager.selectedTheme.accentColor.opacity(0.22), lineWidth: 1)
+            }
+    }
+}
+
 extension View {
     func themeCard() -> some View {
         modifier(ThemeCardModifier())
@@ -84,5 +105,9 @@ extension View {
 
     func themeSecondaryAction() -> some View {
         modifier(ThemeSecondaryActionModifier())
+    }
+
+    func themeCompactSecondaryAction() -> some View {
+        modifier(ThemeCompactSecondaryActionModifier())
     }
 }
