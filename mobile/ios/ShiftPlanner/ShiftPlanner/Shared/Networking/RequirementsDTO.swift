@@ -2,6 +2,7 @@ import Foundation
 
 struct ScheduleRequirementResponseDTO: Codable {
     let id: Int
+    let branchId: Int?
     let positionId: Int
     let positionTitle: String
     let date: String
@@ -11,6 +12,7 @@ struct ScheduleRequirementResponseDTO: Codable {
 
     enum CodingKeys: String, CodingKey {
         case id
+        case branchId = "branch_id"
         case positionId = "position_id"
         case positionTitle = "position_title"
         case date
@@ -21,6 +23,22 @@ struct ScheduleRequirementResponseDTO: Codable {
 }
 
 struct ScheduleRequirementCreateDTO: Codable {
+    let positionId: Int
+    let date: String
+    let minStaff: Int
+    let startTime: String
+    let endTime: String
+
+    enum CodingKeys: String, CodingKey {
+        case positionId = "position_id"
+        case date
+        case minStaff = "min_staff"
+        case startTime = "start_time"
+        case endTime = "end_time"
+    }
+}
+
+struct ScheduleRequirementUpdateDTO: Codable {
     let positionId: Int
     let date: String
     let minStaff: Int

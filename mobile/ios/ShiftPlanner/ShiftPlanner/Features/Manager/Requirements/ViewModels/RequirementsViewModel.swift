@@ -307,13 +307,22 @@ final class RequirementsViewModel: ObservableObject {
         statusMessage = nil
 
         do {
-            for item in remoteMonthOccurrences {
+            // Point-diff by weekday: only weekdays whose templates actually
+            // changed are deleted and re-created. Untouched weekdays keep
+            // their backend rows intact (fewer requests, no needless churn
+            // of requirement ids referenced by existing schedules).
+            let changedWeekdays = changedWeekdaysComparedToBaseline()
+
+            for item in remoteMonthOccurrences where changedWeekdays.contains(item.weekday) {
                 try await repository.deleteRequirement(id: item.id)
             }
 
             let groupedTemplates = Dictionary(grouping: requirements, by: \.weekday)
 
-            for (weekday, weekdayTemplates) in groupedTemplates {
+            for weekday in changedWeekdays.sorted() {
+                guard let weekdayTemplates = groupedTemplates[weekday], !weekdayTemplates.isEmpty else {
+                    continue // weekday cleared — deletions above are enough
+                }
                 let templates = weekdayTemplates.map {
                     RequirementTemplateDraft(
                         positionId: $0.positionId,
@@ -338,6 +347,19 @@ final class RequirementsViewModel: ObservableObject {
         }
 
         isSaving = false
+    }
+
+    /// Weekdays whose template set differs from the last loaded backend state.
+    private func changedWeekdaysComparedToBaseline() -> Set<Int> {
+        var changed: Set<Int> = []
+        for weekday in 0..<7 {
+            let current = requirementsSignature(for: requirements.filter { $0.weekday == weekday })
+            let baseline = requirementsSignature(for: baselineRequirements.filter { $0.weekday == weekday })
+            if current != baseline {
+                changed.insert(weekday)
+            }
+        }
+        return changed
     }
 
     func autoSaveIfNeeded() async {
