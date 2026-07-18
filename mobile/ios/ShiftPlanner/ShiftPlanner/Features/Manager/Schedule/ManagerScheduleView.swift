@@ -204,20 +204,17 @@ struct ManagerScheduleView: View {
     }
 
     private var modePicker: some View {
-        Picker("", selection: $presentationMode) {
-            Text(languageManager.text("List", "Список")).tag(SchedulePresentationMode.list)
-            Text(languageManager.text("Calendar", "Календарь")).tag(SchedulePresentationMode.calendar)
-        }
-        .pickerStyle(.segmented)
+        ThemedSegmentedPicker(selection: $presentationMode, segments: [
+            ThemedSegment(.list, languageManager.text("List", "Список")),
+            ThemedSegment(.calendar, languageManager.text("Calendar", "Календарь"))
+        ])
     }
 
     private var filterPicker: some View {
-        Picker("", selection: $viewModel.filter) {
-            ForEach(ScheduleShiftFilter.allCases, id: \.self) { option in
-                Text(option.title).tag(option)
-            }
-        }
-        .pickerStyle(.segmented)
+        ThemedSegmentedPicker(
+            selection: $viewModel.filter,
+            segments: ScheduleShiftFilter.allCases.map { ThemedSegment($0, $0.title) }
+        )
     }
 
     /// Header card: schedule title + a prominent Publish button (mirrors

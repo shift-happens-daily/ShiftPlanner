@@ -110,12 +110,10 @@ struct ManagerProfileView: View {
                 .fontWeight(.bold)
                 .foregroundStyle(themeManager.selectedTheme.primaryTextColor)
 
-            Picker(localized("Theme", "Тема"), selection: $themeManager.selectedTheme) {
-                ForEach(AppTheme.allCases) { theme in
-                    Text(theme.title).tag(theme)
-                }
-            }
-            .pickerStyle(.segmented)
+            ThemedSegmentedPicker(
+                selection: $themeManager.selectedTheme,
+                segments: AppTheme.allCases.map { ThemedSegment($0, $0.title) }
+            )
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(20)
@@ -129,12 +127,10 @@ struct ManagerProfileView: View {
                 .fontWeight(.bold)
                 .foregroundStyle(themeManager.selectedTheme.primaryTextColor)
 
-            Picker(localized("Language", "Язык"), selection: $languageManager.selectedLanguage) {
-                ForEach(AppLanguage.allCases) { language in
-                    Text(language.title).tag(language)
-                }
-            }
-            .pickerStyle(.segmented)
+            ThemedSegmentedPicker(
+                selection: $languageManager.selectedLanguage,
+                segments: AppLanguage.allCases.map { ThemedSegment($0, $0.title) }
+            )
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(20)

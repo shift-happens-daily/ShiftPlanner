@@ -106,15 +106,11 @@ struct ScheduleCalendarSectionView<Item: Identifiable, RowContent: View>: View {
     }
 
     private var granularityPicker: some View {
-        Picker("", selection: $granularity) {
-            Text(languageManager.text("Day", "День"))
-                .tag(ScheduleCalendarGranularity.day)
-            Text(languageManager.text("Week", "Неделя"))
-                .tag(ScheduleCalendarGranularity.week)
-            Text(languageManager.text("Month", "Месяц"))
-                .tag(ScheduleCalendarGranularity.month)
-        }
-        .pickerStyle(.segmented)
+        ThemedSegmentedPicker(selection: $granularity, segments: [
+            ThemedSegment(.day, languageManager.text("Day", "День")),
+            ThemedSegment(.week, languageManager.text("Week", "Неделя")),
+            ThemedSegment(.month, languageManager.text("Month", "Месяц"))
+        ])
     }
 
     @ViewBuilder

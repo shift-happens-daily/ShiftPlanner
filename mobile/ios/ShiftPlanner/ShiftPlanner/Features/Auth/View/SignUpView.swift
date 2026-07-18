@@ -19,12 +19,10 @@ struct SignUpView: View {
             }
 
             VStack(spacing: 12) {
-                Picker(localized("Role", "Роль"), selection: $viewModel.selectedRole) {
-                    ForEach(UserRole.allCases) { role in
-                        Text(role.title).tag(role)
-                    }
-                }
-                .pickerStyle(.segmented)
+                ThemedSegmentedPicker(
+                    selection: $viewModel.selectedRole,
+                    segments: UserRole.allCases.map { ThemedSegment($0, $0.title) }
+                )
 
                 TextField(localized("Name", "Имя"), text: $viewModel.name)
                     .themeInputField()

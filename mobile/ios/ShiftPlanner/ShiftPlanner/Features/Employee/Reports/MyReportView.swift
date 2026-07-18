@@ -76,11 +76,10 @@ struct MyReportView: View {
         NavigationStack {
             ScrollView(showsIndicators: false) {
                 VStack(spacing: 16) {
-                    Picker("", selection: $viewModel.period) {
-                        Text(MyReportPeriod.week.title).tag(MyReportPeriod.week)
-                        Text(MyReportPeriod.month.title).tag(MyReportPeriod.month)
-                    }
-                    .pickerStyle(.segmented)
+                    ThemedSegmentedPicker(selection: $viewModel.period, segments: [
+                        ThemedSegment(.week, MyReportPeriod.week.title),
+                        ThemedSegment(.month, MyReportPeriod.month.title)
+                    ])
                     .onChange(of: viewModel.period) { _, _ in
                         Task { await viewModel.load() }
                     }
