@@ -25,19 +25,19 @@ struct AvailabilityLegendView: View {
             }
 
             HStack(spacing: 16) {
-                Button("Copy previous week", action: onCopyPreviousWeek)
+                Button(localized("Copy previous week", "Скопировать прошлую неделю"), action: onCopyPreviousWeek)
                     .buttonStyle(.plain)
                     .font(.footnote)
                     .foregroundStyle(.blue)
 
-                Button("Reset week", action: onResetWeek)
+                Button(localized("Reset week", "Сбросить неделю"), action: onResetWeek)
                     .buttonStyle(.plain)
                     .font(.footnote)
                     .foregroundStyle(.red)
 
                 Spacer()
 
-                Text("Drag across the grid to paint your week")
+                Text(localized("Drag across the grid to paint your week", "Проведите по сетке, чтобы заполнить неделю"))
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }

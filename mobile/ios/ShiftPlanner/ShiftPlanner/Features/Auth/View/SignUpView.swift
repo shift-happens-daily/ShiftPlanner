@@ -4,50 +4,50 @@ struct SignUpView: View {
     @ObservedObject var viewModel: AuthViewModel
     @EnvironmentObject private var themeManager: ThemeManager
     let onShowLogin: () -> Void
-    
+
     var body: some View {
         VStack(spacing: 20) {
             Spacer()
-            
+
             VStack(spacing: 8) {
                 Text("ShiftPlanner")
                     .font(.largeTitle)
                     .bold()
                     .foregroundStyle(themeManager.selectedTheme.primaryTextColor)
-                Text("Create account")
+                Text(localized("Create account", "Создать аккаунт"))
                     .foregroundStyle(themeManager.selectedTheme.secondaryTextColor)
             }
-            
+
             VStack(spacing: 12) {
-                Picker("Role", selection: $viewModel.selectedRole) {
+                Picker(localized("Role", "Роль"), selection: $viewModel.selectedRole) {
                     ForEach(UserRole.allCases) { role in
                         Text(role.title).tag(role)
                     }
                 }
                 .pickerStyle(.segmented)
 
-                TextField("Name", text: $viewModel.name)
+                TextField(localized("Name", "Имя"), text: $viewModel.name)
                     .themeInputField()
-                
-                TextField("Email", text: $viewModel.email)
+
+                TextField(localized("Email", "Эл. почта"), text: $viewModel.email)
                     .autocapitalization(.none)
                     .autocorrectionDisabled(true)
                     .keyboardType(.emailAddress)
                     .themeInputField()
-                
-                SecureField("Password", text: $viewModel.password)
+
+                SecureField(localized("Password", "Пароль"), text: $viewModel.password)
                     .themeInputField()
-                
-                SecureField("Repeat password", text: $viewModel.confirmPassword)
+
+                SecureField(localized("Repeat password", "Повторите пароль"), text: $viewModel.confirmPassword)
                     .themeInputField()
             }
-            
+
             if let errorMessage = viewModel.errorMessage {
                 Text(errorMessage)
                     .font(.footnote)
                     .foregroundStyle(themeManager.selectedTheme.destructiveColor)
             }
-            
+
             Button {
                 Task {
                     await viewModel.signUp()
@@ -57,20 +57,20 @@ struct SignUpView: View {
                     ProgressView()
                         .tint(themeManager.selectedTheme.primaryActionTextColor)
                 } else {
-                    Text("Sign up")
+                    Text(localized("Sign up", "Зарегистрироваться"))
                 }
             }
             .buttonStyle(.plain)
             .themePrimaryAction(isEnabled: !viewModel.isLoading && viewModel.passwordsMatch)
             .disabled(viewModel.isLoading || !viewModel.passwordsMatch)
-            
-            Button("Already have an account?") {
+
+            Button(localized("Already have an account?", "Уже есть аккаунт?")) {
                 onShowLogin()
             }
             .buttonStyle(.plain)
             .themeSecondaryAction()
             .disabled(viewModel.isLoading)
-            
+
             Spacer()
         }
         .padding()

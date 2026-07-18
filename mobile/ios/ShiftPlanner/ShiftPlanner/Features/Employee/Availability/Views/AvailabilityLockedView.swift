@@ -13,26 +13,32 @@ struct AvailabilityLockedView: View {
                         .font(.system(size: 56))
                         .foregroundStyle(.secondary)
 
-                    Text("Join a company first")
+                    Text(localized("Join a company first", "Сначала присоединитесь к компании"))
                         .font(.title3)
                         .fontWeight(.bold)
 
-                    Text("Availability becomes available after you join a company with an invite code.")
+                    Text(localized(
+                        "Availability becomes available after you join a company with an invite code.",
+                        "Доступность откроется после присоединения к компании по коду приглашения."
+                    ))
                         .multilineTextAlignment(.center)
                         .foregroundStyle(.secondary)
                 }
                 .padding(.horizontal, 20)
 
                 CompanyMembershipBannerView(
-                    title: "Enter an invite code to unlock availability and schedule preferences.",
-                    buttonTitle: "Enter invite code",
+                    title: localized(
+                        "Enter an invite code to unlock availability and schedule preferences.",
+                        "Введите код приглашения, чтобы открыть доступность и настройки расписания."
+                    ),
+                    buttonTitle: localized("Enter invite code", "Ввести код приглашения"),
                     action: onJoinCompany
                 )
 
                 Spacer()
             }
             .padding()
-            .navigationTitle("Availability")
+            .navigationTitle(localized("Availability", "Доступность"))
             .navigationBarTitleDisplayMode(.inline)
         }
     }
