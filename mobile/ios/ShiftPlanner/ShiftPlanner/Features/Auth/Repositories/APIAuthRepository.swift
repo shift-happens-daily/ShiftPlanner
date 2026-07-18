@@ -6,7 +6,10 @@ enum AuthRepositoryError: LocalizedError {
     var errorDescription: String? {
         switch self {
         case .accountCreatedButLoginFailed:
-            return "Account was created, but automatic sign-in failed. Try logging in from the login screen."
+            return localized(
+                "Account was created, but automatic sign-in failed. Try logging in from the login screen.",
+                "Аккаунт создан, но автоматический вход не удался. Попробуйте войти с экрана входа."
+            )
         }
     }
 }
@@ -94,6 +97,18 @@ final class APIAuthRepository: AuthRepository {
             currentUser = nil
             return nil
         }
+    }
+
+    func deleteAccount() async throws {
+        let request = apiClient.makeRequest(
+            path: "auth/me",
+            method: "DELETE",
+            requiresAuthorization: true
+        )
+        try await apiClient.sendWithoutResponseBody(request)
+
+        apiClient.clearAccessToken()
+        currentUser = nil
     }
 
     private func fetchCurrentUser() async throws -> AppUser {

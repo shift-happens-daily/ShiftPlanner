@@ -20,7 +20,7 @@ enum AuthError: LocalizedError {
             return "Enter a valid email"
         case .passwordTooShort:
             return "Password must be at least 8 characters"
-            
+
         case .passwordsDontMatch:
             return "Passwords do not match"
         }
@@ -83,6 +83,10 @@ final class MockAuthRepository: AuthRepository {
         currentUser
     }
 
+    func deleteAccount() async throws {
+        currentUser = nil
+    }
+
     private func validateLogin(email: String, password: String) throws {
         if email.isEmpty {
             throw AuthError.emptyEmail
@@ -121,6 +125,6 @@ final class MockAuthRepository: AuthRepository {
         if password.count < 8 {
             throw AuthError.passwordTooShort
         }
-        
+
     }
 }

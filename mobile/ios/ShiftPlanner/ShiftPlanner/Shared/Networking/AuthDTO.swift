@@ -50,7 +50,7 @@ struct RegisterResponse: Codable {
     let email: String
     let role: UserRole
     let employeeId: Int?
-    
+
     enum CodingKeys: String, CodingKey {
         case id
         case fullName = "full_name"
@@ -62,6 +62,7 @@ struct RegisterResponse: Codable {
 
 struct CurrentUserResponse: Codable {
     let id: Int
+    let publicId: String?
     let fullName: String
     let email: String
     let role: UserRole
@@ -70,6 +71,7 @@ struct CurrentUserResponse: Codable {
 
     enum CodingKeys: String, CodingKey {
         case id
+        case publicId = "public_id"
         case fullName = "full_name"
         case email
         case role
@@ -94,6 +96,7 @@ extension CurrentUserResponse {
     func asAppUser() -> AppUser {
         AppUser(
             id: String(id),
+            publicId: publicId,
             email: email,
             name: fullName,
             role: role,
