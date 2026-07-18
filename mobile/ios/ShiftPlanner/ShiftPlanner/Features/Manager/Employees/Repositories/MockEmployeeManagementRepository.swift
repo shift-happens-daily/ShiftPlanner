@@ -120,6 +120,38 @@ struct MockEmployeeManagementRepository: EmployeeManagementRepository {
     func removeEmployee(_ employee: ManagedEmployee, from employees: [ManagedEmployee]) async throws -> [ManagedEmployee] {
         employees.filter { $0.id != employee.id }
     }
+
+    // MARK: - Depth stubs
+
+    func linkEmployeeByPublicId(publicId: String, branchId: Int?, positionId: Int?) async throws -> ManagedEmployee {
+        ManagedEmployee(
+            id: Int.random(in: 1000...9999),
+            publicId: publicId,
+            fullName: "Linked User",
+            email: "linked@example.com",
+            role: .employee,
+            branchId: branchId,
+            branchName: nil,
+            positionId: positionId,
+            positionTitle: nil
+        )
+    }
+
+    func fetchWorkLimits(employeeId: Int) async throws -> WorkLimits {
+        WorkLimits(maxHoursPerWeek: 40, maxHoursPerDay: 8)
+    }
+
+    func updateWorkLimits(employeeId: Int, maxHoursPerWeek: Int, maxHoursPerDay: Int) async throws -> WorkLimits {
+        WorkLimits(maxHoursPerWeek: maxHoursPerWeek, maxHoursPerDay: maxHoursPerDay)
+    }
+
+    func fetchManagerRequests() async throws -> [PendingManagerRequest] { [] }
+    func acceptManagerRequest(id: Int) async throws {}
+    func declineManagerRequest(id: Int) async throws {}
+
+    func fetchEmployeeRequests() async throws -> [PendingEmployeeRequest] { [] }
+    func acceptEmployeeRequest(id: Int) async throws {}
+    func declineEmployeeRequest(id: Int) async throws {}
 }
 
 private extension Array {

@@ -53,3 +53,31 @@ struct ManagedEmployee: Identifiable, Equatable {
         self.positionTitle = positionTitle
     }
 }
+
+/// Per-employee working limits (GET/PATCH /employees/{id}/work-limits).
+struct WorkLimits: Equatable {
+    var maxHoursPerWeek: Int
+    var maxHoursPerDay: Int
+
+    init(maxHoursPerWeek: Int, maxHoursPerDay: Int) {
+        self.maxHoursPerWeek = maxHoursPerWeek
+        self.maxHoursPerDay = maxHoursPerDay
+    }
+}
+
+/// A pending manager join request (companies/me/manager-requests).
+struct PendingManagerRequest: Identifiable, Equatable {
+    let id: Int
+    let fullName: String
+    let email: String
+    let managerRole: String
+}
+
+/// A pending employee join request (companies/me/employee-requests).
+struct PendingEmployeeRequest: Identifiable, Equatable {
+    let id: Int
+    let fullName: String
+    let email: String
+    let positionId: Int?
+    let branchId: Int?
+}

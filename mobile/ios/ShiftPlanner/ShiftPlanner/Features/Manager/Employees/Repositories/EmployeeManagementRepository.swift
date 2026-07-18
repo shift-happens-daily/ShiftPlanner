@@ -18,6 +18,22 @@ protocol EmployeeManagementRepository {
     func assignBranch(_ branchId: Int?, to employee: ManagedEmployee, in employees: [ManagedEmployee]) async throws -> [ManagedEmployee]
     func assignPosition(_ positionId: Int?, to employee: ManagedEmployee, in employees: [ManagedEmployee]) async throws -> [ManagedEmployee]
     func removeEmployee(_ employee: ManagedEmployee, from employees: [ManagedEmployee]) async throws -> [ManagedEmployee]
+
+    // MARK: - Depth: linking, work limits, join requests
+
+    /// Links an existing user (by their 16-char public ID) into the company.
+    func linkEmployeeByPublicId(publicId: String, branchId: Int?, positionId: Int?) async throws -> ManagedEmployee
+
+    func fetchWorkLimits(employeeId: Int) async throws -> WorkLimits
+    func updateWorkLimits(employeeId: Int, maxHoursPerWeek: Int, maxHoursPerDay: Int) async throws -> WorkLimits
+
+    func fetchManagerRequests() async throws -> [PendingManagerRequest]
+    func acceptManagerRequest(id: Int) async throws
+    func declineManagerRequest(id: Int) async throws
+
+    func fetchEmployeeRequests() async throws -> [PendingEmployeeRequest]
+    func acceptEmployeeRequest(id: Int) async throws
+    func declineEmployeeRequest(id: Int) async throws
 }
 
 struct EmployeeManagementSnapshot {
