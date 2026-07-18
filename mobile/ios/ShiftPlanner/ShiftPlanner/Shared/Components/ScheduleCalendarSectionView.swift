@@ -115,13 +115,6 @@ struct ScheduleCalendarSectionView<Item: Identifiable, RowContent: View>: View {
                 .tag(ScheduleCalendarGranularity.month)
         }
         .pickerStyle(.segmented)
-        .padding(8)
-        .background(themeManager.selectedTheme.elevatedSurfaceColor)
-        .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
-        .overlay {
-            RoundedRectangle(cornerRadius: 18, style: .continuous)
-                .stroke(themeManager.selectedTheme.borderColor, lineWidth: 1)
-        }
     }
 
     @ViewBuilder

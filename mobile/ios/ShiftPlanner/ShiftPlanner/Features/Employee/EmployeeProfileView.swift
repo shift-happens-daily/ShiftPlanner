@@ -116,13 +116,6 @@ struct EmployeeProfileView: View {
                 }
             }
             .pickerStyle(.segmented)
-            .padding(8)
-            .background(themeManager.selectedTheme.surfaceColor)
-            .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
-            .overlay {
-                RoundedRectangle(cornerRadius: 16, style: .continuous)
-                    .stroke(themeManager.selectedTheme.accentColor.opacity(0.24), lineWidth: 1.2)
-            }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(20)
@@ -142,13 +135,6 @@ struct EmployeeProfileView: View {
                 }
             }
             .pickerStyle(.segmented)
-            .padding(8)
-            .background(themeManager.selectedTheme.surfaceColor)
-            .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
-            .overlay {
-                RoundedRectangle(cornerRadius: 16, style: .continuous)
-                    .stroke(themeManager.selectedTheme.accentColor.opacity(0.24), lineWidth: 1.2)
-            }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(20)
