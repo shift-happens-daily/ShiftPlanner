@@ -11,10 +11,15 @@ data class AppUser(
     val employeeId: Int? = null,
     val company: AppCompanySummary? = null,
     val branch: AppBranchOption? = null,
-    val position: AppPositionOption? = null
+    val position: AppPositionOption? = null,
+    val managerStatus: String? = null   // "pending" | "active" | null
 ) {
     val hasCompany: Boolean
         get() = company != null
+
+    /** A manager who requested to join a company and is awaiting approval. */
+    val isManagerPending: Boolean
+        get() = role == UserRole.MANAGER && company == null && managerStatus == "pending"
 }
 
 data class AppCompanySummary(

@@ -90,6 +90,11 @@
     <string name="auth_have_account">Already have an account?</string>
     <string name="auth_create_account">Create account</string>
     <string name="company_none_title">No company yet</string>
+    <string name="company_join_as_manager">Join as manager</string>
+    <string name="company_join_as_manager_hint">Enter the invite code of the company you want to co-manage. An existing manager will need to approve your request.</string>
+    <string name="company_join_request_send">Send join request</string>
+    <string name="company_pending_title">Waiting for approval</string>
+    <string name="company_pending_subtitle">Your request to join the company has been sent. A manager needs to approve it before you can access the company.</string>
     <string name="company_none_subtitle">Create a company to start scheduling</string>
     <string name="company_create">Create Company</string>
     <string name="company_name_label">Company name</string>

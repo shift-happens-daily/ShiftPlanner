@@ -78,6 +78,9 @@ interface ShiftPlannerApi {
     @POST("companies/join")
     suspend fun joinCompany(@Body request: CompanyJoinRequestDto): CurrentUserResponseDto
 
+    @POST("companies/join-as-manager")
+    suspend fun joinCompanyAsManager(@Body request: CompanyJoinManagerRequestDto): CurrentUserResponseDto
+
     @POST("companies/me/link-user")
     suspend fun linkUserToCompany(@Body request: LinkUserRequestDto): LinkedEmployeeResponseDto
 

@@ -90,6 +90,11 @@
     <string name="auth_have_account">Уже есть аккаунт?</string>
     <string name="auth_create_account">Создать аккаунт</string>
     <string name="company_none_title">Компании пока нет</string>
+    <string name="company_join_as_manager">Присоединиться как менеджер</string>
+    <string name="company_join_as_manager_hint">Введите код приглашения компании, которой хотите управлять вместе. Действующий менеджер должен одобрить ваш запрос.</string>
+    <string name="company_join_request_send">Отправить запрос</string>
+    <string name="company_pending_title">Ожидание одобрения</string>
+    <string name="company_pending_subtitle">Ваш запрос на присоединение к компании отправлен. Менеджер должен одобрить его, прежде чем вы получите доступ к компании.</string>
     <string name="company_none_subtitle">Создайте компанию, чтобы начать планирование</string>
     <string name="company_create">Создать компанию</string>
     <string name="company_name_label">Название компании</string>

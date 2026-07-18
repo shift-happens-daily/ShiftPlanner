@@ -25,4 +25,5 @@ interface CompanyRepository {
     ): Map<Int, WorkingHoursRange>
     suspend fun previewInvite(code: String): AppCompanyInvitePreview
     suspend fun joinCompany(inviteCode: String, branchId: Int?, positionId: Int?): AppUser
+    suspend fun joinCompanyAsManager(inviteCode: String): AppUser
 }

@@ -30,6 +30,7 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
@@ -102,9 +103,18 @@ fun CompanyScreen(
         }
     }
 
+    var showJoinSheet by remember { mutableStateOf(false) }
+
+    // A manager who has requested to join a company is awaiting approval.
+    if (user.isManagerPending) {
+        ManagerPendingContent()
+        return
+    }
+
     when (navState) {
         CompanyNavState.Landing -> CompanyLanding(
             onCreateClick = { navState = CompanyNavState.Creating },
+            onJoinClick = { showJoinSheet = true }
         )
         CompanyNavState.Creating -> CompanySetupScreen(
             viewModel = setupVm,
@@ -121,11 +131,23 @@ fun CompanyScreen(
             CircularProgressIndicator()
         }
     }
+
+    if (showJoinSheet) {
+        ManagerJoinSheet(
+            viewModel = inviteVm,
+            onDismiss = { showJoinSheet = false },
+            onJoined = { updatedUser ->
+                onUserUpdated(updatedUser)
+                showJoinSheet = false
+            }
+        )
+    }
 }
 
 @Composable
 private fun CompanyLanding(
-    onCreateClick: () -> Unit
+    onCreateClick: () -> Unit,
+    onJoinClick: () -> Unit
 ) {
     Column(
         modifier = Modifier
@@ -150,6 +172,109 @@ private fun CompanyLanding(
             modifier = Modifier.fillMaxWidth()
         ) {
             Text(stringResource(R.string.company_create))
+        }
+        Spacer(Modifier.height(12.dp))
+        OutlinedButton(
+            onClick = onJoinClick,
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Text(stringResource(R.string.company_join_as_manager))
+        }
+    }
+}
+
+@Composable
+private fun ManagerPendingContent() {
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(24.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.Center
+    ) {
+        Text(
+            stringResource(R.string.company_pending_title),
+            style = MaterialTheme.typography.headlineSmall,
+            textAlign = androidx.compose.ui.text.style.TextAlign.Center
+        )
+        Spacer(Modifier.height(8.dp))
+        Text(
+            stringResource(R.string.company_pending_subtitle),
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            textAlign = androidx.compose.ui.text.style.TextAlign.Center
+        )
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun ManagerJoinSheet(
+    viewModel: CompanyInviteViewModel,
+    onDismiss: () -> Unit,
+    onJoined: (AppUser) -> Unit
+) {
+    val state by viewModel.uiState.collectAsState()
+
+    LaunchedEffect(state.joinedUser) {
+        state.joinedUser?.let { onJoined(it) }
+    }
+
+    ModalBottomSheet(onDismissRequest = onDismiss) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 20.dp)
+                .padding(bottom = 32.dp)
+                .verticalScroll(rememberScrollState()),
+            verticalArrangement = Arrangement.spacedBy(16.dp)
+        ) {
+            Text(
+                stringResource(R.string.company_join_as_manager),
+                style = MaterialTheme.typography.headlineSmall
+            )
+            Text(
+                stringResource(R.string.company_join_as_manager_hint),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+
+            OutlinedTextField(
+                value = state.inviteCode,
+                onValueChange = viewModel::onCodeChange,
+                label = { Text(stringResource(R.string.invite_code_label)) },
+                singleLine = true,
+                modifier = Modifier.fillMaxWidth()
+            )
+
+            Button(
+                onClick = viewModel::previewCompany,
+                enabled = !state.isLoading,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                if (state.isLoading && state.preview == null) {
+                    CircularProgressIndicator(modifier = Modifier.height(18.dp))
+                } else {
+                    Text(stringResource(R.string.invite_preview))
+                }
+            }
+
+            state.preview?.let { preview ->
+                HorizontalDivider()
+                Text(preview.name, style = MaterialTheme.typography.titleMedium)
+                Button(
+                    onClick = viewModel::joinAsManager,
+                    enabled = state.canJoin,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    if (state.isLoading) CircularProgressIndicator(modifier = Modifier.height(18.dp))
+                    else Text(stringResource(R.string.company_join_request_send))
+                }
+            }
+
+            (state.errorMessage ?: state.errorMessageRes?.let { stringResource(it) })?.let { msg ->
+                Text(msg, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
+            }
         }
     }
 }

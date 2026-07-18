@@ -84,4 +84,23 @@ class CompanyInviteViewModel(
             }
         }
     }
+
+    /** Second manager requests to join an existing company by invite code. */
+    fun joinAsManager() {
+        val state = _uiState.value
+        val code = state.inviteCode.trim().uppercase()
+        if (code.isEmpty()) {
+            _uiState.value = state.copy(errorMessageRes = R.string.invite_enter_code)
+            return
+        }
+        viewModelScope.launch {
+            _uiState.value = _uiState.value.copy(isLoading = true, errorMessage = null)
+            try {
+                val user = repository.joinCompanyAsManager(code)
+                _uiState.value = _uiState.value.copy(joinedUser = user, isLoading = false)
+            } catch (e: Exception) {
+                _uiState.value = _uiState.value.copy(errorMessage = e.message, isLoading = false)
+            }
+        }
+    }
 }
