@@ -167,7 +167,8 @@ struct ManagerProfileView: View {
                     .frame(maxWidth: .infinity)
             }
         }
-        .buttonStyle(.bordered)
+        .buttonStyle(.plain)
+        .themeDestructiveAction()
         .disabled(isDeleting)
         .alert(
             localized("Delete account?", "Удалить аккаунт?"),

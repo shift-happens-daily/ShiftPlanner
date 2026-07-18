@@ -237,7 +237,8 @@ struct ManagerScheduleView: View {
                             .font(.subheadline.weight(.semibold))
                     }
                 }
-                .buttonStyle(.borderedProminent)
+                .buttonStyle(.plain)
+                .themeCompactSecondaryAction()
                 .disabled(viewModel.isPublishing)
                 .alert(
                     languageManager.text("Unfilled shifts", "Незаполненные смены"),
@@ -284,7 +285,8 @@ struct ManagerScheduleView: View {
             } label: {
                 Text(languageManager.text("Generate schedule", "Сгенерировать расписание"))
             }
-            .buttonStyle(.borderedProminent)
+            .buttonStyle(.plain)
+            .themePrimaryAction(isEnabled: viewModel.canGenerate)
             .disabled(!viewModel.canGenerate)
 
             if viewModel.isGenerating {
@@ -411,7 +413,8 @@ struct ManagerScheduleView: View {
                 Text(languageManager.text("Assign", "Назначить"))
                     .font(.footnote.weight(.semibold))
             }
-            .buttonStyle(.bordered)
+            .buttonStyle(.plain)
+            .themeCompactSecondaryAction()
         }
         .padding(12)
         .overlay {

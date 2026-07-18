@@ -142,7 +142,8 @@ struct ReportsView: View {
                         .frame(maxWidth: .infinity)
                 }
             }
-            .buttonStyle(.borderedProminent)
+            .buttonStyle(.plain)
+            .themePrimaryAction(isEnabled: !viewModel.isLoading)
             .disabled(viewModel.isLoading)
         }
         .padding(16)

@@ -108,9 +108,11 @@ struct EmployeeListView: View {
 
             HStack(spacing: 10) {
                 Button(languageManager.text("Accept", "Принять"), action: onAccept)
-                    .buttonStyle(.borderedProminent)
+                    .buttonStyle(.plain)
+                    .themeCompactSecondaryAction()
                 Button(languageManager.text("Decline", "Отклонить"), role: .destructive, action: onDecline)
-                    .buttonStyle(.bordered)
+                    .buttonStyle(.plain)
+                    .themeCompactDestructiveAction()
                 Spacer()
             }
         }
@@ -173,7 +175,8 @@ struct EmployeeListView: View {
                         newPositionTitle = ""
                         Task { await viewModel.addPosition(title: title) }
                     }
-                    .buttonStyle(.borderedProminent)
+                    .buttonStyle(.plain)
+                    .themeCompactSecondaryAction()
                     .disabled(newPositionTitle.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                 }
             }

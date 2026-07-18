@@ -100,7 +100,8 @@ struct RequirementsView: View {
                 Label(languageManager.text("Copy to…", "Копировать в…"), systemImage: "doc.on.doc")
                     .font(.footnote.weight(.semibold))
             }
-            .buttonStyle(.bordered)
+            .buttonStyle(.plain)
+            .themeCompactSecondaryAction()
             .disabled(viewModel.requirementsForSelectedDay.isEmpty)
             .sheet(isPresented: $isShowingCopySheet) {
                 RequirementsCopyTargetsView(

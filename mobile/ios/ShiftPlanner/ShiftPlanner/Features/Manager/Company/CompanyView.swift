@@ -53,8 +53,8 @@ struct CompanyView: View {
                                 ) {
                                     Label(localized("Share", "Поделиться"), systemImage: "square.and.arrow.up")
                                 }
-                                .buttonStyle(.borderedProminent)
-                                .tint(themeManager.selectedTheme.primaryActionFillColor)
+                                .buttonStyle(.plain)
+                                .themeSecondaryAction()
                             }
 
                             Text(localized(
