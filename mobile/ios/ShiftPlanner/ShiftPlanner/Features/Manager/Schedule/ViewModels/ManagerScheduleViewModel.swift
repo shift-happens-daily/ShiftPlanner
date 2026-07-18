@@ -15,6 +15,30 @@ enum ScheduleShiftFilter: CaseIterable {
     }
 }
 
+enum ScheduleCalendarEntry: Identifiable, Equatable {
+    case shift(AppScheduledShift)
+    case unfilled(AppUnfilledRequirement, index: Int)
+
+    var id: String {
+        switch self {
+        case .shift(let shift): return "shift-\(shift.id)"
+        case .unfilled(_, let index): return "unfilled-\(index)"
+        }
+    }
+
+    var date: Date {
+        switch self {
+        case .shift(let shift): return shift.date
+        case .unfilled(let requirement, _): return requirement.date
+        }
+    }
+
+    var isFilled: Bool {
+        if case .shift(let shift) = self { return shift.hasAssignedEmployee }
+        return false
+    }
+}
+
 /// An existing (draft/published) schedule that overlaps the period the user
 /// tried to generate for. Shown in a resolution dialog: open it, or delete it
 /// and regenerate.
@@ -122,6 +146,26 @@ final class ManagerScheduleViewModel: ObservableObject {
         return (schedule?.unfilledRequirements ?? [])
             .filter { calendar.isDate($0.date, inSameDayAs: day) }
             .sorted { $0.startMinutes < $1.startMinutes }
+    }
+
+    /// Unified entries for the calendar view — filled/unfilled shifts plus
+    /// standalone unfilled requirements — honoring the active filter.
+    var calendarEntries: [ScheduleCalendarEntry] {
+        guard let schedule else { return [] }
+        var entries: [ScheduleCalendarEntry] = []
+        for shift in schedule.shifts {
+            switch filter {
+            case .all: entries.append(.shift(shift))
+            case .filled: if shift.hasAssignedEmployee { entries.append(.shift(shift)) }
+            case .unfilled: if !shift.hasAssignedEmployee { entries.append(.shift(shift)) }
+            }
+        }
+        if filter != .filled {
+            for (index, requirement) in schedule.unfilledRequirements.enumerated() {
+                entries.append(.unfilled(requirement, index: index))
+            }
+        }
+        return entries
     }
 
     // MARK: - Loading

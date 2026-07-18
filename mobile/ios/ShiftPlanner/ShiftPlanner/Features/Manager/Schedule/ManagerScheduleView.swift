@@ -53,11 +53,20 @@ struct ManagerScheduleView: View {
                                 dayCard(day)
                             }
                         } else {
+                            filterPicker
                             ScheduleCalendarSectionView(
-                                items: viewModel.schedule?.sortedShifts ?? [],
+                                items: viewModel.calendarEntries,
                                 sectionTitle: languageManager.text("Shifts", "Смены"),
                                 dateProvider: { $0.date },
-                                rowContent: { shift in shiftRow(shift) }
+                                rowContent: { entry -> AnyView in
+                                    switch entry {
+                                    case .shift(let shift):
+                                        return AnyView(shiftRow(shift))
+                                    case .unfilled(let requirement, _):
+                                        return AnyView(unfilledRow(requirement))
+                                    }
+                                },
+                                filledProvider: { $0.isFilled }
                             )
                         }
 
