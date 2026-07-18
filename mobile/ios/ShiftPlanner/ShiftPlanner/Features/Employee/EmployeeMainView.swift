@@ -3,6 +3,7 @@ import SwiftUI
 struct EmployeeMainView: View {
     let user: AppUser
     let onLogout: () async -> Void
+    let onDeleteAccount: () async -> Void
     let onUserUpdated: (AppUser) -> Void
 
     @State private var isShowingInviteSheet = false
@@ -20,17 +21,27 @@ struct EmployeeMainView: View {
                 }
             }
                 .tabItem {
-                    Label("Availability", systemImage: "clock.badge.checkmark")
-                }
-            
-            EmployeeScheduleView()
-                .tabItem {
-                    Label("Schedule", systemImage: "calendar")
+                    Label(localized("Availability", "Доступность"), systemImage: "clock.badge.checkmark")
                 }
 
-            EmployeeProfileView(user: user, onLogout: onLogout)
+            EmployeeScheduleView(user: user)
                 .tabItem {
-                    Label("Profile", systemImage: "person.crop.circle")
+                    Label(localized("Schedule", "Расписание"), systemImage: "calendar")
+                }
+
+            AbsencesView(user: user)
+                .tabItem {
+                    Label(localized("Absences", "Отсутствия"), systemImage: "figure.walk.departure")
+                }
+
+            MyReportView()
+                .tabItem {
+                    Label(localized("Report", "Отчёт"), systemImage: "chart.bar")
+                }
+
+            EmployeeProfileView(user: user, onLogout: onLogout, onDeleteAccount: onDeleteAccount)
+                .tabItem {
+                    Label(localized("Profile", "Профиль"), systemImage: "person.crop.circle")
                 }
         }
         .sheet(isPresented: $isShowingInviteSheet) {
