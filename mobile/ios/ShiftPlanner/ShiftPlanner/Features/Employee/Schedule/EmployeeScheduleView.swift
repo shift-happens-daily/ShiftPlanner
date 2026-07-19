@@ -4,6 +4,7 @@ struct EmployeeScheduleView: View {
     @EnvironmentObject private var themeManager: ThemeManager
     @EnvironmentObject private var languageManager: LanguageManager
     @StateObject private var viewModel: EmployeeScheduleViewModel
+    @State private var exchangeShift: AppScheduledShift?
 
     init(user: AppUser) {
         _viewModel = StateObject(wrappedValue: EmployeeScheduleViewModel(user: user))
@@ -46,6 +47,27 @@ struct EmployeeScheduleView: View {
             .navigationTitle(languageManager.text("Schedule", "Расписание"))
             .navigationBarTitleDisplayMode(.inline)
             .task { await viewModel.loadScheduleIfNeeded() }
+            .sheet(item: $exchangeShift) { shift in
+                RequestExchangeSheet(
+                    shift: shift,
+                    viewModel: viewModel,
+                    onClose: { exchangeShift = nil }
+                )
+                .environmentObject(themeManager)
+                .environmentObject(languageManager)
+            }
+            .alert(
+                languageManager.text("Request sent", "Запрос отправлен"),
+                isPresented: Binding(
+                    get: { viewModel.exchangeMessage != nil },
+                    set: { if !$0 { viewModel.exchangeMessage = nil } }
+                ),
+                presenting: viewModel.exchangeMessage
+            ) { _ in
+                Button("OK", role: .cancel) { viewModel.exchangeMessage = nil }
+            } message: { message in
+                Text(message)
+            }
         }
     }
 
@@ -60,13 +82,92 @@ struct EmployeeScheduleView: View {
                     .foregroundStyle(themeManager.selectedTheme.secondaryTextColor)
             }
             Spacer()
+            Image(systemName: "arrow.left.arrow.right")
+                .font(.footnote)
+                .foregroundStyle(themeManager.selectedTheme.accentColor)
         }
         .padding(12)
         .background(themeManager.selectedTheme.cardTint)
         .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .contentShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .onTapGesture { exchangeShift = shift }
     }
 
     private func minutes(_ value: Int) -> String {
         String(format: "%02d:%02d", value / 60, value % 60)
+    }
+}
+
+// MARK: - Request exchange sheet
+
+private struct RequestExchangeSheet: View {
+    @EnvironmentObject private var languageManager: LanguageManager
+    @EnvironmentObject private var themeManager: ThemeManager
+
+    let shift: AppScheduledShift
+    @ObservedObject var viewModel: EmployeeScheduleViewModel
+    let onClose: () -> Void
+
+    @State private var note = ""
+    @State private var isSending = false
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                Section(languageManager.text("Shift", "Смена")) {
+                    Text("\(Self.dateLabel(shift.date, locale: languageManager.locale)) · \(Self.time(shift.startMinutes)) – \(Self.time(shift.endMinutes))")
+                        .font(.subheadline.weight(.semibold))
+                    Text(shift.positionName)
+                        .foregroundStyle(themeManager.selectedTheme.secondaryTextColor)
+                }
+
+                Section(languageManager.text("Reason", "Причина")) {
+                    TextField(
+                        languageManager.text("Why do you want to swap this shift?", "Почему хотите поменять смену?"),
+                        text: $note
+                    )
+                }
+
+                Section {
+                    Button {
+                        Task {
+                            isSending = true
+                            await viewModel.requestExchange(
+                                shiftId: shift.id,
+                                note: note.trimmingCharacters(in: .whitespacesAndNewlines)
+                            )
+                            isSending = false
+                            onClose()
+                        }
+                    } label: {
+                        if isSending {
+                            ProgressView().frame(maxWidth: .infinity)
+                        } else {
+                            Text(languageManager.text("Send request", "Отправить запрос"))
+                                .frame(maxWidth: .infinity)
+                        }
+                    }
+                    .disabled(isSending || note.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                }
+            }
+            .navigationTitle(languageManager.text("Request exchange", "Запрос на обмен"))
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button(languageManager.text("Cancel", "Отмена")) { onClose() }
+                }
+            }
+        }
+    }
+
+    private static func time(_ minutes: Int) -> String {
+        String(format: "%02d:%02d", minutes / 60, minutes % 60)
+    }
+
+    private static func dateLabel(_ date: Date, locale: Locale) -> String {
+        let formatter = DateFormatter()
+        formatter.locale = locale
+        formatter.dateFormat = "EEE d MMM"
+        return formatter.string(from: date)
     }
 }
