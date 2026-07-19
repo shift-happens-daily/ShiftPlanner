@@ -22,6 +22,7 @@ import androidx.compose.material.icons.filled.ChevronLeft
 import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material.icons.filled.CalendarMonth
 import androidx.compose.material.icons.filled.List
+import androidx.compose.material.icons.filled.Notifications
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.SwapHoriz
 import androidx.compose.material3.Button
@@ -70,7 +71,8 @@ import androidx.compose.runtime.LaunchedEffect
 @Composable
 fun MyScheduleScreen(
     user: AppUser,
-    viewModel: MyScheduleViewModel
+    viewModel: MyScheduleViewModel,
+    onNotificationsClick: (() -> Unit)? = null
 ) {
     val state by viewModel.uiState.collectAsState()
 
@@ -95,6 +97,11 @@ fun MyScheduleScreen(
             TopAppBar(
                 title = { Text(stringResource(R.string.mysch_title)) },
                 actions = {
+                    if (onNotificationsClick != null) {
+                        IconButton(onClick = onNotificationsClick) {
+                            Icon(Icons.Default.Notifications, contentDescription = stringResource(R.string.nav_notifications))
+                        }
+                    }
                     IconButton(
                         onClick = { monthMode = false },
                         colors = IconButtonDefaults.iconButtonColors(

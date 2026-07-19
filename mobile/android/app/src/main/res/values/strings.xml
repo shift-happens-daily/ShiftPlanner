@@ -394,4 +394,37 @@
     <string name="req_import_xlsx">Import from Excel</string>
     <string name="req_import_done_title">Import finished</string>
     <string name="req_import_created">Imported %1$d requirements.</string>
+
+    <!-- Notifications (employee panel + local push) -->
+    <string name="emp_notif_schedule_section">Schedule</string>
+    <string name="emp_notif_schedule_published">Schedule published for %1$s</string>
+    <string name="emp_notif_schedule_published_nodate">A new schedule was published</string>
+    <string name="emp_notif_no_schedule">No published schedule yet.</string>
+    <string name="emp_notif_shifts_section">Your shifts</string>
+    <string name="emp_notif_shifts_count">Shifts assigned: %1$d</string>
+    <string name="emp_notif_no_shifts">No upcoming shifts.</string>
+    <string name="emp_notif_timeoff_section">Time off</string>
+    <string name="emp_notif_no_timeoff">No time-off requests.</string>
+    <string name="emp_notif_timeoff_submitted">Request sent</string>
+    <string name="emp_notif_timeoff_approved">Approved</string>
+    <string name="emp_notif_timeoff_rejected">Rejected</string>
+    <string name="emp_notif_company_section">Company</string>
+    <string name="emp_notif_company_joined">You\'re in company: %1$s</string>
+    <string name="emp_notif_company_none">You\'re not in a company yet.</string>
+    <string name="notif_remove">Remove</string>
+    <string name="notif_channel_name">Updates</string>
+    <string name="notif_channel_desc">Schedule, shift and request notifications</string>
+    <string name="notif_push_schedule_title">Schedule published</string>
+    <string name="notif_push_schedule_body">Schedule published for %1$s</string>
+    <string name="notif_push_schedule_body_nodate">A new schedule was published</string>
+    <string name="notif_push_shifts_title">New shifts</string>
+    <string name="notif_push_shifts_body">You\'ve been assigned %1$d shift(s)</string>
+    <string name="notif_push_exchange_title">Exchange requests</string>
+    <string name="notif_push_exchange_body">%1$d new exchange request(s)</string>
+    <string name="notif_push_emp_req_title">New employees</string>
+    <string name="notif_push_emp_req_body">%1$d new join request(s)</string>
+    <string name="notif_push_mgr_req_title">New managers</string>
+    <string name="notif_push_mgr_req_body">%1$d new manager request(s)</string>
+    <string name="notif_push_timeoff_title">Time off</string>
+    <string name="notif_push_timeoff_body">%1$d new time-off request(s)</string>
 </resources>

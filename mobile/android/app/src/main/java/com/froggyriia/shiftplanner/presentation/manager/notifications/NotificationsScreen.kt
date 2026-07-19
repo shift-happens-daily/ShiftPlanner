@@ -31,6 +31,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.froggyriia.shiftplanner.R
+import com.froggyriia.shiftplanner.domain.model.AppAbsenceStatus
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -80,9 +81,26 @@ fun NotificationsScreen(viewModel: NotificationsViewModel, onBack: (() -> Unit)?
                 }
             }
 
-            // ── Time off (scaffold — no backend approval flow yet) ──
+            // ── Time off ──
             item { SectionHeader(stringResource(R.string.notif_timeoff)) }
-            item { EmptyRow(stringResource(R.string.notif_no_timeoff)) }
+            if (state.timeOff.isEmpty()) {
+                item { EmptyRow(stringResource(R.string.notif_no_timeoff)) }
+            } else {
+                items(state.timeOff, key = { "off_${it.employeeId}_${it.absence.id}" }) { item ->
+                    val statusLabel = when (item.absence.status) {
+                        AppAbsenceStatus.APPROVED -> stringResource(R.string.emp_notif_timeoff_approved)
+                        AppAbsenceStatus.REJECTED -> stringResource(R.string.emp_notif_timeoff_rejected)
+                        else -> stringResource(R.string.emp_notif_timeoff_submitted)
+                    }
+                    TimeOffCard(
+                        title = item.employeeName,
+                        subtitle = "${item.absence.absenceType.displayName} · ${item.absence.startDate} – ${item.absence.endDate}",
+                        status = statusLabel,
+                        removeLabel = stringResource(R.string.notif_remove),
+                        onRemove = { viewModel.deleteTimeOff(item) }
+                    )
+                }
+            }
 
             // ── New employees ──
             item { SectionHeader(stringResource(R.string.notif_new_employees)) }
@@ -173,6 +191,34 @@ private fun RequestCard(
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 TextButton(onClick = onAccept) { Text(acceptLabel) }
                 OutlinedButton(onClick = onDecline) { Text(declineLabel) }
+            }
+        }
+    }
+}
+
+@Composable
+private fun TimeOffCard(
+    title: String,
+    subtitle: String,
+    status: String,
+    removeLabel: String,
+    onRemove: () -> Unit
+) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
+    ) {
+        Column(
+            Modifier
+                .fillMaxWidth()
+                .padding(14.dp),
+            verticalArrangement = Arrangement.spacedBy(6.dp)
+        ) {
+            Text(title, style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.SemiBold)
+            Text(subtitle, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text(status, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary)
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                OutlinedButton(onClick = onRemove) { Text(removeLabel) }
             }
         }
     }

@@ -81,6 +81,8 @@ import com.froggyriia.shiftplanner.presentation.manager.employees.EmployeesScree
 import com.froggyriia.shiftplanner.presentation.manager.employees.EmployeesViewModel
 import com.froggyriia.shiftplanner.presentation.manager.notifications.NotificationsScreen
 import com.froggyriia.shiftplanner.presentation.manager.notifications.NotificationsViewModel
+import com.froggyriia.shiftplanner.presentation.employee.notifications.EmployeeNotificationsScreen
+import com.froggyriia.shiftplanner.presentation.employee.notifications.EmployeeNotificationsViewModel
 import com.froggyriia.shiftplanner.presentation.manager.reports.ReportsScreen
 import com.froggyriia.shiftplanner.presentation.manager.reports.ReportsViewModel
 import com.froggyriia.shiftplanner.presentation.manager.requirements.RequirementsScreen
@@ -156,7 +158,8 @@ private fun ManagerShell(
                     @Suppress("UNCHECKED_CAST")
                     return NotificationsViewModel(
                         appContainer.scheduleRepository,
-                        appContainer.employeeManagementRepository(user.company?.id)
+                        appContainer.employeeManagementRepository(user.company?.id),
+                        appContainer.absenceRepository
                     ) as T
                 }
             }
@@ -303,6 +306,23 @@ private fun EmployeeShell(
             }
         }
     )
+    var showNotifications by rememberSaveable { mutableStateOf(false) }
+
+    val notificationsVm: EmployeeNotificationsViewModel = viewModel(
+        key = "employee_notifications_${user.employeeId}",
+        factory = remember(user.employeeId, user.company?.name) {
+            object : ViewModelProvider.Factory {
+                override fun <T : ViewModel> create(modelClass: Class<T>): T {
+                    @Suppress("UNCHECKED_CAST")
+                    return EmployeeNotificationsViewModel(
+                        appContainer.scheduleRepository,
+                        appContainer.absenceRepository,
+                        user.company?.name
+                    ) as T
+                }
+            }
+        }
+    )
 
     Scaffold(
         bottomBar = {
@@ -320,6 +340,12 @@ private fun EmployeeShell(
         }
     ) { padding ->
         Box(modifier = Modifier.padding(padding)) {
+            if (showNotifications) {
+                EmployeeNotificationsScreen(
+                    viewModel = notificationsVm,
+                    onBack = { showNotifications = false }
+                )
+            } else {
             when (selectedTab) {
                 EmployeeTab.AVAILABILITY -> {
                     if (!user.hasCompany || user.employeeId == null) {
@@ -365,7 +391,14 @@ private fun EmployeeShell(
                                 }
                             }
                         )
-                        MyScheduleScreen(user = user, viewModel = myScheduleVm)
+                        MyScheduleScreen(
+                            user = user,
+                            viewModel = myScheduleVm,
+                            onNotificationsClick = {
+                                notificationsVm.load()
+                                showNotifications = true
+                            }
+                        )
                     }
                 }
                 EmployeeTab.ABSENCES -> {
@@ -421,6 +454,7 @@ private fun EmployeeShell(
                     onLogout = onLogout,
                     onDeleteAccount = onDeleteAccount
                 )
+            }
             }
         }
     }

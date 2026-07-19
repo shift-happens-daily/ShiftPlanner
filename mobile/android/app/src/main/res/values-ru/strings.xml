@@ -396,4 +396,37 @@
     <string name="req_import_xlsx">Импорт из Excel</string>
     <string name="req_import_done_title">Импорт завершён</string>
     <string name="req_import_created">Импортировано требований: %1$d.</string>
+
+    <!-- Notifications (employee panel + local push) -->
+    <string name="emp_notif_schedule_section">Расписание</string>
+    <string name="emp_notif_schedule_published">Опубликовано расписание на %1$s</string>
+    <string name="emp_notif_schedule_published_nodate">Опубликовано новое расписание</string>
+    <string name="emp_notif_no_schedule">Опубликованного расписания пока нет.</string>
+    <string name="emp_notif_shifts_section">Ваши смены</string>
+    <string name="emp_notif_shifts_count">Назначено смен: %1$d</string>
+    <string name="emp_notif_no_shifts">Предстоящих смен нет.</string>
+    <string name="emp_notif_timeoff_section">Отгулы</string>
+    <string name="emp_notif_no_timeoff">Заявок на отгул нет.</string>
+    <string name="emp_notif_timeoff_submitted">Заявка отправлена</string>
+    <string name="emp_notif_timeoff_approved">Одобрено</string>
+    <string name="emp_notif_timeoff_rejected">Отклонено</string>
+    <string name="emp_notif_company_section">Компания</string>
+    <string name="emp_notif_company_joined">Вы в компании: %1$s</string>
+    <string name="emp_notif_company_none">Вы пока не состоите в компании.</string>
+    <string name="notif_remove">Удалить</string>
+    <string name="notif_channel_name">Обновления</string>
+    <string name="notif_channel_desc">Уведомления о расписании, сменах и заявках</string>
+    <string name="notif_push_schedule_title">Расписание опубликовано</string>
+    <string name="notif_push_schedule_body">Опубликовано расписание на %1$s</string>
+    <string name="notif_push_schedule_body_nodate">Опубликовано новое расписание</string>
+    <string name="notif_push_shifts_title">Новые смены</string>
+    <string name="notif_push_shifts_body">Вам назначено смен: %1$d</string>
+    <string name="notif_push_exchange_title">Запросы на обмен</string>
+    <string name="notif_push_exchange_body">Новых запросов на обмен: %1$d</string>
+    <string name="notif_push_emp_req_title">Новые сотрудники</string>
+    <string name="notif_push_emp_req_body">Новых заявок на вступление: %1$d</string>
+    <string name="notif_push_mgr_req_title">Новые менеджеры</string>
+    <string name="notif_push_mgr_req_body">Новых заявок менеджеров: %1$d</string>
+    <string name="notif_push_timeoff_title">Отгулы</string>
+    <string name="notif_push_timeoff_body">Новых заявок на отгул: %1$d</string>
 </resources>
