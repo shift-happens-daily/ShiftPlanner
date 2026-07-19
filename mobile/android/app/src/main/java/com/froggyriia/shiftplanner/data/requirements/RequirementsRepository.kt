@@ -2,6 +2,7 @@ package com.froggyriia.shiftplanner.data.requirements
 
 import com.froggyriia.shiftplanner.domain.model.RequirementOccurrence
 import com.froggyriia.shiftplanner.domain.model.RequirementPositionOption
+import com.froggyriia.shiftplanner.domain.model.RequirementsImportResult
 import com.froggyriia.shiftplanner.domain.model.RequirementTemplateDraft
 
 interface RequirementsRepository {
