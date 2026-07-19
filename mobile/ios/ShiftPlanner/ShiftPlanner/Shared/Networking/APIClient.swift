@@ -23,9 +23,15 @@ final class APIClient {
         path: String,
         method: String,
         body: Data? = nil,
+        queryItems: [URLQueryItem]? = nil,
         requiresAuthorization: Bool = false
     ) -> URLRequest {
-        let url = baseURL.appendingPathComponent(path)
+        var url = baseURL.appendingPathComponent(path)
+        if let queryItems, !queryItems.isEmpty,
+           var components = URLComponents(url: url, resolvingAgainstBaseURL: false) {
+            components.queryItems = queryItems
+            if let built = components.url { url = built }
+        }
         var request = URLRequest(url: url)
         request.httpMethod = method
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")

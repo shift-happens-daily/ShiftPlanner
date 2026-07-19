@@ -256,6 +256,20 @@ final class APIScheduleRepository: ScheduleRepository {
         try await apiClient.sendWithoutResponseBody(request)
     }
 
+    func deleteScheduleWeek(branchId: Int, startDate: Date, endDate: Date) async throws {
+        let request = apiClient.makeRequest(
+            path: "schedule/week",
+            method: "DELETE",
+            queryItems: [
+                URLQueryItem(name: "branch_id", value: String(branchId)),
+                URLQueryItem(name: "start_date", value: Self.dateFormatter.string(from: startDate)),
+                URLQueryItem(name: "end_date", value: Self.dateFormatter.string(from: endDate))
+            ],
+            requiresAuthorization: true
+        )
+        try await apiClient.sendWithoutResponseBody(request)
+    }
+
     func deleteShift(scheduleId: Int, shiftId: Int) async throws -> AppSchedule {
         let request = apiClient.makeRequest(
             path: "schedule/\(scheduleId)/shifts/\(shiftId)",

@@ -27,6 +27,7 @@ struct ManagerScheduleView: View {
     @State private var activeSheet: ScheduleSheet? = nil
     @State private var showPublishConfirm = false
     @State private var showDeleteConfirm = false
+    @State private var showDeleteWeekConfirm = false
     @State private var presentationMode: SchedulePresentationMode = .list
 
     init(user: AppUser) {
@@ -105,8 +106,19 @@ struct ManagerScheduleView: View {
                 }
 
                 ToolbarItem(placement: .topBarTrailing) {
-                    Button(role: .destructive) {
-                        showDeleteConfirm = true
+                    Menu {
+                        if viewModel.canDeleteWeek {
+                            Button(role: .destructive) {
+                                showDeleteWeekConfirm = true
+                            } label: {
+                                Label(languageManager.text("Delete this week", "Удалить эту неделю"), systemImage: "calendar.badge.minus")
+                            }
+                        }
+                        Button(role: .destructive) {
+                            showDeleteConfirm = true
+                        } label: {
+                            Label(languageManager.text("Delete entire schedule", "Удалить всё расписание"), systemImage: "trash")
+                        }
                     } label: {
                         Image(systemName: "trash")
                     }
@@ -123,6 +135,20 @@ struct ManagerScheduleView: View {
                         Text(languageManager.text(
                             "This removes the whole schedule for the period.",
                             "Это удалит всё расписание за период."
+                        ))
+                    }
+                    .alert(
+                        languageManager.text("Delete this week?", "Удалить эту неделю?"),
+                        isPresented: $showDeleteWeekConfirm
+                    ) {
+                        Button(languageManager.text("Delete", "Удалить"), role: .destructive) {
+                            Task { await viewModel.deleteScheduleWeek() }
+                        }
+                        Button(languageManager.text("Cancel", "Отмена"), role: .cancel) {}
+                    } message: {
+                        Text(languageManager.text(
+                            "This removes only the shifts for the selected week.",
+                            "Будут удалены только смены за выбранную неделю."
                         ))
                     }
                 }
