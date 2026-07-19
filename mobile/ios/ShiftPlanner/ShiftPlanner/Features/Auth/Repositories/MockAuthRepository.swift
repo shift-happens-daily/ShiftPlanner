@@ -53,7 +53,7 @@ final class MockAuthRepository: AuthRepository {
         password: String,
         name: String,
         role: UserRole
-    ) async throws -> AppUser {
+    ) async throws -> SignUpOutcome {
         try await Task.sleep(nanoseconds: 700_000_000)
 
         try validateSignUp(
@@ -72,7 +72,11 @@ final class MockAuthRepository: AuthRepository {
         )
 
         currentUser = user
-        return user
+        return .loggedIn(user)
+    }
+
+    func resendVerification(email: String) async throws {
+        try await Task.sleep(nanoseconds: 300_000_000)
     }
 
     func logout() async {

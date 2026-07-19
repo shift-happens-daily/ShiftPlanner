@@ -18,4 +18,5 @@ protocol CompanyRepository {
 
     func previewInvite(code: String) async throws -> AppCompanyInvitePreview
     func joinCompany(inviteCode: String) async throws -> AppUser
+    func joinAsManager(inviteCode: String) async throws -> AppUser
 }

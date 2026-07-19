@@ -18,7 +18,22 @@ struct CompanyView: View {
         NavigationStack {
             ScrollView {
                 VStack(alignment: .leading, spacing: 20) {
-                    if let company = displayedCompany {
+                    if user.isManagerPending {
+                        VStack(alignment: .leading, spacing: 12) {
+                            Text(localized("Waiting for approval", "Ожидание одобрения"))
+                                .font(.title3)
+                                .bold()
+                                .foregroundStyle(themeManager.selectedTheme.primaryTextColor)
+                            Text(localized(
+                                "Your request to join the company has been sent. A manager needs to approve it before you can access the company.",
+                                "Ваш запрос на присоединение к компании отправлен. Менеджер должен одобрить его, прежде чем вы получите доступ."
+                            ))
+                                .foregroundStyle(themeManager.selectedTheme.secondaryTextColor)
+                        }
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding()
+                        .themeCard()
+                    } else if let company = displayedCompany {
                         VStack(alignment: .leading, spacing: 12) {
                             Text(company.name)
                                 .font(.title2)

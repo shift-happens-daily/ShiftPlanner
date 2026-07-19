@@ -50,6 +50,8 @@ struct RegisterResponse: Codable {
     let email: String
     let role: UserRole
     let employeeId: Int?
+    let emailVerificationRequired: Bool?
+    let detail: String?
 
     enum CodingKeys: String, CodingKey {
         case id
@@ -57,7 +59,13 @@ struct RegisterResponse: Codable {
         case email
         case role
         case employeeId = "employee_id"
+        case emailVerificationRequired = "email_verification_required"
+        case detail
     }
+}
+
+struct EmailVerificationResendRequest: Codable {
+    let email: String
 }
 
 struct CurrentUserResponse: Codable {
@@ -68,6 +76,7 @@ struct CurrentUserResponse: Codable {
     let role: UserRole
     let employeeId: Int?
     let company: CurrentUserCompanyResponse?
+    let managerStatus: String?
 
     enum CodingKeys: String, CodingKey {
         case id
@@ -77,6 +86,7 @@ struct CurrentUserResponse: Codable {
         case role
         case employeeId = "employee_id"
         case company
+        case managerStatus = "manager_status"
     }
 }
 
@@ -107,7 +117,8 @@ extension CurrentUserResponse {
                     name: $0.name,
                     inviteCode: $0.inviteCode
                 )
-            }
+            },
+            managerStatus: managerStatus
         )
     }
 }

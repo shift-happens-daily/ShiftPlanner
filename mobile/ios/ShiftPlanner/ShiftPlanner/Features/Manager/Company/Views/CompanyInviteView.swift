@@ -95,12 +95,32 @@ struct CompanyInviteView: View {
                         }
                     } else {
                         Section {
+                            Button {
+                                Task {
+                                    await viewModel.joinAsManager()
+                                    if let joinedUser = viewModel.joinedUser {
+                                        onUserJoined?(joinedUser)
+                                        dismiss()
+                                    }
+                                }
+                            } label: {
+                                if viewModel.isLoading {
+                                    ProgressView()
+                                        .tint(themeManager.selectedTheme.primaryActionTextColor)
+                                } else {
+                                    Text(localized("Send join request", "Отправить запрос"))
+                                }
+                            }
+                            .buttonStyle(.plain)
+                            .themePrimaryAction(isEnabled: !viewModel.isLoading)
+                            .disabled(viewModel.isLoading)
+
                             Text(localized(
-                                "Manager join by invite code will be enabled once the backend supports multi-manager membership.",
-                                "Присоединение менеджера по коду станет доступно, когда бэкенд поддержит несколько менеджеров."
+                                "An existing manager needs to approve your request before you can access the company.",
+                                "Действующий менеджер должен одобрить запрос, прежде чем вы получите доступ к компании."
                             ))
                                 .font(.footnote)
-                                .foregroundStyle(.secondary)
+                                .foregroundStyle(themeManager.selectedTheme.secondaryTextColor)
                         }
                     }
                 }

@@ -99,6 +99,14 @@ struct CompanyJoinRequest: Codable {
     }
 }
 
+struct CompanyJoinManagerRequest: Codable {
+    let inviteCode: String
+
+    enum CodingKeys: String, CodingKey {
+        case inviteCode = "invite_code"
+    }
+}
+
 extension CompanyResponse {
     func asAppCompany() -> AppCompany {
         AppCompany(id: id, name: name, inviteCode: inviteCode, address: address)

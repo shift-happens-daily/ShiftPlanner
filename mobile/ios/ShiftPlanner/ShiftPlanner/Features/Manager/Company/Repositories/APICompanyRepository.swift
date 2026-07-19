@@ -156,4 +156,18 @@ final class APICompanyRepository: CompanyRepository {
         let response = try await apiClient.send(request, as: CurrentUserResponse.self)
         return response.asAppUser()
     }
+
+    func joinAsManager(inviteCode: String) async throws -> AppUser {
+        let body = try JSONEncoder().encode(
+            CompanyJoinManagerRequest(inviteCode: inviteCode)
+        )
+        let request = apiClient.makeRequest(
+            path: "companies/join-as-manager",
+            method: "POST",
+            body: body,
+            requiresAuthorization: true
+        )
+        let response = try await apiClient.send(request, as: CurrentUserResponse.self)
+        return response.asAppUser()
+    }
 }

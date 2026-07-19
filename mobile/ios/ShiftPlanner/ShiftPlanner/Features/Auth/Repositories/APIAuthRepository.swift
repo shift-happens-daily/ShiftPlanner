@@ -45,7 +45,7 @@ final class APIAuthRepository: AuthRepository {
         password: String,
         name: String,
         role: UserRole
-    ) async throws -> AppUser {
+    ) async throws -> SignUpOutcome {
         let requestBody = try JSONEncoder().encode(
             RegisterRequest(
                 fullName: name,
@@ -60,13 +60,29 @@ final class APIAuthRepository: AuthRepository {
             body: requestBody
         )
 
-        _ = try await apiClient.send(request, as: RegisterResponse.self)
+        let response = try await apiClient.send(request, as: RegisterResponse.self)
+
+        // Backend requires email confirmation before login is allowed.
+        if response.emailVerificationRequired == true {
+            return .verificationRequired(email: email, message: response.detail)
+        }
 
         do {
-            return try await login(email: email, password: password)
+            let user = try await login(email: email, password: password)
+            return .loggedIn(user)
         } catch {
             throw AuthRepositoryError.accountCreatedButLoginFailed
         }
+    }
+
+    func resendVerification(email: String) async throws {
+        let body = try JSONEncoder().encode(EmailVerificationResendRequest(email: email))
+        let request = apiClient.makeRequest(
+            path: "auth/resend-verification",
+            method: "POST",
+            body: body
+        )
+        try await apiClient.sendWithoutResponseBody(request)
     }
 
     func logout() async {

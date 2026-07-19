@@ -10,6 +10,9 @@ struct AppUser: Identifiable, Codable {
     let role: UserRole
     let employeeId: Int?
     let company: AppCompanySummary?
+    /// "pending" | "active" | nil — a manager who requested to join a company
+    /// stays "pending" until an existing manager approves the request.
+    let managerStatus: String?
 
     init(
         id: String,
@@ -18,7 +21,8 @@ struct AppUser: Identifiable, Codable {
         name: String,
         role: UserRole,
         employeeId: Int?,
-        company: AppCompanySummary?
+        company: AppCompanySummary?,
+        managerStatus: String? = nil
     ) {
         self.id = id
         self.publicId = publicId
@@ -27,10 +31,16 @@ struct AppUser: Identifiable, Codable {
         self.role = role
         self.employeeId = employeeId
         self.company = company
+        self.managerStatus = managerStatus
     }
 
     var hasCompany: Bool {
         company != nil
+    }
+
+    /// A manager who requested to join a company and is awaiting approval.
+    var isManagerPending: Bool {
+        role == .manager && company == nil && managerStatus == "pending"
     }
 
     /// Public ID when present, otherwise the numeric id — mirrors Android's

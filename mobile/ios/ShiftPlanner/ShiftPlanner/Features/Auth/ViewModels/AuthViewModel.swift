@@ -13,6 +13,9 @@ final class AuthViewModel: ObservableObject {
     @Published var currentUser: AppUser?
     @Published var isLoading = false
     @Published var errorMessage: String?
+    /// Set after sign-up when the backend requires the user to confirm their
+    /// email before they can log in.
+    @Published var emailVerificationPending = false
 
     var passwordsMatch: Bool {
         !name.isEmpty &&
@@ -31,6 +34,7 @@ final class AuthViewModel: ObservableObject {
     func login() async {
         isLoading = true
         errorMessage = nil
+        emailVerificationPending = false
 
         do {
             let user = try await repository.login(
@@ -53,17 +57,38 @@ final class AuthViewModel: ObservableObject {
 
         isLoading = true
         errorMessage = nil
-
+        emailVerificationPending = false
 
         do {
-            let user = try await repository.signUp(
+            let outcome = try await repository.signUp(
                 email: email.trimmingCharacters(in: .whitespacesAndNewlines),
                 password: password,
                 name: name.trimmingCharacters(in: .whitespacesAndNewlines),
                 role: selectedRole)
 
-            currentUser = user
+            switch outcome {
+            case .loggedIn(let user):
+                currentUser = user
+            case .verificationRequired:
+                emailVerificationPending = true
+            }
 
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+
+        isLoading = false
+    }
+
+    /// Re-sends the email confirmation link to the address being registered.
+    func resendVerification() async {
+        isLoading = true
+        errorMessage = nil
+
+        do {
+            try await repository.resendVerification(
+                email: email.trimmingCharacters(in: .whitespacesAndNewlines)
+            )
         } catch {
             errorMessage = error.localizedDescription
         }
@@ -106,5 +131,6 @@ final class AuthViewModel: ObservableObject {
         name = ""
         selectedRole = .employee
         errorMessage = nil
+        emailVerificationPending = false
     }
 }
