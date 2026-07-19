@@ -1,4 +1,5 @@
 import SwiftUI
+import UniformTypeIdentifiers
 
 struct RequirementsView: View {
     @EnvironmentObject private var themeManager: ThemeManager
@@ -6,6 +7,7 @@ struct RequirementsView: View {
     @StateObject private var viewModel: RequirementsViewModel
 
     @State private var isShowingCopySheet = false
+    @State private var showImporter = false
 
     init(user: AppUser) {
         _viewModel = StateObject(wrappedValue: RequirementsViewModel(user: user))
@@ -70,11 +72,68 @@ struct RequirementsView: View {
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
                     Button {
+                        showImporter = true
+                    } label: {
+                        Image(systemName: "square.and.arrow.down")
+                    }
+                    .disabled(!viewModel.canManageRequirements || viewModel.isImporting)
+                }
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button {
                         viewModel.startCreating()
                     } label: {
                         Image(systemName: "plus")
                     }
                     .disabled(!viewModel.canManageRequirements)
+                }
+            }
+            .fileImporter(
+                isPresented: $showImporter,
+                allowedContentTypes: [.spreadsheet],
+                allowsMultipleSelection: false
+            ) { result in
+                switch result {
+                case .success(let urls):
+                    guard let url = urls.first else { return }
+                    Task { @MainActor in
+                        let didAccess = url.startAccessingSecurityScopedResource()
+                        defer { if didAccess { url.stopAccessingSecurityScopedResource() } }
+                        do {
+                            let data = try Data(contentsOf: url)
+                            await viewModel.importRequirements(fileData: data, fileName: url.lastPathComponent)
+                        } catch {
+                            viewModel.errorMessage = error.localizedDescription
+                        }
+                    }
+                case .failure(let error):
+                    let message = error.localizedDescription
+                    Task { @MainActor in viewModel.errorMessage = message }
+                }
+            }
+            .alert(
+                languageManager.text("Import finished", "Импорт завершён"),
+                isPresented: Binding(
+                    get: { viewModel.importResult != nil },
+                    set: { if !$0 { viewModel.importResult = nil } }
+                ),
+                presenting: viewModel.importResult
+            ) { _ in
+                Button("OK", role: .cancel) { viewModel.importResult = nil }
+            } message: { result in
+                if result.errors.isEmpty {
+                    Text(languageManager.text(
+                        "Imported \(result.createdCount) requirements.",
+                        "Импортировано требований: \(result.createdCount)."
+                    ))
+                } else {
+                    Text(
+                        languageManager.text(
+                            "Imported \(result.createdCount). \(result.errors.count) rows had errors:",
+                            "Импортировано: \(result.createdCount). Строк с ошибками: \(result.errors.count):"
+                        )
+                        + "\n"
+                        + result.errors.prefix(5).map { "• \($0.row): \($0.message)" }.joined(separator: "\n")
+                    )
                 }
             }
             .task { await viewModel.loadInitialData() }

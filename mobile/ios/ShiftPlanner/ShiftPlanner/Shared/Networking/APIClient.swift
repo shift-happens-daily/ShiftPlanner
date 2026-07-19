@@ -44,6 +44,35 @@ final class APIClient {
         return request
     }
 
+    /// Builds a multipart/form-data POST carrying a single file part.
+    func makeMultipartRequest(
+        path: String,
+        fileData: Data,
+        fileName: String,
+        fieldName: String = "file",
+        mimeType: String = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        requiresAuthorization: Bool = true
+    ) -> URLRequest {
+        let url = baseURL.appendingPathComponent(path)
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+
+        let boundary = "Boundary-\(UUID().uuidString)"
+        request.setValue("multipart/form-data; boundary=\(boundary)", forHTTPHeaderField: "Content-Type")
+        if requiresAuthorization, let accessToken {
+            request.setValue("Bearer \(accessToken)", forHTTPHeaderField: "Authorization")
+        }
+
+        var body = Data()
+        body.append("--\(boundary)\r\n".data(using: .utf8)!)
+        body.append("Content-Disposition: form-data; name=\"\(fieldName)\"; filename=\"\(fileName)\"\r\n".data(using: .utf8)!)
+        body.append("Content-Type: \(mimeType)\r\n\r\n".data(using: .utf8)!)
+        body.append(fileData)
+        body.append("\r\n--\(boundary)--\r\n".data(using: .utf8)!)
+        request.httpBody = body
+        return request
+    }
+
     func send<T: Decodable>(_ request: URLRequest, as type: T.Type) async throws -> T {
         let (data, response) = try await session.data(for: request)
 

@@ -71,3 +71,16 @@ struct RequirementTemplateDraft: Hashable {
     let startSlot: Int
     let endSlot: Int
 }
+
+/// One failed row in an xlsx requirements import.
+struct RequirementImportRowError: Identifiable, Equatable {
+    let row: Int
+    let message: String
+    var id: Int { row }
+}
+
+/// Result of importing staffing requirements from an Excel file.
+struct RequirementsImportResult: Equatable {
+    let createdCount: Int
+    let errors: [RequirementImportRowError]
+}

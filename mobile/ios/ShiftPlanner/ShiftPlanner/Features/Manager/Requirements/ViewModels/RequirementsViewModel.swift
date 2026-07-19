@@ -12,6 +12,8 @@ final class RequirementsViewModel: ObservableObject {
     @Published var isSaving = false
     @Published var errorMessage: String?
     @Published var statusMessage: String?
+    @Published var isImporting = false
+    @Published var importResult: RequirementsImportResult?
 
     private let repository: RequirementsRepository
     private let hasCompany: Bool
@@ -88,6 +90,24 @@ final class RequirementsViewModel: ObservableObject {
 
         await loadPositionsIfNeeded()
         await loadCurrentMonth(forceRemote: true)
+    }
+
+    func importRequirements(fileData: Data, fileName: String) async {
+        guard hasCompany else {
+            errorMessage = localized("Create or join a company first.", "Сначала создайте компанию или присоединитесь к ней.")
+            return
+        }
+        isImporting = true
+        errorMessage = nil
+        statusMessage = nil
+        do {
+            let result = try await repository.importRequirementsXlsx(fileData: fileData, fileName: fileName)
+            importResult = result
+            await loadCurrentMonth(forceRemote: true)
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+        isImporting = false
     }
 
     func selectWeekday(_ weekday: Int) {

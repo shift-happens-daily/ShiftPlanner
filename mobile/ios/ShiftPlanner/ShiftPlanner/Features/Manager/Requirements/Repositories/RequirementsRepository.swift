@@ -25,4 +25,5 @@ protocol RequirementsRepository {
         templates: [RequirementTemplateDraft]
     ) async throws -> [RequirementOccurrence]
     func deleteRequirement(id: Int) async throws
+    func importRequirementsXlsx(fileData: Data, fileName: String) async throws -> RequirementsImportResult
 }

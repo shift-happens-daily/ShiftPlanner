@@ -126,6 +126,19 @@ final class APIRequirementsRepository: RequirementsRepository {
         return try response.requirements.map(asOccurrence)
     }
 
+    func importRequirementsXlsx(fileData: Data, fileName: String) async throws -> RequirementsImportResult {
+        let request = apiClient.makeMultipartRequest(
+            path: "imports/requirements/xlsx",
+            fileData: fileData,
+            fileName: fileName
+        )
+        let dto = try await apiClient.send(request, as: RequirementsImportResultDTO.self)
+        return RequirementsImportResult(
+            createdCount: dto.createdCount,
+            errors: dto.errors.map { RequirementImportRowError(row: $0.row, message: $0.message) }
+        )
+    }
+
     func deleteRequirement(id: Int) async throws {
         let request = apiClient.makeRequest(
             path: "schedule/requirements/\(id)",

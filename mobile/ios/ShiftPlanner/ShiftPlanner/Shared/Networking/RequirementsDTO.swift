@@ -103,3 +103,18 @@ struct PositionResponseDTO: Codable {
         case companyId = "company_id"
     }
 }
+
+struct RequirementsImportResultDTO: Decodable {
+    let createdCount: Int
+    let errors: [ImportRowErrorDTO]
+
+    enum CodingKeys: String, CodingKey {
+        case createdCount = "created_count"
+        case errors
+    }
+}
+
+struct ImportRowErrorDTO: Decodable {
+    let row: Int
+    let message: String
+}
