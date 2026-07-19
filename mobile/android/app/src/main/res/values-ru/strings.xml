@@ -379,4 +379,21 @@
     <string name="exchange_reason_label">Почему хотите поменять смену?</string>
     <string name="exchange_send">Отправить запрос</string>
     <string name="exchange_sent">Запрос на обмен отправлен. Менеджер его рассмотрит.</string>
+    <string name="emp_manager_added">Запрос менеджеру отправлен.</string>
+    <string name="emp_branches_saved">Филиалы обновлены.</string>
+    <string name="emp_add_manager">Добавить менеджера</string>
+    <string name="emp_add_manager_hint">Введите 16-значный ID другого менеджера, чтобы добавить его в компанию.</string>
+    <string name="emp_add_manager_button">Добавить менеджера</string>
+    <string name="emp_view_calendar">Календарь</string>
+    <string name="emp_make_primary">Сделать основным</string>
+    <string name="emp_primary">Основной</string>
+    <string name="emp_save_branches">Сохранить филиалы</string>
+    <string name="emp_cal_no_shifts">Смен не запланировано.</string>
+    <string name="emp_cal_summary">%1$d смен · %2$s ч</string>
+    <string name="company_delete">Удалить компанию</string>
+    <string name="company_delete_confirm_title">Удалить компанию?</string>
+    <string name="company_delete_confirm_body">Компания и все её данные будут удалены безвозвратно. Это действие нельзя отменить.</string>
+    <string name="req_import_xlsx">Импорт из Excel</string>
+    <string name="req_import_done_title">Импорт завершён</string>
+    <string name="req_import_created">Импортировано требований: %1$d.</string>
 </resources>

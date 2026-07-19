@@ -36,6 +36,11 @@ class ApiCompanyRepository(
         ).toDomain()
     }
 
+    override suspend fun deleteCompany(companyId: Int) = wrap {
+        apiClient.api.deleteCompany(companyId)
+        Unit
+    }
+
     override suspend fun regenerateInviteCode(): AppCompany = wrap {
         apiClient.api.regenerateInviteCode().toDomain()
     }

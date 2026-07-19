@@ -76,3 +76,14 @@ data class ScheduleRequirementBulkResponseDto(
     val createdCount: Int,
     val requirements: List<ScheduleRequirementResponseDto>
 )
+
+data class ImportRowErrorDto(
+    val row: Int,
+    val message: String
+)
+
+data class RequirementsImportResultDto(
+    @SerializedName("created_count")
+    val createdCount: Int = 0,
+    val errors: List<ImportRowErrorDto> = emptyList()
+)

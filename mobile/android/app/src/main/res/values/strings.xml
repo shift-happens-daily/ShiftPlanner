@@ -377,4 +377,21 @@
     <string name="exchange_reason_label">Why do you want to swap this shift?</string>
     <string name="exchange_send">Send request</string>
     <string name="exchange_sent">Exchange request sent. A manager will review it.</string>
+    <string name="emp_manager_added">Manager request sent.</string>
+    <string name="emp_branches_saved">Branches updated.</string>
+    <string name="emp_add_manager">Add manager</string>
+    <string name="emp_add_manager_hint">Enter the 16-character ID of another manager to add them to this company.</string>
+    <string name="emp_add_manager_button">Add manager</string>
+    <string name="emp_view_calendar">Calendar</string>
+    <string name="emp_make_primary">Make primary</string>
+    <string name="emp_primary">Primary</string>
+    <string name="emp_save_branches">Save branches</string>
+    <string name="emp_cal_no_shifts">No shifts scheduled.</string>
+    <string name="emp_cal_summary">%1$d shifts · %2$s h</string>
+    <string name="company_delete">Delete company</string>
+    <string name="company_delete_confirm_title">Delete company?</string>
+    <string name="company_delete_confirm_body">This permanently deletes the company and all its data. This cannot be undone.</string>
+    <string name="req_import_xlsx">Import from Excel</string>
+    <string name="req_import_done_title">Import finished</string>
+    <string name="req_import_created">Imported %1$d requirements.</string>
 </resources>

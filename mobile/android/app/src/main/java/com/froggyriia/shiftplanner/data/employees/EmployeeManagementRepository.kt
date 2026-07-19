@@ -1,7 +1,9 @@
 package com.froggyriia.shiftplanner.data.employees
 
 import com.froggyriia.shiftplanner.domain.model.ManagedBranch
+import com.froggyriia.shiftplanner.domain.model.ManagedBranchAssignment
 import com.froggyriia.shiftplanner.domain.model.ManagedEmployee
+import com.froggyriia.shiftplanner.domain.model.ManagedEmployeeCalendar
 import com.froggyriia.shiftplanner.domain.model.ManagedPosition
 import com.froggyriia.shiftplanner.domain.model.PendingEmployeeRequest
 import com.froggyriia.shiftplanner.domain.model.PendingManagerRequest
@@ -24,6 +26,12 @@ interface EmployeeManagementRepository {
     suspend fun deletePosition(positionId: Int)
 
     suspend fun linkEmployeeByPublicId(publicId: String, branchId: Int?, positionId: Int?): ManagedEmployee
+
+    // ── Multi-branch, calendar, add-manager ───────────────────────────────────
+    suspend fun addManagerByPublicId(publicId: String): PendingManagerRequest
+    suspend fun fetchEmployeeBranches(employeeId: Int): List<ManagedBranchAssignment>
+    suspend fun replaceEmployeeBranches(employeeId: Int, branchIds: List<Int>, primaryBranchId: Int): List<ManagedBranchAssignment>
+    suspend fun fetchEmployeeCalendar(employeeId: Int): ManagedEmployeeCalendar
 
     // ── Work-hours limits ─────────────────────────────────────────────────────
     suspend fun fetchWorkLimits(employeeId: Int): WorkLimits

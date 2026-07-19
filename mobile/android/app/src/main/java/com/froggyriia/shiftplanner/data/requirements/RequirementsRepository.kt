@@ -25,6 +25,7 @@ interface RequirementsRepository {
         endSlot: Int
     ): RequirementOccurrence
     suspend fun deleteRequirement(id: Int)
+    suspend fun importRequirementsXlsx(fileBytes: ByteArray, fileName: String): RequirementsImportResult
     suspend fun createRequirementsBulk(
         startDate: String,
         endDate: String,

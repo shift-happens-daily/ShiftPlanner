@@ -22,6 +22,7 @@ import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Notifications
 import androidx.compose.material.icons.filled.Share
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
@@ -128,7 +129,11 @@ fun CompanyScreen(
         )
         CompanyNavState.Details -> CompanyDetailsContent(
             viewModel = detailsVm,
-            onNotificationsClick = onNotificationsClick
+            onNotificationsClick = onNotificationsClick,
+            onCompanyDeleted = {
+                onUserUpdated(user.copy(company = null))
+                navState = CompanyNavState.Landing
+            }
         )
         else -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
             CircularProgressIndicator()
@@ -286,12 +291,14 @@ private fun ManagerJoinSheet(
 @Composable
 private fun CompanyDetailsContent(
     viewModel: CompanyDetailsViewModel,
-    onNotificationsClick: () -> Unit
+    onNotificationsClick: () -> Unit,
+    onCompanyDeleted: () -> Unit
 ) {
     val state by viewModel.uiState.collectAsState()
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     var didCopy by remember { mutableStateOf(false) }
+    var showDeleteConfirm by remember { mutableStateOf(false) }
     // Branch whose working hours are being edited
     var workingHoursBranch by remember { mutableStateOf<com.froggyriia.shiftplanner.domain.model.AppBranchOption?>(null) }
     val snackbarHostState = remember { SnackbarHostState() }
@@ -443,6 +450,11 @@ private fun CompanyDetailsContent(
                             }
                         }
                     }
+                    OutlinedButton(
+                        onClick = { showDeleteConfirm = true },
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.error)
+                    ) { Text(stringResource(R.string.company_delete)) }
                 } else {
                     // ── Edit form ──
                     OutlinedTextField(
@@ -543,6 +555,23 @@ private fun CompanyDetailsContent(
                 onDismiss = { workingHoursBranch = null }
             )
         }
+    }
+
+    if (showDeleteConfirm) {
+        AlertDialog(
+            onDismissRequest = { showDeleteConfirm = false },
+            title = { Text(stringResource(R.string.company_delete_confirm_title)) },
+            text = { Text(stringResource(R.string.company_delete_confirm_body)) },
+            confirmButton = {
+                TextButton(onClick = {
+                    showDeleteConfirm = false
+                    viewModel.deleteCompany { ok -> if (ok) onCompanyDeleted() }
+                }) { Text(stringResource(R.string.company_delete)) }
+            },
+            dismissButton = {
+                TextButton(onClick = { showDeleteConfirm = false }) { Text(stringResource(R.string.cancel)) }
+            }
+        )
     }
 }
 

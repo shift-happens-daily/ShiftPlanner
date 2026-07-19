@@ -42,3 +42,25 @@ data class WorkLimits(
     val maxHoursPerWeek: Int,
     val maxHoursPerDay: Int
 )
+
+/** One branch an employee is assigned to (multi-branch), with the primary flag. */
+data class ManagedBranchAssignment(
+    val id: Int,
+    val name: String,
+    val isPrimary: Boolean
+)
+
+data class ManagedEmployeeCalendarShift(
+    val date: String,
+    val startMinutes: Int,
+    val endMinutes: Int,
+    val status: String
+)
+
+/** Manager-viewed calendar for one employee. */
+data class ManagedEmployeeCalendar(
+    val employeeName: String,
+    val totalShifts: Int,
+    val totalHours: Double,
+    val shifts: List<ManagedEmployeeCalendarShift>
+)

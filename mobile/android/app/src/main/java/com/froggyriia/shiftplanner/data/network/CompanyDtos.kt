@@ -112,3 +112,8 @@ data class WorkingHoursRangeDto(
     @SerializedName("end_slot")
     val endSlot: Int
 )
+
+data class CompanyUserPublicIdRequestDto(
+    @SerializedName("user_public_id")
+    val userPublicId: String
+)

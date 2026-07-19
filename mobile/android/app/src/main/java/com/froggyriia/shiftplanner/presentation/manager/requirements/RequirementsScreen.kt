@@ -1,5 +1,7 @@
 package com.froggyriia.shiftplanner.presentation.manager.requirements
 
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -18,6 +20,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.DateRange
+import androidx.compose.material.icons.filled.UploadFile
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Badge
 import androidx.compose.material3.Button
@@ -87,6 +90,14 @@ fun RequirementsScreen(user: AppUser, viewModel: RequirementsViewModel) {
         state.errorMessage?.let { snackbarHostState.showSnackbar(it); viewModel.clearMessages() }
     }
     val context = LocalContext.current
+    val importLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.GetContent()
+    ) { uri ->
+        uri?.let {
+            val bytes = context.contentResolver.openInputStream(it)?.use { stream -> stream.readBytes() }
+            if (bytes != null) viewModel.importXlsx(bytes, "requirements.xlsx")
+        }
+    }
     LaunchedEffect(state.statusMessageRes, state.errorMessageRes) {
         val res = state.statusMessageRes ?: state.errorMessageRes
         if (res != null) {
@@ -100,6 +111,28 @@ fun RequirementsScreen(user: AppUser, viewModel: RequirementsViewModel) {
             Text(stringResource(R.string.req_setup_company_first))
         }
         return
+    }
+
+    state.importResult?.let { result ->
+        AlertDialog(
+            onDismissRequest = { viewModel.clearImportResult() },
+            title = { Text(stringResource(R.string.req_import_done_title)) },
+            text = {
+                Column {
+                    Text(stringResource(R.string.req_import_created, result.createdCount))
+                    result.errors.take(5).forEach { err ->
+                        Text(
+                            "• ${err.row}: ${err.message}",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.error
+                        )
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = { viewModel.clearImportResult() }) { Text("OK") }
+            }
+        )
     }
 
     Scaffold(snackbarHost = { SnackbarHost(snackbarHostState) }) { padding ->
@@ -158,6 +191,13 @@ fun RequirementsScreen(user: AppUser, viewModel: RequirementsViewModel) {
                             onClick = viewModel::resetFilters,
                             modifier = Modifier.weight(1f)
                         ) { Text(stringResource(R.string.req_reset)) }
+                    }
+                    OutlinedButton(
+                        onClick = { importLauncher.launch("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet") },
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Icon(Icons.Default.UploadFile, contentDescription = null, modifier = Modifier.padding(end = 6.dp))
+                        Text(stringResource(R.string.req_import_xlsx))
                     }
                 }
             }

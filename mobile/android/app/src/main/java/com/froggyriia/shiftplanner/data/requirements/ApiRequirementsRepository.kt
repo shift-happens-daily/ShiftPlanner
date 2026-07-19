@@ -6,8 +6,13 @@ import com.froggyriia.shiftplanner.data.network.ScheduleRequirementCreateDto
 import com.froggyriia.shiftplanner.data.network.ScheduleRequirementResponseDto
 import com.froggyriia.shiftplanner.data.network.ScheduleRequirementTemplateCreateDto
 import com.froggyriia.shiftplanner.data.network.ScheduleRequirementUpdateDto
+import com.froggyriia.shiftplanner.domain.model.RequirementImportError
 import com.froggyriia.shiftplanner.domain.model.RequirementOccurrence
 import com.froggyriia.shiftplanner.domain.model.RequirementPositionOption
+import com.froggyriia.shiftplanner.domain.model.RequirementsImportResult
+import okhttp3.MediaType.Companion.toMediaTypeOrNull
+import okhttp3.MultipartBody
+import okhttp3.RequestBody.Companion.toRequestBody
 import com.froggyriia.shiftplanner.domain.model.RequirementTemplateDraft
 import java.text.SimpleDateFormat
 import java.util.Calendar
@@ -132,6 +137,18 @@ class ApiRequirementsRepository(
     }
 
     private val dateFormatter = SimpleDateFormat("yyyy-MM-dd", Locale.US)
+
+    override suspend fun importRequirementsXlsx(fileBytes: ByteArray, fileName: String): RequirementsImportResult = wrap {
+        val body = fileBytes.toRequestBody(
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet".toMediaTypeOrNull()
+        )
+        val part = MultipartBody.Part.createFormData("file", fileName, body)
+        val dto = apiClient.api.importRequirementsXlsx(part)
+        RequirementsImportResult(
+            createdCount = dto.createdCount,
+            errors = dto.errors.map { RequirementImportError(row = it.row, message = it.message) }
+        )
+    }
 
     private suspend fun <T> wrap(block: suspend () -> T): T {
         return try {

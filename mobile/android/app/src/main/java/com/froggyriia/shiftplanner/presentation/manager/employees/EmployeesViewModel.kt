@@ -4,7 +4,9 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.froggyriia.shiftplanner.data.employees.EmployeeManagementRepository
 import com.froggyriia.shiftplanner.domain.model.ManagedBranch
+import com.froggyriia.shiftplanner.domain.model.ManagedBranchAssignment
 import com.froggyriia.shiftplanner.domain.model.ManagedEmployee
+import com.froggyriia.shiftplanner.domain.model.ManagedEmployeeCalendar
 import com.froggyriia.shiftplanner.domain.model.ManagedPosition
 import com.froggyriia.shiftplanner.domain.model.PendingEmployeeRequest
 import com.froggyriia.shiftplanner.domain.model.PendingManagerRequest
@@ -349,6 +351,53 @@ class EmployeesViewModel(
                 _uiState.value = _uiState.value.copy(errorMessage = e.message)
                 onDone(false)
             }
+        }
+    }
+
+    fun addManagerByPublicId(publicId: String, onDone: (Boolean) -> Unit) {
+        viewModelScope.launch {
+            try {
+                repository.addManagerByPublicId(publicId)
+                _uiState.value = _uiState.value.copy(statusMessageRes = R.string.emp_manager_added)
+                loadPendingRequests()
+                onDone(true)
+            } catch (e: Exception) {
+                _uiState.value = _uiState.value.copy(errorMessage = e.message)
+                onDone(false)
+            }
+        }
+    }
+
+    fun loadEmployeeBranches(employeeId: Int, onResult: (List<ManagedBranchAssignment>?) -> Unit) {
+        viewModelScope.launch {
+            onResult(runCatching { repository.fetchEmployeeBranches(employeeId) }.getOrNull())
+        }
+    }
+
+    fun saveEmployeeBranches(employeeId: Int, branchIds: List<Int>, primaryBranchId: Int, onDone: (Boolean) -> Unit) {
+        viewModelScope.launch {
+            try {
+                val assignments = repository.replaceEmployeeBranches(employeeId, branchIds, primaryBranchId)
+                val primary = assignments.firstOrNull { it.isPrimary }
+                if (primary != null) {
+                    _uiState.value = _uiState.value.copy(
+                        employees = _uiState.value.employees.map {
+                            if (it.id == employeeId) it.copy(branchId = primary.id, branchName = primary.name) else it
+                        }
+                    )
+                }
+                _uiState.value = _uiState.value.copy(statusMessageRes = R.string.emp_branches_saved)
+                onDone(true)
+            } catch (e: Exception) {
+                _uiState.value = _uiState.value.copy(errorMessage = e.message)
+                onDone(false)
+            }
+        }
+    }
+
+    fun loadEmployeeCalendar(employeeId: Int, onResult: (ManagedEmployeeCalendar?) -> Unit) {
+        viewModelScope.launch {
+            onResult(runCatching { repository.fetchEmployeeCalendar(employeeId) }.getOrNull())
         }
     }
 

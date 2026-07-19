@@ -6,8 +6,12 @@ import retrofit2.http.Body
 import retrofit2.http.DELETE
 import retrofit2.http.GET
 import retrofit2.http.PATCH
+import retrofit2.http.Multipart
 import retrofit2.http.POST
+import retrofit2.http.PUT
+import retrofit2.http.Part
 import retrofit2.http.Path
+import okhttp3.MultipartBody
 import retrofit2.http.Query
 
 interface ShiftPlannerApi {
@@ -42,6 +46,9 @@ interface ShiftPlannerApi {
 
     @POST("companies/me/invite-code/regenerate")
     suspend fun regenerateInviteCode(): CompanyResponseDto
+
+    @DELETE("companies/{companyId}")
+    suspend fun deleteCompany(@Path("companyId") companyId: Int): Response<Unit>
 
     @GET("companies/branches")
     suspend fun getBranches(): List<CompanyBranchResponseDto>
@@ -93,6 +100,9 @@ interface ShiftPlannerApi {
     @POST("companies/me/manager-requests/{id}/decline")
     suspend fun declineManagerRequest(@Path("id") id: Int): ManagerRequestDto
 
+    @POST("companies/me/managers/by-public-id")
+    suspend fun addManagerByPublicId(@Body request: CompanyUserPublicIdRequestDto): ManagerRequestDto
+
     @GET("companies/me/employee-requests")
     suspend fun getEmployeeRequests(): List<EmployeeRequestDto>
 
@@ -125,6 +135,15 @@ interface ShiftPlannerApi {
         @Body request: EmployeeBranchUpdateRequestDto
     ): EmployeeResponseDto
 
+    @GET("employees/{id}/branches")
+    suspend fun getEmployeeBranches(@Path("id") id: Int): List<EmployeeBranchAssignmentDto>
+
+    @PUT("employees/{id}/branches")
+    suspend fun replaceEmployeeBranches(
+        @Path("id") id: Int,
+        @Body request: EmployeeBranchesUpdateDto
+    ): List<EmployeeBranchAssignmentDto>
+
     @GET("employees/{id}/work-limits")
     suspend fun getEmployeeWorkLimits(@Path("id") id: Int): EmployeeWorkLimitsDto
 
@@ -133,6 +152,9 @@ interface ShiftPlannerApi {
         @Path("id") id: Int,
         @Body request: EmployeeWorkLimitsDto
     ): EmployeeWorkLimitsDto
+
+    @GET("employees/{id}/calendar-summary")
+    suspend fun getEmployeeCalendarSummary(@Path("id") id: Int): EmployeeCalendarSummaryDto
 
     // ── Positions ─────────────────────────────────────────────────────────────
 
@@ -166,6 +188,10 @@ interface ShiftPlannerApi {
 
     @POST("schedule/requirements")
     suspend fun createRequirement(@Body request: ScheduleRequirementCreateDto): ScheduleRequirementResponseDto
+
+    @Multipart
+    @POST("imports/requirements/xlsx")
+    suspend fun importRequirementsXlsx(@Part file: MultipartBody.Part): RequirementsImportResultDto
 
     @PATCH("schedule/requirements/{id}")
     suspend fun updateRequirement(
