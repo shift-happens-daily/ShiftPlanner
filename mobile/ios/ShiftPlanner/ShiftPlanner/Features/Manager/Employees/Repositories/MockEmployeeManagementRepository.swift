@@ -141,6 +141,9 @@ struct MockEmployeeManagementRepository: EmployeeManagementRepository {
         EmployeeCalendarSummary(employeeName: "", totalShifts: 0, totalHours: 0, shifts: [])
     }
 
+    func fetchEmployeeBranches(employeeId: Int) async throws -> [EmployeeBranchAssignment] { [] }
+    func replaceEmployeeBranches(employeeId: Int, branchIds: [Int], primaryBranchId: Int) async throws -> [EmployeeBranchAssignment] { [] }
+
     func fetchWorkLimits(employeeId: Int) async throws -> WorkLimits {
         WorkLimits(maxHoursPerWeek: 40, maxHoursPerDay: 8)
     }

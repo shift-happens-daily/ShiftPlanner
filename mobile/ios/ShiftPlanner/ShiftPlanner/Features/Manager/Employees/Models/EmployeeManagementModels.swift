@@ -98,3 +98,10 @@ struct EmployeeCalendarSummary: Equatable {
     let totalHours: Double
     let shifts: [EmployeeCalendarShiftItem]
 }
+
+/// One branch an employee is assigned to (multi-branch), with the primary flag.
+struct EmployeeBranchAssignment: Identifiable, Equatable {
+    let id: Int
+    let name: String
+    let isPrimary: Bool
+}

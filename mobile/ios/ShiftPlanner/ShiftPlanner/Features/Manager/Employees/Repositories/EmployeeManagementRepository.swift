@@ -26,6 +26,9 @@ protocol EmployeeManagementRepository {
 
     func fetchEmployeeCalendar(employeeId: Int) async throws -> EmployeeCalendarSummary
 
+    func fetchEmployeeBranches(employeeId: Int) async throws -> [EmployeeBranchAssignment]
+    func replaceEmployeeBranches(employeeId: Int, branchIds: [Int], primaryBranchId: Int) async throws -> [EmployeeBranchAssignment]
+
     func fetchWorkLimits(employeeId: Int) async throws -> WorkLimits
     func updateWorkLimits(employeeId: Int, maxHoursPerWeek: Int, maxHoursPerDay: Int) async throws -> WorkLimits
 

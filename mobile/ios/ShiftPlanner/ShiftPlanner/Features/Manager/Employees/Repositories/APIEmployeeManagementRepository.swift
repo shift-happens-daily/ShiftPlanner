@@ -67,6 +67,32 @@ private struct EmployeeManagementBranchResponseDTO: Decodable {
     }
 }
 
+private struct EmployeeBranchAssignmentDTO: Decodable {
+    let id: Int
+    let name: String
+    let isPrimary: Bool
+
+    enum CodingKeys: String, CodingKey {
+        case id
+        case name
+        case isPrimary = "is_primary"
+    }
+
+    func asDomain() -> EmployeeBranchAssignment {
+        EmployeeBranchAssignment(id: id, name: name, isPrimary: isPrimary)
+    }
+}
+
+private struct EmployeeBranchesUpdateRequestDTO: Encodable {
+    let branchIds: [Int]
+    let primaryBranchId: Int
+
+    enum CodingKeys: String, CodingKey {
+        case branchIds = "branch_ids"
+        case primaryBranchId = "primary_branch_id"
+    }
+}
+
 private struct EmployeeManagementPositionCreateRequestDTO: Encodable {
     let title: String
     let companyId: Int
@@ -410,6 +436,28 @@ final class APIEmployeeManagementRepository: EmployeeManagementRepository {
             totalHours: dto.workload?.totalHours ?? 0,
             shifts: shifts
         )
+    }
+
+    func fetchEmployeeBranches(employeeId: Int) async throws -> [EmployeeBranchAssignment] {
+        let request = apiClient.makeRequest(
+            path: "employees/\(employeeId)/branches",
+            method: "GET",
+            requiresAuthorization: true
+        )
+        return try await apiClient.send(request, as: [EmployeeBranchAssignmentDTO].self).map { $0.asDomain() }
+    }
+
+    func replaceEmployeeBranches(employeeId: Int, branchIds: [Int], primaryBranchId: Int) async throws -> [EmployeeBranchAssignment] {
+        let body = try JSONEncoder().encode(
+            EmployeeBranchesUpdateRequestDTO(branchIds: branchIds, primaryBranchId: primaryBranchId)
+        )
+        let request = apiClient.makeRequest(
+            path: "employees/\(employeeId)/branches",
+            method: "PUT",
+            body: body,
+            requiresAuthorization: true
+        )
+        return try await apiClient.send(request, as: [EmployeeBranchAssignmentDTO].self).map { $0.asDomain() }
     }
 
     private static let calendarDateFormatter: DateFormatter = {

@@ -178,6 +178,39 @@ final class EmployeeListViewModel: ObservableObject {
 
     // MARK: - Work limits
 
+    func employeeBranches(for employeeId: Int) async -> [EmployeeBranchAssignment]? {
+        do {
+            return try await repository.fetchEmployeeBranches(employeeId: employeeId)
+        } catch {
+            errorMessage = error.localizedDescription
+            return nil
+        }
+    }
+
+    func saveEmployeeBranches(employeeId: Int, branchIds: [Int], primaryBranchId: Int) async {
+        do {
+            let assignments = try await repository.replaceEmployeeBranches(
+                employeeId: employeeId,
+                branchIds: branchIds,
+                primaryBranchId: primaryBranchId
+            )
+            if let primary = assignments.first(where: { $0.isPrimary }) {
+                employees = employees.map { emp in
+                    guard emp.id == employeeId else { return emp }
+                    var copy = emp
+                    copy.branchId = primary.id
+                    copy.branchName = primary.name
+                    return copy
+                }
+            }
+            statusMessage = localized("Branches updated.", "Филиалы обновлены.")
+            errorMessage = nil
+        } catch {
+            errorMessage = error.localizedDescription
+            statusMessage = nil
+        }
+    }
+
     func employeeCalendar(for employeeId: Int) async -> EmployeeCalendarSummary? {
         do {
             return try await repository.fetchEmployeeCalendar(employeeId: employeeId)

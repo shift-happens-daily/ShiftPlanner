@@ -219,26 +219,11 @@ struct EmployeeListView: View {
     private func pickerSheetContent(_ sheet: EmployeePickerSheet) -> some View {
         switch sheet {
         case let .branch(employee):
-            NavigationStack {
-                ScrollView {
-                    BranchPickerListView(
-                        branches: viewModel.branches,
-                        currentBranchTitle: viewModel.branchTitle(for: employee),
-                        onAssignBranch: { branchId in
-                            Task { await viewModel.assignBranch(branchId, to: employee) }
-                            pickerSheet = nil
-                        }
-                    )
-                }
-                .background(themeManager.selectedTheme.screenBackground)
-                .navigationTitle(languageManager.text("Branch", "Филиал"))
-                .navigationBarTitleDisplayMode(.inline)
-                .toolbar {
-                    ToolbarItem(placement: .topBarLeading) {
-                        Button(languageManager.text("Cancel", "Отмена")) { pickerSheet = nil }
-                    }
-                }
-            }
+            BranchAssignmentSheet(
+                viewModel: viewModel,
+                employee: employee,
+                onClose: { pickerSheet = nil }
+            )
         case let .role(employee):
             NavigationStack {
                 ScrollView {
@@ -369,6 +354,116 @@ private struct EmployeeCalendarSheet: View {
         formatter.locale = locale
         formatter.dateFormat = "EEE d MMM"
         return formatter.string(from: date)
+    }
+}
+
+// MARK: - Branch assignment sheet (multi-branch)
+
+private struct BranchAssignmentSheet: View {
+    @EnvironmentObject private var languageManager: LanguageManager
+    @EnvironmentObject private var themeManager: ThemeManager
+    @ObservedObject var viewModel: EmployeeListViewModel
+    let employee: ManagedEmployee
+    let onClose: () -> Void
+
+    @State private var selected: Set<Int> = []
+    @State private var primaryId: Int?
+    @State private var isLoading = true
+    @State private var isSaving = false
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                if isLoading {
+                    ProgressView()
+                } else if viewModel.branches.isEmpty {
+                    Text(languageManager.text("This company has no branches.", "В компании нет филиалов."))
+                        .foregroundStyle(themeManager.selectedTheme.secondaryTextColor)
+                } else {
+                    Section(languageManager.text("Branches", "Филиалы")) {
+                        ForEach(viewModel.branches) { branch in
+                            branchRow(branch)
+                        }
+                    }
+
+                    Section {
+                        Button {
+                            Task {
+                                guard let primaryId else { return }
+                                isSaving = true
+                                await viewModel.saveEmployeeBranches(
+                                    employeeId: employee.id,
+                                    branchIds: Array(selected),
+                                    primaryBranchId: primaryId
+                                )
+                                isSaving = false
+                                onClose()
+                            }
+                        } label: {
+                            if isSaving {
+                                ProgressView().frame(maxWidth: .infinity)
+                            } else {
+                                Text(languageManager.text("Save", "Сохранить")).frame(maxWidth: .infinity)
+                            }
+                        }
+                        .disabled(isSaving || selected.isEmpty || primaryId == nil)
+                    }
+                }
+            }
+            .navigationTitle(languageManager.text("Branches", "Филиалы"))
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button(languageManager.text("Cancel", "Отмена")) { onClose() }
+                }
+            }
+            .task {
+                if let assignments = await viewModel.employeeBranches(for: employee.id) {
+                    selected = Set(assignments.map { $0.id })
+                    primaryId = assignments.first(where: { $0.isPrimary })?.id ?? assignments.first?.id
+                }
+                isLoading = false
+            }
+        }
+    }
+
+    private func branchRow(_ branch: ManagedBranch) -> some View {
+        let isSelected = selected.contains(branch.id)
+        return HStack(spacing: 12) {
+            Button {
+                if isSelected {
+                    selected.remove(branch.id)
+                    if primaryId == branch.id { primaryId = selected.first }
+                } else {
+                    selected.insert(branch.id)
+                    if primaryId == nil { primaryId = branch.id }
+                }
+            } label: {
+                HStack(spacing: 10) {
+                    Image(systemName: isSelected ? "checkmark.circle.fill" : "circle")
+                        .foregroundStyle(isSelected ? themeManager.selectedTheme.accentColor : themeManager.selectedTheme.secondaryTextColor)
+                    Text(branch.name)
+                        .foregroundStyle(themeManager.selectedTheme.primaryTextColor)
+                    Spacer(minLength: 0)
+                }
+            }
+            .buttonStyle(.plain)
+
+            if isSelected {
+                Button {
+                    primaryId = branch.id
+                } label: {
+                    Text(primaryId == branch.id
+                        ? languageManager.text("Primary", "Основной")
+                        : languageManager.text("Make primary", "Сделать основным"))
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(primaryId == branch.id
+                            ? themeManager.selectedTheme.accentColor
+                            : themeManager.selectedTheme.secondaryTextColor)
+                }
+                .buttonStyle(.plain)
+            }
+        }
     }
 }
 
