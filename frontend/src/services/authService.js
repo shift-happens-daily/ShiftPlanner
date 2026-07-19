@@ -25,6 +25,21 @@ export async function deleteAccountRequest() {
   return response.data;
 }
 
+export async function requestPasswordResetRequest(email) {
+  const response = await api.post('/auth/password-reset/request', { email });
+  return response.data;
+}
+
+export async function confirmPasswordResetRequest({ token, new_password }) {
+  const response = await api.post('/auth/password-reset/confirm', { token, new_password });
+  return response.data;
+}
+
+export async function changePasswordRequest({ current_password, new_password }) {
+  const response = await api.post('/auth/change-password', { current_password, new_password });
+  return response.data;
+}
+
 export function persistToken(token) {
   localStorage.setItem(TOKEN_STORAGE_KEY, token);
 }

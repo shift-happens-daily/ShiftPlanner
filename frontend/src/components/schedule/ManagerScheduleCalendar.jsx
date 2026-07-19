@@ -1,70 +1,18 @@
 import { useMemo } from 'react';
 import { formatLocalDate } from '../../services/scheduleService';
+import {
+  formatApiDateRange,
+  formatDisplayDateWithWeekday,
+  formatLocalizedDate,
+  getDateLocale,
+} from '../../utils/dateDisplay';
+import '../../styles/schedule-tab.css';
 
-const LEGEND_COLORS = {
-  draft: '#667eea',
-  published: '#34c759',
-  unfilled: '#ff9500',
+const INDICATOR_COLORS = {
+  draft: '#6366f1',
+  published: '#10b981',
+  unfilled: '#f97316',
 };
-
-function getShiftVisuals(scheduleStatus, isUnfilled) {
-  if (isUnfilled) {
-    return {
-      background: 'linear-gradient(135deg, #ffd6a5 0%, #ffb085 100%)',
-      color: '#5a1a1a',
-      border: isUnfilled ? '1px dashed rgba(141, 29, 29, 0.35)' : 'none',
-      boxShadow: '0 2px 8px rgba(141, 29, 29, 0.12)',
-      badgeBackground: 'rgba(141, 29, 29, 0.12)',
-      badgeColor: '#8d1d1d',
-    };
-  }
-
-  if (scheduleStatus === 'published') {
-    return {
-      background: 'linear-gradient(135deg, #34c759 0%, #248a3d 100%)',
-      color: '#ffffff',
-      border: '1px solid rgba(255,255,255,0.12)',
-      boxShadow: '0 2px 8px rgba(52, 199, 89, 0.28)',
-      badgeBackground: 'rgba(255,255,255,0.18)',
-      badgeColor: '#ffffff',
-    };
-  }
-
-  return {
-    background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
-    color: '#ffffff',
-    border: '1px solid rgba(255,255,255,0.12)',
-    boxShadow: '0 2px 8px rgba(102,126,234,0.25)',
-    badgeBackground: 'rgba(255,255,255,0.18)',
-    badgeColor: '#ffffff',
-  };
-}
-
-function LegendItem({ color, label, size = 8 }) {
-  return (
-    <span style={{
-      display: 'inline-flex',
-      alignItems: 'center',
-      gap: 6,
-      color: '#4f646f',
-      fontSize: 12,
-      fontWeight: 600,
-    }}
-    >
-      <span style={{
-        width: size,
-        height: size,
-        borderRadius: '50%',
-        background: color,
-        flexShrink: 0,
-        display: 'block',
-      }}
-      />
-      {label}
-    </span>
-  );
-}
-
 
 function parseDateKey(value) {
   if (!value) return null;
@@ -114,14 +62,7 @@ function isSameDateKey(left, right) {
 }
 
 function formatDisplayDate(value, language = 'ru') {
-  const date = parseDateKey(value);
-  if (!date) return value;
-
-  return date.toLocaleDateString(language === 'ru' ? 'ru-RU' : 'en-US', {
-    weekday: 'short',
-    month: 'short',
-    day: 'numeric',
-  });
+  return formatDisplayDateWithWeekday(value, language);
 }
 
 function formatTimeLabel(value) {
@@ -133,127 +74,130 @@ function isDateWithinRange(dateKey, startDate, endDate) {
   return dateKey >= startDate && dateKey <= endDate;
 }
 
-function ShiftDetailCard({ entry, texts, scheduleStatus = 'draft', compact = false, mobileStyles }) {
-  const isUnfilled = entry.kind === 'unfilled';
-  const timeLabel = `${formatTimeLabel(entry.startTime)} – ${formatTimeLabel(entry.endTime)}`;
-  const visuals = getShiftVisuals(scheduleStatus, isUnfilled);
+function getDayIndicator(dayCounts, scheduleStatus) {
+  const total = (dayCounts.shifts || 0) + (dayCounts.unfilled || 0);
+  if (total === 0) return null;
 
-  if (compact) {
-    return (
-      <div
-        title={`${timeLabel} · ${entry.position}${entry.employee ? ` · ${entry.employee}` : ''}`}
-        style={{
-          width: '100%',
-          padding: '2px 4px',
-          borderRadius: 4,
-          fontSize: 9,
-          fontWeight: 700,
-          lineHeight: 1.25,
-          textAlign: 'left',
-          overflow: 'hidden',
-          textOverflow: 'ellipsis',
-          whiteSpace: 'nowrap',
-          color: visuals.color,
-          background: visuals.background,
-          border: isUnfilled ? visuals.border : 'none',
-          ...mobileStyles?.shiftChip,
-        }}
-      >
-        {formatTimeLabel(entry.startTime)} {entry.position}
-      </div>
-    );
-  }
+  const color = dayCounts.unfilled > 0
+    ? INDICATOR_COLORS.unfilled
+    : (scheduleStatus === 'published' ? INDICATOR_COLORS.published : INDICATOR_COLORS.draft);
+
+  return { total, color };
+}
+
+function ManagerShiftDetail({
+  entry,
+  texts,
+  scheduleStatus,
+  canEditDraft = false,
+  isSubmitting = false,
+  availableEmployees = [],
+  reassignEmployeeId = '',
+  onReassignEmployeeChange,
+  onLoadAvailableEmployees,
+  onReassignShift,
+  onUnassignShift,
+}) {
+  const isUnfilled = entry.kind === 'unfilled';
+  const canEditShift = canEditDraft
+    && entry.kind === 'shift'
+    && entry.shiftId
+    && entry.employeeId;
+  const timeLabel = `${formatTimeLabel(entry.startTime)} – ${formatTimeLabel(entry.endTime)}`;
 
   return (
-    <article
-      style={{
-        padding: '14px 16px',
-        borderRadius: 14,
-        background: visuals.background,
-        color: visuals.color,
-        border: isUnfilled ? '2px dashed #8d1d1d' : visuals.border,
-        boxShadow: visuals.boxShadow,
-        display: 'flex',
-        flexDirection: 'column',
-        gap: 8,
-        ...mobileStyles?.shiftCard,
-      }}
-    >
-      <div style={{
-        display: 'flex',
-        alignItems: 'flex-start',
-        justifyContent: 'space-between',
-        gap: 10,
-      }}
-      >
-        <div style={{
-          fontSize: 16,
-          fontWeight: 900,
-          letterSpacing: '0.01em',
-          ...mobileStyles?.shiftTime,
-        }}
-        >
-          {timeLabel}
+    <div className="st-detail-shift-card">
+      <div className="st-detail-header" style={{ marginBottom: 12 }}>
+        <div>
+          <p className="st-detail-status">
+            {isUnfilled ? texts.unfilledBadge : texts.assignedBadge}
+          </p>
         </div>
-        <span style={{
-          flexShrink: 0,
-          padding: '3px 8px',
-          borderRadius: 999,
-          fontSize: 10,
-          fontWeight: 800,
-          textTransform: 'uppercase',
-          letterSpacing: '0.04em',
-          background: visuals.badgeBackground,
-          color: visuals.badgeColor,
-        }}
-        >
-          {isUnfilled ? texts.unfilledBadge : texts.assignedBadge}
-        </span>
       </div>
 
-      <div style={{ display: 'grid', gap: 6 }}>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-          <span style={{ fontSize: 11, fontWeight: 700, opacity: 0.82, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
-            {texts.position}
-          </span>
-          <strong style={{ fontSize: 15, fontWeight: 800, ...mobileStyles?.shiftPosition }}>
-            {entry.position}
-          </strong>
-        </div>
+      <div className={`st-shift-time-box ${isUnfilled ? 'st-shift-time-box--unfilled' : 'st-shift-time-box--assigned'}`}>
+        <p className="st-shift-time-label">{texts.shiftTime || 'SHIFT TIME'}</p>
+        <p className="st-shift-time-value">{timeLabel}</p>
+      </div>
 
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-          <span style={{ fontSize: 11, fontWeight: 700, opacity: 0.82, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
-            {texts.employee}
-          </span>
-          <span style={{ fontSize: 14, fontWeight: 700, ...mobileStyles?.shiftEmployee }}>
-            {isUnfilled
-              ? (entry.missingStaff > 1
-                ? texts.missingStaff.replace('{count}', String(entry.missingStaff))
-                : texts.notFound)
-              : entry.employee}
-          </span>
-        </div>
+      <div className="st-detail-section">
+        <p className="st-detail-section-label">{texts.position}</p>
+        <p className="st-detail-section-value">{entry.position}</p>
+      </div>
 
-        {entry.branch ? (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-            <span style={{ fontSize: 11, fontWeight: 700, opacity: 0.82, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
-              {texts.branch}
-            </span>
-            <span style={{ fontSize: 13, fontWeight: 650 }}>
-              {entry.branch}
-            </span>
+      <div className="st-detail-section">
+        <p className="st-detail-section-label">{texts.employee}</p>
+        <p className="st-detail-section-value">
+          {isUnfilled
+            ? (entry.missingStaff > 1
+              ? texts.missingStaff.replace('{count}', String(entry.missingStaff))
+              : texts.notFound)
+            : entry.employee}
+        </p>
+      </div>
+
+      {entry.branch ? (
+        <div className="st-detail-section">
+          <p className="st-detail-section-label">{texts.branch}</p>
+          <p className="st-detail-section-value">{entry.branch}</p>
+        </div>
+      ) : null}
+
+      {canEditShift ? (
+        <div className="st-shift-edit">
+          <button
+            type="button"
+            className="st-btn st-btn--secondary"
+            onClick={() => onLoadAvailableEmployees?.(entry)}
+            disabled={isSubmitting}
+          >
+            {texts.loadEmployees}
+          </button>
+
+          <select
+            className="st-select"
+            value={reassignEmployeeId}
+            onChange={(event) => onReassignEmployeeChange?.(entry.shiftId, event.target.value)}
+            onFocus={() => onLoadAvailableEmployees?.(entry)}
+            disabled={isSubmitting}
+          >
+            <option value="">
+              {availableEmployees.length ? texts.chooseEmployee : texts.noEmployeesAvailable}
+            </option>
+            {availableEmployees.map((employee) => (
+              <option key={employee.id} value={employee.id}>
+                {employee.full_name}
+              </option>
+            ))}
+          </select>
+
+          <div className="st-shift-edit-actions">
+            <button
+              type="button"
+              className="st-btn st-btn--primary"
+              onClick={() => onReassignShift?.(entry)}
+              disabled={!reassignEmployeeId || isSubmitting}
+            >
+              {texts.reassign}
+            </button>
+            <button
+              type="button"
+              className="st-btn st-btn--danger"
+              onClick={() => onUnassignShift?.(entry)}
+              disabled={isSubmitting}
+            >
+              {texts.unassign}
+            </button>
           </div>
-        ) : null}
-      </div>
-    </article>
+        </div>
+      ) : null}
+    </div>
   );
 }
 
 export default function ManagerScheduleCalendar({
   language,
   texts,
-  panelStyle,
-  mobileStyles,
   calendarMonth,
   onCalendarMonthChange,
   selectedDate,
@@ -264,6 +208,14 @@ export default function ManagerScheduleCalendar({
   scheduleStartDate,
   scheduleEndDate,
   selectedDayEntries,
+  canEditDraft = false,
+  isSubmitting = false,
+  availableByShiftId = {},
+  reassignEmployeeIds = {},
+  onReassignEmployeeChange,
+  onLoadAvailableEmployees,
+  onReassignShift,
+  onUnassignShift,
 }) {
   const calendarGrid = useMemo(
     () => buildCalendarGrid(calendarMonth),
@@ -272,23 +224,18 @@ export default function ManagerScheduleCalendar({
 
   const calendarMonthLabel = useMemo(() => {
     const date = startOfMonthDate(calendarMonth);
-    return date.toLocaleDateString(language === 'ru' ? 'ru-RU' : 'en-US', {
+    return date.toLocaleDateString(getDateLocale(language), {
       month: 'long',
       year: 'numeric',
     });
   }, [calendarMonth, language]);
-
-  const calendarMonthKey = useMemo(() => {
-    const date = startOfMonthDate(calendarMonth);
-    return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
-  }, [calendarMonth]);
 
   const weekdayLabels = useMemo(() => {
     const base = startOfMonthDate(calendarMonth);
     return Array.from({ length: 7 }, (_, index) => {
       const day = new Date(base);
       day.setDate(day.getDate() - ((day.getDay() + 6) % 7) + index);
-      return day.toLocaleDateString(language === 'ru' ? 'ru-RU' : 'en-US', { weekday: 'short' });
+      return day.toLocaleDateString(getDateLocale(language), { weekday: 'short' });
     });
   }, [calendarMonth, language]);
 
@@ -298,365 +245,193 @@ export default function ManagerScheduleCalendar({
     onCalendarMonthChange(formatLocalDate(current));
   };
 
-  const maxCellPreview = mobileStyles ? 2 : 3;
-
   const hasUnfilledInView = useMemo(
     () => Object.values(groupedScheduleByDate).some((day) => day.unfilled > 0),
     [groupedScheduleByDate],
   );
 
-  return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: mobileStyles?.sectionGap || 12 }}>
-      <section style={{
-        ...panelStyle,
-        display: 'grid',
-        gridTemplateRows: 'auto auto auto auto',
-        gap: 8,
-        padding: 18,
-        ...mobileStyles?.calendarPanel,
-      }}
-      >
-        <div style={{
-          display: 'flex',
-          justifyContent: 'space-between',
-          alignItems: 'center',
-          gap: 8,
-          flexWrap: 'wrap',
-        }}
-        >
-          <div>
-            <h3 style={{
-              margin: 0,
-              color: '#002642',
-              fontSize: 20,
-              fontWeight: 900,
-              textTransform: 'capitalize',
-              ...mobileStyles?.calendarTitle,
-            }}
-            >
-              {calendarMonthLabel}
-            </h3>
-            {scheduleStartDate && scheduleEndDate ? (
-              <p style={{ margin: '4px 0 0', color: '#4f646f', fontSize: 13, ...mobileStyles?.selectedDayHint }}>
-                {texts.loadedPeriod}: {scheduleStartDate} — {scheduleEndDate}
-              </p>
-            ) : null}
-          </div>
+  const showDetail = Boolean(selectedDate) && (
+    selectedDayEntries.length > 0
+    || isDateWithinRange(selectedDate, scheduleStartDate, scheduleEndDate)
+  );
 
-          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+  const emptyDetailMessage = !isDateWithinRange(selectedDate, scheduleStartDate, scheduleEndDate)
+    ? texts.noShiftsThisDay
+    : (Object.keys(groupedScheduleByDate).length === 0 ? texts.noShiftsInVersion : texts.noShiftsThisDay);
+
+  return (
+    <div className="st-layout">
+      <div className="st-main">
+        <div className="st-calendar-header">
+          <div />
+          <div className="st-month-nav">
             <button
               type="button"
+              className="st-month-nav-btn"
               onClick={() => shiftCalendarMonth(-1)}
-              style={{
-                width: 40,
-                height: 36,
-                borderRadius: 10,
-                border: '1px solid #dee7e7',
-                background: '#eef3f6',
-                color: '#002642',
-                fontSize: 18,
-                fontWeight: 800,
-                cursor: 'pointer',
-                ...mobileStyles?.calendarNavButton,
-              }}
               aria-label={texts.prevMonth}
             >
-              ←
+              <span className="st-icon-chevron-left" aria-hidden />
             </button>
+            <span className="st-month-label">{calendarMonthLabel}</span>
             <button
               type="button"
-              onClick={() => {
-                const today = formatLocalDate(new Date());
-                onCalendarMonthChange(today);
-                onSelectedDateChange(today);
-              }}
-              style={{
-                height: 36,
-                padding: '0 14px',
-                borderRadius: 10,
-                border: '1px solid #dbe6f0',
-                background: '#ffffff',
-                color: '#002642',
-                fontSize: 13,
-                fontWeight: 850,
-                cursor: 'pointer',
-                whiteSpace: 'nowrap',
-                ...mobileStyles?.calendarMonthKey,
-              }}
-            >
-              {calendarMonthKey}
-            </button>
-            <button
-              type="button"
+              className="st-month-nav-btn"
               onClick={() => shiftCalendarMonth(1)}
-              style={{
-                width: 40,
-                height: 36,
-                borderRadius: 10,
-                border: '1px solid #dee7e7',
-                background: '#eef3f6',
-                color: '#002642',
-                fontSize: 18,
-                fontWeight: 800,
-                cursor: 'pointer',
-                ...mobileStyles?.calendarNavButton,
-              }}
               aria-label={texts.nextMonth}
             >
-              →
+              <span className="st-icon-chevron-right" aria-hidden />
             </button>
           </div>
         </div>
 
-        <div style={{
-          display: 'grid',
-          gridTemplateColumns: 'repeat(7, minmax(0, 1fr))',
-          background: '#f4faff',
-          border: '1px solid #dee7e7',
-          borderBottom: 'none',
-          borderRadius: '10px 10px 0 0',
-        }}
-        >
-          {weekdayLabels.map((weekday) => (
-            <div
-              key={weekday}
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                color: '#4f646f',
-                fontSize: 12,
-                fontWeight: 850,
-                textTransform: 'capitalize',
-                padding: '8px 0',
-                ...mobileStyles?.monthWeekday,
-              }}
-            >
-              {weekday}
-            </div>
-          ))}
-        </div>
+        {scheduleStartDate && scheduleEndDate ? (
+          <p className="st-page-subtitle" style={{ marginBottom: 14 }}>
+            {texts.loadedPeriod}: {formatApiDateRange(scheduleStartDate, scheduleEndDate)}
+          </p>
+        ) : null}
 
-        <div style={{
-          display: 'grid',
-          gridTemplateColumns: 'repeat(7, minmax(0, 1fr))',
-          gridAutoRows: 'minmax(88px, auto)',
-          background: '#dee7e7',
-          gap: '1px',
-          border: '1px solid #dee7e7',
-          borderRadius: '0 0 10px 10px',
-          overflow: 'hidden',
-          ...mobileStyles?.monthGrid,
-        }}
-        >
-          {calendarGrid.days.map((calendarDay) => {
-            const dayCounts = groupedScheduleByDate[calendarDay.date] || { shifts: 0, unfilled: 0 };
-            const dayEntries = entriesByDate[calendarDay.date] || [];
-            const hasUnfilled = dayCounts.unfilled > 0;
-            const isSelected = calendarDay.date === selectedDate;
-            const isTodayDate = isSameDateKey(calendarDay.date, formatLocalDate(new Date()));
-            const inLoadedRange = isDateWithinRange(
-              calendarDay.date,
-              scheduleStartDate,
-              scheduleEndDate,
-            );
-            const previewEntries = dayEntries.slice(0, maxCellPreview);
-            const hiddenCount = Math.max(dayEntries.length - previewEntries.length, 0);
-
-            return (
-              <button
-                key={calendarDay.date}
-                type="button"
-                onClick={() => onSelectedDateChange(calendarDay.date)}
-                style={{
-                  minWidth: 0,
-                  minHeight: 0,
-                  border: 0,
-                  background: calendarDay.isCurrentMonth ? '#ffffff' : '#f8fbfd',
-                  color: calendarDay.isCurrentMonth ? '#002642' : '#8da0a9',
-                  cursor: 'pointer',
-                  padding: 6,
-                  display: 'flex',
-                  flexDirection: 'column',
-                  alignItems: 'stretch',
-                  justifyContent: 'flex-start',
-                  gap: 4,
-                  opacity: calendarDay.isCurrentMonth ? 1 : 0.55,
-                  textAlign: 'left',
-                  ...(inLoadedRange ? { background: calendarDay.isCurrentMonth ? '#f8fcff' : '#f3f8fb' } : {}),
-                  ...(isSelected ? {
-                    background: '#eaf6ff',
-                    boxShadow: 'inset 0 0 0 2px #002642',
-                  } : {}),
-                  ...mobileStyles?.monthDayCell,
-                }}
-              >
-                <div style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'space-between',
-                  gap: 4,
-                }}
-                >
-                  <span style={{
-                    width: 26,
-                    height: 26,
-                    borderRadius: '50%',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    fontSize: 13,
-                    fontWeight: 800,
-                    flexShrink: 0,
-                    ...(isTodayDate ? { border: '2px solid #007aff', color: '#007aff' } : {}),
-                    ...(isSelected ? { background: '#002642', color: '#ffffff', borderColor: '#002642' } : {}),
-                    ...mobileStyles?.monthDayNumber,
-                  }}
-                  >
-                    {calendarDay.day}
-                  </span>
-                </div>
-
-                <div style={{
-                  display: 'flex',
-                  flexDirection: 'column',
-                  gap: 2,
-                  width: '100%',
-                  minHeight: 0,
-                  flex: 1,
-                }}
-                >
-                  {previewEntries.map((entry) => (
-                    <ShiftDetailCard
-                      key={entry.key}
-                      entry={entry}
-                      texts={texts}
-                      scheduleStatus={scheduleStatus}
-                      compact
-                      mobileStyles={mobileStyles}
-                    />
-                  ))}
-                  {hiddenCount > 0 ? (
-                    <span style={{
-                      fontSize: 9,
-                      fontWeight: 800,
-                      color: '#4f646f',
-                      padding: '0 2px',
-                    }}
-                    >
-                      {texts.moreShifts.replace('{count}', String(hiddenCount))}
-                    </span>
-                  ) : null}
-                </div>
-              </button>
-            );
-          })}
-        </div>
-
-        <div style={{
-          display: 'flex',
-          gap: 14,
-          flexWrap: 'wrap',
-          alignItems: 'center',
-        }}
-        >
-          <LegendItem
-            color={scheduleStatus === 'published' ? LEGEND_COLORS.published : LEGEND_COLORS.draft}
-            label={scheduleStatus === 'published' ? texts.legendPublishedShifts : texts.legendDraftShifts}
-          />
+        <div className="st-legend">
+          <div className="st-legend-item">
+            <span
+              className="st-legend-dot"
+              style={{ background: scheduleStatus === 'published' ? INDICATOR_COLORS.published : INDICATOR_COLORS.draft }}
+            />
+            <span className="st-legend-label">
+              {scheduleStatus === 'published' ? texts.legendPublishedShifts : texts.legendDraftShifts}
+            </span>
+          </div>
           {hasUnfilledInView ? (
-            <LegendItem color={LEGEND_COLORS.unfilled} label={texts.legendUnfilled} />
+            <div className="st-legend-item">
+              <span className="st-legend-dot st-legend-dot--unfilled" />
+              <span className="st-legend-label">{texts.legendUnfilled}</span>
+            </div>
           ) : null}
-        </div>
-      </section>
-
-      <section style={{
-        ...panelStyle,
-        background: '#f8fbfd',
-        display: 'flex',
-        flexDirection: 'column',
-        gap: 12,
-        padding: 18,
-        ...mobileStyles?.selectedDayPanel,
-      }}
-      >
-        <div style={{
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'space-between',
-          gap: 10,
-        }}
-        >
-          <div>
-            <h3 style={{
-              margin: 0,
-              color: '#002642',
-              fontSize: 18,
-              fontWeight: 900,
-              ...mobileStyles?.selectedDayTitle,
-            }}
-            >
-              {formatDisplayDate(selectedDate, language)}
-            </h3>
-            <p style={{ margin: '2px 0 0', color: '#4f646f', fontSize: 13, ...mobileStyles?.selectedDayHint }}>
-              {selectedDate}
-            </p>
+          <div className="st-legend-item">
+            <span className="st-legend-dot st-legend-dot--empty" />
+            <span className="st-legend-label">{texts.legendNoShift || 'No shift'}</span>
           </div>
-          <span style={{
-            minWidth: 40,
-            height: 32,
-            padding: '0 10px',
-            borderRadius: 999,
-            background: '#002642',
-            color: '#ffffff',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            fontSize: 15,
-            fontWeight: 900,
-            ...mobileStyles?.selectedDayCount,
-          }}
-          >
-            {selectedDayEntries.length}
-          </span>
         </div>
 
-        {selectedDayEntries.length === 0 ? (
-          <div style={{
-            padding: '12px 14px',
-            textAlign: 'center',
-            background: '#ffffff',
-            borderRadius: 10,
-            border: '1px solid #dee7e7',
-            color: '#4f646f',
-            fontWeight: 600,
-            fontSize: 13,
-            ...mobileStyles?.emptyBox,
-          }}
-          >
-            {!isDateWithinRange(selectedDate, scheduleStartDate, scheduleEndDate)
-              ? texts.noShiftsThisDay
-              : (Object.keys(groupedScheduleByDate).length === 0 ? texts.noShiftsInVersion : texts.noShiftsThisDay)}
-          </div>
-        ) : (
-          <div style={{
-            display: 'grid',
-            gridTemplateColumns: 'repeat(auto-fill, minmax(240px, 1fr))',
-            gap: 10,
-          }}
-          >
-            {selectedDayEntries.map((entry) => (
-              <ShiftDetailCard
-                key={entry.key}
-                entry={entry}
-                texts={texts}
-                scheduleStatus={scheduleStatus}
-                mobileStyles={mobileStyles}
-              />
+        <div className="st-calendar">
+          <div className="st-calendar-weekdays">
+            {weekdayLabels.map((weekday) => (
+              <div key={weekday} className="st-calendar-weekday">{weekday}</div>
             ))}
           </div>
-        )}
-      </section>
+
+          <div className="st-calendar-grid">
+            {calendarGrid.days.map((calendarDay, index) => {
+              const dayCounts = groupedScheduleByDate[calendarDay.date] || { shifts: 0, unfilled: 0 };
+              const indicator = getDayIndicator(dayCounts, scheduleStatus);
+              const isSelected = calendarDay.date === selectedDate;
+              const isTodayDate = isSameDateKey(calendarDay.date, formatLocalDate(new Date()));
+              const inLoadedRange = isDateWithinRange(
+                calendarDay.date,
+                scheduleStartDate,
+                scheduleEndDate,
+              );
+              const isWeekend = index % 7 >= 5;
+
+              const cellClass = [
+                'st-day-cell',
+                isWeekend ? 'st-day-cell--weekend' : '',
+                !calendarDay.isCurrentMonth ? 'st-day-cell--outside' : '',
+                isSelected ? 'st-day-cell--selected' : '',
+                inLoadedRange && calendarDay.isCurrentMonth ? 'st-day-cell--in-range' : '',
+              ].filter(Boolean).join(' ');
+
+              return (
+                <button
+                  key={calendarDay.date}
+                  type="button"
+                  className={cellClass}
+                  onClick={() => onSelectedDateChange(calendarDay.date)}
+                >
+                  <span className={`st-day-number ${isTodayDate ? 'st-day-number--today' : ''}`}>
+                    {calendarDay.day}
+                  </span>
+
+                  {indicator ? (
+                    <div
+                      className="st-day-indicator"
+                      title={`${indicator.total} ${indicator.total === 1 ? (texts.shiftSingular || 'shift') : (texts.shiftPlural || 'shifts')}`}
+                    >
+                      <span
+                        className="st-day-indicator-dot"
+                        style={{ background: indicator.color }}
+                      />
+                      <span className="st-day-indicator-text">
+                        {indicator.total} {indicator.total === 1 ? (texts.shiftSingular || 'shift') : (texts.shiftPlural || 'shifts')}
+                      </span>
+                      <span className="st-day-indicator-count">{indicator.total}</span>
+                    </div>
+                  ) : null}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      </div>
+
+      <div className="st-sidebar">
+        <div className="st-detail-panel">
+          {showDetail && selectedDayEntries.length > 0 ? (
+            <div className="st-detail-content">
+              <div className="st-detail-header">
+                <div>
+                  <p className="st-detail-date">{formatDisplayDate(selectedDate, language)}</p>
+                  <p className="st-detail-status">
+                    {selectedDayEntries.length}{' '}
+                    {selectedDayEntries.length === 1
+                      ? (texts.shiftSingular || 'shift')
+                      : (texts.shiftPlural || 'shifts')}
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  className="st-detail-close"
+                  onClick={() => onSelectedDateChange(null)}
+                  aria-label={texts.closeDetail || 'Close'}
+                >
+                  <span className="st-icon-close" aria-hidden />
+                </button>
+              </div>
+
+              {selectedDayEntries.map((entry) => (
+                <ManagerShiftDetail
+                  key={entry.key}
+                  entry={entry}
+                  texts={texts}
+                  scheduleStatus={scheduleStatus}
+                  canEditDraft={canEditDraft}
+                  isSubmitting={isSubmitting}
+                  availableEmployees={availableByShiftId[entry.shiftId] || []}
+                  reassignEmployeeId={reassignEmployeeIds[entry.shiftId] || ''}
+                  onReassignEmployeeChange={onReassignEmployeeChange}
+                  onLoadAvailableEmployees={onLoadAvailableEmployees}
+                  onReassignShift={onReassignShift}
+                  onUnassignShift={onUnassignShift}
+                />
+              ))}
+            </div>
+          ) : (
+            <div className="st-detail-empty">
+              <span className="st-detail-empty-icon" aria-hidden />
+              <p className="st-detail-empty-title">
+                {selectedDate && selectedDayEntries.length === 0
+                  ? (texts.noShiftsThisDay || emptyDetailMessage)
+                  : (texts.selectDay || 'Select a day')}
+              </p>
+              <p className="st-detail-empty-message">
+                {selectedDate && selectedDayEntries.length === 0
+                  ? emptyDetailMessage
+                  : (texts.selectDayHint || 'Click a day with a shift indicator to see details here.')}
+              </p>
+            </div>
+          )}
+        </div>
+      </div>
     </div>
   );
 }

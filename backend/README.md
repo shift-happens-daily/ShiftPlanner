@@ -110,9 +110,12 @@ EMAIL_VERIFICATION_REQUIRED=true
 EMAIL_PROVIDER=resend
 EMAIL_FROM=ShiftPlanner <no-reply@shiftplanner.online>
 RESEND_API_KEY=re_...
+PASSWORD_RESET_URL=https://shiftplanner.online/reset-password
+EMAIL_FORCE_IPV4=true
 ```
 
 For production delivery through Resend, verify the sending domain in Resend and use an address from that domain, for example `no-reply@shiftplanner.online`.
+If container logs show `Network is unreachable` while calling Resend, keep `EMAIL_FORCE_IPV4=true` or configure SMTP fallback with `SMTP_PASSWORD`.
 
 ## Run PostgreSQL
 
@@ -271,6 +274,9 @@ Typical frontend auth flow:
 * `POST /auth/login`
 * `POST /auth/token`
 * `POST /auth/register`
+* `POST /auth/password-reset/request`
+* `POST /auth/password-reset/confirm`
+* `POST /auth/change-password`
 * `GET /auth/me`
 * `POST /auth/logout`
 

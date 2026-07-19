@@ -221,5 +221,12 @@ class ShiftExchangeRequestRead(BaseModel):
     employee_name: str
     note: str
     status: Literal["pending", "approved", "rejected"]
+    shift_date: date | None = None
+    start_time: time | None = None
+    end_time: time | None = None
+    branch_id: int | None = None
+    branch_name: str | None = None
+    position_id: int | None = None
+    position_name: str | None = None
     created_at: datetime
     updated_at: datetime

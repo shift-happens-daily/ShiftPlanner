@@ -1,5 +1,7 @@
 import api from './api';
 
+const SCHEDULE_GENERATION_TIMEOUT_MS = 180000;
+
 export function formatLocalDate(value) {
   const date = value instanceof Date ? value : new Date(`${value}T12:00:00`);
   if (Number.isNaN(date.getTime())) {
@@ -116,17 +118,6 @@ function buildScheduleQueryParams(period = null, status = null, branchId = null)
   return params;
 }
 
-function pickPrimarySchedule(schedules, branchId = null) {
-  if (!Array.isArray(schedules) || schedules.length === 0) {
-    return null;
-  }
-  const filtered = branchId
-    ? schedules.filter((schedule) => Number(schedule.branch_id) === Number(branchId))
-    : schedules;
-  const source = filtered.length > 0 ? filtered : schedules;
-  return [...source].sort((a, b) => b.id - a.id)[0];
-}
-
 export function pickScheduleForBranch(schedules, branchId) {
   if (!Array.isArray(schedules) || branchId == null) {
     return null;
@@ -227,19 +218,45 @@ export async function listSchedules(params = {}) {
   return Array.isArray(response.data) ? response.data : [response.data].filter(Boolean);
 }
 
-export async function findOverlappingSchedules({ branch_id, start_date, end_date }) {
-  const schedules = await listSchedules({
-    branch_id,
-    date_from: start_date,
-    date_to: end_date,
-  });
+const ACTIVE_SCHEDULE_STATUSES = new Set(['draft', 'published']);
 
-  return schedules.filter((schedule) => periodsOverlap(
-    schedule.start_date,
-    schedule.end_date,
-    start_date,
-    end_date,
-  ));
+function isActiveSchedule(schedule) {
+  return ACTIVE_SCHEDULE_STATUSES.has(schedule?.status);
+}
+
+function overlapsRequestedPeriod(schedule, start_date, end_date) {
+  return periodsOverlap(schedule.start_date, schedule.end_date, start_date, end_date);
+}
+
+/** Conflicts that block generation for a branch (includes legacy company-wide schedules). */
+export async function findGenerationConflicts({ branch_id, start_date, end_date }) {
+  const [branchScoped, companyWide] = await Promise.all([
+    listSchedules({
+      branch_id,
+      date_from: start_date,
+      date_to: end_date,
+    }),
+    listSchedules({
+      date_from: start_date,
+      date_to: end_date,
+    }),
+  ]);
+
+  const branchSchedules = branchScoped
+    .filter(isActiveSchedule)
+    .filter((schedule) => overlapsRequestedPeriod(schedule, start_date, end_date));
+
+  const legacySchedules = companyWide
+    .filter(isActiveSchedule)
+    .filter((schedule) => schedule.branch_id == null)
+    .filter((schedule) => overlapsRequestedPeriod(schedule, start_date, end_date));
+
+  return { branchSchedules, legacySchedules };
+}
+
+export async function findOverlappingSchedules(params) {
+  const { branchSchedules, legacySchedules } = await findGenerationConflicts(params);
+  return [...branchSchedules, ...legacySchedules];
 }
 
 export async function fetchScheduleCoverage({ branch_id, date_from, date_to }) {
@@ -300,7 +317,7 @@ export async function generateScheduleWeek(period, branchId = null) {
     payload.branch_id = branchId;
   }
   const response = await api.post('/schedule/generate', payload, {
-    timeout: 120000,
+    timeout: SCHEDULE_GENERATION_TIMEOUT_MS,
   });
   return Array.isArray(response.data) ? response.data : [response.data].filter(Boolean);
 }
@@ -332,9 +349,7 @@ export async function generateScheduleWeeks(mondayStart, weeks, branchId) {
 /** Backward-compatible alias: generate for branch across one or more weeks. */
 export async function generateScheduleForBranch(period, branchId, weeks = null) {
   if (!branchId) {
-    const response = await api.post('/schedule/generate', period, { timeout: 120000 });
-    const schedules = Array.isArray(response.data) ? response.data : [response.data].filter(Boolean);
-    return mergeWeeklySchedules(schedules, branchId, period) || withPeriod(schedules[0], period);
+    throw new Error('Branch is required to generate a schedule.');
   }
 
   const mondayStart = snapToMonday(period.start_date);
@@ -360,8 +375,7 @@ export async function generateScheduleForPeriod(period, branchId = null) {
     return generateScheduleForBranch(period, branchId);
   }
 
-  const response = await api.post('/schedule/generate', period);
-  return withPeriod(response.data, period);
+  throw new Error('Branch is required to generate a schedule.');
 }
 
 /** Solver-friendly default: next Mon–Sun week. */
@@ -410,13 +424,22 @@ export function mergePublishedSchedule(previous, published) {
   };
 }
 
-export async function publishScheduleForPeriod(schedule) {
+export async function publishScheduleForPeriod(schedule, branchId = null) {
+  const expectedBranchId = branchId ?? schedule?.branch_id ?? null;
+  const matchesBranch = (item) => (
+    expectedBranchId == null
+    || Number(item?.branch_id) === Number(expectedBranchId)
+  );
+
   const weeklySchedules = (schedule?.weekly_schedules || [])
-    .filter((item) => item.status !== 'published');
+    .filter((item) => item.status !== 'published')
+    .filter(matchesBranch);
 
   const targets = weeklySchedules.length > 0
     ? weeklySchedules
-    : (schedule?.id ? [{ id: schedule.id, status: schedule.status }] : []);
+    : (schedule?.id && matchesBranch(schedule)
+      ? [{ id: schedule.id, status: schedule.status, branch_id: schedule.branch_id }]
+      : []);
 
   if (targets.length === 0) {
     throw new Error('No schedule id to publish.');
@@ -482,7 +505,9 @@ export async function createBulkRequirements(payload) {
 }
 
 export async function generateSchedule(payload) {
-  const response = await api.post('/schedule/generate', payload);
+  const response = await api.post('/schedule/generate', payload, {
+    timeout: SCHEDULE_GENERATION_TIMEOUT_MS,
+  });
   return withPeriod(response.data, payload);
 }
 

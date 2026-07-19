@@ -4,6 +4,8 @@ from sqlalchemy.orm import Session
 
 def ensure_runtime_schema(db: Session) -> None:
     ensure_email_verification_schema(db)
+    ensure_password_reset_schema(db)
+    ensure_company_management_schema(db)
     ensure_employee_assignment_schema(db)
     db.commit()
 
@@ -25,6 +27,102 @@ def ensure_email_verification_schema(db: Session) -> None:
             CREATE UNIQUE INDEX IF NOT EXISTS users_email_verification_token_unique
             ON users (email_verification_token)
             WHERE email_verification_token IS NOT NULL
+            """
+        )
+    )
+
+
+def ensure_password_reset_schema(db: Session) -> None:
+    db.execute(
+        text(
+            """
+            ALTER TABLE users
+                ADD COLUMN IF NOT EXISTS password_reset_token VARCHAR(128),
+                ADD COLUMN IF NOT EXISTS password_reset_expires_at TIMESTAMP
+            """
+        )
+    )
+    db.execute(
+        text(
+            """
+            CREATE UNIQUE INDEX IF NOT EXISTS users_password_reset_token_unique
+            ON users (password_reset_token)
+            WHERE password_reset_token IS NOT NULL
+            """
+        )
+    )
+
+
+def ensure_company_management_schema(db: Session) -> None:
+    db.execute(
+        text(
+            """
+            ALTER TABLE companies
+                ADD COLUMN IF NOT EXISTS invite_code_generated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                ADD COLUMN IF NOT EXISTS invite_code_expires_at TIMESTAMP,
+                ADD COLUMN IF NOT EXISTS manager_user_id INTEGER REFERENCES users(id) ON DELETE SET NULL
+            """
+        )
+    )
+    db.execute(
+        text(
+            """
+            UPDATE companies
+            SET invite_code_generated_at = CURRENT_TIMESTAMP
+            WHERE invite_code_generated_at IS NULL
+            """
+        )
+    )
+    db.execute(
+        text(
+            """
+            CREATE TABLE IF NOT EXISTS company_managers (
+                id SERIAL PRIMARY KEY,
+                company_id INTEGER NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
+                user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                manager_role VARCHAR(50) NOT NULL DEFAULT 'manager',
+                membership_status VARCHAR(50) NOT NULL DEFAULT 'active',
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                UNIQUE (company_id, user_id)
+            )
+            """
+        )
+    )
+    db.execute(
+        text(
+            """
+            CREATE INDEX IF NOT EXISTS idx_company_managers_user_status
+                ON company_managers (user_id, membership_status)
+            """
+        )
+    )
+    db.execute(
+        text(
+            """
+            CREATE INDEX IF NOT EXISTS idx_company_managers_company_status
+                ON company_managers (company_id, membership_status)
+            """
+        )
+    )
+    db.execute(
+        text(
+            """
+            INSERT INTO company_managers (
+                company_id,
+                user_id,
+                manager_role,
+                membership_status
+            )
+            SELECT companies.id, companies.manager_user_id, 'owner', 'active'
+            FROM companies
+            WHERE companies.manager_user_id IS NOT NULL
+              AND NOT EXISTS (
+                SELECT 1
+                FROM company_managers
+                WHERE company_managers.company_id = companies.id
+                  AND company_managers.user_id = companies.manager_user_id
+              )
             """
         )
     )

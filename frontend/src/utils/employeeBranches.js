@@ -37,6 +37,21 @@ function normalizeBranchId(value) {
   return String(value);
 }
 
+function toSingleBranchIds(branchIds, employee = null) {
+  const ids = (branchIds || [])
+    .map(normalizeBranchId)
+    .filter(Boolean);
+
+  if (ids.length === 0) return [];
+
+  const primaryId = normalizeBranchId(getPrimaryBranchId(employee));
+  if (primaryId && ids.includes(primaryId)) {
+    return [primaryId];
+  }
+
+  return [ids[0]];
+}
+
 function branchIdsFromApiList(branches) {
   if (!Array.isArray(branches) || branches.length === 0) return [];
   return branches
@@ -53,7 +68,7 @@ export function getStoredBranchIds(employeeId) {
 export function setStoredBranchIds(employeeId, branchIds) {
   if (employeeId == null || employeeId === '') return;
   const store = readStore();
-  const normalized = Array.from(new Set((branchIds || []).map(normalizeBranchId).filter(Boolean)));
+  const normalized = toSingleBranchIds(branchIds);
   if (normalized.length === 0) {
     delete store[String(employeeId)];
   } else {
@@ -108,12 +123,12 @@ export function getEmployeeBranchIds(employee) {
   if (!employee) return [];
 
   const apiIds = branchIdsFromApiList(employee.branches);
-  if (apiIds.length > 0) return apiIds;
+  if (apiIds.length > 0) return toSingleBranchIds(apiIds, employee);
 
   const primaryId = normalizeBranchId(getPrimaryBranchId(employee));
   if (primaryId) return [primaryId];
 
-  return getStoredBranchIds(employee.id);
+  return toSingleBranchIds(getStoredBranchIds(employee.id), employee);
 }
 
 export function resolveBranchById(branchId, allBranches = [], employee = null) {
@@ -142,10 +157,8 @@ export function resolveEmployeeBranches(employee, allBranches = []) {
 }
 
 export function getEmployeeBranchesLabel(employee, allBranches = []) {
-  const labels = resolveEmployeeBranches(employee, allBranches)
-    .map((branch) => branch.name || branch.title || branch.branch_name)
-    .filter(Boolean);
-  return labels.join(', ');
+  const [branch] = resolveEmployeeBranches(employee, allBranches);
+  return branch?.name || branch?.title || branch?.branch_name || '';
 }
 
 export function employeeHasBranch(employee, branchId) {
@@ -159,12 +172,8 @@ export function addEmployeeBranch(employee, branchId) {
   const nextId = normalizeBranchId(branchId);
   if (!employeeId || !nextId) return getEmployeeBranchIds(employee);
 
-  const current = getEmployeeBranchIds(employee);
-  if (current.includes(nextId)) return current;
-
-  const next = [...current, nextId];
-  setStoredBranchIds(employeeId, next);
-  return next;
+  setStoredBranchIds(employeeId, [nextId]);
+  return [nextId];
 }
 
 export function removeEmployeeBranch(employee, branchId) {
@@ -206,14 +215,15 @@ export function removeBranchFromAllStoredAssignments(branchId) {
 export function getUserBranchIds(user) {
   if (!user) return [];
 
+  const syntheticEmployee = buildUserAsEmployee(user);
   const apiIds = branchIdsFromApiList(user.branches);
-  if (apiIds.length > 0) return apiIds;
+  if (apiIds.length > 0) return toSingleBranchIds(apiIds, syntheticEmployee);
 
   const primaryId = normalizeBranchId(user.branch?.id ?? user.branch_id);
   if (primaryId) return [primaryId];
 
   const employeeId = user.employeeId ?? user.employee_id;
-  return employeeId ? getStoredBranchIds(employeeId) : [];
+  return employeeId ? toSingleBranchIds(getStoredBranchIds(employeeId), syntheticEmployee) : [];
 }
 
 export function resolveUserBranches(user, allBranches = []) {
@@ -230,10 +240,8 @@ export function resolveUserBranches(user, allBranches = []) {
 }
 
 export function getUserBranchesLabel(user, allBranches = []) {
-  return resolveUserBranches(user, allBranches)
-    .map((branch) => branch.name || branch.title)
-    .filter(Boolean)
-    .join(', ');
+  const [branch] = resolveUserBranches(user, allBranches);
+  return branch?.name || branch?.title || '';
 }
 
 export function enrichReportRowBranch(item, allBranches = []) {
@@ -256,16 +264,17 @@ export function enrichReportRowBranch(item, allBranches = []) {
   };
 
   const resolved = resolveEmployeeBranches(syntheticEmployee, allBranches);
-  const branchNames = resolved
-    .map((branch) => branch.name || branch.title)
-    .filter(Boolean);
+  const branch = resolved[0];
+  const branchNames = branch
+    ? [branch.name || branch.title].filter(Boolean)
+    : [];
 
   if (branchNames.length === 0 && apiBranchName) {
     branchNames.push(apiBranchName);
   }
 
   return {
-    branch: branchNames.length > 0 ? branchNames.join(', ') : '—',
+    branch: branchNames[0] || apiBranchName || '\u2014',
     branchNames,
   };
 }

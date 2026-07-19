@@ -4,12 +4,11 @@ on:
   pull_request:
     branches:
       - main
-      - dev2
+      - dev
   push:
     branches:
       - main
       - dev
-      - dev2
   workflow_dispatch:
 
 concurrency:
@@ -197,7 +196,7 @@ jobs:
           command -v git >/dev/null
           command -v docker >/dev/null
           docker compose version >/dev/null
-          test "$(id -u)" -eq 0
+          docker info >/dev/null
 
           if [ ! -d "$DEPLOY_DIR/.git" ]; then
             rm -rf -- "$DEPLOY_DIR"
@@ -221,14 +220,31 @@ jobs:
             echo "Nginx will start in HTTP-only mode until the certificate exists on the host."
           fi
 
+          $COMPOSE up -d postgres --wait --wait-timeout 180
+          docker exec -i shiftplanner_postgres \
+            psql -v ON_ERROR_STOP=1 -U shiftplanner_user -d shiftplanner \
+            < backend/db/migrations/005_branch_working_hours.sql
+
           if $COMPOSE up -d --build --force-recreate --remove-orphans --wait --wait-timeout 180; then
             docker exec shiftplanner_frontend sh -c '! grep -R "localhost:8000" -n /usr/share/nginx/html'
-            install -D -m 755 \
-              nginx/renewal-hooks/pre/shiftplanner-nginx \
-              /etc/letsencrypt/renewal-hooks/pre/shiftplanner-nginx
-            install -D -m 755 \
-              nginx/renewal-hooks/post/shiftplanner-nginx \
-              /etc/letsencrypt/renewal-hooks/post/shiftplanner-nginx
+            if command -v sudo >/dev/null && sudo -n true 2>/dev/null; then
+              sudo install -D -m 755 \
+                nginx/renewal-hooks/pre/shiftplanner-nginx \
+                /etc/letsencrypt/renewal-hooks/pre/shiftplanner-nginx
+              sudo install -D -m 755 \
+                nginx/renewal-hooks/post/shiftplanner-nginx \
+                /etc/letsencrypt/renewal-hooks/post/shiftplanner-nginx
+            elif [ -w /etc/letsencrypt/renewal-hooks/pre ] && \
+                 [ -w /etc/letsencrypt/renewal-hooks/post ]; then
+              install -D -m 755 \
+                nginx/renewal-hooks/pre/shiftplanner-nginx \
+                /etc/letsencrypt/renewal-hooks/pre/shiftplanner-nginx
+              install -D -m 755 \
+                nginx/renewal-hooks/post/shiftplanner-nginx \
+                /etc/letsencrypt/renewal-hooks/post/shiftplanner-nginx
+            else
+              echo "WARNING: skipping certbot hook installation; passwordless sudo or writable Let's Encrypt hook directories are required."
+            fi
             docker image prune -f
           else
             git reset --hard "$PREVIOUS_SHA"

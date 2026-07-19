@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+﻿import { useCallback, useEffect, useMemo, useState } from 'react';
 import * as XLSX from 'xlsx';
 import { extractApiErrorMessage, localizeBackendMessage } from '../../services/error';
 import {
@@ -19,9 +19,20 @@ import {
 } from '../../services/scheduleService';
 import { filterRealEmployees, listEmployees } from '../../services/employeeService';
 import { useTabResponsive } from '../../utils/tabResponsive';
-import { getPositionLabel } from '../../utils/employeeDisplay';
+import { getBranchLabel, getPositionLabel } from '../../utils/employeeDisplay';
 import { usePositionTitleRevision } from '../../hooks/usePositionTitleRevision';
 import { useUnsavedChanges } from '../../context/useUnsavedChanges';
+import { useAuth } from '../../context/useAuth';
+import '../../styles/schedule-tab.css';
+import { CHECK_MARK } from '../../utils/textSymbols';
+import {
+  formatApiDateAsDisplay,
+  formatDisplayDateWithWeekday,
+  formatLocalizedDate,
+  getDateLocale,
+} from '../../utils/dateDisplay';
+import { formatExchangeRequestShiftLine } from '../../utils/exchangeRequestDisplay';
+import DateField from '../ui/DateField';
 
 const EXCHANGE_NOTE_SCOPE = 'schedule-exchange-note';
 
@@ -56,7 +67,9 @@ function getShiftDurationLabel(shift, language) {
   const hours = Math.floor(duration / 60);
   const minutes = duration % 60;
   if (language === 'ru') {
-    return minutes ? `${hours} ч ${minutes} мин` : `${hours} ч`;
+    const hoursUnit = '\u0447';
+    const minutesUnit = '\u043c\u0438\u043d';
+    return minutes ? `${hours} ${hoursUnit} ${minutes} ${minutesUnit}` : `${hours} ${hoursUnit}`;
   }
   return minutes ? `${hours}h ${minutes}m` : `${hours}h`;
 }
@@ -78,17 +91,8 @@ function formatDate(value) {
   return formatLocalDate(date);
 }
 
-function formatDisplayDate(value) {
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) {
-    return value;
-  }
-
-  return date.toLocaleDateString('en-US', {
-    weekday: 'short',
-    month: 'short',
-    day: 'numeric',
-  });
+function formatDisplayDate(value, language = 'en') {
+  return formatDisplayDateWithWeekday(value, language);
 }
 
 function parseDateKey(value) {
@@ -159,8 +163,25 @@ function getShiftEmployeeName(shift) {
   return shift?.employee_name || shift?.employee?.full_name || shift?.full_name || '—';
 }
 
+function getShiftBranch(shift, user) {
+  return getBranchLabel(
+    shift?.branch_name || shift?.branch?.name || user?.branch?.name || user?.branch_name,
+    '—',
+  );
+}
+
 function getShiftCompany(shift) {
   return shift?.company_name || shift?.company?.name || shift?.company || '—';
+}
+
+function formatLongDisplayDate(value, language) {
+  const date = parseDateKey(value);
+  if (!date) return value;
+  return date.toLocaleDateString(getDateLocale(language), {
+    month: 'long',
+    day: 'numeric',
+    year: 'numeric',
+  });
 }
 
 function getShiftPositionId(shift) {
@@ -396,6 +417,7 @@ const MOBILE_EMPLOYEE_SCHEDULE_STYLES = {
 export default function ScheduleTab({ language, userRole }) {
   const positionTitleRevision = usePositionTitleRevision();
   const { markUnsaved, markSaved } = useUnsavedChanges();
+  const { user } = useAuth();
   const isManager = userRole === 'manager';
   const r = useTabResponsive(1480);
   const isEmployeeMobile = !isManager && r.isMobile;
@@ -409,6 +431,7 @@ export default function ScheduleTab({ language, userRole }) {
   const [selectedEmployeeDate, setSelectedEmployeeDate] = useState(() => formatLocalDate(new Date()));
   const [employeeCalendarMonth, setEmployeeCalendarMonth] = useState(() => formatLocalDate(new Date()));
   const [exchangeNotes, setExchangeNotes] = useState({});
+  const [exchangeSubmittedShiftIds, setExchangeSubmittedShiftIds] = useState({});
   const [exchangeRequests, setExchangeRequests] = useState([]);
   const [reassignEmployeeIds, setReassignEmployeeIds] = useState({});
   const [availableByShift, setAvailableByShift] = useState({});
@@ -423,6 +446,9 @@ export default function ScheduleTab({ language, userRole }) {
   const texts = {
     ru: {
       titleManager: 'Расписание',
+      titleEmployee: 'Расписание',
+      subtitleManager: 'Генерация и публикация смен для сотрудников.',
+      subtitleEmployee: 'Ваши опубликованные смены по месяцам.',
       day: 'День',
       week: 'Неделя',
       month: 'Месяц',
@@ -476,15 +502,33 @@ export default function ScheduleTab({ language, userRole }) {
       exchangeNotePlaceholder: 'Причина обмена',
       requestExchange: 'Запросить обмен',
       exchangeRequested: 'Запрос на обмен отправлен.',
+      exchangePending: 'Запрос отправлен. Ожидайте решения менеджера.',
       exchangeNoteRequired: 'Укажите причину обмена.',
       exchangeApprove: 'Одобрить',
       exchangeReject: 'Отклонить',
+      shift: 'Смена',
       exchangeApproved: 'Запрос на обмен одобрен.',
       exchangeRejected: 'Запрос на обмен отклонён.',
       noExchangeRequests: 'Нет ожидающих запросов на обмен.',
+      shiftTime: 'ВРЕМЯ СМЕНЫ',
+      location: 'ФИЛИАЛ',
+      positionLabel: 'ДОЛЖНОСТЬ',
+      shiftSingular: 'смена',
+      shiftPlural: 'смен',
+      selectDay: 'Выберите день',
+      selectDayHint: 'Нажмите на день с индикатором смены, чтобы увидеть детали.',
+      closeDetail: 'Закрыть',
+      legendAssigned: 'Назначено',
+      legendNoShift: 'Нет смен',
+      assignedStatus: 'Назначено',
+      noShiftsThisDayTitle: 'Нет смен в этот день',
+      noShiftsThisDayHint: 'На эту дату у вас нет опубликованных смен.',
     },
     en: {
       titleManager: 'Schedule',
+      titleEmployee: 'Schedule',
+      subtitleManager: 'Generate and publish shifts for your team.',
+      subtitleEmployee: 'Your published shifts by month.',
       day: 'Day',
       week: 'Week',
       month: 'Month',
@@ -538,12 +582,27 @@ export default function ScheduleTab({ language, userRole }) {
       exchangeNotePlaceholder: 'Reason for exchange',
       requestExchange: 'Request exchange',
       exchangeRequested: 'Exchange request submitted.',
+      exchangePending: 'Request sent. Waiting for your manager to review it.',
       exchangeNoteRequired: 'Enter a reason for the exchange.',
       exchangeApprove: 'Approve',
       exchangeReject: 'Reject',
+      shift: 'Shift',
       exchangeApproved: 'Exchange request approved.',
       exchangeRejected: 'Exchange request rejected.',
       noExchangeRequests: 'No pending exchange requests.',
+      shiftTime: 'SHIFT TIME',
+      location: 'LOCATION',
+      positionLabel: 'POSITION',
+      shiftSingular: 'shift',
+      shiftPlural: 'shifts',
+      selectDay: 'Select a day',
+      selectDayHint: 'Click a day with a shift indicator to see details here.',
+      closeDetail: 'Close',
+      legendAssigned: 'Assigned',
+      legendNoShift: 'No shift',
+      assignedStatus: 'Assigned',
+      noShiftsThisDayTitle: 'No shifts on this day',
+      noShiftsThisDayHint: 'You have no published shifts scheduled for this date.',
     },
   };
 
@@ -588,7 +647,7 @@ export default function ScheduleTab({ language, userRole }) {
 
   const employeeCalendarMonthLabel = useMemo(() => {
     const date = startOfMonthDate(employeeCalendarMonth);
-    return date.toLocaleDateString(language === 'ru' ? 'ru-RU' : 'en-US', {
+    return date.toLocaleDateString(getDateLocale(language), {
       month: 'long',
       year: 'numeric',
     });
@@ -604,7 +663,7 @@ export default function ScheduleTab({ language, userRole }) {
     return Array.from({ length: 7 }, (_, index) => {
       const date = new Date(monday);
       date.setDate(monday.getDate() + index);
-      return date.toLocaleDateString(language === 'ru' ? 'ru-RU' : 'en-US', { weekday: 'short' });
+      return date.toLocaleDateString(getDateLocale(language), { weekday: 'short' });
     });
   }, [language]);
 
@@ -841,6 +900,7 @@ export default function ScheduleTab({ language, userRole }) {
         note,
       });
       setExchangeNotes((prev) => ({ ...prev, [shiftId]: '' }));
+      setExchangeSubmittedShiftIds((prev) => ({ ...prev, [shiftId]: true }));
       markSaved(EXCHANGE_NOTE_SCOPE);
       setSuccessMessage(t.exchangeRequested);
     } catch (error) {
@@ -888,7 +948,7 @@ export default function ScheduleTab({ language, userRole }) {
       <div style={styles.toastLayer}>
         <div style={errorMessage ? styles.toastError : styles.toastSuccess}>
           <span style={errorMessage ? styles.toastIconError : styles.toastIconSuccess}>
-            {errorMessage ? '!' : '✓'}
+            {errorMessage ? '!' : CHECK_MARK}
           </span>
 
           <span style={styles.toastText}>{errorMessage || successMessage}</span>
@@ -902,7 +962,7 @@ export default function ScheduleTab({ language, userRole }) {
             style={styles.toastClose}
             aria-label="Close notification"
           >
-            ×
+            <span className="st-icon-close" aria-hidden />
           </button>
         </div>
       </div>
@@ -930,10 +990,218 @@ export default function ScheduleTab({ language, userRole }) {
   };
 
   if (isLoading) {
+    if (!isManager) {
+      return (
+        <section className="schedule-tab">
+          <div className="st-page">
+            <div className="st-loading">{t.loading}</div>
+          </div>
+        </section>
+      );
+    }
+
     return (
       <section style={pageStyle}>
         <div style={shellStyle}>
           <div style={styles.emptyBox}>{t.loading}</div>
+        </div>
+      </section>
+    );
+  }
+
+  if (!isManager) {
+    return (
+      <section className="schedule-tab">
+        <div className="st-page">
+          {renderToast()}
+
+          <header className="st-page-header">
+            <div>
+              <h1 className="st-page-title">{t.titleEmployee}</h1>
+              <p className="st-page-subtitle">{t.subtitleEmployee}</p>
+            </div>
+          </header>
+
+          <div className="st-layout">
+            <div className="st-main">
+              <div className="st-calendar-header">
+                <div />
+                <div className="st-month-nav">
+                  <button
+                    type="button"
+                    className="st-month-nav-btn"
+                    onClick={() => shiftEmployeeCalendarMonth(-1)}
+                    aria-label="Previous month"
+                  >
+                    <span className="st-icon-chevron-left" aria-hidden />
+                  </button>
+                  <span className="st-month-label">{employeeCalendarMonthLabel}</span>
+                  <button
+                    type="button"
+                    className="st-month-nav-btn"
+                    onClick={() => shiftEmployeeCalendarMonth(1)}
+                    aria-label="Next month"
+                  >
+                    <span className="st-icon-chevron-right" aria-hidden />
+                  </button>
+                </div>
+              </div>
+
+              <div className="st-legend">
+                <div className="st-legend-item">
+                  <span className="st-legend-dot st-legend-dot--assigned" />
+                  <span className="st-legend-label">{t.legendAssigned}</span>
+                </div>
+                <div className="st-legend-item">
+                  <span className="st-legend-dot st-legend-dot--empty" />
+                  <span className="st-legend-label">{t.legendNoShift}</span>
+                </div>
+              </div>
+
+              <div className="st-calendar">
+                <div className="st-calendar-weekdays">
+                  {employeeWeekdayLabels.map((weekday) => (
+                    <div key={weekday} className="st-calendar-weekday">{weekday}</div>
+                  ))}
+                </div>
+
+                <div className="st-calendar-grid">
+                  {employeeCalendarGrid.days.map((calendarDay, index) => {
+                    const shiftsForDate = normalizeArray(groupedMySchedule[calendarDay.date]);
+                    const isSelected = calendarDay.date === selectedEmployeeDate;
+                    const isTodayDate = isSameDateKey(calendarDay.date, formatLocalDate(new Date()));
+                    const isWeekend = index % 7 >= 5;
+
+                    const cellClass = [
+                      'st-day-cell',
+                      isWeekend ? 'st-day-cell--weekend' : '',
+                      !calendarDay.isCurrentMonth ? 'st-day-cell--outside' : '',
+                      isSelected ? 'st-day-cell--selected' : '',
+                    ].filter(Boolean).join(' ');
+
+                    return (
+                      <button
+                        key={calendarDay.date}
+                        type="button"
+                        className={cellClass}
+                        onClick={() => selectEmployeeCalendarDate(calendarDay.date)}
+                      >
+                        <span className={`st-day-number ${isTodayDate ? 'st-day-number--today' : ''}`}>
+                          {calendarDay.day}
+                        </span>
+
+                        {shiftsForDate.length > 0 ? (
+                          <div
+                            className="st-day-indicator"
+                            title={`${shiftsForDate.length} ${shiftsForDate.length === 1 ? t.shiftSingular : t.shiftPlural}`}
+                          >
+                            <span className="st-day-indicator-dot" style={{ background: '#3b82f6' }} />
+                            <span className="st-day-indicator-text">
+                              {shiftsForDate.length}{' '}
+                              {shiftsForDate.length === 1 ? t.shiftSingular : t.shiftPlural}
+                            </span>
+                            <span className="st-day-indicator-count">{shiftsForDate.length}</span>
+                          </div>
+                        ) : null}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            </div>
+
+            <div className="st-sidebar">
+              <div className="st-detail-panel">
+                {selectedEmployeeDate && selectedEmployeeDateShifts.length > 0 ? (
+                  <div className="st-detail-content">
+                    <div className="st-detail-header">
+                      <div>
+                        <p className="st-detail-date">{formatLongDisplayDate(selectedEmployeeDate, language)}</p>
+                        <p className="st-detail-status">{t.assignedStatus}</p>
+                      </div>
+                      <button
+                        type="button"
+                        className="st-detail-close"
+                        onClick={() => setSelectedEmployeeDate(null)}
+                        aria-label={t.closeDetail}
+                      >
+                        <span className="st-icon-close" aria-hidden />
+                      </button>
+                    </div>
+
+                    {selectedEmployeeDateShifts.map((shift) => {
+                      const shiftId = getShiftId(shift);
+                      const timeLabel = `${formatTime(shift.start_time)} – ${formatTime(shift.end_time)}`;
+
+                      return (
+                        <div key={shiftId} className="st-detail-shift-card">
+                          <div className="st-shift-time-box st-shift-time-box--assigned">
+                            <p className="st-shift-time-label">{t.shiftTime}</p>
+                            <p className="st-shift-time-value">{timeLabel}</p>
+                          </div>
+
+                          <div className="st-detail-section">
+                            <p className="st-detail-section-label">{t.location}</p>
+                            <p className="st-detail-section-value">{getShiftBranch(shift, user)}</p>
+                          </div>
+
+                          <div className="st-detail-section">
+                            <p className="st-detail-section-label">{t.positionLabel}</p>
+                            <p className="st-detail-section-value">{getShiftPosition(shift)}</p>
+                          </div>
+
+                          <div className="st-exchange-row">
+                            {exchangeSubmittedShiftIds[shiftId] ? (
+                              <p className="st-exchange-sent">{t.exchangePending}</p>
+                            ) : (
+                              <>
+                                <textarea
+                                  className="st-exchange-input"
+                                  value={exchangeNotes[shiftId] || ''}
+                                  onChange={(event) => {
+                                    setExchangeNotes((prev) => ({
+                                      ...prev,
+                                      [shiftId]: event.target.value,
+                                    }));
+                                    markUnsaved(EXCHANGE_NOTE_SCOPE);
+                                  }}
+                                  placeholder={t.exchangeNotePlaceholder}
+                                  disabled={isSubmitting}
+                                />
+
+                                <button
+                                  type="button"
+                                  onClick={() => handleCreateExchangeRequest(shiftId)}
+                                  className="st-btn st-btn--secondary"
+                                  disabled={isSubmitting}
+                                >
+                                  {t.requestExchange}
+                                </button>
+                              </>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                ) : (
+                  <div className="st-detail-empty">
+                    <span className="st-detail-empty-icon" aria-hidden />
+                    <p className="st-detail-empty-title">
+                      {selectedEmployeeDate && selectedEmployeeDateShifts.length === 0
+                        ? (employeeSchedule.length === 0 ? t.noPublishedScheduleTitle : t.noShiftsThisDayTitle)
+                        : t.selectDay}
+                    </p>
+                    <p className="st-detail-empty-message">
+                      {selectedEmployeeDate && selectedEmployeeDateShifts.length === 0
+                        ? (employeeSchedule.length === 0 ? t.noPublishedScheduleHint : t.noShiftsThisDayHint)
+                        : t.selectDayHint}
+                    </p>
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
         </div>
       </section>
     );
@@ -946,11 +1214,11 @@ export default function ScheduleTab({ language, userRole }) {
 
         <header style={{ ...styles.header, ...r.header, ...mobileSchedule?.header }}>
           <div>
-            <h2 style={{ ...styles.title, ...r.title, ...mobileSchedule?.title }}>{isManager ? t.titleManager : t.titleEmployee}</h2>
-            <p style={{ ...styles.subtitle, ...mobileSchedule?.subtitle }}>{isManager ? t.subtitleManager : t.subtitleEmployee}</p>
+            <h2 style={{ ...styles.title, ...r.title, ...mobileSchedule?.title }}>{t.titleManager}</h2>
+            <p style={{ ...styles.subtitle, ...mobileSchedule?.subtitle }}>{t.subtitleManager}</p>
           </div>
 
-          {isManager && schedule && (
+          {schedule && (
             <div style={styles.headerStats}>
               <Metric label={t.filledShifts} value={countFilledShifts(schedule)} />
               <Metric label={t.unfilledCount} value={countUnfilled(schedule)} />
@@ -958,30 +1226,29 @@ export default function ScheduleTab({ language, userRole }) {
           )}
         </header>
 
-        {isManager ? (
-          <div style={{ ...styles.managerLayout, ...r.splitLayout('300px minmax(0, 1fr)') }}>
+        <div style={{ ...styles.managerLayout, ...r.splitLayout('300px minmax(0, 1fr)') }}>
             <aside style={styles.sidebar}>
               <section style={styles.panel}>
                 <h3 style={styles.panelTitle}>{t.period}</h3>
 
                 <div style={styles.stack}>
                   <Field label={t.startDate}>
-                    <input
-                      type="date"
+                    <DateField
+                      language={language}
                       value={periodForm.start_date}
-                      onChange={(event) =>
-                        setPeriodForm((prev) => ({ ...prev, start_date: event.target.value }))
+                      onChange={(nextValue) =>
+                        setPeriodForm((prev) => ({ ...prev, start_date: nextValue }))
                       }
                       style={styles.dateInput}
                     />
                   </Field>
 
                   <Field label={t.endDate}>
-                    <input
-                      type="date"
+                    <DateField
+                      language={language}
                       value={periodForm.end_date}
-                      onChange={(event) =>
-                        setPeriodForm((prev) => ({ ...prev, end_date: event.target.value }))
+                      onChange={(nextValue) =>
+                        setPeriodForm((prev) => ({ ...prev, end_date: nextValue }))
                       }
                       style={styles.dateInput}
                     />
@@ -1049,6 +1316,9 @@ export default function ScheduleTab({ language, userRole }) {
                       <div key={request.id} style={styles.compactItem}>
                         <strong style={styles.itemTitle}>{request.employee_name}</strong>
                         <span style={styles.itemMeta}>
+                          {formatExchangeRequestShiftLine(request, t)}
+                        </span>
+                        <span style={styles.itemMeta}>
                           {t.note}: {request.note}
                         </span>
                         <div style={styles.inlineActions}>
@@ -1080,7 +1350,7 @@ export default function ScheduleTab({ language, userRole }) {
               {!schedule ? (
                 <div style={styles.emptyHero}>
                   <div style={styles.emptyHeroInner}>
-                    <div style={styles.emptyIcon}>📅</div>
+                    <div className="st-detail-empty-icon" style={{ margin: '0 auto' }} aria-hidden />
                     <h3 style={styles.emptyTitle}>{t.noSchedule}</h3>
                     <p style={styles.emptySubtitle}>{t.noScheduleHint}</p>
                     <p style={styles.emptyNote}>{t.noScheduleRequirements}</p>
@@ -1115,7 +1385,7 @@ export default function ScheduleTab({ language, userRole }) {
                               <div style={styles.shiftMain}>
                                 <strong style={styles.itemTitle}>{getShiftEmployeeName(shift)}</strong>
                                 <span style={styles.itemMeta}>{getShiftPosition(shift)}</span>
-                                <span style={styles.itemMeta}>{shift.date}</span>
+                                <span style={styles.itemMeta}>{formatApiDateAsDisplay(shift.date)}</span>
                                 <span style={styles.timeBadge}>
                                   {formatTime(shift.start_time)} — {formatTime(shift.end_time)}
                                 </span>
@@ -1196,7 +1466,7 @@ export default function ScheduleTab({ language, userRole }) {
                                   position_title: item.position_title || item.position,
                                 }, item.position_title || '—')}
                               </strong>
-                              <span style={styles.itemMeta}>{item.date}</span>
+                              <span style={styles.itemMeta}>{formatApiDateAsDisplay(item.date)}</span>
                               <span style={styles.itemMeta}>
                                 {formatTime(item.start_time)} — {formatTime(item.end_time)}
                               </span>
@@ -1253,7 +1523,7 @@ export default function ScheduleTab({ language, userRole }) {
                           {conflicts.map((conflict) => (
                             <div key={`${conflict.employee_id}-${conflict.date}`} style={styles.compactItem}>
                               <strong style={styles.itemTitle}>{conflict.employee_name}</strong>
-                              <span style={styles.itemMeta}>{conflict.date}</span>
+                              <span style={styles.itemMeta}>{formatApiDateAsDisplay(conflict.date)}</span>
                               <span style={styles.itemMeta}>
                                 {localizeBackendMessage(conflict.message, language)}
                               </span>
@@ -1267,379 +1537,6 @@ export default function ScheduleTab({ language, userRole }) {
               )}
             </main>
           </div>
-        ) : (
-          <main style={{ ...styles.employeeArea, ...r.employeeArea, ...mobileSchedule?.employeeArea }}>
-            <section style={{ ...styles.employeeCalendarPanel, ...r.employeePanel, ...mobileSchedule?.employeeCalendarPanel }}>
-              <div style={{
-                ...styles.employeeCalendarHeader,
-                ...(r.isMobile ? { alignItems: 'stretch' } : {}),
-                ...mobileSchedule?.employeeCalendarHeader,
-              }}
-              >
-                <div>
-                  <h3 style={{ ...styles.employeeCalendarTitle, ...mobileSchedule?.employeeCalendarTitle }}>{employeeCalendarMonthLabel}</h3>
-                  <p style={{ ...styles.panelHint, ...mobileSchedule?.panelHint }}>{formatDisplayDate(selectedEmployeeDate)}</p>
-                </div>
-
-                <div style={{ ...styles.calendarNav, ...mobileSchedule?.calendarNav }}>
-                  <button
-                    type="button"
-                    onClick={() => shiftEmployeeCalendarMonth(-1)}
-                    style={{ ...styles.calendarNavButton, ...mobileSchedule?.calendarNavButton }}
-                    aria-label="Previous month"
-                  >
-                    ←
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      const today = formatLocalDate(new Date());
-                      setEmployeeCalendarMonth(today);
-                      setSelectedEmployeeDate(today);
-                    }}
-                    style={{ ...styles.calendarTodayButton, ...mobileSchedule?.calendarTodayButton }}
-                  >
-                    {employeeCalendarMonthKey}
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => shiftEmployeeCalendarMonth(1)}
-                    style={{ ...styles.calendarNavButton, ...mobileSchedule?.calendarNavButton }}
-                    aria-label="Next month"
-                  >
-                    →
-                  </button>
-                </div>
-              </div>
-
-              <div style={{ ...styles.monthCalendar, ...mobileSchedule?.monthCalendar }}>
-                <div style={styles.monthWeekdays}>
-                  {employeeWeekdayLabels.map((weekday) => (
-                    <div key={weekday} style={{ ...styles.monthWeekday, ...mobileSchedule?.monthWeekday }}>{weekday}</div>
-                  ))}
-                </div>
-
-                <div style={{ ...styles.monthGrid, ...mobileSchedule?.monthGrid }}>
-                  {employeeCalendarGrid.days.map((calendarDay) => {
-                    const shiftsForDate = normalizeArray(groupedMySchedule[calendarDay.date]);
-                    const isSelected = calendarDay.date === selectedEmployeeDate;
-                    const isTodayDate = isSameDateKey(calendarDay.date, formatLocalDate(new Date()));
-
-                    return (
-                      <button
-                        key={calendarDay.date}
-                        type="button"
-                        onClick={() => selectEmployeeCalendarDate(calendarDay.date)}
-                        style={{
-                          ...styles.monthDayCell,
-                          ...(calendarDay.isCurrentMonth ? {} : styles.monthDayMuted),
-                          ...(isSelected ? styles.monthDaySelected : {}),
-                          ...mobileSchedule?.monthDayCell,
-                        }}
-                      >
-                        <span style={{
-                          ...styles.monthDayNumber,
-                          ...(isTodayDate ? styles.monthDayToday : {}),
-                          ...(isSelected ? styles.monthDayNumberSelected : {}),
-                          ...mobileSchedule?.monthDayNumber,
-                        }}
-                        >
-                          {calendarDay.day}
-                        </span>
-
-                        <span style={{ ...styles.monthDots, ...mobileSchedule?.monthDots }}>
-                          {shiftsForDate.slice(0, 4).map((shift, index) => (
-                            <span
-                              key={`${getShiftId(shift)}-${index}`}
-                              style={{
-                                ...styles.monthDot,
-                                ...mobileSchedule?.monthDot,
-                                background: shiftDotColors[index % shiftDotColors.length],
-                              }}
-                            />
-                          ))}
-                        </span>
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
-
-              <section style={{ ...styles.selectedDatePanel, ...mobileSchedule?.selectedDatePanel }}>
-                <div style={styles.selectedDateHeader}>
-                  <div>
-                    <h3 style={{ ...styles.panelTitle, ...mobileSchedule?.panelTitle }}>{formatDisplayDate(selectedEmployeeDate)}</h3>
-                    <p style={{ ...styles.panelHint, ...mobileSchedule?.panelHint }}>{selectedEmployeeDate}</p>
-                  </div>
-                  <span style={{ ...styles.selectedDateCount, ...mobileSchedule?.selectedDateCount }}>{selectedEmployeeDateShifts.length}</span>
-                </div>
-
-                {selectedEmployeeDateShifts.length === 0 ? (
-                  <div style={{ ...styles.selectedDateEmpty, ...mobileSchedule?.selectedDateEmpty }}>
-                    <strong style={{ ...styles.emptyTitle, ...mobileSchedule?.emptyTitle }}>
-                      {employeeSchedule.length === 0 ? t.noPublishedScheduleTitle : t.empty}
-                    </strong>
-                    <span style={{ ...styles.emptySubtitle, ...mobileSchedule?.emptySubtitle }}>
-                      {employeeSchedule.length === 0 ? t.noPublishedScheduleHint : t.empty}
-                    </span>
-                  </div>
-                ) : (
-                  <div style={{ ...styles.selectedShiftList, ...mobileSchedule?.selectedShiftList }}>
-                    {selectedEmployeeDateShifts.map((shift) => {
-                      const shiftId = getShiftId(shift);
-                      const durationLabel = getShiftDurationLabel(shift, language);
-
-                      return (
-                        <div
-                          key={shiftId}
-                          style={{
-                            ...styles.calendarShiftCard,
-                            ...mobileSchedule?.calendarShiftCard,
-                          }}
-                        >
-                          <div style={{
-                            ...styles.calendarShiftInfo,
-                            ...(r.isMobile ? { alignItems: 'center', justifyContent: 'center' } : {}),
-                            ...mobileSchedule?.calendarShiftInfo,
-                          }}
-                          >
-                            <span style={{ ...styles.calendarShiftTimeInline, ...mobileSchedule?.calendarShiftTimeInline }}>
-                              {formatTime(shift.start_time)} - {formatTime(shift.end_time)}
-                            </span>
-                            <strong style={{ ...styles.calendarShiftTitle, ...mobileSchedule?.calendarShiftTitle }}>{getShiftPosition(shift)}</strong>
-                            {durationLabel && (
-                              <span style={{ ...styles.calendarDurationBadge, ...mobileSchedule?.calendarDurationBadge }}>{durationLabel}</span>
-                            )}
-                          </div>
-
-                          <div style={{
-                            ...styles.calendarExchangeRow,
-                            ...(r.isMobile ? { gridTemplateColumns: '1fr' } : {}),
-                            ...mobileSchedule?.calendarExchangeRow,
-                          }}
-                          >
-                            <textarea
-                              value={exchangeNotes[shiftId] || ''}
-                              onChange={(event) => {
-                                setExchangeNotes((prev) => ({
-                                  ...prev,
-                                  [shiftId]: event.target.value,
-                                }));
-                                markUnsaved(EXCHANGE_NOTE_SCOPE);
-                              }}
-                              placeholder={t.exchangeNotePlaceholder}
-                              style={{ ...styles.calendarExchangeInput, ...mobileSchedule?.calendarExchangeInput }}
-                              disabled={isSubmitting}
-                            />
-
-                            <button
-                              type="button"
-                              onClick={() => handleCreateExchangeRequest(shiftId)}
-                              style={{
-                                ...(isSubmitting ? styles.smallSecondaryButtonDisabled : styles.calendarExchangeButton),
-                                width: '100%',
-                                ...mobileSchedule?.calendarExchangeButton,
-                              }}
-                              disabled={isSubmitting}
-                            >
-                              {t.requestExchange}
-                            </button>
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
-                )}
-              </section>
-
-              <div style={{ display: 'none' }}>
-              <div style={{ ...styles.panelHeader, ...r.panelHeader }}>
-                <div style={{ ...styles.modeSegment, ...r.modeSegment }}>
-                  {['day', 'week', 'month'].map((mode) => (
-                    <button
-                      key={mode}
-                      type="button"
-                      onClick={() => setEmployeeViewMode(mode)}
-                      style={{
-                        ...styles.modeButton,
-                        ...(employeeViewMode === mode ? styles.modeButtonActive : {}),
-                        ...r.modeButton,
-                      }}
-                    >
-                      {t[mode] || mode}
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              {employeeSchedule.length === 0 ? (
-                <div style={{ ...styles.emptyHero, ...(r.isMobile ? { padding: '32px 16px' } : {}) }}>
-                  <div style={styles.emptyHeroInner}>
-                    <div style={styles.emptyIcon}>🕒</div>
-                    <h3 style={styles.emptyTitle}>{t.noPublishedScheduleTitle}</h3>
-                    <p style={styles.emptySubtitle}>{t.noPublishedScheduleHint}</p>
-                    <ul style={styles.emptySteps}>
-                      {[t.noPublishedScheduleStep1, t.noPublishedScheduleStep2].map((step, index) => (
-                        <li key={step} style={styles.emptyStepRow}>
-                          <span style={styles.emptyStepBadge}>{index + 1}</span>
-                          <span style={styles.emptyStepText}>{step}</span>
-                        </li>
-                      ))}
-                    </ul>
-                  </div>
-                </div>
-              ) : (
-                <div style={{
-                  ...styles.employeeTimelineScroll,
-                  ...(r.isMobile ? { overflowY: 'visible', flex: 'none' } : {}),
-                }}
-                >
-                  <div style={styles.employeeTimeline}>
-                    {employeeTimelineDates.map((date) => {
-                      const shiftsForDate = normalizeArray(employeeSchedule).filter(
-                        (shift) => formatDate(shift.date || '') === date
-                      );
-
-                      return (
-                        <section key={date} style={{
-                          ...styles.timelineDay,
-                          ...(r.isMobile ? { padding: 14, borderRadius: 16 } : {}),
-                        }}
-                        >
-                          <div style={{
-                            ...styles.timelineDayHeader,
-                            ...(r.isMobile ? { flexDirection: 'column', alignItems: 'flex-start', gap: 4 } : {}),
-                          }}
-                          >
-                            <strong style={styles.itemTitle}>{formatDisplayDate(date)}</strong>
-                            <span style={styles.itemMeta}>{date}</span>
-                          </div>
-
-                          {shiftsForDate.length === 0 ? (
-                            <p style={styles.emptyText}>{t.empty}</p>
-                          ) : (
-                            <div style={styles.shiftList}>
-                              {shiftsForDate.map((shift) => {
-                                const shiftId = getShiftId(shift);
-                                const timeLabel = `${formatTime(shift.start_time)} — ${formatTime(shift.end_time)}`;
-
-                                if (r.isMobile) {
-                                  return (
-                                    <div
-                                      key={shiftId}
-                                      style={{
-                                        padding: '14px 16px',
-                                        borderRadius: 14,
-                                        background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
-                                        color: '#fff',
-                                        border: '1px solid rgba(255,255,255,0.12)',
-                                        boxShadow: '0 2px 8px rgba(102,126,234,0.25)',
-                                        display: 'flex',
-                                        flexDirection: 'column',
-                                        alignItems: 'center',
-                                        textAlign: 'center',
-                                      }}
-                                    >
-                                      <div style={{ fontWeight: 800, fontSize: 15, marginBottom: 4, width: '100%' }}>
-                                        {getShiftPosition(shift)}
-                                      </div>
-                                      <div style={{ fontSize: 13, opacity: 0.92, marginBottom: 6, width: '100%' }}>
-                                        {getShiftCompany(shift)}
-                                      </div>
-                                      <div style={{
-                                        display: 'inline-block',
-                                        padding: '4px 10px',
-                                        borderRadius: 999,
-                                        background: 'rgba(255,255,255,0.18)',
-                                        fontSize: 13,
-                                        fontWeight: 700,
-                                      }}
-                                      >
-                                        {timeLabel}
-                                      </div>
-                                      <textarea
-                                        value={exchangeNotes[shiftId] || ''}
-                                        onChange={(event) => {
-                                          setExchangeNotes((prev) => ({
-                                            ...prev,
-                                            [shiftId]: event.target.value,
-                                          }));
-                                          markUnsaved(EXCHANGE_NOTE_SCOPE);
-                                        }}
-                                        placeholder={t.exchangeNotePlaceholder}
-                                        style={{
-                                          ...styles.textarea,
-                                          marginTop: 10,
-                                          minHeight: 48,
-                                          background: 'rgba(255,255,255,0.95)',
-                                          color: '#002642',
-                                        }}
-                                        disabled={isSubmitting}
-                                      />
-                                      <button
-                                        type="button"
-                                        onClick={() => handleCreateExchangeRequest(shiftId)}
-                                        style={{
-                                          ...(isSubmitting ? styles.smallSecondaryButtonDisabled : styles.smallSecondaryButton),
-                                          marginTop: 8,
-                                          width: '100%',
-                                        }}
-                                        disabled={isSubmitting}
-                                      >
-                                        {t.requestExchange}
-                                      </button>
-                                    </div>
-                                  );
-                                }
-
-                                return (
-                                  <div key={shiftId} style={styles.shiftCard}>
-                                    <div style={styles.shiftMain}>
-                                      <div style={styles.shiftRow}>
-                                        <strong style={styles.itemTitle}>{getShiftPosition(shift)}</strong>
-                                        <span style={styles.itemMeta}>· {getShiftCompany(shift)}</span>
-                                        <span style={styles.timeBadge}>{timeLabel}</span>
-                                      </div>
-                                      <textarea
-                                        value={exchangeNotes[shiftId] || ''}
-                                        onChange={(event) => {
-                                          setExchangeNotes((prev) => ({
-                                            ...prev,
-                                            [shiftId]: event.target.value,
-                                          }));
-                                          markUnsaved(EXCHANGE_NOTE_SCOPE);
-                                        }}
-                                        placeholder={t.exchangeNotePlaceholder}
-                                        style={{ ...styles.textarea, marginTop: 10 }}
-                                        disabled={isSubmitting}
-                                      />
-                                      <button
-                                        type="button"
-                                        onClick={() => handleCreateExchangeRequest(shiftId)}
-                                        style={{
-                                          ...(isSubmitting ? styles.smallSecondaryButtonDisabled : styles.smallPrimaryButton),
-                                          marginTop: 8,
-                                        }}
-                                        disabled={isSubmitting}
-                                      >
-                                        {t.requestExchange}
-                                      </button>
-                                    </div>
-                                  </div>
-                                );
-                              })}
-                            </div>
-                          )}
-                        </section>
-                      );
-                    })}
-                  </div>
-                </div>
-              )}
-              </div>
-            </section>
-          </main>
-        )}
       </div>
     </section>
   );

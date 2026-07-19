@@ -33,8 +33,11 @@ services:
       ACCESS_TOKEN_EXPIRE_MINUTES: 60
       ROOT_PATH: ${ROOT_PATH:-}
       PUBLIC_API_BASE_URL: ${PUBLIC_API_BASE_URL:-http://localhost:8000}
+      PUBLIC_FRONTEND_BASE_URL: ${PUBLIC_FRONTEND_BASE_URL:-https://shiftplanner.online}
+      PASSWORD_RESET_URL: ${PASSWORD_RESET_URL:-}
       EMAIL_VERIFICATION_REQUIRED: ${EMAIL_VERIFICATION_REQUIRED:-true}
       EMAIL_PROVIDER: ${EMAIL_PROVIDER:-smtp}
+      EMAIL_FORCE_IPV4: ${EMAIL_FORCE_IPV4:-true}
       EMAIL_FROM: "${EMAIL_FROM:-ShiftPlanner <shiftplanner@mail.ru>}"
       RESEND_API_KEY: ${RESEND_API_KEY:-}
       SMTP_HOST: ${SMTP_HOST:-smtp.mail.ru}

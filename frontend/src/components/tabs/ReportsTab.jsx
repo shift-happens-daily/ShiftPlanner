@@ -1,15 +1,19 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+﻿import { useCallback, useEffect, useMemo, useState } from 'react';
 import * as XLSX from 'xlsx';
 import { getEmployeeReports, getMyReport } from '../../services/reportService';
 import { listBranches } from '../../services/companyService';
 import { filterRealEmployees, listEmployees } from '../../services/employeeService';
 import { listPositions } from '../../services/positionService';
-import { enrichReportRowBranch } from '../../utils/employeeBranches';
+import { enrichReportRowBranch, getEmployeeBranchesLabel, getUserBranchesLabel, resolveEmployeeBranches } from '../../utils/employeeBranches';
 import { getEmployeePositionLabel, getPositionLabel } from '../../utils/employeeDisplay';
 import { extractApiErrorMessage } from '../../services/error';
 import { POSITION_TITLES_CHANGED_EVENT } from '../../services/positionService';
-import { useTabResponsive } from '../../utils/tabResponsive';
+import { useIsMobile } from '../../hooks/useMediaQuery';
 import { formatLocalDate } from '../../services/scheduleService';
+import { CHECK_MARK, CLOSE_MARK, EM_DASH, formatDateRange } from '../../utils/textSymbols';
+import { formatApiDateAsDisplay } from '../../utils/dateDisplay';
+import DateField from '../ui/DateField';
+import '../../styles/reports-tab.css';
 
 function defaultRange() {
   const today = formatLocalDate(new Date());
@@ -19,6 +23,75 @@ function defaultRange() {
     end_date: today,
   };
 }
+
+function formatHoursValue(value) {
+  const hours = normalizeNumber(value);
+  if (Number.isInteger(hours)) return `${hours}h`;
+  return `${hours.toFixed(1)}h`;
+}
+
+function formatPeriodLabel(startDate, endDate) {
+  return formatDateRange(startDate, endDate);
+}
+
+function formatAvgShiftLength(totalHours, totalShifts) {
+  if (!totalShifts) return '0h';
+  return `${(totalHours / totalShifts).toFixed(1)}h`;
+}
+
+function IconClock() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <circle cx="12" cy="12" r="9" stroke="currentColor" strokeWidth="2" />
+      <path d="M12 7V12L15 14" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+    </svg>
+  );
+}
+
+function IconCheckCircle() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <circle cx="12" cy="12" r="9" stroke="currentColor" strokeWidth="2" />
+      <path d="M8 12L11 15L16 9" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+}
+
+function IconUsers() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <path d="M16 19V17C16 15.3431 14.6569 14 13 14H7C5.34315 14 4 15.3431 4 17V19" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+      <circle cx="10" cy="8" r="3" stroke="currentColor" strokeWidth="2" />
+      <path d="M20 19V17C20 15.9391 19.5786 14.9217 18.8284 14.1716" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+      <path d="M16 4.13C16.8604 4.35031 17.623 4.85071 18.1679 5.55232C18.7128 6.25392 19.0078 7.11683 19.0078 8.005C19.0078 8.89317 18.7128 9.75608 18.1679 10.4577C17.623 11.1593 16.8604 11.6597 16 11.88" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+    </svg>
+  );
+}
+
+function IconActivity() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <path d="M4 14L8 10L12 14L16 8L20 12" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+}
+
+function IconDownload() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <path d="M12 4V15" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+      <path d="M8 11L12 15L16 11" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+      <path d="M4 19H20" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+    </svg>
+  );
+}
+
+const STAT_TONES = {
+  blue: { background: '#eff6ff', color: '#2563eb' },
+  violet: { background: '#f5f3ff', color: '#7c3aed' },
+  amber: { background: '#fffbeb', color: '#d97706' },
+  emerald: { background: '#ecfdf5', color: '#059669' },
+};
 
 function normalizeArray(value) {
   if (Array.isArray(value)) {
@@ -51,235 +124,87 @@ function uniqueSorted(values) {
     .sort((a, b) => a.localeCompare(b));
 }
 
-const DEFAULT_HOURLY_RATE = 25;
+function unwrapReportPayload(value) {
+  if (!value) return null;
+  if (Array.isArray(value)) return value.length ? value[0] : null;
+  if (value?.report && typeof value.report === 'object') return value.report;
+  if (value?.data && typeof value.data === 'object' && !Array.isArray(value.data)) return value.data;
+  return value;
+}
 
 function normalizeManagerRow(item, allBranches = [], employeesById = {}) {
   const totalHours = normalizeNumber(item?.total_hours);
-  const hourlyRate = normalizeNumber(item?.hourly_rate) || DEFAULT_HOURLY_RATE;
-  const totalSalary = normalizeNumber(item?.total_salary) || normalizeNumber(item?.salary) || totalHours * hourlyRate;
-  const branchInfo = enrichReportRowBranch(item, allBranches);
   const employeeId = item?.employee_id || item?.id || item?.user_id;
   const employee = employeesById[String(employeeId)] || null;
+  const branchInfo = employee
+    ? {
+      branch: getEmployeeBranchesLabel(employee, allBranches) || EM_DASH,
+      branchNames: resolveEmployeeBranches(employee, allBranches)
+        .map((branch) => branch.name || branch.title || branch.branch_name)
+        .filter(Boolean),
+    }
+    : enrichReportRowBranch(item, allBranches);
   const position = employee
-    ? getEmployeePositionLabel(employee, item?.position || item?.position_title || item?.position_name || '—')
+    ? getEmployeePositionLabel(employee, item?.position || item?.position_title || item?.position_name || EM_DASH)
     : getPositionLabel({
       position_title: item?.position || item?.position_title || item?.position_name,
-    }, '—');
+    }, EM_DASH);
 
   return {
     employee_id: employeeId || `${item?.full_name}-${item?.position}`,
-    full_name: item?.full_name || item?.employee_name || item?.name || '—',
+    full_name: item?.full_name || item?.employee_name || item?.name || EM_DASH,
     position,
     branch: branchInfo.branch,
     branchNames: branchInfo.branchNames,
     total_hours: totalHours,
     total_shifts: normalizeNumber(item?.total_shifts),
-    hourly_rate: hourlyRate,
-    total_salary: totalSalary,
   };
 }
 
 function normalizeEmployeeReport(report, user) {
-  if (!report) {
+  const payload = unwrapReportPayload(report);
+  if (!payload) {
     return null;
   }
 
-  const totalHours = normalizeNumber(report.total_hours);
-  const totalSalary = normalizeNumber(report.total_salary) || normalizeNumber(report.salary) || totalHours * DEFAULT_HOURLY_RATE;
+  const totalHours = normalizeNumber(payload.total_hours);
   const position = user
-    ? getEmployeePositionLabel(user, report.position || report.position_title || report.position_name || '—')
+    ? getEmployeePositionLabel(user, payload.position || payload.position_title || payload.position_name || EM_DASH)
     : getPositionLabel({
-      position_title: report.position || report.position_title || report.position_name,
-    }, '—');
+      position_title: payload.position || payload.position_title || payload.position_name,
+    }, EM_DASH);
 
   return {
-    full_name: report.full_name || report.employee_name || report.name || '—',
+    full_name: payload.full_name || payload.employee_name || payload.name || user?.fullName || user?.full_name || EM_DASH,
     position,
+    branches: getUserBranchesLabel(user) || EM_DASH,
     total_hours: totalHours,
-    total_shifts: normalizeNumber(report.total_shifts),
-    total_salary: totalSalary,
+    total_shifts: normalizeNumber(payload.total_shifts),
   };
 }
 
-const MOBILE_REPORTS_STYLES = {
-  page: {
-    padding: '6px 8px 10px',
-    overflowY: 'auto',
-    height: 'auto',
-  },
-  shell: {
-    gap: 8,
-    overflow: 'visible',
-    height: 'auto',
-    padding: 0,
-    borderRadius: 0,
-  },
-  header: {
-    gap: 6,
-  },
-  title: {
-    fontSize: 18,
-  },
-  subtitle: {
-    fontSize: 12,
-    margin: '2px 0 0',
-  },
-  layout: {
-    gap: 8,
-    overflow: 'visible',
-  },
-  sidebar: {
-    gap: 8,
-  },
-  panel: {
-    padding: 10,
-    borderRadius: 12,
-  },
-  panelTitle: {
-    fontSize: 15,
-    margin: '0 0 8px',
-  },
-  summaryCard: {
-    padding: 10,
-    borderRadius: 12,
-    gap: 6,
-  },
-  summaryTitle: {
-    fontSize: 15,
-    margin: '0 0 4px',
-  },
-  stack: {
-    gap: 7,
-  },
-  label: {
-    fontSize: 11,
-  },
-  dateInput: {
-    height: 34,
-    padding: '0 10px',
-    fontSize: 13,
-    borderRadius: 8,
-  },
-  select: {
-    height: 34,
-    padding: '0 10px',
-    fontSize: 13,
-    borderRadius: 8,
-  },
-  modeSegment: {
-    padding: 3,
-    gap: 3,
-    borderRadius: 8,
-  },
-  modeButton: {
-    height: 32,
-    padding: '0 8px',
-    fontSize: 11,
-  },
-  primaryButton: {
-    height: 34,
-    padding: '0 12px',
-    fontSize: 12,
-    borderRadius: 8,
-  },
-  secondaryButton: {
-    height: 34,
-    padding: '0 12px',
-    fontSize: 12,
-    borderRadius: 8,
-  },
-  metric: {
-    padding: '8px 10px',
-    borderRadius: 8,
-    gap: 2,
-  },
-  metricLabel: {
-    fontSize: 10,
-  },
-  metricValue: {
-    fontSize: 16,
-  },
-  content: {
-    overflow: 'visible',
-  },
-  reportCardList: {
-    gap: 6,
-  },
-  reportCard: {
-    padding: '8px 10px',
-    borderRadius: 10,
-    gap: 5,
-  },
-  reportCardName: {
-    fontSize: 13,
-  },
-  reportCardRow: {
-    gap: 8,
-    fontSize: 12,
-  },
-  reportCardValue: {
-    fontSize: 12,
-  },
-  totalReportCard: {
-    padding: '8px 10px',
-    borderRadius: 10,
-    gap: 5,
-  },
-  employeeReportCard: {
-    minHeight: 0,
-    padding: 12,
-    gap: 12,
-    borderRadius: 12,
-  },
-  employeeReportHeader: {
-    gap: 8,
-  },
-  employeeReportPill: {
-    height: 28,
-    padding: '0 10px',
-    fontSize: 11,
-  },
-  miniLabel: {
-    fontSize: 11,
-    marginBottom: 4,
-  },
-  employeeStats: {
-    gridTemplateColumns: '1fr',
-    gap: 6,
-  },
-  emptyHero: {
-    minHeight: 0,
-    padding: 16,
-    borderRadius: 12,
-    gap: 6,
-  },
-  emptyTitle: {
-    fontSize: 16,
-  },
-  emptyText: {
-    fontSize: 12,
-  },
-  emptyBox: {
-    padding: 16,
-    borderRadius: 12,
-    fontSize: 13,
-  },
-  toastLayer: {
-    top: 8,
-    right: 8,
-    width: 'calc(100% - 16px)',
-  },
-};
+function StatCard({ icon: Icon, tone, value, label, sub }) {
+  const toneStyle = STAT_TONES[tone] || STAT_TONES.blue;
+
+  return (
+    <div className="rt-stat-card">
+      <div className="rt-stat-icon" style={{ background: toneStyle.background, color: toneStyle.color }}>
+        <Icon />
+      </div>
+      <p className="rt-stat-value">{value}</p>
+      <p className="rt-stat-label">{label}</p>
+      {sub ? <p className="rt-stat-sub">{sub}</p> : null}
+    </div>
+  );
+}
 
 export default function ReportsTab({ language, userRole, user }) {
-  const r = useTabResponsive(1480);
-  const mobileStyles = r.isMobile ? MOBILE_REPORTS_STYLES : null;
+  const isMobile = useIsMobile();
   const isManager = userRole === 'manager';
   const companyId = user?.company?.id || user?.company_id || null;
 
   const [filterForm, setFilterForm] = useState(defaultRange);
   const [appliedRange, setAppliedRange] = useState(defaultRange);
-  const [reportMode, setReportMode] = useState('hours');
   const [employeeSearch, setEmployeeSearch] = useState('');
   const [positionFilter, setPositionFilter] = useState('');
   const [branchFilter, setBranchFilter] = useState('');
@@ -298,43 +223,45 @@ export default function ReportsTab({ language, userRole, user }) {
 
   const texts = {
     ru: {
-      title: 'Отчеты',
-      selfTitle: 'Мой отчет',
-      period: 'Период отчета',
-      startDate: 'Начало периода',
-      endDate: 'Конец периода',
-      apply: 'Показать отчет',
+      title: 'Отчёты',
+      selfTitle: 'Мой отчёт',
+      subtitleManager: 'Сводка по часам и сменам за выбранный период.',
+      subtitleEmployee: 'Ваши часы и смены за выбранный период.',
+      period: 'Период',
+      startDate: 'Дата начала',
+      endDate: 'Дата окончания',
+      apply: 'Показать отчёт',
       employee: 'Сотрудник',
       position: 'Позиция',
       hours: 'Часы',
       shifts: 'Смены',
-      salary: 'Зарплата',
       branch: 'Филиал',
       allBranches: 'Все филиалы',
       allEmployees: 'Все сотрудники',
       allPositions: 'Все позиции',
-      reportType: 'Тип отчета',
       hoursReport: 'По часам',
-      shiftsReport: 'По сменам',
-      salaryReport: 'По зарплате',
       total: 'Итого',
       export: 'Скачать XLSX',
       loading: 'Загрузка...',
       empty: 'Нет данных за выбранный период.',
       unknownPosition: 'Не указана',
-      reportReady: 'Отчет обновлен.',
-      exported: 'Отчет скачан в XLSX.',
+      reportReady: 'Отчёт обновлён.',
+      exported: 'Отчёт сохранён в формате XLSX.',
       summary: 'Сводка',
       totalHours: 'Всего часов',
       totalShifts: 'Всего смен',
-      employees: 'Сотрудников',
+      avgShift: 'Средняя длительность смены',
+      perShift: 'за смену',
+      employees: 'Сотрудники',
       noPermission:
-        'У вас нет прав для этого отчета. Проверьте роль аккаунта или используйте личный отчет сотрудника.',
+        'У вас нет доступа к этому отчёту. Проверьте роль аккаунта или откройте личный отчёт.',
     },
     en: {
       title: 'Reports',
-      selfTitle: 'My report',
-      period: 'Report period',
+      selfTitle: 'My Report',
+      subtitleManager: 'Summary of hours and shifts for the selected period.',
+      subtitleEmployee: 'Your hours and shifts for the selected period.',
+      period: 'Period',
       startDate: 'Start date',
       endDate: 'End date',
       apply: 'Show report',
@@ -342,28 +269,26 @@ export default function ReportsTab({ language, userRole, user }) {
       position: 'Position',
       hours: 'Hours',
       shifts: 'Shifts',
-      salary: 'Salary',
       branch: 'Branch',
       allBranches: 'All branches',
       allEmployees: 'All employees',
       allPositions: 'All positions',
-      reportType: 'Report type',
-      hoursReport: 'By hours',
-      shiftsReport: 'By shifts',
-      salaryReport: 'By salary',
+      hoursReport: 'Hours report',
       total: 'Total',
       export: 'Download XLSX',
       loading: 'Loading...',
       empty: 'No data for the selected period.',
       unknownPosition: 'Not specified',
-      reportReady: 'Report refreshed.',
-      exported: 'Report downloaded as XLSX.',
+      reportReady: 'Report updated.',
+      exported: 'Report saved as XLSX.',
       summary: 'Summary',
       totalHours: 'Total hours',
       totalShifts: 'Total shifts',
+      avgShift: 'Average shift length',
+      perShift: 'per shift',
       employees: 'Employees',
       noPermission:
-        'You do not have permission for this report. Check the account role or use the employee personal report.',
+        'You do not have access to this report. Check your account role or open your personal report.',
     },
   };
 
@@ -433,7 +358,10 @@ export default function ReportsTab({ language, userRole, user }) {
     return normalizedManagerReport.filter((item) => {
       const matchesEmployee = !employeeSearch || item.full_name.toLowerCase().includes(employeeSearch.toLowerCase());
       const matchesPosition = !positionFilter || item.position.toLowerCase().includes(positionFilter.toLowerCase());
-      const matchesBranch = !branchFilter || item.branch.toLowerCase().includes(branchFilter.toLowerCase());
+      const matchesBranch = !branchFilter || (
+        (item.branchNames || []).some((name) => name.toLowerCase() === branchFilter.toLowerCase())
+        || item.branch.toLowerCase().includes(branchFilter.toLowerCase())
+      );
       return matchesEmployee && matchesPosition && matchesBranch;
     });
   }, [normalizedManagerReport, employeeSearch, positionFilter, branchFilter]);
@@ -467,20 +395,73 @@ export default function ReportsTab({ language, userRole, user }) {
         (acc, item) => ({
           total_hours: acc.total_hours + item.total_hours,
           total_shifts: acc.total_shifts + item.total_shifts,
-          total_salary: acc.total_salary + item.total_salary,
           employees: acc.employees + 1,
         }),
-        { total_hours: 0, total_shifts: 0, total_salary: 0, employees: 0 }
+        { total_hours: 0, total_shifts: 0, employees: 0 }
       );
     }
 
     return {
       total_hours: normalizedEmployeeReport?.total_hours || 0,
       total_shifts: normalizedEmployeeReport?.total_shifts || 0,
-      total_salary: normalizedEmployeeReport?.total_salary || 0,
       employees: normalizedEmployeeReport ? 1 : 0,
     };
   }, [isManager, normalizedEmployeeReport, filteredManagerReport]);
+
+  const periodSub = formatPeriodLabel(appliedRange.start_date, appliedRange.end_date);
+
+  const statsCards = useMemo(() => {
+    const cards = [
+      {
+        key: 'hours',
+        icon: IconClock,
+        tone: 'blue',
+        value: formatHoursValue(totals.total_hours),
+        label: t.totalHours,
+        sub: periodSub,
+      },
+      {
+        key: 'shifts',
+        icon: IconCheckCircle,
+        tone: 'violet',
+        value: String(totals.total_shifts),
+        label: t.totalShifts,
+        sub: periodSub,
+      },
+    ];
+
+    if (isManager) {
+      cards.push(
+        {
+          key: 'employees',
+          icon: IconUsers,
+          tone: 'emerald',
+          value: String(totals.employees),
+          label: t.employees,
+          sub: periodSub,
+        },
+        {
+          key: 'avg',
+          icon: IconActivity,
+          tone: 'amber',
+          value: formatAvgShiftLength(totals.total_hours, totals.total_shifts),
+          label: t.avgShift,
+          sub: t.perShift,
+        }
+      );
+    } else {
+      cards.push({
+        key: 'avg',
+        icon: IconActivity,
+        tone: 'amber',
+        value: formatAvgShiftLength(totals.total_hours, totals.total_shifts),
+        label: t.avgShift,
+        sub: t.perShift,
+      });
+    }
+
+    return cards;
+  }, [isManager, periodSub, t, totals]);
 
   useEffect(() => {
     if (!errorMessage && !successMessage) {
@@ -504,7 +485,7 @@ export default function ReportsTab({ language, userRole, user }) {
 
     const requestParams = {
       ...range,
-      report_type: reportMode,
+      report_type: 'hours',
     };
 
     setErrorMessage('');
@@ -543,7 +524,6 @@ export default function ReportsTab({ language, userRole, user }) {
     appliedRange,
     isManager,
     language,
-    reportMode,
     t.empty,
     t.noPermission,
     t.reportReady,
@@ -564,45 +544,28 @@ export default function ReportsTab({ language, userRole, user }) {
 
   const exportToExcel = () => {
     const rows = isManager
-      ? filteredManagerReport.map((item) => {
-          const baseRow = {
-            [t.employee]: item.full_name,
-            [t.position]: item.position || t.unknownPosition,
-            [t.branch]: item.branch || '—',
-          };
-
-          if (reportMode === 'salary') {
-            return {
-              ...baseRow,
-              [t.hours]: item.total_hours,
-              [t.salary]: item.total_salary,
-            };
-          }
-
-          return {
-            ...baseRow,
-            [t.hours]: item.total_hours,
-          };
-        })
+      ? filteredManagerReport.map((item) => ({
+          [t.employee]: item.full_name,
+          [t.position]: item.position || t.unknownPosition,
+          [t.branch]: item.branch || EM_DASH,
+          [t.hours]: item.total_hours,
+          [t.shifts]: item.total_shifts,
+        }))
       : [
           {
             [t.employee]: normalizedEmployeeReport?.full_name || '',
             [t.position]: normalizedEmployeeReport?.position || t.unknownPosition,
             [t.hours]: normalizedEmployeeReport?.total_hours || 0,
-            ...(reportMode === 'salary'
-              ? { [t.salary]: normalizedEmployeeReport?.total_salary || 0 }
-              : {}),
+            [t.shifts]: normalizedEmployeeReport?.total_shifts || 0,
           },
         ];
 
     const summaryRows = [
       { metric: t.totalHours, value: totals.total_hours },
-      ...(reportMode === 'salary'
-        ? [{ metric: t.salary, value: totals.total_salary }]
-        : []),
+      { metric: t.totalShifts, value: totals.total_shifts },
       { metric: t.employees, value: totals.employees },
-      { metric: t.startDate, value: appliedRange.start_date },
-      { metric: t.endDate, value: appliedRange.end_date },
+      { metric: t.startDate, value: formatApiDateAsDisplay(appliedRange.start_date) },
+      { metric: t.endDate, value: formatApiDateAsDisplay(appliedRange.end_date) },
     ];
 
     const workbook = XLSX.utils.book_new();
@@ -615,13 +578,13 @@ export default function ReportsTab({ language, userRole, user }) {
 
   const renderToast = () => (
     (errorMessage || successMessage) && (
-      <div style={{ ...styles.toastLayer, ...mobileStyles?.toastLayer }}>
-        <div style={errorMessage ? styles.toastError : styles.toastSuccess}>
-          <span style={errorMessage ? styles.toastIconError : styles.toastIconSuccess}>
-            {errorMessage ? '!' : '✓'}
+      <div className="rt-toast-layer">
+        <div className={`rt-toast${errorMessage ? ' rt-toast--error' : ''}`}>
+          <span className="rt-toast-icon">
+            {errorMessage ? '!' : CHECK_MARK}
           </span>
 
-          <span style={styles.toastText}>{errorMessage || successMessage}</span>
+          <span className="rt-toast-text">{errorMessage || successMessage}</span>
 
           <button
             type="button"
@@ -629,867 +592,282 @@ export default function ReportsTab({ language, userRole, user }) {
               setErrorMessage('');
               setSuccessMessage('');
             }}
-            style={styles.toastClose}
+            className="rt-toast-close"
             aria-label="Close notification"
           >
-            ×
+            {CLOSE_MARK}
           </button>
         </div>
       </div>
     )
   );
 
+  const renderFilters = () => (
+    <div className={`rt-filters-grid ${isManager ? 'rt-filters-grid--manager' : 'rt-filters-grid--employee'}`}>
+      <label className="rt-field">
+        <span className="rt-label">{t.startDate}</span>
+        <DateField
+          language={language}
+          className="rt-input"
+          value={filterForm.start_date}
+          onChange={(nextValue) =>
+            setFilterForm((prev) => ({ ...prev, start_date: nextValue }))
+          }
+        />
+      </label>
+
+      <label className="rt-field">
+        <span className="rt-label">{t.endDate}</span>
+        <DateField
+          language={language}
+          className="rt-input"
+          value={filterForm.end_date}
+          onChange={(nextValue) =>
+            setFilterForm((prev) => ({ ...prev, end_date: nextValue }))
+          }
+        />
+      </label>
+
+      {isManager ? (
+        <>
+          <label className="rt-field">
+            <span className="rt-label">{t.employee}</span>
+            <select
+              className="rt-select"
+              value={employeeSearch}
+              onChange={(event) => setEmployeeSearch(event.target.value)}
+            >
+              <option value="">{t.allEmployees}</option>
+              {employeeFilterOptions.map((name) => (
+                <option key={name} value={name}>{name}</option>
+              ))}
+            </select>
+          </label>
+
+          <label className="rt-field">
+            <span className="rt-label">{t.position}</span>
+            <select
+              className="rt-select"
+              value={positionFilter}
+              onChange={(event) => setPositionFilter(event.target.value)}
+            >
+              <option value="">{t.allPositions}</option>
+              {positionFilterOptions.map((position) => (
+                <option key={position} value={position}>{position}</option>
+              ))}
+            </select>
+          </label>
+
+          <label className="rt-field">
+            <span className="rt-label">{t.branch}</span>
+            <select
+              className="rt-select"
+              value={branchFilter}
+              onChange={(event) => setBranchFilter(event.target.value)}
+            >
+              <option value="">{t.allBranches}</option>
+              {branchFilterOptions.map((branch) => (
+                <option key={branch} value={branch}>{branch}</option>
+              ))}
+            </select>
+          </label>
+        </>
+      ) : null}
+
+      <button
+        type="button"
+        onClick={applyFilters}
+        className="rt-btn rt-btn-secondary"
+        disabled={isRefreshing}
+      >
+        {isRefreshing ? '...' : t.apply}
+      </button>
+    </div>
+  );
+
+  const renderManagerContent = () => {
+    if (!hasManagerRows) {
+      return (
+        <div className="rt-empty">
+          <h3 className="rt-empty-title">{t.empty}</h3>
+          <p className="rt-empty-text">{periodSub}</p>
+        </div>
+      );
+    }
+
+    if (isMobile) {
+      return (
+        <div className="rt-mobile-list">
+          {filteredManagerReport.map((item) => (
+            <div key={item.employee_id} className="rt-mobile-card">
+              <strong className="rt-employee-name">{item.full_name}</strong>
+              <div className="rt-mobile-row">
+                <span>{t.position}</span>
+                <span>{item.position || t.unknownPosition}</span>
+              </div>
+              <div className="rt-mobile-row">
+                <span>{t.branch}</span>
+                <span>{item.branch}</span>
+              </div>
+              <div className="rt-mobile-row">
+                <span>{t.hours}</span>
+                <span>{item.total_hours}</span>
+              </div>
+              <div className="rt-mobile-row">
+                <span>{t.shifts}</span>
+                <span>{item.total_shifts}</span>
+              </div>
+            </div>
+          ))}
+          <div className="rt-mobile-card rt-mobile-card--total">
+            <strong className="rt-employee-name">{t.total}</strong>
+            <div className="rt-mobile-row">
+              <span>{t.hours}</span>
+              <span>{totals.total_hours}</span>
+            </div>
+            <div className="rt-mobile-row">
+              <span>{t.shifts}</span>
+              <span>{totals.total_shifts}</span>
+            </div>
+          </div>
+        </div>
+      );
+    }
+
+    return (
+      <div className="rt-table-wrap">
+        <table className="rt-table">
+          <thead>
+            <tr>
+              <th>{t.employee}</th>
+              <th>{t.position}</th>
+              <th>{t.branch}</th>
+              <th>{t.hours}</th>
+              <th>{t.shifts}</th>
+            </tr>
+          </thead>
+          <tbody>
+            {filteredManagerReport.map((item) => (
+              <tr key={item.employee_id}>
+                <td className="rt-employee-name">{item.full_name}</td>
+                <td>{item.position || t.unknownPosition}</td>
+                <td>{item.branch}</td>
+                <td className="rt-number">{item.total_hours}</td>
+                <td className="rt-number">{item.total_shifts}</td>
+              </tr>
+            ))}
+          </tbody>
+          <tfoot>
+            <tr>
+              <td>{t.total}</td>
+              <td />
+              <td />
+              <td className="rt-number">{totals.total_hours}</td>
+              <td className="rt-number">{totals.total_shifts}</td>
+            </tr>
+          </tfoot>
+        </table>
+      </div>
+    );
+  };
+
+  const renderEmployeeContent = () => {
+    if (!hasEmployeeReport) {
+      return (
+        <div className="rt-empty">
+          <h3 className="rt-empty-title">{t.empty}</h3>
+          <p className="rt-empty-text">{periodSub}</p>
+        </div>
+      );
+    }
+
+    return (
+      <div className="rt-employee-panel">
+        <div className="rt-employee-header">
+          <div>
+            <h3 className="rt-employee-name-lg">{normalizedEmployeeReport.full_name}</h3>
+            <p className="rt-employee-meta">
+              {normalizedEmployeeReport.position || t.unknownPosition}
+            </p>
+            <p className="rt-employee-meta">
+              {t.branch}: {normalizedEmployeeReport.branches || EM_DASH}
+            </p>
+          </div>
+          <span className="rt-pill">{t.hoursReport}</span>
+        </div>
+
+        {!hasEmployeeData ? (
+          <div className="rt-empty">
+            <p className="rt-empty-text">{t.empty}</p>
+          </div>
+        ) : null}
+      </div>
+    );
+  };
+
   if (isLoading) {
     return (
-      <section style={{ ...styles.page, ...r.page, ...(r.isMobile ? {} : styles.desktopPage), ...mobileStyles?.page }}>
-        <div style={{ ...styles.shell, ...r.shell, ...(r.isMobile ? {} : styles.desktopShell), ...mobileStyles?.shell }}>
-          <div style={{ ...styles.emptyBox, ...mobileStyles?.emptyBox }}>{t.loading}</div>
+      <section className="reports-tab">
+        <div className="rt-page">
+          <div className="rt-loading">{t.loading}</div>
         </div>
       </section>
     );
   }
 
   const hasManagerRows = filteredManagerReport.length > 0;
-  const hasEmployeeReport = Boolean(normalizedEmployeeReport);
-  const tableColumns = reportMode === 'salary'
-    ? '1.2fr 1fr 0.8fr 0.7fr 0.7fr'
-    : '1.2fr 1fr 0.8fr 0.7fr';
+  const hasEmployeeReport = normalizedEmployeeReport != null;
+  const hasEmployeeData = hasEmployeeReport && (
+    normalizedEmployeeReport.total_hours > 0
+    || normalizedEmployeeReport.total_shifts > 0
+  );
 
   return (
-    <section style={{ ...styles.page, ...r.page, ...(r.isMobile ? {} : styles.desktopPage), ...mobileStyles?.page }}>
-      <div style={{ ...styles.shell, ...r.shell, ...(r.isMobile ? {} : styles.desktopShell), ...mobileStyles?.shell }}>
+    <section className="reports-tab">
+      <div className="rt-page">
         {renderToast()}
 
-        <header style={{ ...styles.header, ...r.header, ...mobileStyles?.header }}>
+        <header className="rt-header">
           <div>
-            <h2 style={{ ...styles.title, ...r.title, ...mobileStyles?.title }}>{isManager ? t.title : t.selfTitle}</h2>
-            <p style={{ ...styles.subtitle, ...mobileStyles?.subtitle }}>{isManager ? t.subtitleManager : t.subtitleEmployee}</p>
+            <h1 className="rt-title">{isManager ? t.title : t.selfTitle}</h1>
+            <p className="rt-subtitle">{isManager ? t.subtitleManager : t.subtitleEmployee}</p>
           </div>
 
-          <button
-            type="button"
-            onClick={exportToExcel}
-            style={{ ...styles.primaryButton, ...r.fullWidth, ...mobileStyles?.primaryButton }}
-            disabled={isRefreshing || (!hasManagerRows && !hasEmployeeReport)}
-          >
-            {t.export}
-          </button>
+          <div className="rt-header-actions">
+            <button
+              type="button"
+              onClick={exportToExcel}
+              className="rt-btn rt-btn-primary"
+              disabled={isRefreshing || (!hasManagerRows && !hasEmployeeReport)}
+            >
+              <IconDownload />
+              {t.export}
+            </button>
+          </div>
         </header>
 
-        <div style={{ ...styles.layout, ...r.splitLayout('280px minmax(0, 1fr)'), ...mobileStyles?.layout }}>
-          <aside style={{ ...styles.sidebar, ...mobileStyles?.sidebar }}>
-            <section style={{ ...styles.panel, ...mobileStyles?.panel }}>
-              <h3 style={{ ...styles.panelTitle, ...mobileStyles?.panelTitle }}>{t.period}</h3>
+        <div className={`rt-stats-grid${isManager ? '' : ' rt-stats-grid--employee'}`}>
+          {statsCards.map((card) => (
+            <StatCard
+              key={card.key}
+              icon={card.icon}
+              tone={card.tone}
+              value={card.value}
+              label={card.label}
+              sub={card.sub}
+            />
+          ))}
+        </div>
 
-              <div style={{ ...styles.stack, ...mobileStyles?.stack }}>
-                <Field label={t.startDate} labelStyle={mobileStyles?.label}>
-                  <input
-                    type="date"
-                    value={filterForm.start_date}
-                    onChange={(event) =>
-                      setFilterForm((prev) => ({ ...prev, start_date: event.target.value }))
-                    }
-                    style={{ ...styles.dateInput, ...mobileStyles?.dateInput }}
-                  />
-                </Field>
+        <div className="rt-card rt-card-padded">
+          <h2 className="rt-card-title">{t.period}</h2>
+          {renderFilters()}
+        </div>
 
-                <Field label={t.endDate} labelStyle={mobileStyles?.label}>
-                  <input
-                    type="date"
-                    value={filterForm.end_date}
-                    onChange={(event) =>
-                      setFilterForm((prev) => ({ ...prev, end_date: event.target.value }))
-                    }
-                    style={{ ...styles.dateInput, ...mobileStyles?.dateInput }}
-                  />
-                </Field>
-
-                <Field label={t.reportType} labelStyle={mobileStyles?.label}>
-                  <div style={{ ...styles.modeSegment, ...r.modeSegment, ...mobileStyles?.modeSegment }}>
-                    {[
-                      { id: 'hours', label: t.hoursReport },
-                      { id: 'salary', label: t.salaryReport },
-                    ].map((mode) => (
-                      <button
-                        key={mode.id}
-                        type="button"
-                        onClick={() => setReportMode(mode.id)}
-                        style={
-                          reportMode === mode.id
-                            ? { ...styles.modeButton, ...styles.modeButtonActive, ...r.modeButton, ...mobileStyles?.modeButton }
-                            : { ...styles.modeButton, ...r.modeButton, ...mobileStyles?.modeButton }
-                        }
-                      >
-                        {mode.label}
-                      </button>
-                    ))}
-                  </div>
-                </Field>
-                {isManager && (
-                  <>
-                    <Field label={t.employee} labelStyle={mobileStyles?.label}>
-                      <select
-                        value={employeeSearch}
-                        onChange={(event) => setEmployeeSearch(event.target.value)}
-                        style={{ ...styles.select, ...mobileStyles?.select }}
-                      >
-                        <option value="">{t.allEmployees}</option>
-                        {employeeFilterOptions.map((name) => (
-                          <option key={name} value={name}>{name}</option>
-                        ))}
-                      </select>
-                    </Field>
-
-                    <Field label={t.position} labelStyle={mobileStyles?.label}>
-                      <select
-                        value={positionFilter}
-                        onChange={(event) => setPositionFilter(event.target.value)}
-                        style={{ ...styles.select, ...mobileStyles?.select }}
-                      >
-                        <option value="">{t.allPositions}</option>
-                        {positionFilterOptions.map((position) => (
-                          <option key={position} value={position}>{position}</option>
-                        ))}
-                      </select>
-                    </Field>
-
-                    <Field label={t.branch} labelStyle={mobileStyles?.label}>
-                      <select
-                        value={branchFilter}
-                        onChange={(event) => setBranchFilter(event.target.value)}
-                        style={{ ...styles.select, ...mobileStyles?.select }}
-                      >
-                        <option value="">{t.allBranches}</option>
-                        {branchFilterOptions.map((branch) => (
-                          <option key={branch} value={branch}>{branch}</option>
-                        ))}
-                      </select>
-                    </Field>
-                  </>
-                )}
-
-                <button
-                  type="button"
-                  onClick={applyFilters}
-                  style={{ ...styles.secondaryButton, ...r.fullWidth, ...mobileStyles?.secondaryButton }}
-                  disabled={isRefreshing}
-                >
-                  {isRefreshing ? '...' : t.apply}
-                </button>
-              </div>
-            </section>
-
-            <section style={{ ...styles.summaryCard, ...mobileStyles?.summaryCard }}>
-              <h3 style={{ ...styles.summaryTitle, ...mobileStyles?.summaryTitle }}>{t.summary}</h3>
-
-              <Metric
-                label={t.totalHours}
-                value={totals.total_hours}
-                metricStyle={mobileStyles?.metric}
-                metricLabelStyle={mobileStyles?.metricLabel}
-                metricValueStyle={mobileStyles?.metricValue}
-              />
-              {reportMode === 'salary' && (
-                <Metric
-                  label={t.salary}
-                  value={totals.total_salary}
-                  metricStyle={mobileStyles?.metric}
-                  metricLabelStyle={mobileStyles?.metricLabel}
-                  metricValueStyle={mobileStyles?.metricValue}
-                />
-              )}
-              {isManager && (
-                <Metric
-                  label={t.employees}
-                  value={totals.employees}
-                  metricStyle={mobileStyles?.metric}
-                  metricLabelStyle={mobileStyles?.metricLabel}
-                  metricValueStyle={mobileStyles?.metricValue}
-                />
-              )}
-            </section>
-          </aside>
-
-          <main style={{ ...styles.content, ...(r.isMobile ? { overflow: 'visible' } : {}), ...mobileStyles?.content }}>
-            {isManager ? (
-              hasManagerRows ? (
-                r.isMobile ? (
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: 10, ...mobileStyles?.reportCardList }}>
-                    {filteredManagerReport.map((item) => (
-                      <div key={item.employee_id} style={{ ...r.reportCard, ...mobileStyles?.reportCard }}>
-                        <strong style={{ color: '#002642', fontSize: 16, ...mobileStyles?.reportCardName }}>{item.full_name}</strong>
-                        <div style={{ ...r.reportCardRow, ...mobileStyles?.reportCardRow }}>
-                          <span>{t.position}</span>
-                          <span style={{ ...r.reportCardValue, ...mobileStyles?.reportCardValue }}>{item.position || t.unknownPosition}</span>
-                        </div>
-                        <div style={{ ...r.reportCardRow, ...mobileStyles?.reportCardRow }}>
-                          <span>{t.branch}</span>
-                          <span style={{ ...r.reportCardValue, ...mobileStyles?.reportCardValue }}>{item.branch}</span>
-                        </div>
-                        <div style={{ ...r.reportCardRow, ...mobileStyles?.reportCardRow }}>
-                          <span>{t.hours}</span>
-                          <span style={{ ...r.reportCardValue, ...mobileStyles?.reportCardValue }}>{item.total_hours}</span>
-                        </div>
-                        {reportMode === 'salary' && (
-                          <div style={{ ...r.reportCardRow, ...mobileStyles?.reportCardRow }}>
-                            <span>{t.salary}</span>
-                            <span style={{ ...r.reportCardValue, ...mobileStyles?.reportCardValue }}>{item.total_salary}</span>
-                          </div>
-                        )}
-                      </div>
-                    ))}
-                    <div style={{
-                      ...r.reportCard,
-                      ...mobileStyles?.reportCard,
-                      ...mobileStyles?.totalReportCard,
-                      background: '#dee7e7',
-                      border: '1px solid rgba(79, 100, 111, 0.12)',
-                    }}
-                    >
-                      <strong style={{ color: '#002642', ...mobileStyles?.reportCardName }}>{t.total}</strong>
-                      <div style={{ ...r.reportCardRow, ...mobileStyles?.reportCardRow }}>
-                        <span>{t.hours}</span>
-                        <span style={{ ...r.reportCardValue, ...mobileStyles?.reportCardValue }}>{totals.total_hours}</span>
-                      </div>
-                      {reportMode === 'salary' && (
-                        <div style={{ ...r.reportCardRow, ...mobileStyles?.reportCardRow }}>
-                          <span>{t.salary}</span>
-                          <span style={{ ...r.reportCardValue, ...mobileStyles?.reportCardValue }}>{totals.total_salary}</span>
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                ) : (
-                <div style={styles.tableCard}>
-                  <div style={{ ...styles.tableHeader, gridTemplateColumns: tableColumns }}>
-                    <span>{t.employee}</span>
-                    <span>{t.position}</span>
-                    <span>{t.branch}</span>
-                    <span>{t.hours}</span>
-                    {reportMode === 'salary' && <span>{t.salary}</span>}
-                  </div>
-
-                  <div style={styles.tableBody}>
-                    {filteredManagerReport.map((item) => (
-                      <div key={item.employee_id} style={{ ...styles.tableRow, gridTemplateColumns: tableColumns }}>
-                        <strong style={styles.employeeName}>{item.full_name}</strong>
-                        <span style={styles.tableCell}>{item.position || t.unknownPosition}</span>
-                        <span style={styles.tableCell}>{item.branch}</span>
-                        <span style={styles.numberCell}>{item.total_hours}</span>
-                        {reportMode === 'salary' && (
-                          <span style={styles.numberCell}>{item.total_salary}</span>
-                        )}
-                      </div>
-                    ))}
-                  </div>
-
-                  <div style={{ ...styles.tableFooter, gridTemplateColumns: tableColumns }}>
-                    <strong>{t.total}</strong>
-                    <span />
-                    <span />
-                    <strong>{totals.total_hours}</strong>
-                    {reportMode === 'salary' && <strong>{totals.total_salary}</strong>}
-                  </div>
-                </div>
-                )
-              ) : (
-                <div style={{ ...styles.emptyHero, ...mobileStyles?.emptyHero }}>
-                  <h3 style={{ ...styles.emptyTitle, ...mobileStyles?.emptyTitle }}>{t.empty}</h3>
-                  <p style={{ ...styles.emptyText, ...mobileStyles?.emptyText }}>
-                    {appliedRange.start_date} — {appliedRange.end_date}
-                  </p>
-                </div>
-              )
-            ) : hasEmployeeReport ? (
-              <div style={{
-                ...styles.employeeReportCard,
-                ...mobileStyles?.employeeReportCard,
-              }}
-              >
-                <div style={{ ...styles.employeeReportHeader, ...mobileStyles?.employeeReportHeader }}>
-                  <div>
-                    <span style={{ ...styles.miniLabel, ...mobileStyles?.miniLabel }}>
-                      {appliedRange.start_date} — {appliedRange.end_date}
-                    </span>
-                  </div>
-                  <span style={{ ...styles.employeeReportPill, ...mobileStyles?.employeeReportPill }}>{reportMode === 'salary' ? t.salaryReport : t.hoursReport}</span>
-                </div>
-
-                <div style={{
-                  ...styles.employeeStats,
-                  ...mobileStyles?.employeeStats,
-                }}
-                >
-                  <Metric
-                    label={t.totalHours}
-                    value={normalizedEmployeeReport.total_hours}
-                    metricStyle={mobileStyles?.metric}
-                    metricLabelStyle={mobileStyles?.metricLabel}
-                    metricValueStyle={mobileStyles?.metricValue}
-                  />
-                  <Metric
-                    label={t.totalShifts}
-                    value={normalizedEmployeeReport.total_shifts}
-                    metricStyle={mobileStyles?.metric}
-                    metricLabelStyle={mobileStyles?.metricLabel}
-                    metricValueStyle={mobileStyles?.metricValue}
-                  />
-                  {reportMode === 'salary' && (
-                    <Metric
-                      label={t.salary}
-                      value={normalizedEmployeeReport.total_salary}
-                      metricStyle={mobileStyles?.metric}
-                      metricLabelStyle={mobileStyles?.metricLabel}
-                      metricValueStyle={mobileStyles?.metricValue}
-                    />
-                  )}
-                </div>
-              </div>
-            ) : (
-              <div style={{ ...styles.emptyHero, ...mobileStyles?.emptyHero }}>
-                <h3 style={{ ...styles.emptyTitle, ...mobileStyles?.emptyTitle }}>{t.empty}</h3>
-                <p style={{ ...styles.emptyText, ...mobileStyles?.emptyText }}>
-                  {appliedRange.start_date} — {appliedRange.end_date}
-                </p>
-              </div>
-            )}
-          </main>
+        <div className="rt-card">
+          {isManager ? renderManagerContent() : renderEmployeeContent()}
         </div>
       </div>
     </section>
   );
 }
-
-function Field({ label, children, labelStyle }) {
-  return (
-    <label style={styles.field}>
-      <span style={{ ...styles.label, ...labelStyle }}>{label}</span>
-      {children}
-    </label>
-  );
-}
-
-function Metric({ label, value, metricStyle, metricLabelStyle, metricValueStyle }) {
-  return (
-    <div style={{ ...styles.metric, ...metricStyle }}>
-      <span style={{ ...styles.metricLabel, ...metricLabelStyle }}>{label}</span>
-      <strong style={{ ...styles.metricValue, ...metricValueStyle }}>{value}</strong>
-    </div>
-  );
-}
-
-const styles = {
-  page: {
-    width: '100%',
-    height: '100%',
-    boxSizing: 'border-box',
-    padding: '16px 24px 18px',
-    overflow: 'hidden',
-    background: '#f4faff',
-  },
-
-  desktopPage: {
-    height: 'calc(100dvh - 96px)',
-  },
-
-  shell: {
-    width: '100%',
-    height: '100%',
-    margin: '0 auto',
-    boxSizing: 'border-box',
-    padding: 0,
-    borderRadius: 0,
-    background: 'transparent',
-    border: 'none',
-    boxShadow: 'none',
-    display: 'flex',
-    flexDirection: 'column',
-    gap: 14,
-    overflow: 'hidden',
-    position: 'relative',
-  },
-
-  desktopShell: {
-    width: '100%',
-    padding: 0,
-    borderRadius: 0,
-  },
-
-  header: {
-    flexShrink: 0,
-    display: 'flex',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    gap: 18,
-    marginBottom: 0,
-  },
-
-  title: {
-    margin: 0,
-    color: '#002642',
-    fontSize: '28px',
-    fontWeight: '900',
-    letterSpacing: 0,
-  },
-
-  subtitle: {
-    maxWidth: '760px',
-    margin: '6px 0 0',
-    color: '#4f646f',
-    fontSize: '14px',
-    fontWeight: '600',
-    lineHeight: 1.45,
-  },
-
-  layout: {
-    flex: '1 1 auto',
-    minHeight: 0,
-    display: 'grid',
-    gridTemplateColumns: '280px minmax(0, 1fr)',
-    gap: 14,
-    overflow: 'hidden',
-  },
-
-  sidebar: {
-    minHeight: 0,
-    display: 'flex',
-    flexDirection: 'column',
-    gap: 14,
-    overflowY: 'auto',
-  },
-
-  content: {
-    minHeight: 0,
-    overflow: 'hidden',
-  },
-
-  panel: {
-    padding: '16px',
-    borderRadius: 12,
-    background: '#ffffff',
-    border: '1px solid #dee7e7',
-    boxShadow: '0 10px 24px rgba(0, 38, 66, 0.035)',
-  },
-
-  summaryCard: {
-    padding: '16px',
-    borderRadius: 12,
-    background: '#002642',
-    border: '1px solid #dee7e7',
-    boxShadow: '0 10px 24px rgba(0, 38, 66, 0.035)',
-    display: 'flex',
-    flexDirection: 'column',
-    gap: '10px',
-  },
-
-  panelTitle: {
-    margin: '0 0 12px',
-    color: 'inherit',
-    fontSize: '18px',
-    fontWeight: '850',
-  },
-
-  summaryTitle: {
-    margin: '0 0 2px',
-    color: '#ffffff',
-    fontSize: '18px',
-    fontWeight: '900',
-  },
-
-  stack: {
-    display: 'flex',
-    flexDirection: 'column',
-    gap: '12px',
-  },
-
-  field: {
-    display: 'flex',
-    flexDirection: 'column',
-    gap: '6px',
-  },
-
-  label: {
-    color: '#4f646f',
-    fontSize: '12px',
-    fontWeight: '850',
-  },
-
-  input: {
-    width: '100%',
-    height: 40,
-    boxSizing: 'border-box',
-    borderRadius: 10,
-    border: '1px solid #dbe6f0',
-    background: '#ffffff',
-    padding: '0 13px',
-    color: '#002642',
-    fontSize: '14px',
-    outline: 'none',
-  },
-
-  select: {
-    width: '100%',
-    height: 40,
-    boxSizing: 'border-box',
-    borderRadius: 10,
-    border: '1px solid #dbe6f0',
-    background: '#ffffff',
-    padding: '0 13px',
-    color: '#002642',
-    fontSize: '14px',
-    fontWeight: '700',
-    outline: 'none',
-    cursor: 'pointer',
-  },
-
-  dateInput: {
-    width: '100%',
-    height: 40,
-    boxSizing: 'border-box',
-    borderRadius: 10,
-    border: '1px solid #dbe6f0',
-    background: '#ffffff',
-    padding: '0 13px',
-    color: '#002642',
-    colorScheme: 'light',
-    fontSize: '14px',
-    fontWeight: '700',
-    outline: 'none',
-    cursor: 'pointer',
-  },
-
-  modeSegment: {
-    display: 'flex',
-    borderRadius: 10,
-    background: '#dee7e7',
-    padding: '4px',
-    gap: '4px',
-  },
-
-  modeButton: {
-    flex: 1,
-    border: 'none',
-    borderRadius: 8,
-    background: 'transparent',
-    color: '#4f646f',
-    padding: '8px 4px',
-    fontSize: '12px',
-    fontWeight: '750',
-    cursor: 'pointer',
-    transition: 'all 0.2s ease',
-  },
-
-  modeButtonActive: {
-    background: '#ffffff',
-    color: '#002642',
-    boxShadow: 'none',
-  },
-
-  primaryButton: {
-    height: 40,
-    padding: '0 18px',
-    background: '#002642',
-    border: 'none',
-    borderRadius: 10,
-    color: '#f4faff',
-    fontWeight: '850',
-    cursor: 'pointer',
-    whiteSpace: 'nowrap',
-  },
-
-  secondaryButton: {
-    height: 40,
-    padding: '0 18px',
-    background: '#dee7e7',
-    border: '1px solid #dee7e7',
-    borderRadius: 10,
-    color: '#002642',
-    fontWeight: '850',
-    cursor: 'pointer',
-    whiteSpace: 'nowrap',
-  },
-
-  metric: {
-    padding: '12px 14px',
-    borderRadius: 10,
-    background: '#f8fbfd',
-    color: '#002642',
-    display: 'flex',
-    flexDirection: 'column',
-    gap: '3px',
-    border: '1px solid #edf2f2',
-  },
-
-  metricLabel: {
-    fontSize: '12px',
-    color: 'currentColor',
-    opacity: 0.72,
-    fontWeight: '800',
-  },
-
-  metricValue: {
-    fontSize: '20px',
-    fontWeight: '900',
-    color: 'currentColor',
-  },
-
-  tableCard: {
-    height: '100%',
-    minHeight: 0,
-    borderRadius: 12,
-    background: '#ffffff',
-    border: '1px solid #dee7e7',
-    boxShadow: '0 10px 24px rgba(0, 38, 66, 0.035)',
-    overflow: 'hidden',
-    display: 'grid',
-    gridTemplateRows: 'auto minmax(0, 1fr) auto',
-  },
-
-  tableHeader: {
-    display: 'grid',
-    gridTemplateColumns: '1.4fr 1fr 0.7fr 0.7fr',
-    gap: '10px',
-    padding: '13px 16px',
-    background: '#002642',
-    fontWeight: '900',
-    fontSize: '13px',
-    color: '#ffffff',
-  },
-
-  tableBody: {
-    minHeight: 0,
-    overflowY: 'auto',
-  },
-
-  tableRow: {
-    display: 'grid',
-    gridTemplateColumns: '1.4fr 1fr 0.7fr 0.7fr',
-    gap: '10px',
-    padding: '13px 16px',
-    alignItems: 'center',
-    borderBottom: '1px solid #edf2f2',
-    color: '#002642',
-  },
-
-  employeeName: {
-    overflowWrap: 'anywhere',
-  },
-
-  tableCell: {
-    color: '#002642',
-    fontWeight: '650',
-    overflowWrap: 'anywhere',
-  },
-
-  numberCell: {
-    color: '#002642',
-    fontWeight: '850',
-    textAlign: 'center',
-  },
-
-  tableFooter: {
-    display: 'grid',
-    gridTemplateColumns: '1.4fr 1fr 0.7fr 0.7fr',
-    gap: '10px',
-    padding: '12px 16px',
-    background: '#f8fbfd',
-    color: '#002642',
-    alignItems: 'center',
-  },
-
-  employeeReportCard: {
-    height: '100%',
-    minHeight: '360px',
-    borderRadius: 12,
-    background: '#ffffff',
-    border: '1px solid #dee7e7',
-    boxShadow: '0 10px 24px rgba(0, 38, 66, 0.035)',
-    display: 'flex',
-    flexDirection: 'column',
-    justifyContent: 'space-between',
-    gap: '22px',
-    padding: '28px',
-    boxSizing: 'border-box',
-  },
-
-  employeeReportHeader: {
-    display: 'flex',
-    alignItems: 'flex-start',
-    justifyContent: 'space-between',
-    gap: '16px',
-    flexWrap: 'wrap',
-  },
-
-  employeeReportPill: {
-    height: '34px',
-    padding: '0 12px',
-    borderRadius: '999px',
-    background: '#f4faff',
-    border: '1px solid #dee7e7',
-    color: '#002642',
-    display: 'inline-flex',
-    alignItems: 'center',
-    fontSize: '13px',
-    fontWeight: '850',
-    whiteSpace: 'nowrap',
-  },
-
-  miniLabel: {
-    color: '#4f646f',
-    fontSize: '13px',
-    fontWeight: '850',
-    marginBottom: '8px',
-  },
-
-  employeeReportName: {
-    margin: 0,
-    color: '#002642',
-    fontSize: '30px',
-    fontWeight: '900',
-  },
-
-  employeePosition: {
-    margin: '8px 0 24px',
-    color: '#4f646f',
-    fontSize: '16px',
-    fontWeight: '700',
-  },
-
-  employeeStats: {
-    display: 'grid',
-    gridTemplateColumns: 'repeat(2, minmax(0, 1fr))',
-    gap: '12px',
-  },
-
-  emptyHero: {
-    height: '100%',
-    minHeight: '320px',
-    padding: '28px',
-    borderRadius: 14,
-    background: '#ffffff',
-    border: '1px solid #dee7e7',
-    boxShadow: '0 12px 30px rgba(0, 38, 66, 0.04)',
-    display: 'flex',
-    flexDirection: 'column',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: '8px',
-    textAlign: 'center',
-  },
-
-  emptyTitle: {
-    margin: 0,
-    color: '#002642',
-    fontSize: '22px',
-    fontWeight: '900',
-  },
-
-  emptyBox: {
-    padding: '26px',
-    borderRadius: 14,
-    background: '#ffffff',
-    border: '1px solid #dee7e7',
-    color: '#4f646f',
-    fontWeight: '800',
-    textAlign: 'center',
-  },
-
-  emptyText: {
-    margin: 0,
-    color: '#4f646f',
-    fontSize: '14px',
-    fontWeight: '650',
-    lineHeight: 1.45,
-  },
-
-  toastLayer: {
-    position: 'absolute',
-    top: '22px',
-    right: '26px',
-    zIndex: 20,
-    width: 'min(420px, calc(100% - 52px))',
-    pointerEvents: 'none',
-  },
-
-  toastSuccess: {
-    minHeight: '44px',
-    boxSizing: 'border-box',
-    padding: '10px 12px',
-    borderRadius: '16px',
-    background: '#ffffff',
-    color: '#002642',
-    fontSize: '14px',
-    fontWeight: '750',
-    display: 'grid',
-    gridTemplateColumns: '26px minmax(0, 1fr) 28px',
-    alignItems: 'center',
-    gap: '10px',
-    border: '1px solid rgba(79, 100, 111, 0.12)',
-    boxShadow: '0 16px 36px rgba(0, 38, 66, 0.16)',
-    pointerEvents: 'auto',
-  },
-
-  toastError: {
-    minHeight: '44px',
-    boxSizing: 'border-box',
-    padding: '10px 12px',
-    borderRadius: '16px',
-    background: '#ffffff',
-    color: '#8d1d1d',
-    fontSize: '14px',
-    fontWeight: '750',
-    display: 'grid',
-    gridTemplateColumns: '26px minmax(0, 1fr) 28px',
-    alignItems: 'center',
-    gap: '10px',
-    border: '1px solid rgba(215, 173, 207, 0.6)',
-    boxShadow: '0 16px 36px rgba(0, 38, 66, 0.16)',
-    pointerEvents: 'auto',
-  },
-
-  toastIconSuccess: {
-    width: '26px',
-    height: '26px',
-    borderRadius: '999px',
-    background: '#dee7e7',
-    color: '#002642',
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    fontSize: '14px',
-    fontWeight: '900',
-  },
-
-  toastIconError: {
-    width: '26px',
-    height: '26px',
-    borderRadius: '999px',
-    background: 'rgba(215, 173, 207, 0.5)',
-    color: '#8d1d1d',
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    fontSize: '14px',
-    fontWeight: '900',
-  },
-
-  toastText: {
-    minWidth: 0,
-    overflow: 'hidden',
-    textOverflow: 'ellipsis',
-    whiteSpace: 'nowrap',
-  },
-
-  toastClose: {
-    width: '28px',
-    height: '28px',
-    border: 'none',
-    borderRadius: '999px',
-    background: 'transparent',
-    color: '#4f646f',
-    fontSize: '18px',
-    fontWeight: '900',
-    cursor: 'pointer',
-    lineHeight: 1,
-  },
-};

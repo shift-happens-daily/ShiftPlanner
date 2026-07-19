@@ -3,18 +3,13 @@
 import { useEffect, useState } from 'react';
 import { useAuth } from '../../context/useAuth';
 import {
-  acceptEmployeeRequest,
-  acceptManagerRequest,
   createBranch,
   createCompany,
-  declineEmployeeRequest,
-  declineManagerRequest,
   deleteBranch,
   joinCompany,
   joinCompanyAsManager,
   listBranches,
-  listEmployeeRequests,
-  listManagerRequests,
+  listCompanyManagers,
   previewInviteCode,
   regenerateInviteCode,
 } from '../../services/companyService';
@@ -23,6 +18,7 @@ import { useUserBranches } from '../../hooks/useUserBranches';
 import { removeBranchFromAllStoredAssignments } from '../../utils/employeeBranches';
 import { useTabResponsive } from '../../utils/tabResponsive';
 import { getEmployeePositionLabel, getPositionLabel } from '../../utils/employeeDisplay';
+import { getManagerInitials, normalizeManagerList, sortCompanyManagers } from '../../utils/managerDisplay';
 import { usePositionTitleRevision } from '../../hooks/usePositionTitleRevision';
 import { useUnsavedChanges } from '../../context/useUnsavedChanges';
 
@@ -106,8 +102,7 @@ export default function CompanyTab({ language, userRole, user }) {
   const [branchName, setBranchName] = useState('');
 
   const [companyName, setCompanyName] = useState('');
-  const [employeeRequests, setEmployeeRequests] = useState([]);
-  const [managerRequests, setManagerRequests] = useState([]);
+  const [companyManagers, setCompanyManagers] = useState([]);
 
   const [errorMessage, setErrorMessage] = useState('');
   const [successMessage, setSuccessMessage] = useState('');
@@ -147,9 +142,13 @@ export default function CompanyTab({ language, userRole, user }) {
       managerJoinSuccess: 'Вы присоединились к компании как менеджер.',
       managerPendingTitle: 'Заявка менеджера на рассмотрении',
       managerPendingText: 'Владелец компании должен принять вашу заявку. После этого откроется доступ к управлению.',
-      managerRequests: 'Заявки менеджеров',
-      managerRequestsHint: 'Примите или отклоните заявки других менеджеров на вступление в компанию.',
-      noManagerRequests: 'Нет ожидающих заявок менеджеров.',
+      companyManagers: 'Менеджеры компании',
+      companyManagersHint: 'Активные менеджеры с доступом к управлению компанией.',
+      noCompanyManagers: 'Пока нет других активных менеджеров.',
+      managerRoleOwner: 'Владелец',
+      managerRoleManager: 'Менеджер',
+      managerYou: 'Вы',
+      email: 'Email',
       employeeInviteHint: 'Один код для сотрудников и других менеджеров.',
       previewInvite: 'Проверить код',
       joinCompany: 'Присоединиться',
@@ -178,7 +177,7 @@ export default function CompanyTab({ language, userRole, user }) {
       branchRequired: 'Введите название филиала.',
       noBranchSelected: 'Без филиала',
       noPositionSelected: 'Без позиции',
-      noBranchesAssigned: 'Филиалы не назначены',
+      noBranchesAssigned: 'Филиал не назначен',
       positionsHint: '',
       employeeHint: 'После подтверждения менеджером станут доступны расписание и отчёты.',
       managerHint: 'Скопируйте инвайт-код и отправьте его сотрудникам или другим менеджерам.',
@@ -187,16 +186,6 @@ export default function CompanyTab({ language, userRole, user }) {
       joinPending: 'Заявка отправлена. Дождитесь подтверждения менеджера во вкладке «Компания».',
       pendingTitle: 'Заявка на рассмотрении',
       pendingText: 'Менеджер компании должен принять вашу заявку. После этого здесь появятся филиал и позиция.',
-      employeeRequests: 'Заявки сотрудников',
-      employeeRequestsHint: 'Примите или отклоните заявки на вступление в компанию.',
-      noEmployeeRequests: 'Нет ожидающих заявок.',
-      acceptRequest: 'Принять',
-      declineRequest: 'Отклонить',
-      requestAccepted: 'Сотрудник принят.',
-      requestDeclined: 'Заявка отклонена.',
-      requestActionError: 'Не удалось обработать заявку.',
-      requestBranches: 'Филиалы в заявке',
-      requestPosition: 'Позиция в заявке',
     },
     en: {
       title: 'Company',
@@ -231,9 +220,13 @@ export default function CompanyTab({ language, userRole, user }) {
       managerJoinSuccess: 'You have joined the company as a manager.',
       managerPendingTitle: 'Manager request pending',
       managerPendingText: 'The company owner must approve your request. Management access will unlock after approval.',
-      managerRequests: 'Manager requests',
-      managerRequestsHint: 'Approve or decline requests from other managers to join your company.',
-      noManagerRequests: 'No pending manager requests.',
+      companyManagers: 'Company managers',
+      companyManagersHint: 'Active managers with access to manage this company.',
+      noCompanyManagers: 'No other active managers yet.',
+      managerRoleOwner: 'Owner',
+      managerRoleManager: 'Manager',
+      managerYou: 'You',
+      email: 'Email',
       employeeInviteHint: 'One invite code for employees and other managers.',
       previewInvite: 'Preview invite',
       joinCompany: 'Join company',
@@ -262,7 +255,7 @@ export default function CompanyTab({ language, userRole, user }) {
       branchRequired: 'Enter branch name.',
       noBranchSelected: 'No branch selected',
       noPositionSelected: 'No position selected',
-      noBranchesAssigned: 'No branches assigned',
+      noBranchesAssigned: 'No branch assigned',
       positionsHint: '',
       employeeHint: 'Schedule and reports become available after a manager approves your request.',
       managerHint: 'Copy the invite code and send it to employees or other managers.',
@@ -271,16 +264,6 @@ export default function CompanyTab({ language, userRole, user }) {
       joinPending: 'Request submitted. Wait for manager approval in the Company tab.',
       pendingTitle: 'Request pending',
       pendingText: 'A company manager must approve your request. Branch and position will appear here after approval.',
-      employeeRequests: 'Employee requests',
-      employeeRequestsHint: 'Approve or decline join requests.',
-      noEmployeeRequests: 'No pending requests.',
-      acceptRequest: 'Accept',
-      declineRequest: 'Decline',
-      requestAccepted: 'Employee accepted.',
-      requestDeclined: 'Request declined.',
-      requestActionError: 'Failed to process the request.',
-      requestBranches: 'Requested branches',
-      requestPosition: 'Requested position',
     },
   };
 
@@ -323,31 +306,17 @@ export default function CompanyTab({ language, userRole, user }) {
     }
   };
 
-  const loadEmployeeRequests = async () => {
-    if (!isManager || !currentCompanyId) {
-      setEmployeeRequests([]);
+  const loadCompanyManagers = async () => {
+    if (!isManager || !currentCompanyId || isPendingManager) {
+      setCompanyManagers([]);
       return;
     }
 
     try {
-      const data = await listEmployeeRequests();
-      setEmployeeRequests(normalizeArray(data));
+      const data = await listCompanyManagers();
+      setCompanyManagers(sortCompanyManagers(normalizeManagerList(data)));
     } catch {
-      setEmployeeRequests([]);
-    }
-  };
-
-  const loadManagerRequests = async () => {
-    if (!isManager || !currentCompanyId) {
-      setManagerRequests([]);
-      return;
-    }
-
-    try {
-      const data = await listManagerRequests();
-      setManagerRequests(normalizeArray(data));
-    } catch {
-      setManagerRequests([]);
+      setCompanyManagers([]);
     }
   };
 
@@ -361,12 +330,8 @@ export default function CompanyTab({ language, userRole, user }) {
   }, [isManager, currentCompanyId]);
 
   useEffect(() => {
-    void loadEmployeeRequests();
-  }, [isManager, currentCompanyId]);
-
-  useEffect(() => {
-    void loadManagerRequests();
-  }, [isManager, currentCompanyId]);
+    void loadCompanyManagers();
+  }, [isManager, currentCompanyId, isPendingManager]);
 
   const handlePreview = async () => {
     if (!inviteCode.trim()) {
@@ -555,77 +520,6 @@ export default function CompanyTab({ language, userRole, user }) {
     }
   };
 
-  const getRequestBranchesLabel = (request) => {
-    const labels = normalizeArray(request?.branches)
-      .map((branch) => branch?.name || branch?.title)
-      .filter(Boolean);
-    return labels.length > 0 ? labels.join(', ') : '—';
-  };
-
-  const handleAcceptEmployeeRequest = async (requestId) => {
-    clearMessages();
-    setIsSubmitting(true);
-
-    try {
-      await acceptEmployeeRequest(requestId);
-      await loadEmployeeRequests();
-      setSuccessMessage(t.requestAccepted);
-    } catch (error) {
-      setErrorMessage(extractApiErrorMessage(error, t.requestActionError, language));
-    } finally {
-      setIsSubmitting(false);
-    }
-  };
-
-  const handleDeclineEmployeeRequest = async (requestId) => {
-    if (!window.confirm(language === 'en' ? 'Decline this request?' : 'Отклонить заявку?')) return;
-
-    clearMessages();
-    setIsSubmitting(true);
-
-    try {
-      await declineEmployeeRequest(requestId);
-      await loadEmployeeRequests();
-      setSuccessMessage(t.requestDeclined);
-    } catch (error) {
-      setErrorMessage(extractApiErrorMessage(error, t.requestActionError, language));
-    } finally {
-      setIsSubmitting(false);
-    }
-  };
-
-  const handleAcceptManagerRequest = async (requestId) => {
-    clearMessages();
-    setIsSubmitting(true);
-
-    try {
-      await acceptManagerRequest(requestId);
-      await loadManagerRequests();
-      setSuccessMessage(t.requestAccepted);
-    } catch (error) {
-      setErrorMessage(extractApiErrorMessage(error, t.requestActionError, language));
-    } finally {
-      setIsSubmitting(false);
-    }
-  };
-
-  const handleDeclineManagerRequest = async (requestId) => {
-    if (!window.confirm(language === 'en' ? 'Decline this manager request?' : 'Отклонить заявку менеджера?')) return;
-
-    clearMessages();
-    setIsSubmitting(true);
-
-    try {
-      await declineManagerRequest(requestId);
-      await loadManagerRequests();
-      setSuccessMessage(t.requestDeclined);
-    } catch (error) {
-      setErrorMessage(extractApiErrorMessage(error, t.requestActionError, language));
-    } finally {
-      setIsSubmitting(false);
-    }
-  };
-
   const handleRegenerateInviteCode = async () => {
     if (!currentCompanyId) return;
     if (!window.confirm(t.confirmRegenerate)) return;
@@ -662,7 +556,7 @@ export default function CompanyTab({ language, userRole, user }) {
           background: 'transparent',
           border: 'none',
           boxShadow: 'none',
-          ...(r.isMobile ? {} : styles.desktopScaleShell),
+          ...(r.isMobile ? {} : {}),
         }}
       >
         {(errorMessage || successMessage) && (
@@ -682,8 +576,6 @@ export default function CompanyTab({ language, userRole, user }) {
               </div>
 
               <div style={styles.section}>
-                <h3 style={styles.sectionTitle}>{t.currentCompany}</h3>
-
                 <div style={styles.companyPanel}>
                   <strong style={styles.companyTitle}>{currentCompany.name || t.empty}</strong>
 
@@ -825,97 +717,69 @@ export default function CompanyTab({ language, userRole, user }) {
               </div>
             </section>
 
-            <section style={{
-              ...styles.requestsCard,
-              gridColumn: r.isMobile ? 'auto' : '1 / -1',
-            }}>
-              <div style={styles.requestsHeader}>
-                <h3 style={styles.sectionTitle}>{t.managerRequests}</h3>
-                <p style={styles.hint}>{t.managerRequestsHint}</p>
-              </div>
+            {!isPendingManager && (
+              <section style={{
+                ...styles.managersCard,
+                gridColumn: r.isMobile ? 'auto' : '1 / -1',
+              }}>
+                <div style={styles.managersHeader}>
+                  <div>
+                    <h3 style={styles.managersSectionTitle}>{t.companyManagers}</h3>
+                    <p style={styles.managersHint}>{t.companyManagersHint}</p>
+                  </div>
+                  {companyManagers.length > 0 ? (
+                    <span style={styles.managersCountBadge}>{companyManagers.length}</span>
+                  ) : null}
+                </div>
 
-              <div style={styles.requestList}>
-                {managerRequests.length === 0 ? (
-                  <div style={styles.emptyRequests}>{t.noManagerRequests}</div>
+                {companyManagers.length === 0 ? (
+                  <div style={styles.managersEmpty}>{t.noCompanyManagers}</div>
                 ) : (
-                  managerRequests.map((request) => (
-                    <div key={request.id} style={styles.requestItem}>
-                      <div style={styles.requestMain}>
-                        <strong style={styles.requestName}>{request.full_name || request.email}</strong>
-                        <span style={styles.requestMeta}>{request.email}</span>
-                      </div>
-                      <div style={styles.requestActions}>
-                        <button
-                          type="button"
-                          onClick={() => handleAcceptManagerRequest(request.id)}
-                          style={isSubmitting ? styles.primaryButtonDisabled : styles.primaryButton}
-                          disabled={isSubmitting}
-                        >
-                          {t.acceptRequest}
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => handleDeclineManagerRequest(request.id)}
-                          style={isSubmitting ? styles.secondaryButtonDisabled : styles.secondaryButton}
-                          disabled={isSubmitting}
-                        >
-                          {t.declineRequest}
-                        </button>
-                      </div>
-                    </div>
-                  ))
-                )}
-              </div>
-            </section>
+                  <div style={{
+                    ...styles.managersGrid,
+                    gridTemplateColumns: r.isMobile
+                      ? '1fr'
+                      : 'repeat(auto-fill, minmax(280px, 1fr))',
+                  }}>
+                    {companyManagers.map((manager) => {
+                      const isSelf = Number(manager.user_id) === Number(user?.id);
+                      const managerName = manager.full_name || manager.email || t.empty;
+                      const roleLabel = manager.manager_role === 'owner'
+                        ? t.managerRoleOwner
+                        : t.managerRoleManager;
 
-            <section style={{
-              ...styles.requestsCard,
-              gridColumn: r.isMobile ? 'auto' : '1 / -1',
-            }}>
-              <div style={styles.requestsHeader}>
-                <h3 style={styles.sectionTitle}>{t.employeeRequests}</h3>
-                <p style={styles.hint}>{t.employeeRequestsHint}</p>
-              </div>
-
-              <div style={styles.requestList}>
-                {employeeRequests.length === 0 ? (
-                  <div style={styles.emptyRequests}>{t.noEmployeeRequests}</div>
-                ) : (
-                  employeeRequests.map((request) => (
-                    <div key={request.id} style={styles.requestItem}>
-                      <div style={styles.requestMain}>
-                        <strong style={styles.requestName}>{request.full_name || request.email}</strong>
-                        <span style={styles.requestMeta}>{request.email}</span>
-                        <span style={styles.requestMeta}>
-                          {t.requestBranches}: {getRequestBranchesLabel(request)}
-                        </span>
-                        <span style={styles.requestMeta}>
-                          {t.requestPosition}: {getPositionLabel(request.position, '—')}
-                        </span>
-                      </div>
-                      <div style={styles.requestActions}>
-                        <button
-                          type="button"
-                          onClick={() => handleAcceptEmployeeRequest(request.id)}
-                          style={isSubmitting ? styles.primaryButtonDisabled : styles.primaryButton}
-                          disabled={isSubmitting}
-                        >
-                          {t.acceptRequest}
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => handleDeclineEmployeeRequest(request.id)}
-                          style={isSubmitting ? styles.secondaryButtonDisabled : styles.secondaryButton}
-                          disabled={isSubmitting}
-                        >
-                          {t.declineRequest}
-                        </button>
-                      </div>
-                    </div>
-                  ))
+                      return (
+                        <div key={manager.id ?? manager.user_id ?? manager.email} style={styles.managerCard}>
+                          <div style={styles.managerCardHeader}>
+                            <div style={styles.managerAvatar}>{getManagerInitials(managerName)}</div>
+                            <div style={styles.managerCardMain}>
+                              <div style={styles.managerNameRow}>
+                                <strong style={styles.managerCardName}>{managerName}</strong>
+                                {isSelf ? (
+                                  <span style={styles.managerYouBadge}>{t.managerYou}</span>
+                                ) : null}
+                              </div>
+                              <span style={{
+                                ...styles.managerRoleBadge,
+                                ...(manager.manager_role === 'owner' ? styles.managerRoleBadgeOwner : {}),
+                              }}
+                              >
+                                {roleLabel}
+                              </span>
+                            </div>
+                          </div>
+                          <div style={styles.managerEmailBox}>
+                            <span style={styles.managerEmailLabel}>{t.email}</span>
+                            <span style={styles.managerEmailValue}>{manager.email || t.empty}</span>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
                 )}
-              </div>
-            </section>
+              </section>
+            )}
+
           </div>
         ) : (
           <div style={{
@@ -932,8 +796,6 @@ export default function CompanyTab({ language, userRole, user }) {
               </div>
 
               <div style={isEmployee && currentCompany ? styles.employeeSection : styles.section}>
-                <h3 style={styles.sectionTitle}>{t.currentCompany}</h3>
-
                 {isPendingEmployee ? (
                   <div style={styles.pendingPanel}>
                     <strong style={styles.pendingTitle}>{t.pendingTitle}</strong>
@@ -960,17 +822,11 @@ export default function CompanyTab({ language, userRole, user }) {
                         gridTemplateColumns: r.gridCols('minmax(0, 1.3fr) minmax(0, 1fr)'),
                       }}>
                         <div style={{ ...styles.infoItem, ...styles.employeeInfoItem }}>
-                          <span style={styles.infoLabel}>{t.branches}</span>
+                          <span style={styles.infoLabel}>{t.branch}</span>
                           {userBranches.length === 0 ? (
                             <strong style={styles.infoValue}>{t.noBranchesAssigned}</strong>
                           ) : (
-                            <div style={styles.assignedBranchList}>
-                              {userBranches.map((branch) => (
-                                <span key={branch.id} style={styles.assignedBranchPill}>
-                                  {getName(branch)}
-                                </span>
-                              ))}
-                            </div>
+                            <strong style={styles.infoValue}>{getName(userBranches[0])}</strong>
                           )}
                         </div>
                         <InfoItem
@@ -1179,25 +1035,27 @@ const styles = {
     height: '100%',
     boxSizing: 'border-box',
     padding: '16px 24px 18px',
-    overflow: 'hidden',
+    overflowX: 'hidden',
+    overflowY: 'auto',
     background: '#f4faff',
   },
 
   desktopViewportPage: {
     height: 'calc(100dvh - 96px)',
-    overflow: 'hidden',
+    overflowX: 'hidden',
+    overflowY: 'auto',
   },
 
   shell: {
     width: 'min(100%, 1480px)',
-    height: '100%',
+    height: 'auto',
+    minHeight: '100%',
     margin: '0 auto',
     boxSizing: 'border-box',
     display: 'flex',
     flexDirection: 'column',
     gap: '14px',
-    minHeight: 0,
-    overflow: 'hidden',
+    overflow: 'visible',
     position: 'relative',
   },
 
@@ -1209,14 +1067,13 @@ const styles = {
   },
 
   managerGrid: {
-    flex: '1 1 auto',
-    minHeight: 0,
+    flex: '0 0 auto',
     width: '100%',
     display: 'grid',
     gridTemplateColumns: 'minmax(0, 1fr) minmax(0, 1fr)',
-    gridTemplateRows: 'auto minmax(0, 1fr)',
+    gridAutoRows: 'auto',
     gap: '14px',
-    alignItems: 'stretch',
+    alignContent: 'start',
   },
 
   grid: {
@@ -1277,6 +1134,153 @@ const styles = {
     flexDirection: 'column',
     gap: '12px',
     overflow: 'hidden',
+  },
+
+  managersCard: {
+    boxSizing: 'border-box',
+    width: '100%',
+    minWidth: 0,
+    padding: '24px',
+    borderRadius: '16px',
+    background: '#ffffff',
+    border: '1px solid #dee7e7',
+    boxShadow: '0 12px 30px rgba(0, 38, 66, 0.04)',
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '18px',
+    overflow: 'visible',
+    flexShrink: 0,
+  },
+
+  managersHeader: {
+    display: 'flex',
+    alignItems: 'flex-start',
+    justifyContent: 'space-between',
+    gap: '16px',
+    paddingBottom: '14px',
+    borderBottom: '1px solid #dee7e7',
+  },
+
+  managersSectionTitle: {
+    margin: 0,
+    color: '#002642',
+    fontSize: '18px',
+    fontWeight: '900',
+    letterSpacing: 0,
+    textAlign: 'left',
+  },
+
+  managersHint: {
+    margin: '6px 0 0',
+    color: '#4f646f',
+    fontSize: '14px',
+    lineHeight: 1.45,
+    textAlign: 'left',
+  },
+
+  managersCountBadge: {
+    display: 'inline-flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    minWidth: '32px',
+    height: '32px',
+    padding: '0 10px',
+    borderRadius: '999px',
+    background: '#e0ecff',
+    color: '#1e3a5f',
+    fontSize: '14px',
+    fontWeight: '800',
+    flexShrink: 0,
+  },
+
+  managersGrid: {
+    display: 'grid',
+    gap: '16px',
+  },
+
+  managersEmpty: {
+    minHeight: '140px',
+    borderRadius: '16px',
+    background: '#f8fbff',
+    border: '1px dashed #cfdde8',
+    color: '#4f646f',
+    fontSize: '15px',
+    fontWeight: '750',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    textAlign: 'center',
+    padding: '24px',
+  },
+
+  managerCard: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '14px',
+    padding: '18px 20px',
+    borderRadius: '16px',
+    background: '#f8fbff',
+    border: '1px solid #dee7e7',
+    minHeight: '148px',
+  },
+
+  managerCardHeader: {
+    display: 'flex',
+    alignItems: 'flex-start',
+    gap: '14px',
+  },
+
+  managerAvatar: {
+    width: '48px',
+    height: '48px',
+    borderRadius: '14px',
+    background: '#1e3a5f',
+    color: '#ffffff',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    fontSize: '16px',
+    fontWeight: '800',
+    flexShrink: 0,
+  },
+
+  managerCardMain: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '8px',
+    minWidth: 0,
+  },
+
+  managerCardName: {
+    color: '#002642',
+    fontSize: '16px',
+    fontWeight: '850',
+    lineHeight: 1.3,
+  },
+
+  managerEmailBox: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '4px',
+    padding: '12px 14px',
+    borderRadius: '12px',
+    background: '#ffffff',
+    border: '1px solid #e8eef2',
+  },
+
+  managerEmailLabel: {
+    color: '#64748b',
+    fontSize: '11px',
+    fontWeight: '700',
+    letterSpacing: '0.04em',
+    textTransform: 'uppercase',
+  },
+
+  managerEmailValue: {
+    color: '#002642',
+    fontSize: '14px',
+    fontWeight: '650',
+    wordBreak: 'break-word',
   },
 
   cardHeaderCompact: {
@@ -1561,6 +1565,41 @@ const styles = {
   requestMeta: {
     color: '#64748b',
     fontSize: '12px',
+  },
+
+  managerNameRow: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '8px',
+    flexWrap: 'wrap',
+  },
+
+  managerYouBadge: {
+    display: 'inline-flex',
+    alignItems: 'center',
+    padding: '2px 8px',
+    borderRadius: '999px',
+    background: '#e0ecff',
+    color: '#1e3a5f',
+    fontSize: '11px',
+    fontWeight: '800',
+  },
+
+  managerRoleBadge: {
+    display: 'inline-flex',
+    alignItems: 'center',
+    padding: '6px 10px',
+    borderRadius: '999px',
+    background: '#eef3f6',
+    color: '#4f646f',
+    fontSize: '12px',
+    fontWeight: '800',
+    flexShrink: 0,
+  },
+
+  managerRoleBadgeOwner: {
+    background: '#e8f7ee',
+    color: '#1f7a3f',
   },
 
   requestActions: {

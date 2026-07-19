@@ -289,39 +289,46 @@ def generate_schedule(
         )
     _validate_generation_period_http(start_date, end_date)
 
-    if payload and payload.branch_id is not None:
-        branch = company_repository.get_branch_by_id(db, payload.branch_id)
-        if branch is None or branch.company_id != current_user.company_id:
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="Branch does not belong to the authenticated user's company.",
-            )
-        branches = [branch]
-    else:
-        branches = company_repository.list_branches_for_company(db, current_user.company_id)
-    if not branches:
+    branch_id = payload.branch_id if payload else None
+    if branch_id is None:
         raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Manager's company does not have a branch.",
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="branch_id is required for schedule generation.",
         )
 
+    branch = company_repository.get_branch_by_id(db, branch_id)
+    if branch is None:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Branch {branch_id} was not found.",
+        )
+    if branch.company_id != current_user.company_id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Branch does not belong to the authenticated user's company.",
+        )
+
+    _ensure_no_schedule_conflict(
+        db,
+        company_id=current_user.company_id,
+        branch_id=branch.id,
+        start_date=start_date,
+        end_date=end_date,
+    )
+
     try:
-        results = []
-        for branch in branches:
-            results.append(
-                schedule_solver.generate_schedule(
-                    db,
-                    company_id=current_user.company_id,
-                    branch_id=branch.id,
-                    start_date=start_date,
-                    end_date=end_date,
-                    commit=False,
-                )
-            )
+        result = schedule_solver.generate_schedule(
+            db,
+            company_id=current_user.company_id,
+            branch_id=branch.id,
+            start_date=start_date,
+            end_date=end_date,
+            commit=False,
+        )
         db.commit()
     except schedule_solver.ScheduleDataError as exc:
         db.rollback()
-        if str(exc).startswith("schedule already exists"):
+        if str(exc).lower().startswith("schedule already exists"):
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,
                 detail=str(exc),
@@ -334,11 +341,37 @@ def generate_schedule(
         db.rollback()
         raise
 
-    if not results:
+    if result is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Schedule was not generated.")
-    result = results[0]
     schedule = schedule_repository.get_schedule(db, result.schedule_id)
     return _build_schedule_read(db, result.schedule_id, schedule.status)
+
+
+def _ensure_no_schedule_conflict(
+    db: Session,
+    *,
+    company_id: int,
+    branch_id: int,
+    start_date: date,
+    end_date: date,
+) -> None:
+    conflict = schedule_repository.find_active_schedule_conflict(
+        db,
+        company_id=company_id,
+        branch_id=branch_id,
+        start_date=start_date,
+        end_date=end_date,
+    )
+    if conflict is None:
+        return
+    raise HTTPException(
+        status_code=status.HTTP_409_CONFLICT,
+        detail=(
+            "Schedule already exists for this period. "
+            f"Delete schedule {conflict['id']} "
+            f"({conflict['start_date']} to {conflict['end_date']}) before creating a new one."
+        ),
+    )
 
 
 def list_schedules(
@@ -780,8 +813,8 @@ def delete_schedule_for_branch_week(
             DELETE FROM schedules
             WHERE company_id = :company_id
               AND branch_id = :branch_id
-              AND start_date <= :end_date
-              AND end_date >= :start_date
+              AND start_date = :start_date
+              AND end_date = :end_date
             """
         ),
         {
@@ -890,30 +923,42 @@ def _build_schedule_read(
 
     if unfilled_override is None:
         for requirement in requirements:
-            assigned_count = sum(
-                1
+            position = position_repository.get_position_by_id(
+                db,
+                requirement.position_id,
+            )
+
+            relevant_shifts = [
+                row
                 for row in rows
                 if row["position_id"] == requirement.position_id
+                and row["employee_id"] is not None
+                and row["shift_date"] == requirement.shift_date
                 and _matches_requirement_branch(
                     row["employee_branch_id"],
                     requirement.branch_id,
                 )
-                and row["employee_id"] is not None
-                and row["shift_date"] == requirement.shift_date
-                and row["start_time"] == requirement.start_time
-                and row["end_time"] == requirement.end_time
+                and row["start_time"] < requirement.end_time
+                and row["end_time"] > requirement.start_time
+            ]
+
+            uncovered_segments = _calculate_uncovered_requirement_segments(
+                requirement_start=requirement.start_time,
+                requirement_end=requirement.end_time,
+                required_staff=requirement.required_employees,
+                assigned_shifts=relevant_shifts,
             )
-            if assigned_count < requirement.required_employees:
-                position = position_repository.get_position_by_id(db, requirement.position_id)
+
+            for segment in uncovered_segments:
                 unfilled.append(
                     {
                         "requirement_id": requirement.id,
                         "position_id": requirement.position_id,
                         "position_title": position.name if position else "",
                         "date": requirement.shift_date,
-                        "start_time": requirement.start_time,
-                        "end_time": requirement.end_time,
-                        "missing_staff": requirement.required_employees - assigned_count,
+                        "start_time": segment["start_time"],
+                        "end_time": segment["end_time"],
+                        "missing_staff": segment["missing_staff"],
                     }
                 )
     return ScheduleRead(
@@ -945,6 +990,96 @@ def _matches_requirement_branch(
     requirement_branch_id: int | None,
 ) -> bool:
     return employee_branch_id == requirement_branch_id
+
+def _calculate_uncovered_requirement_segments(
+    *,
+    requirement_start: time,
+    requirement_end: time,
+    required_staff: int,
+    assigned_shifts: list[dict],
+) -> list[dict]:
+    """
+    Calculate uncovered parts of a staffing requirement.
+
+    The calculation uses 30-minute slots because schedule generation
+    also works with 30-minute slots.
+
+    Example:
+        Requirement: 09:00-18:00, required_staff=1
+        Assigned:    12:30-18:00
+
+        Result:
+        [
+            {
+                "start_time": 09:00,
+                "end_time": 12:30,
+                "missing_staff": 1,
+            }
+        ]
+    """
+    requirement_slots = _time_slots_30_minutes(
+        requirement_start,
+        requirement_end,
+    )
+
+    if not requirement_slots:
+        return []
+
+    missing_by_slot: list[tuple[time, int]] = []
+
+    for slot_start in requirement_slots:
+        slot_end = _add_minutes(slot_start, 30)
+
+        assigned_count = sum(
+            1
+            for shift in assigned_shifts
+            if shift["start_time"] < slot_end
+            and shift["end_time"] > slot_start
+        )
+
+        missing_staff = max(
+            required_staff - assigned_count,
+            0,
+        )
+
+        missing_by_slot.append(
+            (slot_start, missing_staff)
+        )
+
+    segments: list[dict] = []
+    current_start: time | None = None
+    current_missing_staff = 0
+
+    for slot_start, missing_staff in missing_by_slot:
+        if missing_staff == current_missing_staff:
+            continue
+
+        if current_start is not None and current_missing_staff > 0:
+            segments.append(
+                {
+                    "start_time": current_start,
+                    "end_time": slot_start,
+                    "missing_staff": current_missing_staff,
+                }
+            )
+
+        if missing_staff > 0:
+            current_start = slot_start
+        else:
+            current_start = None
+
+        current_missing_staff = missing_staff
+
+    if current_start is not None and current_missing_staff > 0:
+        segments.append(
+            {
+                "start_time": current_start,
+                "end_time": requirement_end,
+                "missing_staff": current_missing_staff,
+            }
+        )
+
+    return segments
 
 
 def _get_manager_schedule(db: Session, schedule_id: int, current_user: UserRead):
@@ -1216,6 +1351,19 @@ def _get_employee_availability_status_for_date(
 
 def _add_minutes(value, minutes: int):
     return (datetime.combine(date.min, value) + timedelta(minutes=minutes)).time()
+
+def _time_slots_30_minutes(
+    start_time: time,
+    end_time: time,
+) -> list[time]:
+    slots: list[time] = []
+    current = start_time
+
+    while current < end_time:
+        slots.append(current)
+        current = _add_minutes(current, 30)
+
+    return slots
 
 
 def _build_requirement_read(db: Session, requirement) -> ScheduleRequirementRead:

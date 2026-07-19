@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useAuth } from '../context/useAuth';
 import { useIsMobile } from '../hooks/useMediaQuery';
 import EmployeeDashboardTab from './tabs/EmployeeDashboardTab';
@@ -13,6 +13,13 @@ import ShiftsTab from './tabs/ShiftsTab';
 import { getPositionLabel } from '../utils/employeeDisplay';
 import { usePositionTitleRevision } from '../hooks/usePositionTitleRevision';
 import { useUnsavedChanges } from '../context/useUnsavedChanges';
+import ManagerExchangeInbox from './ManagerExchangeInbox';
+import {
+  User,
+  Languages,
+  LogOut,
+  ChevronDown,
+} from "lucide-react";
 
 const APP_ICON_SRC = '/v2-Photoroom.png';
 
@@ -58,7 +65,13 @@ const TAB_ICONS = {
   ),
 };
 
-export default function DashboardTabs({ userRole, language, title, rightSlot }) {
+export default function DashboardTabs({
+  userRole,
+  language,
+  title,
+  onLanguageChange,
+  onLogout,
+}) {
   usePositionTitleRevision();
   const isMobile = useIsMobile();
   const {
@@ -74,6 +87,8 @@ export default function DashboardTabs({ userRole, language, title, rightSlot }) 
     if (stored) return stored;
     return userRole === 'employee' ? defaultEmployeeTab : 'schedule';
   });
+  const [profileMenuOpen, setProfileMenuOpen] = useState(false);
+  const profileMenuRef = useRef(null);
 
   const { user } = useAuth();
   const isEmployeePending = userRole === 'employee' && user?.employeeStatus === 'pending';
@@ -106,17 +121,19 @@ export default function DashboardTabs({ userRole, language, title, rightSlot }) 
 
   const tabLabels = {
     ru: {
-      dashboard: 'Dashboard',
+      dashboard: 'Доска',
       profile: 'Профиль',
       company: 'Компания',
       employees: 'Сотрудники',
       shifts: 'Смены',
       schedule: 'Расписание',
-      reports: 'Отчеты',
+      reports: 'Отчёты',
       manager: 'Менеджер',
       employee: 'Сотрудник',
       openProfile: 'Открыть профиль',
       noPosition: 'Без позиции',
+      language: 'Язык',
+      logout: 'Выйти',
     },
     en: {
       dashboard: 'Dashboard',
@@ -130,6 +147,8 @@ export default function DashboardTabs({ userRole, language, title, rightSlot }) 
       employee: 'Employee',
       openProfile: 'Open profile',
       noPosition: 'No position',
+      language: 'Language',
+      logout: 'Logout',
     },
   };
 
@@ -165,6 +184,22 @@ export default function DashboardTabs({ userRole, language, title, rightSlot }) 
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeTab, activeTabStorageKey, tabs]);
 
+  useEffect(() => {
+    function handleClick(event) {
+      if (
+        profileMenuRef.current &&
+        !profileMenuRef.current.contains(event.target)
+      ) {
+        setProfileMenuOpen(false);
+      }
+    }
+
+    document.addEventListener('mousedown', handleClick);
+
+    return () =>
+      document.removeEventListener('mousedown', handleClick);
+  }, []);
+
   const handleTabClick = (tabId) => {
     if (tabId !== safeActiveTab && !confirmDiscardChanges()) {
       return;
@@ -176,6 +211,22 @@ export default function DashboardTabs({ userRole, language, title, rightSlot }) 
 
     setActiveTab(tabId);
     localStorage.setItem(activeTabStorageKey, tabId);
+  };
+
+  const handleProfileClick = () => {
+    setProfileMenuOpen(false);
+    handleTabClick('profile');
+  };
+
+  const handleLanguageClick = () => {
+    const nextLanguage = language === 'ru' ? 'en' : 'ru';
+    onLanguageChange?.(nextLanguage);
+    setProfileMenuOpen(false);
+  };
+
+  const handleLogoutClick = () => {
+    setProfileMenuOpen(false);
+    onLogout?.();
   };
 
   const fullName = user?.fullName || user?.full_name || user?.name || '';
@@ -279,13 +330,13 @@ export default function DashboardTabs({ userRole, language, title, rightSlot }) 
               ...(isMobile ? styles.brandLogoMobile : {}),
             }}
           />
-          <h1 style={{
-            ...styles.brand,
-            ...(isMobile ? styles.brandMobile : {}),
-          }}
-          >
-            {title || 'ShiftPlanner'}
-          </h1>
+          {isMobile ? (
+            <span style={styles.brandSrOnly}>{title || 'ShiftPlanner'}</span>
+          ) : (
+            <h1 style={styles.brand}>
+              {title || 'ShiftPlanner'}
+            </h1>
+          )}
         </div>
 
         {!isMobile && (
@@ -299,35 +350,101 @@ export default function DashboardTabs({ userRole, language, title, rightSlot }) 
           ...(isMobile ? styles.headerRightMobile : {}),
         }}
         >
-          <button
-            type="button"
-            onClick={() => handleTabClick('profile')}
-            style={{
-              ...styles.profileButton,
-              ...(isMobile ? styles.profileButtonMobile : {}),
-              ...(safeActiveTab === 'profile' ? styles.profileButtonActive : {}),
-            }}
-            aria-label={t.openProfile}
-            title={t.openProfile}
-          >
-            <span style={styles.avatar}>{avatarInitials}</span>
-            {!isMobile && (
-              <span style={styles.profileInfo}>
-                <span style={styles.profileName}>{fullName || t.profile}</span>
-                <span style={styles.profilePosition}>{positionName}</span>
-              </span>
-            )}
-          </button>
+          {userRole === 'manager' ? (
+            <ManagerExchangeInbox language={language} isMobile={isMobile} />
+          ) : null}
 
-          {rightSlot && (
-            <div style={{
-              ...styles.rightSlot,
-              ...(isMobile ? styles.rightSlotMobile : {}),
-            }}
+          <div ref={profileMenuRef} style={styles.profileMenuWrapper}>
+            <button
+              type="button"
+              onClick={() => setProfileMenuOpen((current) => !current)}
+              style={{
+                ...styles.profileButton,
+                ...(isMobile ? styles.profileButtonMobile : {}),
+                ...(profileMenuOpen || safeActiveTab === 'profile'
+                  ? styles.profileButtonActive
+                  : {}),
+              }}
+              aria-label={t.openProfile}
+              aria-expanded={profileMenuOpen}
             >
-              {rightSlot}
-            </div>
-          )}
+              <span style={styles.avatar}>{avatarInitials}</span>
+
+              {!isMobile && (
+                <span style={styles.profileInfo}>
+                  <span style={styles.profileName}>
+                    {fullName || t.profile}
+                  </span>
+                  <span style={styles.profilePosition}>
+                    {positionName}
+                  </span>
+                </span>
+              )}
+
+              <ChevronDown
+                size={16}
+                style={{
+                  ...styles.profileChevron,
+                  ...(profileMenuOpen ? styles.profileChevronOpen : {}),
+                }}
+              />
+            </button>
+
+            {profileMenuOpen && (
+              <div style={{
+                ...styles.profileDropdown,
+                ...(isMobile ? styles.profileDropdownMobile : {}),
+              }}
+              >
+                <button
+                  type="button"
+                  onClick={handleProfileClick}
+                  style={styles.profileMenuItem}
+                >
+                  <User
+                    size={18}
+                    style={styles.profileMenuIcon}
+                  />
+                  <span>{t.profile}</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={handleLanguageClick}
+                  style={styles.profileMenuItem}
+                >
+                  <Languages
+                    size={18}
+                    style={styles.profileMenuIcon}
+                  />
+
+                  <span style={styles.profileMenuItemContent}>
+                    <span>{t.language}</span>
+                    <strong style={styles.profileLanguageValue}>
+                      {language === 'ru' ? 'EN' : 'RU'}
+                    </strong>
+                  </span>
+                </button>
+
+                <div style={styles.profileMenuDivider} />
+
+                <button
+                  type="button"
+                  onClick={handleLogoutClick}
+                  style={{
+                    ...styles.profileMenuItem,
+                    ...styles.profileLogoutItem,
+                  }}
+                >
+                  <LogOut
+                    size={18}
+                    style={styles.profileMenuIcon}
+                  />
+                  <span>{t.logout}</span>
+                </button>
+              </div>
+            )}
+          </div>
         </div>
       </header>
 
@@ -396,7 +513,7 @@ const styles = {
   },
 
   brandWrapMobile: {
-    flex: '1 1 auto',
+    flex: '0 0 auto',
   },
 
   brandLogo: {
@@ -420,13 +537,16 @@ const styles = {
     whiteSpace: 'nowrap',
   },
 
-  brandMobile: {
-    fontSize: '18px',
+  brandSrOnly: {
+    position: 'absolute',
+    width: '1px',
+    height: '1px',
+    padding: 0,
+    margin: '-1px',
     overflow: 'hidden',
-    textOverflow: 'ellipsis',
+    clip: 'rect(0, 0, 0, 0)',
     whiteSpace: 'nowrap',
-    minWidth: 0,
-    flex: '1 1 auto',
+    border: 0,
   },
 
   tabsContainer: {
@@ -511,17 +631,109 @@ const styles = {
     flexShrink: 0,
   },
 
+  profileMenuWrapper: {
+    position: 'relative',
+    flexShrink: 0,
+  },
+
+  profileChevron: {
+    marginLeft: '2px',
+    color: '#4f646f',
+    fontSize: '16px',
+    lineHeight: 1,
+    transition: 'transform 0.2s ease',
+  },
+
+  profileChevronOpen: {
+    transform: 'rotate(180deg)',
+  },
+
+  profileDropdown: {
+    position: 'absolute',
+    top: 'calc(100% + 8px)',
+    right: 0,
+    zIndex: 1000,
+    width: '230px',
+    boxSizing: 'border-box',
+    padding: '8px',
+    borderRadius: '16px',
+    border: '1px solid rgba(79, 100, 111, 0.16)',
+    background: '#ffffff',
+    boxShadow: '0 18px 40px rgba(0, 38, 66, 0.16)',
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '2px',
+  },
+
+  profileDropdownMobile: {
+    position: 'fixed',
+    top: '66px',
+    right: '12px',
+    width: 'min(230px, calc(100vw - 24px))',
+  },
+
+  profileMenuItem: {
+    width: '100%',
+    minHeight: '44px',
+    boxSizing: 'border-box',
+    padding: '10px 12px',
+    border: 'none',
+    borderRadius: '10px',
+    background: 'transparent',
+    color: '#002642',
+    display: 'flex',
+    alignItems: 'center',
+    gap: '12px',
+    fontSize: '14px',
+    fontWeight: '750',
+    textAlign: 'left',
+    cursor: 'pointer',
+  },
+
+  profileMenuIcon: {
+    width: 18,
+    height: 18,
+    flexShrink: 0,
+    color: '#4f646f',
+  },
+
+  profileMenuItemContent: {
+    flex: 1,
+    minWidth: 0,
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: '12px',
+  },
+
+  profileLanguageValue: {
+    color: '#64748b',
+    fontSize: '12px',
+    fontWeight: '800',
+  },
+
+  profileMenuDivider: {
+    height: '1px',
+    margin: '4px 0',
+    background: '#dee7e7',
+  },
+
+  profileLogoutItem: {
+    color: '#b42318',
+  },
+
   profileButton: {
     display: 'flex',
     alignItems: 'center',
-    gap: '9px',
-    padding: '5px 12px 5px 5px',
+    gap: '12px',
+    padding: '7px 16px 7px 7px',
     background: '#f4faff',
     border: '1px solid rgba(79, 100, 111, 0.16)',
     borderRadius: '999px',
     cursor: 'pointer',
     transition: 'all 0.2s ease',
-    maxWidth: '220px',
+    maxWidth: '260px',
+    minHeight: '52px',
   },
 
   profileButtonMobile: {
@@ -536,15 +748,15 @@ const styles = {
 
   avatar: {
     flexShrink: 0,
-    width: '34px',
-    height: '34px',
+    width: '40px',
+    height: '40px',
     borderRadius: '50%',
     background: '#002642',
     color: '#f4faff',
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'center',
-    fontSize: '13px',
+    fontSize: '15px',
     fontWeight: '800',
     letterSpacing: '0.02em',
   },
@@ -558,7 +770,7 @@ const styles = {
 
   profileName: {
     color: '#002642',
-    fontSize: '13px',
+    fontSize: '15px',
     fontWeight: '800',
     lineHeight: 1.15,
     maxWidth: '145px',
@@ -569,26 +781,13 @@ const styles = {
 
   profilePosition: {
     color: '#4f646f',
-    fontSize: '11px',
+    fontSize: '12px',
     fontWeight: '600',
     lineHeight: 1.15,
     maxWidth: '145px',
     overflow: 'hidden',
     textOverflow: 'ellipsis',
     whiteSpace: 'nowrap',
-  },
-
-  rightSlot: {
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'flex-end',
-    gap: '10px',
-    flexShrink: 0,
-    minWidth: 'fit-content',
-  },
-
-  rightSlotMobile: {
-    gap: '6px',
   },
 
   content: {
