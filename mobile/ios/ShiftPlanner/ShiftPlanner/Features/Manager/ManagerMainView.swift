@@ -33,6 +33,11 @@ struct ManagerMainView: View {
                     Label(localized("Reports", "Отчёты"), systemImage: "chart.bar")
                 }
 
+            NotificationsView(companyId: user.company?.id, showsClose: false)
+                .tabItem {
+                    Label(localized("Notifications", "Уведомления"), systemImage: "bell")
+                }
+
             ManagerProfileView(user: user, onLogout: onLogout, onDeleteAccount: onDeleteAccount)
                 .tabItem {
                     Label(localized("Profile", "Профиль"), systemImage: "person.crop.circle")

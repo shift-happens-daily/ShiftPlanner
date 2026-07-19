@@ -4,8 +4,10 @@ struct NotificationsView: View {
     @EnvironmentObject private var themeManager: ThemeManager
     @Environment(\.dismiss) private var dismiss
     @StateObject private var viewModel: NotificationsViewModel
+    private let showsClose: Bool
 
-    init(companyId: Int?) {
+    init(companyId: Int?, showsClose: Bool = true) {
+        self.showsClose = showsClose
         _viewModel = StateObject(wrappedValue: NotificationsViewModel(companyId: companyId))
     }
 
@@ -29,8 +31,10 @@ struct NotificationsView: View {
             .navigationTitle(localized("Notifications", "Уведомления"))
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
-                ToolbarItem(placement: .cancellationAction) {
-                    Button(localized("Close", "Закрыть")) { dismiss() }
+                if showsClose {
+                    ToolbarItem(placement: .cancellationAction) {
+                        Button(localized("Close", "Закрыть")) { dismiss() }
+                    }
                 }
             }
             .overlay {
