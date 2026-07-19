@@ -24,6 +24,8 @@ protocol EmployeeManagementRepository {
     /// Links an existing user (by their 16-char public ID) into the company.
     func linkEmployeeByPublicId(publicId: String, branchId: Int?, positionId: Int?) async throws -> ManagedEmployee
 
+    func fetchEmployeeCalendar(employeeId: Int) async throws -> EmployeeCalendarSummary
+
     func fetchWorkLimits(employeeId: Int) async throws -> WorkLimits
     func updateWorkLimits(employeeId: Int, maxHoursPerWeek: Int, maxHoursPerDay: Int) async throws -> WorkLimits
 

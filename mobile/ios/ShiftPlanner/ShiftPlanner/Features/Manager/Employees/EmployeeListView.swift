@@ -147,7 +147,8 @@ struct EmployeeListView: View {
                         onToggleBranchPicker: { pickerSheet = .branch(employee) },
                         onToggleRolePicker: { pickerSheet = .role(employee) },
                         onDelete: { Task { await viewModel.removeEmployee(employee) } },
-                        onWorkLimits: { pickerSheet = .workLimits(employee) }
+                        onWorkLimits: { pickerSheet = .workLimits(employee) },
+                        onViewCalendar: { pickerSheet = .calendar(employee) }
                     )
                 }
             }
@@ -274,12 +275,100 @@ struct EmployeeListView: View {
                 employee: employee,
                 onClose: { pickerSheet = nil }
             )
+        case let .calendar(employee):
+            EmployeeCalendarSheet(
+                viewModel: viewModel,
+                employee: employee,
+                onClose: { pickerSheet = nil }
+            )
         case .link:
             LinkEmployeeSheet(
                 viewModel: viewModel,
                 onClose: { pickerSheet = nil }
             )
         }
+    }
+}
+
+// MARK: - Employee calendar sheet
+
+private struct EmployeeCalendarSheet: View {
+    @EnvironmentObject private var languageManager: LanguageManager
+    @EnvironmentObject private var themeManager: ThemeManager
+    @ObservedObject var viewModel: EmployeeListViewModel
+    let employee: ManagedEmployee
+    let onClose: () -> Void
+
+    @State private var summary: EmployeeCalendarSummary?
+    @State private var isLoading = true
+
+    var body: some View {
+        NavigationStack {
+            Group {
+                if isLoading {
+                    ProgressView().frame(maxWidth: .infinity, maxHeight: .infinity)
+                } else if let summary, !summary.shifts.isEmpty {
+                    List {
+                        Section {
+                            HStack {
+                                stat(value: "\(summary.totalShifts)", label: languageManager.text("Shifts", "Смены"))
+                                stat(value: String(format: "%.1f", summary.totalHours), label: languageManager.text("Hours", "Часы"))
+                            }
+                        }
+                        Section(languageManager.text("Shifts", "Смены")) {
+                            ForEach(summary.shifts) { shift in
+                                HStack {
+                                    Text(Self.dateLabel(shift.date, locale: languageManager.locale))
+                                        .font(.subheadline)
+                                    Spacer()
+                                    Text("\(Self.time(shift.startMinutes)) – \(Self.time(shift.endMinutes))")
+                                        .font(.subheadline.monospacedDigit())
+                                        .foregroundStyle(themeManager.selectedTheme.secondaryTextColor)
+                                }
+                            }
+                        }
+                    }
+                } else {
+                    Text(languageManager.text("No shifts scheduled.", "Смен не запланировано."))
+                        .foregroundStyle(themeManager.selectedTheme.secondaryTextColor)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                }
+            }
+            .navigationTitle(employee.fullName)
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button(languageManager.text("Close", "Закрыть")) { onClose() }
+                }
+            }
+            .task {
+                summary = await viewModel.employeeCalendar(for: employee.id)
+                isLoading = false
+            }
+        }
+    }
+
+    private func stat(value: String, label: String) -> some View {
+        VStack(spacing: 4) {
+            Text(value)
+                .font(.title3.bold())
+                .foregroundStyle(themeManager.selectedTheme.accentColor)
+            Text(label)
+                .font(.caption)
+                .foregroundStyle(themeManager.selectedTheme.secondaryTextColor)
+        }
+        .frame(maxWidth: .infinity)
+    }
+
+    private static func time(_ minutes: Int) -> String {
+        String(format: "%02d:%02d", minutes / 60, minutes % 60)
+    }
+
+    private static func dateLabel(_ date: Date, locale: Locale) -> String {
+        let formatter = DateFormatter()
+        formatter.locale = locale
+        formatter.dateFormat = "EEE d MMM"
+        return formatter.string(from: date)
     }
 }
 
@@ -429,6 +518,7 @@ private enum EmployeePickerSheet: Identifiable {
     case branch(ManagedEmployee)
     case role(ManagedEmployee)
     case workLimits(ManagedEmployee)
+    case calendar(ManagedEmployee)
     case link
 
     var id: String {
@@ -436,6 +526,7 @@ private enum EmployeePickerSheet: Identifiable {
         case let .branch(employee): return "branch-\(employee.id)"
         case let .role(employee): return "role-\(employee.id)"
         case let .workLimits(employee): return "limits-\(employee.id)"
+        case let .calendar(employee): return "calendar-\(employee.id)"
         case .link: return "link"
         }
     }

@@ -224,9 +224,20 @@ struct EmployeeCalendarShiftDTO: Codable {
     }
 }
 
+struct EmployeeWorkloadDTO: Codable {
+    let totalShifts: Int
+    let totalHours: Double
+
+    enum CodingKeys: String, CodingKey {
+        case totalShifts = "total_shifts"
+        case totalHours = "total_hours"
+    }
+}
+
 struct EmployeeCalendarSummaryDTO: Codable {
     let employee: EmployeeCalendarEmployeeDTO
     let shifts: [EmployeeCalendarShiftDTO]
+    let workload: EmployeeWorkloadDTO?
 }
 
 /// Wrapper that tolerates both shapes of POST /schedule/generate:

@@ -385,6 +385,47 @@ final class APIEmployeeManagementRepository: EmployeeManagementRepository {
 
     // MARK: - Work limits
 
+    func fetchEmployeeCalendar(employeeId: Int) async throws -> EmployeeCalendarSummary {
+        let request = apiClient.makeRequest(
+            path: "employees/\(employeeId)/calendar-summary",
+            method: "GET",
+            requiresAuthorization: true
+        )
+        let dto = try await apiClient.send(request, as: EmployeeCalendarSummaryDTO.self)
+        let shifts = dto.shifts.compactMap { s -> EmployeeCalendarShiftItem? in
+            guard let date = Self.calendarDateFormatter.date(from: s.date) else { return nil }
+            return EmployeeCalendarShiftItem(
+                id: s.shiftId,
+                date: date,
+                startMinutes: Self.minutes(from: s.startTime),
+                endMinutes: Self.minutes(from: s.endTime),
+                status: s.status ?? ""
+            )
+        }.sorted {
+            $0.date == $1.date ? $0.startMinutes < $1.startMinutes : $0.date < $1.date
+        }
+        return EmployeeCalendarSummary(
+            employeeName: dto.employee.fullName,
+            totalShifts: dto.workload?.totalShifts ?? shifts.count,
+            totalHours: dto.workload?.totalHours ?? 0,
+            shifts: shifts
+        )
+    }
+
+    private static let calendarDateFormatter: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.calendar = Calendar(identifier: .gregorian)
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.dateFormat = "yyyy-MM-dd"
+        return formatter
+    }()
+
+    private static func minutes(from time: String) -> Int {
+        let parts = time.split(separator: ":").compactMap { Int($0) }
+        guard parts.count >= 2 else { return 0 }
+        return parts[0] * 60 + parts[1]
+    }
+
     func fetchWorkLimits(employeeId: Int) async throws -> WorkLimits {
         let request = apiClient.makeRequest(
             path: "employees/\(employeeId)/work-limits",

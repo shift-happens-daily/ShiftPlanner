@@ -81,3 +81,20 @@ struct PendingEmployeeRequest: Identifiable, Equatable {
     let positionId: Int?
     let branchId: Int?
 }
+
+/// A single shift in a manager-viewed employee calendar.
+struct EmployeeCalendarShiftItem: Identifiable, Equatable {
+    let id: Int
+    let date: Date
+    let startMinutes: Int
+    let endMinutes: Int
+    let status: String
+}
+
+/// Aggregated calendar for one employee, seen by a manager.
+struct EmployeeCalendarSummary: Equatable {
+    let employeeName: String
+    let totalShifts: Int
+    let totalHours: Double
+    let shifts: [EmployeeCalendarShiftItem]
+}

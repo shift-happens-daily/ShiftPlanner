@@ -178,6 +178,15 @@ final class EmployeeListViewModel: ObservableObject {
 
     // MARK: - Work limits
 
+    func employeeCalendar(for employeeId: Int) async -> EmployeeCalendarSummary? {
+        do {
+            return try await repository.fetchEmployeeCalendar(employeeId: employeeId)
+        } catch {
+            errorMessage = error.localizedDescription
+            return nil
+        }
+    }
+
     func workLimits(for employeeId: Int) async -> WorkLimits? {
         do {
             return try await repository.fetchWorkLimits(employeeId: employeeId)
