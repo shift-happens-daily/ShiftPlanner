@@ -813,8 +813,8 @@ def delete_schedule_for_branch_week(
             DELETE FROM schedules
             WHERE company_id = :company_id
               AND branch_id = :branch_id
-              AND start_date <= :end_date
-              AND end_date >= :start_date
+              AND start_date = :start_date
+              AND end_date = :end_date
             """
         ),
         {

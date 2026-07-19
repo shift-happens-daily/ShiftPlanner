@@ -2617,6 +2617,50 @@ def test_manager_can_delete_own_company_schedule_and_related_rows(client: TestCl
             assert cursor.fetchone()[0] == 0
 
 
+def test_delete_schedule_week_does_not_delete_overlapping_long_period(client: TestClient) -> None:
+    manager_headers = login_json(client, "manager@example.com", "manager123")
+
+    with psycopg.connect(PSYCOPG_DSN) as connection:
+        with connection.cursor() as cursor:
+            cursor.execute(
+                """
+                INSERT INTO schedules (company_id, branch_id, start_date, end_date, status)
+                VALUES
+                    (1, 1, '2026-07-06', '2026-08-02', 'draft'),
+                    (1, 1, '2026-07-20', '2026-07-26', 'draft')
+                RETURNING id, start_date, end_date
+                """
+            )
+            long_schedule_id, _, _ = cursor.fetchone()
+            weekly_schedule_id, _, _ = cursor.fetchone()
+            cursor.execute(
+                """
+                INSERT INTO shifts (schedule_id, company_id, position_id, shift_date, start_time, end_time)
+                VALUES
+                    (%s, 1, 1, '2026-07-13', '09:00', '17:00'),
+                    (%s, 1, 1, '2026-07-20', '09:00', '17:00')
+                """,
+                (long_schedule_id, weekly_schedule_id),
+            )
+
+    deleted = client.delete(
+        "/schedule/week?branch_id=1&start_date=2026-07-20&end_date=2026-07-26",
+        headers=manager_headers,
+    )
+    assert deleted.status_code == 204, deleted.text
+
+    with psycopg.connect(PSYCOPG_DSN) as connection:
+        with connection.cursor() as cursor:
+            cursor.execute("SELECT COUNT(*) FROM schedules WHERE id = %s", (long_schedule_id,))
+            assert cursor.fetchone()[0] == 1
+            cursor.execute("SELECT COUNT(*) FROM schedules WHERE id = %s", (weekly_schedule_id,))
+            assert cursor.fetchone()[0] == 0
+            cursor.execute("SELECT COUNT(*) FROM shifts WHERE schedule_id = %s", (long_schedule_id,))
+            assert cursor.fetchone()[0] == 1
+            cursor.execute("SELECT COUNT(*) FROM shifts WHERE schedule_id = %s", (weekly_schedule_id,))
+            assert cursor.fetchone()[0] == 0
+
+
 def test_manager_cannot_delete_another_company_schedule(client: TestClient) -> None:
     seed_second_company_scope_data()
     manager_headers = login_json(client, "manager@example.com", "manager123")
