@@ -256,3 +256,46 @@ struct ScheduleGenerateResponseDTO: Decodable {
         }
     }
 }
+
+struct ShiftExchangeRequestDTO: Decodable {
+    let id: Int
+    let shiftId: Int
+    let employeeId: Int
+    let employeeName: String
+    let note: String
+    let status: String
+
+    enum CodingKeys: String, CodingKey {
+        case id
+        case shiftId = "shift_id"
+        case employeeId = "employee_id"
+        case employeeName = "employee_name"
+        case note
+        case status
+    }
+
+    func asDomain() -> ShiftExchangeRequest {
+        ShiftExchangeRequest(
+            id: id,
+            shiftId: shiftId,
+            employeeId: employeeId,
+            employeeName: employeeName,
+            note: note,
+            status: status
+        )
+    }
+}
+
+struct ShiftExchangeRequestUpdateDTO: Encodable {
+    let status: String
+}
+
+struct ShiftExchangeRequestCreateDTO: Encodable {
+    let shiftId: Int
+    let note: String
+
+    enum CodingKeys: String, CodingKey {
+        case shiftId = "shift_id"
+        case note
+    }
+}

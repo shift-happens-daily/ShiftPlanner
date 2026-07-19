@@ -136,3 +136,13 @@ struct AppSchedule: Identifiable, Equatable {
         !unfilledRequirements.isEmpty || shifts.contains { !$0.hasAssignedEmployee }
     }
 }
+
+/// A shift-exchange request raised by an employee, reviewed by a manager.
+struct ShiftExchangeRequest: Identifiable, Equatable {
+    let id: Int
+    let shiftId: Int
+    let employeeId: Int
+    let employeeName: String
+    let note: String
+    let status: String   // "pending" | "approved" | "rejected"
+}

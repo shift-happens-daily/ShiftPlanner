@@ -9,6 +9,7 @@ struct CompanyView: View {
     @State private var isShowingInviteSheet = false
     @State private var companyOverride: AppCompany?
     @State private var didCopyInviteCode = false
+    @State private var showNotifications = false
 
     private var displayedCompany: AppCompany? {
         companyOverride ?? user.company?.asAppCompany()
@@ -157,6 +158,19 @@ struct CompanyView: View {
             .background(themeManager.selectedTheme.screenBackground)
             .navigationTitle(localized("Company", "Компания"))
             .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button {
+                        showNotifications = true
+                    } label: {
+                        Image(systemName: "bell")
+                    }
+                }
+            }
+            .sheet(isPresented: $showNotifications) {
+                NotificationsView(companyId: user.company?.id)
+                    .environmentObject(themeManager)
+            }
             .onChange(of: user.company?.inviteCode) { _, _ in
                 if let company = user.company?.asAppCompany() {
                     companyOverride = company

@@ -44,6 +44,12 @@ protocol ScheduleRepository {
     ) async throws -> AppSchedule
 
     func deleteSchedule(scheduleId: Int) async throws
+    func deleteScheduleWeek(branchId: Int, startDate: Date, endDate: Date) async throws
+
+    // Shift exchange
+    func fetchExchangeRequests() async throws -> [ShiftExchangeRequest]
+    func updateExchangeRequest(id: Int, approved: Bool) async throws -> ShiftExchangeRequest
+    func createExchangeRequest(shiftId: Int, note: String) async throws
 
     func deleteShift(scheduleId: Int, shiftId: Int) async throws -> AppSchedule
 

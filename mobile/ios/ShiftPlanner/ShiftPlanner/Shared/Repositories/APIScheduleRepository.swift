@@ -256,6 +256,57 @@ final class APIScheduleRepository: ScheduleRepository {
         try await apiClient.sendWithoutResponseBody(request)
     }
 
+    func deleteScheduleWeek(branchId: Int, startDate: Date, endDate: Date) async throws {
+        let request = apiClient.makeRequest(
+            path: "schedule/week",
+            method: "DELETE",
+            queryItems: [
+                URLQueryItem(name: "branch_id", value: String(branchId)),
+                URLQueryItem(name: "start_date", value: Self.dateFormatter.string(from: startDate)),
+                URLQueryItem(name: "end_date", value: Self.dateFormatter.string(from: endDate))
+            ],
+            requiresAuthorization: true
+        )
+        try await apiClient.sendWithoutResponseBody(request)
+    }
+
+    // MARK: - Shift exchange
+
+    func fetchExchangeRequests() async throws -> [ShiftExchangeRequest] {
+        let request = apiClient.makeRequest(
+            path: "schedule/exchange-requests",
+            method: "GET",
+            requiresAuthorization: true
+        )
+        return try await apiClient.send(request, as: [ShiftExchangeRequestDTO].self).map { $0.asDomain() }
+    }
+
+    func updateExchangeRequest(id: Int, approved: Bool) async throws -> ShiftExchangeRequest {
+        let body = try JSONEncoder().encode(
+            ShiftExchangeRequestUpdateDTO(status: approved ? "approved" : "rejected")
+        )
+        let request = apiClient.makeRequest(
+            path: "schedule/exchange-requests/\(id)",
+            method: "PATCH",
+            body: body,
+            requiresAuthorization: true
+        )
+        return try await apiClient.send(request, as: ShiftExchangeRequestDTO.self).asDomain()
+    }
+
+    func createExchangeRequest(shiftId: Int, note: String) async throws {
+        let body = try JSONEncoder().encode(
+            ShiftExchangeRequestCreateDTO(shiftId: shiftId, note: note)
+        )
+        let request = apiClient.makeRequest(
+            path: "schedule/exchange-requests",
+            method: "POST",
+            body: body,
+            requiresAuthorization: true
+        )
+        _ = try await apiClient.send(request, as: ShiftExchangeRequestDTO.self)
+    }
+
     func deleteShift(scheduleId: Int, shiftId: Int) async throws -> AppSchedule {
         let request = apiClient.makeRequest(
             path: "schedule/\(scheduleId)/shifts/\(shiftId)",
