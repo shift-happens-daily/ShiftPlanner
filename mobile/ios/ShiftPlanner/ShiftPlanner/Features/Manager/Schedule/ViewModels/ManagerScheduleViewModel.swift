@@ -444,23 +444,6 @@ final class ManagerScheduleViewModel: ObservableObject {
         }
     }
 
-    /// Deleting a single week needs a concrete branch on the schedule.
-    var canDeleteWeek: Bool { schedule?.branchId != nil }
-
-    func deleteScheduleWeek() async {
-        guard let branchId = schedule?.branchId else { return }
-        do {
-            try await scheduleRepository.deleteScheduleWeek(
-                branchId: branchId,
-                startDate: weekStart,
-                endDate: weekEnd
-            )
-            statusMessage = localized("Week deleted.", "Неделя удалена.")
-            await refresh()
-        } catch {
-            errorMessage = error.localizedDescription
-        }
-    }
 
     // MARK: - Shift CRUD
 
