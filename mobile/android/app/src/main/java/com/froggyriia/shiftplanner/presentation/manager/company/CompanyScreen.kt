@@ -20,6 +20,7 @@ import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.Notifications
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -75,7 +76,8 @@ private sealed class CompanyNavState {
 fun CompanyScreen(
     user: AppUser,
     repository: CompanyRepository,
-    onUserUpdated: (AppUser) -> Unit
+    onUserUpdated: (AppUser) -> Unit,
+    onNotificationsClick: () -> Unit = {}
 ) {
     // remember (not rememberSaveable): CompanyNavState is not Parcelable/Serializable
     var navState by remember { mutableStateOf<CompanyNavState>(
@@ -125,7 +127,8 @@ fun CompanyScreen(
             }
         )
         CompanyNavState.Details -> CompanyDetailsContent(
-            viewModel = detailsVm
+            viewModel = detailsVm,
+            onNotificationsClick = onNotificationsClick
         )
         else -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
             CircularProgressIndicator()
@@ -282,7 +285,8 @@ private fun ManagerJoinSheet(
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun CompanyDetailsContent(
-    viewModel: CompanyDetailsViewModel
+    viewModel: CompanyDetailsViewModel,
+    onNotificationsClick: () -> Unit
 ) {
     val state by viewModel.uiState.collectAsState()
     val context = LocalContext.current
@@ -304,6 +308,9 @@ private fun CompanyDetailsContent(
             TopAppBar(
                 title = { Text(state.company?.name ?: stringResource(R.string.nav_company)) },
                 actions = {
+                    IconButton(onClick = onNotificationsClick) {
+                        Icon(Icons.Default.Notifications, contentDescription = stringResource(R.string.nav_notifications))
+                    }
                     if (!state.isEditing) {
                         IconButton(onClick = viewModel::startEditing) {
                             Icon(Icons.Default.Edit, contentDescription = stringResource(R.string.edit))

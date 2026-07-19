@@ -23,7 +23,6 @@ import androidx.compose.material.icons.filled.CalendarToday
 import androidx.compose.material.icons.filled.EventAvailable
 import androidx.compose.material.icons.filled.EventBusy
 import androidx.compose.material.icons.filled.Group
-import androidx.compose.material.icons.filled.Notifications
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -135,7 +134,6 @@ private enum class ManagerTab(@StringRes val labelRes: Int, val icon: ImageVecto
     REQUIREMENTS(R.string.nav_reqs, Icons.Default.Assignment),
     SCHEDULE(R.string.nav_schedule, Icons.Default.CalendarMonth),
     REPORTS(R.string.nav_reports, Icons.Default.Assessment),
-    NOTIFICATIONS(R.string.nav_notifications, Icons.Default.Notifications),
     PROFILE(R.string.nav_profile, Icons.Default.Person)
 }
 
@@ -148,6 +146,22 @@ private fun ManagerShell(
     onDeleteAccount: () -> Unit
 ) {
     var selectedTab by rememberSaveable { mutableStateOf(ManagerTab.COMPANY) }
+    var showNotifications by rememberSaveable { mutableStateOf(false) }
+
+    val notificationsVm: NotificationsViewModel = viewModel(
+        key = "manager_notifications_${user.company?.id}",
+        factory = remember(user.company?.id) {
+            object : ViewModelProvider.Factory {
+                override fun <T : ViewModel> create(modelClass: Class<T>): T {
+                    @Suppress("UNCHECKED_CAST")
+                    return NotificationsViewModel(
+                        appContainer.scheduleRepository,
+                        appContainer.employeeManagementRepository(user.company?.id)
+                    ) as T
+                }
+            }
+        }
+    )
 
     Scaffold(
         bottomBar = {
@@ -165,11 +179,21 @@ private fun ManagerShell(
         }
     ) { padding ->
         Box(modifier = Modifier.padding(padding)) {
+            if (showNotifications) {
+                NotificationsScreen(
+                    viewModel = notificationsVm,
+                    onBack = { showNotifications = false }
+                )
+            } else {
             when (selectedTab) {
                 ManagerTab.COMPANY -> CompanyScreen(
                     user = user,
                     repository = appContainer.companyRepository,
-                    onUserUpdated = onUserUpdated
+                    onUserUpdated = onUserUpdated,
+                    onNotificationsClick = {
+                        notificationsVm.load()
+                        showNotifications = true
+                    }
                 )
                 ManagerTab.EMPLOYEES -> {
                     val employeesVm: EmployeesViewModel = viewModel(
@@ -239,28 +263,12 @@ private fun ManagerShell(
                     )
                     ReportsScreen(viewModel = reportsVm)
                 }
-                ManagerTab.NOTIFICATIONS -> {
-                    val notificationsVm: NotificationsViewModel = viewModel(
-                        key = "manager_notifications_${user.company?.id}",
-                        factory = remember(user.company?.id) {
-                            object : ViewModelProvider.Factory {
-                                override fun <T : ViewModel> create(modelClass: Class<T>): T {
-                                    @Suppress("UNCHECKED_CAST")
-                                    return NotificationsViewModel(
-                                        appContainer.scheduleRepository,
-                                        appContainer.employeeManagementRepository(user.company?.id)
-                                    ) as T
-                                }
-                            }
-                        }
-                    )
-                    NotificationsScreen(viewModel = notificationsVm)
-                }
                 ManagerTab.PROFILE -> ProfileScreen(
                     user = user,
                     onLogout = onLogout,
                     onDeleteAccount = onDeleteAccount
                 )
+            }
             }
         }
     }
