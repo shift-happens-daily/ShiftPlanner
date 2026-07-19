@@ -168,7 +168,8 @@ data class EmployeeCalendarShiftDto(
 
 data class EmployeeCalendarSummaryDto(
     val employee: EmployeeCalendarEmployeeDto,
-    val shifts: List<EmployeeCalendarShiftDto>
+    val shifts: List<EmployeeCalendarShiftDto>,
+    val workload: EmployeeWorkloadDto? = null
 )
 
 // ── Absences ──────────────────────────────────────────────────────────────────
