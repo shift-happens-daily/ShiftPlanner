@@ -84,3 +84,13 @@ data class AppScheduleListItem(
     val endDate: Date,
     val status: AppScheduleStatus
 )
+
+/** A shift-exchange request raised by an employee, reviewed by a manager. */
+data class PendingShiftExchange(
+    val id: Int,
+    val shiftId: Int,
+    val employeeId: Int,
+    val employeeName: String,
+    val note: String,
+    val status: String   // "pending" | "approved" | "rejected"
+)

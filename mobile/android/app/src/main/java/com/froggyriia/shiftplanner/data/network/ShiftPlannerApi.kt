@@ -278,17 +278,17 @@ interface ShiftPlannerApi {
 
     // ── Shift exchange requests ───────────────────────────────────────────────
 
-    @POST("schedule/exchanges")
+    @POST("schedule/exchange-requests")
     suspend fun createExchangeRequest(@Body request: ShiftExchangeCreateRequestDto): ShiftExchangeResponseDto
 
-    @GET("schedule/exchanges")
+    @GET("schedule/exchange-requests")
     suspend fun getExchangeRequests(): List<ShiftExchangeResponseDto>
 
-    @POST("schedule/exchanges/{id}/approve")
-    suspend fun approveExchangeRequest(@Path("id") id: Int): ShiftExchangeResponseDto
-
-    @POST("schedule/exchanges/{id}/reject")
-    suspend fun rejectExchangeRequest(@Path("id") id: Int): ShiftExchangeResponseDto
+    @PATCH("schedule/exchange-requests/{id}")
+    suspend fun updateExchangeRequest(
+        @Path("id") id: Int,
+        @Body request: ShiftExchangeUpdateRequestDto
+    ): ShiftExchangeResponseDto
 
     // ── Reports ───────────────────────────────────────────────────────────────
 

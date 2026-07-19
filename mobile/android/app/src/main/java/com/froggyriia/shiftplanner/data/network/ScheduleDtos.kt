@@ -209,8 +209,14 @@ data class ShiftExchangeResponseDto(
     val id: Int,
     @SerializedName("shift_id")
     val shiftId: Int,
-    val note: String?,
-    val status: String,
     @SerializedName("employee_id")
-    val employeeId: Int
+    val employeeId: Int,
+    @SerializedName("employee_name")
+    val employeeName: String = "",
+    val note: String?,
+    val status: String
+)
+
+data class ShiftExchangeUpdateRequestDto(
+    val status: String
 )

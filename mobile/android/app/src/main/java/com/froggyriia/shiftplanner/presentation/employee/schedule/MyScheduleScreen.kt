@@ -23,6 +23,8 @@ import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material.icons.filled.CalendarMonth
 import androidx.compose.material.icons.filled.List
 import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.SwapHoriz
+import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
@@ -33,7 +35,10 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.IconButtonDefaults
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
@@ -70,11 +75,22 @@ fun MyScheduleScreen(
     val state by viewModel.uiState.collectAsState()
 
     var monthMode by rememberSaveable { mutableStateOf(false) }
+    var exchangeShift by remember { mutableStateOf<AppScheduledShift?>(null) }
+    val snackbarHostState = remember { SnackbarHostState() }
+    val exchangeSentMsg = stringResource(R.string.exchange_sent)
 
     // Reload when the tab is opened — the schedule may have been republished.
     LaunchedEffect(Unit) { viewModel.loadMySchedule() }
 
+    LaunchedEffect(state.exchangeSubmitted) {
+        if (state.exchangeSubmitted) {
+            snackbarHostState.showSnackbar(exchangeSentMsg)
+            viewModel.consumeExchangeSubmitted()
+        }
+    }
+
     Scaffold(
+        snackbarHost = { SnackbarHost(snackbarHostState) },
         topBar = {
             TopAppBar(
                 title = { Text(stringResource(R.string.mysch_title)) },
@@ -172,12 +188,50 @@ fun MyScheduleScreen(
                                     MyShiftDayHeader(date = date)
                                 }
                                 items(shifts, key = { "shift_${it.id}" }) { shift ->
-                                    MyShiftCard(shift = shift)
+                                    MyShiftCard(shift = shift, onClick = { exchangeShift = shift })
                                 }
                             }
                             item { Spacer(Modifier.height(16.dp)) }
                         }
                     }
+                }
+            }
+        }
+    }
+
+    exchangeShift?.let { shift ->
+        var note by remember(shift.id) { mutableStateOf("") }
+        ModalBottomSheet(onDismissRequest = { exchangeShift = null }) {
+            Column(
+                Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp)
+                    .padding(bottom = 32.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                Text(stringResource(R.string.exchange_request_title), style = MaterialTheme.typography.titleMedium)
+                Text(
+                    "${shift.positionName} · " +
+                        "${ScheduleViewModel.minutesToDisplay(shift.startMinutes)} – " +
+                        ScheduleViewModel.minutesToDisplay(shift.endMinutes),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                OutlinedTextField(
+                    value = note,
+                    onValueChange = { note = it },
+                    label = { Text(stringResource(R.string.exchange_reason_label)) },
+                    modifier = Modifier.fillMaxWidth()
+                )
+                Button(
+                    onClick = {
+                        viewModel.requestExchange(shift.id, note.trim())
+                        exchangeShift = null
+                    },
+                    enabled = note.isNotBlank(),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text(stringResource(R.string.exchange_send))
                 }
             }
         }
@@ -220,12 +274,13 @@ private fun MyShiftDayHeader(date: String) {
 }
 
 @Composable
-private fun MyShiftCard(shift: AppScheduledShift) {
+private fun MyShiftCard(shift: AppScheduledShift, onClick: (() -> Unit)? = null) {
     val hours = (shift.endMinutes - shift.startMinutes) / 60.0
     Card(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(horizontal = 16.dp, vertical = 4.dp),
+            .padding(horizontal = 16.dp, vertical = 4.dp)
+            .then(if (onClick != null) Modifier.clickable { onClick() } else Modifier),
         colors = CardDefaults.cardColors(
             containerColor = MaterialTheme.colorScheme.primaryContainer
         )
@@ -257,6 +312,14 @@ private fun MyShiftCard(shift: AppScheduledShift) {
                 fontWeight = FontWeight.Bold,
                 color = MaterialTheme.colorScheme.onPrimaryContainer
             )
+            if (onClick != null) {
+                Spacer(Modifier.width(8.dp))
+                Icon(
+                    Icons.Default.SwapHoriz,
+                    contentDescription = stringResource(R.string.exchange_request_title),
+                    tint = MaterialTheme.colorScheme.primary
+                )
+            }
         }
     }
 }

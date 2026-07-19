@@ -18,7 +18,8 @@ data class MyScheduleUiState(
     val weekDates: List<String> = emptyList(),
     val weekLabel: String = "",
     val isLoading: Boolean = false,
-    val errorMessage: String? = null
+    val errorMessage: String? = null,
+    val exchangeSubmitted: Boolean = false
 )
 
 class MyScheduleViewModel(
@@ -58,6 +59,21 @@ class MyScheduleViewModel(
                 _uiState.value = _uiState.value.copy(isLoading = false, errorMessage = e.message)
             }
         }
+    }
+
+    fun requestExchange(shiftId: Int, note: String) {
+        viewModelScope.launch {
+            try {
+                repository.createExchangeRequest(shiftId, note)
+                _uiState.value = _uiState.value.copy(exchangeSubmitted = true)
+            } catch (e: Exception) {
+                _uiState.value = _uiState.value.copy(errorMessage = e.message)
+            }
+        }
+    }
+
+    fun consumeExchangeSubmitted() {
+        _uiState.value = _uiState.value.copy(exchangeSubmitted = false)
     }
 
     fun shiftsForDate(date: String): List<AppScheduledShift> {

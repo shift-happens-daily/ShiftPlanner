@@ -10,6 +10,8 @@ import com.froggyriia.shiftplanner.data.network.ScheduleRequirementInScheduleUpd
 import com.froggyriia.shiftplanner.data.network.ScheduleResponseDto
 import com.froggyriia.shiftplanner.data.network.ScheduleShiftResponseDto
 import com.froggyriia.shiftplanner.data.network.ScheduleShiftUpdateRequestDto
+import com.froggyriia.shiftplanner.data.network.ShiftExchangeCreateRequestDto
+import com.froggyriia.shiftplanner.data.network.ShiftExchangeUpdateRequestDto
 import com.froggyriia.shiftplanner.data.network.ScheduleUnfilledRequirementResponseDto
 import com.google.gson.Gson
 import com.google.gson.reflect.TypeToken
@@ -20,6 +22,7 @@ import com.froggyriia.shiftplanner.domain.model.AppScheduleListItem
 import com.froggyriia.shiftplanner.domain.model.AppScheduleStatus
 import com.froggyriia.shiftplanner.domain.model.AppScheduledShift
 import com.froggyriia.shiftplanner.domain.model.AppUnfilledRequirement
+import com.froggyriia.shiftplanner.domain.model.PendingShiftExchange
 import com.froggyriia.shiftplanner.domain.model.ScheduleShiftMutation
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -284,6 +287,41 @@ class ApiScheduleRepository(
         String.format(Locale.US, "%02d:%02d:00", minutes / 60, minutes % 60)
 
     private val dateFormatter = SimpleDateFormat("yyyy-MM-dd", Locale.US)
+
+    override suspend fun createExchangeRequest(shiftId: Int, note: String) = wrap {
+        apiClient.api.createExchangeRequest(
+            ShiftExchangeCreateRequestDto(shiftId = shiftId, note = note)
+        )
+        Unit
+    }
+
+    override suspend fun fetchExchangeRequests(): List<PendingShiftExchange> = wrap {
+        apiClient.api.getExchangeRequests().map { dto ->
+            PendingShiftExchange(
+                id = dto.id,
+                shiftId = dto.shiftId,
+                employeeId = dto.employeeId,
+                employeeName = dto.employeeName,
+                note = dto.note ?: "",
+                status = dto.status
+            )
+        }
+    }
+
+    override suspend fun updateExchangeRequest(id: Int, approved: Boolean): PendingShiftExchange = wrap {
+        val dto = apiClient.api.updateExchangeRequest(
+            id,
+            ShiftExchangeUpdateRequestDto(status = if (approved) "approved" else "rejected")
+        )
+        PendingShiftExchange(
+            id = dto.id,
+            shiftId = dto.shiftId,
+            employeeId = dto.employeeId,
+            employeeName = dto.employeeName,
+            note = dto.note ?: "",
+            status = dto.status
+        )
+    }
 
     private suspend fun <T> wrap(block: suspend () -> T): T {
         return try {

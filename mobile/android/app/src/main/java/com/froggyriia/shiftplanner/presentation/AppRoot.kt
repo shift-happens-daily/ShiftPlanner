@@ -23,6 +23,7 @@ import androidx.compose.material.icons.filled.CalendarToday
 import androidx.compose.material.icons.filled.EventAvailable
 import androidx.compose.material.icons.filled.EventBusy
 import androidx.compose.material.icons.filled.Group
+import androidx.compose.material.icons.filled.Notifications
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -79,6 +80,8 @@ import com.froggyriia.shiftplanner.presentation.manager.company.CompanyInviteVie
 import com.froggyriia.shiftplanner.presentation.manager.company.CompanyScreen
 import com.froggyriia.shiftplanner.presentation.manager.employees.EmployeesScreen
 import com.froggyriia.shiftplanner.presentation.manager.employees.EmployeesViewModel
+import com.froggyriia.shiftplanner.presentation.manager.notifications.NotificationsScreen
+import com.froggyriia.shiftplanner.presentation.manager.notifications.NotificationsViewModel
 import com.froggyriia.shiftplanner.presentation.manager.reports.ReportsScreen
 import com.froggyriia.shiftplanner.presentation.manager.reports.ReportsViewModel
 import com.froggyriia.shiftplanner.presentation.manager.requirements.RequirementsScreen
@@ -132,6 +135,7 @@ private enum class ManagerTab(@StringRes val labelRes: Int, val icon: ImageVecto
     REQUIREMENTS(R.string.nav_reqs, Icons.Default.Assignment),
     SCHEDULE(R.string.nav_schedule, Icons.Default.CalendarMonth),
     REPORTS(R.string.nav_reports, Icons.Default.Assessment),
+    NOTIFICATIONS(R.string.nav_notifications, Icons.Default.Notifications),
     PROFILE(R.string.nav_profile, Icons.Default.Person)
 }
 
@@ -234,6 +238,23 @@ private fun ManagerShell(
                         }
                     )
                     ReportsScreen(viewModel = reportsVm)
+                }
+                ManagerTab.NOTIFICATIONS -> {
+                    val notificationsVm: NotificationsViewModel = viewModel(
+                        key = "manager_notifications_${user.company?.id}",
+                        factory = remember(user.company?.id) {
+                            object : ViewModelProvider.Factory {
+                                override fun <T : ViewModel> create(modelClass: Class<T>): T {
+                                    @Suppress("UNCHECKED_CAST")
+                                    return NotificationsViewModel(
+                                        appContainer.scheduleRepository,
+                                        appContainer.employeeManagementRepository(user.company?.id)
+                                    ) as T
+                                }
+                            }
+                        }
+                    )
+                    NotificationsScreen(viewModel = notificationsVm)
                 }
                 ManagerTab.PROFILE -> ProfileScreen(
                     user = user,

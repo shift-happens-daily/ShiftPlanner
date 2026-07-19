@@ -360,4 +360,21 @@
     <string-array name="weekdays_short">
         <item>Mon</item><item>Tue</item><item>Wed</item><item>Thu</item><item>Fri</item><item>Sat</item><item>Sun</item>
     </string-array>
+    <string name="nav_notifications">Notifications</string>
+    <string name="notif_exchange">Shift exchange</string>
+    <string name="notif_no_exchange">No exchange requests.</string>
+    <string name="notif_timeoff">Time off</string>
+    <string name="notif_no_timeoff">No time-off requests.</string>
+    <string name="notif_new_employees">New employees</string>
+    <string name="notif_no_employees">No pending employees.</string>
+    <string name="notif_managers">Managers</string>
+    <string name="notif_no_managers">No pending managers.</string>
+    <string name="notif_approve">Approve</string>
+    <string name="notif_reject">Reject</string>
+    <string name="notif_accept">Accept</string>
+    <string name="notif_decline">Decline</string>
+    <string name="exchange_request_title">Request exchange</string>
+    <string name="exchange_reason_label">Why do you want to swap this shift?</string>
+    <string name="exchange_send">Send request</string>
+    <string name="exchange_sent">Exchange request sent. A manager will review it.</string>
 </resources>

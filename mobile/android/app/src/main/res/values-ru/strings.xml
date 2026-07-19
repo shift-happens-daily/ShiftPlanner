@@ -362,4 +362,21 @@
     <string-array name="weekdays_short">
         <item>Пн</item><item>Вт</item><item>Ср</item><item>Чт</item><item>Пт</item><item>Сб</item><item>Вс</item>
     </string-array>
+    <string name="nav_notifications">Уведомления</string>
+    <string name="notif_exchange">Обмен сменами</string>
+    <string name="notif_no_exchange">Нет запросов на обмен.</string>
+    <string name="notif_timeoff">Отгулы</string>
+    <string name="notif_no_timeoff">Нет запросов на отгулы.</string>
+    <string name="notif_new_employees">Новые сотрудники</string>
+    <string name="notif_no_employees">Нет заявок от сотрудников.</string>
+    <string name="notif_managers">Менеджеры</string>
+    <string name="notif_no_managers">Нет заявок от менеджеров.</string>
+    <string name="notif_approve">Одобрить</string>
+    <string name="notif_reject">Отклонить</string>
+    <string name="notif_accept">Принять</string>
+    <string name="notif_decline">Отклонить</string>
+    <string name="exchange_request_title">Запрос на обмен</string>
+    <string name="exchange_reason_label">Почему хотите поменять смену?</string>
+    <string name="exchange_send">Отправить запрос</string>
+    <string name="exchange_sent">Запрос на обмен отправлен. Менеджер его рассмотрит.</string>
 </resources>
