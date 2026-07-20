@@ -100,10 +100,20 @@ data class CompanyJoinRequestDto(
     val positionId: Int?
 )
 
+data class CompanyJoinManagerRequestDto(
+    @SerializedName("invite_code")
+    val inviteCode: String
+)
+
 /** Value of the working-hours map: weekday ("0".."6") -> range in 30-min slots. */
 data class WorkingHoursRangeDto(
     @SerializedName("start_slot")
     val startSlot: Int,
     @SerializedName("end_slot")
     val endSlot: Int
+)
+
+data class CompanyUserPublicIdRequestDto(
+    @SerializedName("user_public_id")
+    val userPublicId: String
 )

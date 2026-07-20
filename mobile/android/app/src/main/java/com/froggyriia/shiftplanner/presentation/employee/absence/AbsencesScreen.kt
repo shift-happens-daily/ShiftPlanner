@@ -316,24 +316,27 @@ private fun AbsenceCard(absence: AppAbsence, onDelete: () -> Unit) {
                         style = MaterialTheme.typography.bodyLarge,
                         fontWeight = FontWeight.Medium
                     )
-                    Spacer(Modifier.height(0.dp))
-                    Badge(
-                        containerColor = when (absence.status) {
-                            AppAbsenceStatus.APPROVED -> MaterialTheme.colorScheme.primaryContainer
-                            AppAbsenceStatus.PENDING -> MaterialTheme.colorScheme.secondaryContainer
-                            AppAbsenceStatus.REJECTED -> MaterialTheme.colorScheme.errorContainer
-                        },
-                        modifier = Modifier.padding(start = 8.dp)
-                    ) {
-                        Text(
-                            when (absence.status) {
-                                AppAbsenceStatus.APPROVED -> stringResource(R.string.abs_status_approved)
-                                AppAbsenceStatus.PENDING -> stringResource(R.string.abs_status_pending)
-                                AppAbsenceStatus.REJECTED -> stringResource(R.string.abs_status_rejected)
+                    // Status badge only when the backend actually reports a status.
+                    absence.status?.let { status ->
+                        Spacer(Modifier.height(0.dp))
+                        Badge(
+                            containerColor = when (status) {
+                                AppAbsenceStatus.APPROVED -> MaterialTheme.colorScheme.primaryContainer
+                                AppAbsenceStatus.PENDING -> MaterialTheme.colorScheme.secondaryContainer
+                                AppAbsenceStatus.REJECTED -> MaterialTheme.colorScheme.errorContainer
                             },
-                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
-                            style = MaterialTheme.typography.labelSmall
-                        )
+                            modifier = Modifier.padding(start = 8.dp)
+                        ) {
+                            Text(
+                                when (status) {
+                                    AppAbsenceStatus.APPROVED -> stringResource(R.string.abs_status_approved)
+                                    AppAbsenceStatus.PENDING -> stringResource(R.string.abs_status_pending)
+                                    AppAbsenceStatus.REJECTED -> stringResource(R.string.abs_status_rejected)
+                                },
+                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
+                                style = MaterialTheme.typography.labelSmall
+                            )
+                        }
                     }
                 }
                 Text(

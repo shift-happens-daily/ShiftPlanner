@@ -15,6 +15,8 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.CalendarMonth
+import androidx.compose.material.icons.filled.PersonAdd
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Link
 import androidx.compose.material.icons.filled.Refresh
@@ -54,6 +56,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import com.froggyriia.shiftplanner.domain.model.AppUser
 import com.froggyriia.shiftplanner.domain.model.ManagedEmployee
+import com.froggyriia.shiftplanner.domain.model.ManagedEmployeeCalendar
 import com.froggyriia.shiftplanner.domain.model.ManagedPosition
 import com.froggyriia.shiftplanner.domain.model.PendingEmployeeRequest
 import com.froggyriia.shiftplanner.domain.model.PendingManagerRequest
@@ -61,6 +64,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import com.froggyriia.shiftplanner.R
 import androidx.compose.material.icons.filled.Schedule
+import androidx.compose.material3.Checkbox
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.ui.text.input.KeyboardType
 
@@ -103,6 +107,8 @@ fun EmployeesScreen(
     var positionToDelete by remember { mutableStateOf<ManagedPosition?>(null) }
     var positionPickerEmployee by remember { mutableStateOf<ManagedEmployee?>(null) }
     var branchPickerEmployee by remember { mutableStateOf<ManagedEmployee?>(null) }
+    var showAddManagerSheet by remember { mutableStateOf(false) }
+    var calendarEmployee by remember { mutableStateOf<ManagedEmployee?>(null) }
 
     if (!user.hasCompany) {
         Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
@@ -117,8 +123,13 @@ fun EmployeesScreen(
                 title = { Text(stringResource(R.string.emp_title)) },
                 actions = {
                     when (tabIndex) {
-                        0 -> IconButton(onClick = { showLinkByIdSheet = true }) {
-                            Icon(Icons.Default.Link, contentDescription = stringResource(R.string.emp_link_by_id))
+                        0 -> {
+                            IconButton(onClick = { showAddManagerSheet = true }) {
+                                Icon(Icons.Default.PersonAdd, contentDescription = stringResource(R.string.emp_add_manager))
+                            }
+                            IconButton(onClick = { showLinkByIdSheet = true }) {
+                                Icon(Icons.Default.Link, contentDescription = stringResource(R.string.emp_link_by_id))
+                            }
                         }
                         1 -> IconButton(onClick = { showAddPositionDialog = true }) {
                             Icon(Icons.Default.Add, contentDescription = stringResource(R.string.emp_add_position))
@@ -154,7 +165,8 @@ fun EmployeesScreen(
                     onEditLimits = { workLimitsTarget = it },
                     onDeleteEmployee = { employeeToDelete = it },
                     onPickPosition = { positionPickerEmployee = it },
-                    onPickBranch = if (state.branches.isNotEmpty()) { { branchPickerEmployee = it } } else null
+                    onPickBranch = if (state.branches.isNotEmpty()) { { branchPickerEmployee = it } } else null,
+                    onViewCalendar = { calendarEmployee = it }
                 )
                 1 -> PositionListTab(
                     positions = state.positions,
@@ -335,33 +347,153 @@ fun EmployeesScreen(
 
     // ── Branch Picker Sheet ───────────────────────────────────────────────────
 
+    // ── Multi-branch editor ───────────────────────────────────────────────────
     branchPickerEmployee?.let { emp ->
+        var selectedBranches by remember(emp.id) { mutableStateOf<Set<Int>>(emptySet()) }
+        var primaryBranchId by remember(emp.id) { mutableStateOf<Int?>(null) }
+        var branchesLoaded by remember(emp.id) { mutableStateOf(false) }
+        LaunchedEffect(emp.id) {
+            viewModel.loadEmployeeBranches(emp.id) { assignments ->
+                if (assignments != null) {
+                    selectedBranches = assignments.map { it.id }.toSet()
+                    primaryBranchId = assignments.firstOrNull { it.isPrimary }?.id ?: assignments.firstOrNull()?.id
+                }
+                branchesLoaded = true
+            }
+        }
         ModalBottomSheet(onDismissRequest = { branchPickerEmployee = null }) {
             Column(
-                modifier = Modifier.padding(horizontal = 20.dp).padding(bottom = 32.dp),
+                modifier = Modifier
+                    .padding(horizontal = 20.dp)
+                    .padding(bottom = 32.dp)
+                    .verticalScroll(rememberScrollState()),
                 verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
                 Text(stringResource(R.string.emp_set_branch_for, emp.fullName), style = MaterialTheme.typography.titleMedium)
-                TextButton(
-                    onClick = {
-                        viewModel.assignBranch(emp, null)
-                        branchPickerEmployee = null
-                    },
-                    modifier = Modifier.fillMaxWidth()
-                ) { Text(stringResource(R.string.emp_no_branch)) }
-                state.branches.forEach { branch ->
-                    val isSelected = emp.branchId == branch.id
-                    TextButton(
+                if (!branchesLoaded) {
+                    CircularProgressIndicator()
+                } else {
+                    state.branches.forEach { branch ->
+                        val isSel = selectedBranches.contains(branch.id)
+                        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+                            Checkbox(
+                                checked = isSel,
+                                onCheckedChange = { checked ->
+                                    selectedBranches = if (checked) {
+                                        if (primaryBranchId == null) primaryBranchId = branch.id
+                                        selectedBranches + branch.id
+                                    } else {
+                                        val ns = selectedBranches - branch.id
+                                        if (primaryBranchId == branch.id) primaryBranchId = ns.firstOrNull()
+                                        ns
+                                    }
+                                }
+                            )
+                            Text(branch.name, modifier = Modifier.weight(1f))
+                            if (isSel) {
+                                TextButton(onClick = { primaryBranchId = branch.id }) {
+                                    Text(
+                                        if (primaryBranchId == branch.id) stringResource(R.string.emp_primary)
+                                        else stringResource(R.string.emp_make_primary),
+                                        style = MaterialTheme.typography.labelSmall
+                                    )
+                                }
+                            }
+                        }
+                    }
+                    Button(
                         onClick = {
-                            viewModel.assignBranch(emp, branch.id)
-                            branchPickerEmployee = null
+                            val pid = primaryBranchId
+                            if (pid != null && selectedBranches.isNotEmpty()) {
+                                viewModel.saveEmployeeBranches(emp.id, selectedBranches.toList(), pid) { ok ->
+                                    if (ok) branchPickerEmployee = null
+                                }
+                            }
                         },
+                        enabled = selectedBranches.isNotEmpty() && primaryBranchId != null,
                         modifier = Modifier.fillMaxWidth()
-                    ) {
+                    ) { Text(stringResource(R.string.emp_save_branches)) }
+                }
+            }
+        }
+    }
+
+    // ── Add manager by public ID ──────────────────────────────────────────────
+    if (showAddManagerSheet) {
+        var managerId by remember { mutableStateOf("") }
+        ModalBottomSheet(onDismissRequest = { showAddManagerSheet = false }) {
+            Column(
+                modifier = Modifier
+                    .padding(horizontal = 20.dp)
+                    .padding(bottom = 32.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                Text(stringResource(R.string.emp_add_manager), style = MaterialTheme.typography.headlineSmall)
+                Text(
+                    stringResource(R.string.emp_add_manager_hint),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                OutlinedTextField(
+                    value = managerId,
+                    onValueChange = { if (it.length <= 16) managerId = it },
+                    label = { Text(stringResource(R.string.emp_public_id_label)) },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth(),
+                    supportingText = { Text("${managerId.length}/16") }
+                )
+                Button(
+                    onClick = {
+                        viewModel.addManagerByPublicId(managerId) { ok -> if (ok) showAddManagerSheet = false }
+                    },
+                    modifier = Modifier.fillMaxWidth(),
+                    enabled = managerId.length == 16
+                ) { Text(stringResource(R.string.emp_add_manager_button)) }
+            }
+        }
+    }
+
+    // ── Employee calendar ─────────────────────────────────────────────────────
+    calendarEmployee?.let { emp ->
+        var calendar by remember(emp.id) { mutableStateOf<ManagedEmployeeCalendar?>(null) }
+        var calendarLoaded by remember(emp.id) { mutableStateOf(false) }
+        LaunchedEffect(emp.id) {
+            viewModel.loadEmployeeCalendar(emp.id) { c -> calendar = c; calendarLoaded = true }
+        }
+        ModalBottomSheet(onDismissRequest = { calendarEmployee = null }) {
+            Column(
+                modifier = Modifier
+                    .padding(horizontal = 20.dp)
+                    .padding(bottom = 32.dp)
+                    .verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                Text(emp.fullName, style = MaterialTheme.typography.titleMedium)
+                val cal = calendar
+                when {
+                    !calendarLoaded -> CircularProgressIndicator()
+                    cal == null || cal.shifts.isEmpty() ->
+                        Text(stringResource(R.string.emp_cal_no_shifts), color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    else -> {
                         Text(
-                            branch.name,
-                            color = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface
+                            stringResource(R.string.emp_cal_summary, cal.totalShifts, "%.1f".format(cal.totalHours)),
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
+                        HorizontalDivider()
+                        cal.shifts.forEach { sh ->
+                            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                                Text(sh.date, style = MaterialTheme.typography.bodyMedium)
+                                Text(
+                                    "%02d:%02d – %02d:%02d".format(
+                                        sh.startMinutes / 60, sh.startMinutes % 60,
+                                        sh.endMinutes / 60, sh.endMinutes % 60
+                                    ),
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                        }
                     }
                 }
             }
@@ -378,7 +510,8 @@ private fun EmployeeListTab(
     onEditLimits: (ManagedEmployee) -> Unit,
     onDeleteEmployee: (ManagedEmployee) -> Unit,
     onPickPosition: (ManagedEmployee) -> Unit,
-    onPickBranch: ((ManagedEmployee) -> Unit)?
+    onPickBranch: ((ManagedEmployee) -> Unit)?,
+    onViewCalendar: (ManagedEmployee) -> Unit
 ) {
     if (employees.isEmpty()) {
         Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
@@ -399,6 +532,7 @@ private fun EmployeeListTab(
                 branchTitle = viewModel.branchTitle(emp),
                 onPickPosition = { onPickPosition(emp) },
                 onPickBranch = onPickBranch?.let { { it(emp) } },
+                onViewCalendar = { onViewCalendar(emp) },
                 onEditLimits = { onEditLimits(emp) },
                 onDelete = { onDeleteEmployee(emp) }
             )
@@ -413,6 +547,7 @@ private fun EmployeeCard(
     branchTitle: String,
     onPickPosition: () -> Unit,
     onPickBranch: (() -> Unit)?,
+    onViewCalendar: () -> Unit,
     onEditLimits: () -> Unit,
     onDelete: () -> Unit
 ) {
@@ -426,6 +561,9 @@ private fun EmployeeCard(
                 Column(modifier = Modifier.weight(1f)) {
                     Text(employee.fullName, style = MaterialTheme.typography.titleMedium)
                     Text(employee.email, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+                IconButton(onClick = onViewCalendar) {
+                    Icon(Icons.Default.CalendarMonth, contentDescription = stringResource(R.string.emp_view_calendar))
                 }
                 IconButton(onClick = onEditLimits) {
                     Icon(Icons.Default.Schedule, contentDescription = stringResource(R.string.emp_edit_limits))

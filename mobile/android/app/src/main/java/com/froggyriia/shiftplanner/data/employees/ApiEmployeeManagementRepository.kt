@@ -6,9 +6,14 @@ import com.froggyriia.shiftplanner.data.network.EmployeeCreateRequestDto
 import com.froggyriia.shiftplanner.data.network.EmployeePositionUpdateRequestDto
 import com.froggyriia.shiftplanner.data.network.LinkUserRequestDto
 import com.froggyriia.shiftplanner.data.network.EmployeeWorkLimitsDto
+import com.froggyriia.shiftplanner.data.network.EmployeeBranchesUpdateDto
+import com.froggyriia.shiftplanner.data.network.CompanyUserPublicIdRequestDto
 import com.froggyriia.shiftplanner.data.network.PositionCreateRequestDto
 import com.froggyriia.shiftplanner.domain.model.ManagedBranch
+import com.froggyriia.shiftplanner.domain.model.ManagedBranchAssignment
 import com.froggyriia.shiftplanner.domain.model.ManagedEmployee
+import com.froggyriia.shiftplanner.domain.model.ManagedEmployeeCalendar
+import com.froggyriia.shiftplanner.domain.model.ManagedEmployeeCalendarShift
 import com.froggyriia.shiftplanner.domain.model.ManagedPosition
 import com.froggyriia.shiftplanner.domain.model.PendingEmployeeRequest
 import com.froggyriia.shiftplanner.domain.model.PendingManagerRequest
@@ -143,6 +148,50 @@ class ApiEmployeeManagementRepository(
 
     override suspend fun declineEmployeeRequest(id: Int) = wrap {
         apiClient.api.declineEmployeeRequest(id); Unit
+    }
+
+    override suspend fun addManagerByPublicId(publicId: String): PendingManagerRequest = wrap {
+        apiClient.api.addManagerByPublicId(CompanyUserPublicIdRequestDto(userPublicId = publicId)).toDomain()
+    }
+
+    override suspend fun fetchEmployeeBranches(employeeId: Int): List<ManagedBranchAssignment> = wrap {
+        apiClient.api.getEmployeeBranches(employeeId).map {
+            ManagedBranchAssignment(id = it.id, name = it.name, isPrimary = it.isPrimary)
+        }
+    }
+
+    override suspend fun replaceEmployeeBranches(
+        employeeId: Int,
+        branchIds: List<Int>,
+        primaryBranchId: Int
+    ): List<ManagedBranchAssignment> = wrap {
+        apiClient.api.replaceEmployeeBranches(
+            employeeId,
+            EmployeeBranchesUpdateDto(branchIds = branchIds, primaryBranchId = primaryBranchId)
+        ).map { ManagedBranchAssignment(id = it.id, name = it.name, isPrimary = it.isPrimary) }
+    }
+
+    override suspend fun fetchEmployeeCalendar(employeeId: Int): ManagedEmployeeCalendar = wrap {
+        val dto = apiClient.api.getEmployeeCalendarSummary(employeeId)
+        val shifts = dto.shifts.map { s ->
+            ManagedEmployeeCalendarShift(
+                date = s.date,
+                startMinutes = timeToMinutes(s.startTime),
+                endMinutes = timeToMinutes(s.endTime),
+                status = s.status ?: ""
+            )
+        }.sortedWith(compareBy({ it.date }, { it.startMinutes }))
+        ManagedEmployeeCalendar(
+            employeeName = dto.employee.fullName,
+            totalShifts = dto.workload?.totalShifts ?: shifts.size,
+            totalHours = dto.workload?.totalHours ?: 0.0,
+            shifts = shifts
+        )
+    }
+
+    private fun timeToMinutes(time: String): Int {
+        val parts = time.split(":").mapNotNull { it.toIntOrNull() }
+        return if (parts.size >= 2) parts[0] * 60 + parts[1] else 0
     }
 
     private suspend fun <T> wrap(block: suspend () -> T): T {

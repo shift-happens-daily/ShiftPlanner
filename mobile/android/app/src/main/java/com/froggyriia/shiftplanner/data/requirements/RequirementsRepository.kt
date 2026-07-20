@@ -2,6 +2,7 @@ package com.froggyriia.shiftplanner.data.requirements
 
 import com.froggyriia.shiftplanner.domain.model.RequirementOccurrence
 import com.froggyriia.shiftplanner.domain.model.RequirementPositionOption
+import com.froggyriia.shiftplanner.domain.model.RequirementsImportResult
 import com.froggyriia.shiftplanner.domain.model.RequirementTemplateDraft
 
 interface RequirementsRepository {
@@ -25,6 +26,7 @@ interface RequirementsRepository {
         endSlot: Int
     ): RequirementOccurrence
     suspend fun deleteRequirement(id: Int)
+    suspend fun importRequirementsXlsx(fileBytes: ByteArray, fileName: String): RequirementsImportResult
     suspend fun createRequirementsBulk(
         startDate: String,
         endDate: String,

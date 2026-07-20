@@ -4,6 +4,7 @@ import com.froggyriia.shiftplanner.domain.model.AppAvailableEmployee
 import com.froggyriia.shiftplanner.domain.model.AppSchedule
 import com.froggyriia.shiftplanner.domain.model.AppScheduleListItem
 import com.froggyriia.shiftplanner.domain.model.AppScheduledShift
+import com.froggyriia.shiftplanner.domain.model.PendingShiftExchange
 import com.froggyriia.shiftplanner.domain.model.ScheduleShiftMutation
 
 interface ScheduleRepository {
@@ -51,4 +52,9 @@ interface ScheduleRepository {
         mutation: ScheduleShiftMutation,
         quantity: Int = 1
     ): AppSchedule
+
+    // Shift exchange
+    suspend fun createExchangeRequest(shiftId: Int, note: String)
+    suspend fun fetchExchangeRequests(): List<PendingShiftExchange>
+    suspend fun updateExchangeRequest(id: Int, approved: Boolean): PendingShiftExchange
 }

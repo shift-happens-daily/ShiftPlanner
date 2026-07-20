@@ -52,7 +52,9 @@ data class CurrentUserResponseDto(
     val employeeId: Int?,
     val company: CurrentUserCompanyDto?,
     val branch: CurrentUserBranchDto?,
-    val position: CurrentUserPositionDto?
+    val position: CurrentUserPositionDto?,
+    @SerializedName("manager_status")
+    val managerStatus: String? = null
 ) {
     fun toAppUser(): AppUser {
         return AppUser(
@@ -64,7 +66,8 @@ data class CurrentUserResponseDto(
             employeeId = employeeId,
             company = company?.toDomain(),
             branch = branch?.toDomain(),
-            position = position?.toDomain()
+            position = position?.toDomain(),
+            managerStatus = managerStatus
         )
     }
 }

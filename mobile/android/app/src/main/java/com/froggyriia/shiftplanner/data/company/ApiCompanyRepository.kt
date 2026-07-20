@@ -5,6 +5,7 @@ import com.froggyriia.shiftplanner.data.network.CompanyBranchCreateRequestDto
 import com.froggyriia.shiftplanner.data.network.CompanyBranchUpdateRequestDto
 import com.froggyriia.shiftplanner.data.network.CompanyCreateRequestDto
 import com.froggyriia.shiftplanner.data.network.CompanyJoinRequestDto
+import com.froggyriia.shiftplanner.data.network.CompanyJoinManagerRequestDto
 import com.froggyriia.shiftplanner.data.network.CompanyUpdateRequestDto
 import com.froggyriia.shiftplanner.data.network.WorkingHoursRangeDto
 import com.froggyriia.shiftplanner.domain.model.AppBranchOption
@@ -33,6 +34,11 @@ class ApiCompanyRepository(
         apiClient.api.updateMyCompany(
             CompanyUpdateRequestDto(name = name, address = address)
         ).toDomain()
+    }
+
+    override suspend fun deleteCompany(companyId: Int) = wrap {
+        apiClient.api.deleteCompany(companyId)
+        Unit
     }
 
     override suspend fun regenerateInviteCode(): AppCompany = wrap {
@@ -107,6 +113,12 @@ class ApiCompanyRepository(
                 branchId = branchId,
                 positionId = positionId
             )
+        ).toAppUser()
+    }
+
+    override suspend fun joinCompanyAsManager(inviteCode: String): AppUser = wrap {
+        apiClient.api.joinCompanyAsManager(
+            CompanyJoinManagerRequestDto(inviteCode = inviteCode)
         ).toAppUser()
     }
 

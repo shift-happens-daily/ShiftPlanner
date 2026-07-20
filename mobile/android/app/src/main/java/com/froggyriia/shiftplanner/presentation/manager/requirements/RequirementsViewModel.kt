@@ -5,6 +5,7 @@ import androidx.lifecycle.viewModelScope
 import com.froggyriia.shiftplanner.data.company.CompanyRepository
 import com.froggyriia.shiftplanner.data.requirements.RequirementsRepository
 import com.froggyriia.shiftplanner.domain.model.AppBranchOption
+import com.froggyriia.shiftplanner.domain.model.RequirementsImportResult
 import com.froggyriia.shiftplanner.domain.model.RequirementOccurrence
 import com.froggyriia.shiftplanner.domain.model.RequirementPositionOption
 import com.froggyriia.shiftplanner.domain.model.RequirementTemplateDraft
@@ -29,7 +30,8 @@ data class RequirementsUiState(
     val statusMessage: String? = null,
     val errorMessageRes: Int? = null,
     val statusMessageRes: Int? = null,
-    val statusMessageArgs: List<Any> = emptyList()
+    val statusMessageArgs: List<Any> = emptyList(),
+    val importResult: RequirementsImportResult? = null
 )
 
 data class RequirementDraft(
@@ -78,6 +80,23 @@ class RequirementsViewModel(
                 _uiState.value = _uiState.value.copy(branches = it)
             }
         }
+    }
+
+    fun importXlsx(fileBytes: ByteArray, fileName: String) {
+        viewModelScope.launch {
+            _uiState.value = _uiState.value.copy(isLoading = true, errorMessage = null)
+            try {
+                val result = repository.importRequirementsXlsx(fileBytes, fileName)
+                _uiState.value = _uiState.value.copy(isLoading = false, importResult = result)
+                loadFiltered()
+            } catch (e: Exception) {
+                _uiState.value = _uiState.value.copy(isLoading = false, errorMessage = e.message)
+            }
+        }
+    }
+
+    fun clearImportResult() {
+        _uiState.value = _uiState.value.copy(importResult = null)
     }
 
     fun loadFiltered(

@@ -152,3 +152,24 @@ data class EmployeeWorkLimitsDto(
     @SerializedName("max_hours_per_day")
     val maxHoursPerDay: Int
 )
+
+data class EmployeeBranchAssignmentDto(
+    val id: Int,
+    val name: String,
+    @SerializedName("is_primary")
+    val isPrimary: Boolean = false
+)
+
+data class EmployeeBranchesUpdateDto(
+    @SerializedName("branch_ids")
+    val branchIds: List<Int>,
+    @SerializedName("primary_branch_id")
+    val primaryBranchId: Int
+)
+
+data class EmployeeWorkloadDto(
+    @SerializedName("total_shifts")
+    val totalShifts: Int = 0,
+    @SerializedName("total_hours")
+    val totalHours: Double = 0.0
+)

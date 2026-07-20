@@ -62,6 +62,20 @@ class CompanyDetailsViewModel(
         applyCompany(company, company.branches)
     }
 
+    fun deleteCompany(onDone: (Boolean) -> Unit) {
+        val id = _uiState.value.company?.id
+        if (id == null) { onDone(false); return }
+        viewModelScope.launch {
+            try {
+                repository.deleteCompany(id)
+                onDone(true)
+            } catch (e: Exception) {
+                _uiState.value = _uiState.value.copy(errorMessage = e.message)
+                onDone(false)
+            }
+        }
+    }
+
     fun startEditing() {
         val s = _uiState.value
         _uiState.value = s.copy(isEditing = true, errorMessage = null)

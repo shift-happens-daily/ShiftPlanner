@@ -25,3 +25,15 @@ data class RequirementTemplateDraft(
     val startSlot: Int,
     val endSlot: Int
 )
+
+/** One failed row of an xlsx requirements import. */
+data class RequirementImportError(
+    val row: Int,
+    val message: String
+)
+
+/** Result of importing staffing requirements from an Excel file. */
+data class RequirementsImportResult(
+    val createdCount: Int,
+    val errors: List<RequirementImportError>
+)

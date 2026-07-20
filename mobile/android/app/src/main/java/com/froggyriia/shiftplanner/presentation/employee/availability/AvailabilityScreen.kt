@@ -39,6 +39,7 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -264,13 +265,15 @@ private fun AvailabilityGrid(
         val dayColPx = with(density) { dayColWidth.toPx() }
         val cellHeightPx = with(density) { CELL_HEIGHT.toPx() }
 
-        fun paintAt(x: Float, y: Float) {
+        // Latest grid, read without restarting an in-progress gesture.
+        val currentGrid by rememberUpdatedState(grid)
+
+        // Map a touch position to a (weekday, slot) cell, or null if outside the grid.
+        fun cellAt(x: Float, y: Float): Pair<Int, Int>? {
             val col = ((x - timeColPx) / dayColPx).toInt()
             val slotIdx = (y / cellHeightPx).toInt()
             val slot = FIRST_SLOT + slotIdx
-            if (col in 0..6 && slot in FIRST_SLOT until LAST_SLOT) {
-                onSetSlot(col, slot, paintColor)
-            }
+            return if (col in 0..6 && slot in FIRST_SLOT until LAST_SLOT) col to slot else null
         }
 
         val totalSlots = LAST_SLOT - FIRST_SLOT
@@ -310,11 +313,24 @@ private fun AvailabilityGrid(
                     .pointerInput(paintColor) {
                         awaitEachGesture {
                             val down = awaitFirstDown()
-                            paintAt(down.position.x, down.position.y)
+                            // Toggle semantics: if the first touched cell already holds the
+                            // selected paint color, the whole gesture erases (paints gray);
+                            // otherwise it paints the selected color. Re-tapping a slot of the
+                            // same color therefore clears it back to gray (Maria's request).
+                            val firstCell = cellAt(down.position.x, down.position.y)
+                            val paintValue = if (firstCell != null &&
+                                (currentGrid[firstCell.first]?.get(firstCell.second)
+                                    ?: AvailabilitySlotState.UNAVAILABLE) == paintColor
+                            ) AvailabilitySlotState.UNAVAILABLE else paintColor
+                            firstCell?.let { onSetSlot(it.first, it.second, paintValue) }
                             do {
                                 val event = awaitPointerEvent()
                                 event.changes.forEach { change ->
-                                    if (change.pressed) paintAt(change.position.x, change.position.y)
+                                    if (change.pressed) {
+                                        cellAt(change.position.x, change.position.y)?.let {
+                                            onSetSlot(it.first, it.second, paintValue)
+                                        }
+                                    }
                                 }
                             } while (event.changes.any { it.pressed })
                         }
