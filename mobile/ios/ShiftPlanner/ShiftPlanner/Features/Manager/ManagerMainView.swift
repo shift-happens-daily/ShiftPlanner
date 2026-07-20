@@ -3,35 +3,46 @@ import SwiftUI
 struct ManagerMainView: View {
     let user: AppUser
     let onLogout: () async -> Void
+    let onDeleteAccount: () async -> Void
     let onUserUpdated: (AppUser) -> Void
 
     var body: some View {
         TabView {
             CompanyView(user: user, onUserUpdated: onUserUpdated)
                 .tabItem {
-                    Label("Company", systemImage: "building.2")
+                    Label(localized("Company", "Компания"), systemImage: "building.2")
                 }
-            
-            EmployeeListView()
+
+            EmployeeListView(user: user)
                 .tabItem {
-                    Label("Employees", systemImage: "person.3")
+                    Label(localized("Employees", "Сотрудники"), systemImage: "person.3")
                 }
-            
-            RequirementsView()
+
+            RequirementsView(user: user)
                 .tabItem {
-                    Label("Rules", systemImage: "slider.horizontal.3")
+                    Label(localized("Rules", "Требования"), systemImage: "slider.horizontal.3")
                 }
-            
-            ManagerScheduleView()
+
+            ManagerScheduleView(user: user)
                 .tabItem {
-                    Label("Schedule", systemImage: "calendar")
+                    Label(localized("Schedule", "Расписание"), systemImage: "calendar")
                 }
-            
-            ManagerProfileView(user: user, onLogout: onLogout)
+
+            ReportsView()
                 .tabItem {
-                    Label("Profile", systemImage: "person.crop.circle")
+                    Label(localized("Reports", "Отчёты"), systemImage: "chart.bar")
                 }
-            
+
+            NotificationsView(companyId: user.company?.id, showsClose: false)
+                .tabItem {
+                    Label(localized("Notifications", "Уведомления"), systemImage: "bell")
+                }
+
+            ManagerProfileView(user: user, onLogout: onLogout, onDeleteAccount: onDeleteAccount)
+                .tabItem {
+                    Label(localized("Profile", "Профиль"), systemImage: "person.crop.circle")
+                }
+
         }
     }
 }

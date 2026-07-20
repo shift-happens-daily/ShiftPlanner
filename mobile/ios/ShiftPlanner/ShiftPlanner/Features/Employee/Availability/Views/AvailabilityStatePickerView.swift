@@ -43,13 +43,13 @@ struct AvailabilityStatePickerView: View {
             }
 
             HStack(spacing: 16) {
-                Button("Copy previous week", action: onCopyPreviousWeek)
+                Button(localized("Copy previous week", "Скопировать прошлую неделю"), action: onCopyPreviousWeek)
                     .buttonStyle(.plain)
                     .font(.footnote)
                     .foregroundStyle(themeManager.selectedTheme.accentColor)
                     .disabled(isSaving)
 
-                Button("Reset week", action: onResetWeek)
+                Button(localized("Reset week", "Сбросить неделю"), action: onResetWeek)
                     .buttonStyle(.plain)
                     .font(.footnote)
                     .foregroundStyle(themeManager.selectedTheme.destructiveColor)

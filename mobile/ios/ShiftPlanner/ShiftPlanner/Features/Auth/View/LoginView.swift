@@ -4,37 +4,37 @@ struct LoginView: View {
     @ObservedObject var viewModel: AuthViewModel
     @EnvironmentObject private var themeManager: ThemeManager
     let onShowSignUp: () -> Void
-    
+
     var body: some View {
         VStack(spacing: 20) {
             Spacer()
-            
+
             VStack(spacing: 8) {
                 Text("ShiftPlanner")
                     .font(.largeTitle)
                     .bold()
                     .foregroundStyle(themeManager.selectedTheme.primaryTextColor)
-                Text("Sign in to your account")
+                Text(localized("Sign in to your account", "Войдите в свой аккаунт"))
                     .foregroundStyle(themeManager.selectedTheme.secondaryTextColor)
             }
-            
+
             VStack(spacing: 12) {
-                TextField("Email", text: $viewModel.email)
+                TextField(localized("Email", "Эл. почта"), text: $viewModel.email)
                     .autocapitalization(.none)
                     .autocorrectionDisabled(true)
                     .keyboardType(.emailAddress)
                     .themeInputField()
-                
-                SecureField("Password", text: $viewModel.password)
+
+                SecureField(localized("Password", "Пароль"), text: $viewModel.password)
                     .themeInputField()
             }
-            
+
             if let errorMessage = viewModel.errorMessage {
                 Text(errorMessage)
                     .font(.footnote)
                     .foregroundStyle(themeManager.selectedTheme.destructiveColor)
             }
-            
+
             Button {
                 Task {
                     await viewModel.login()
@@ -44,20 +44,20 @@ struct LoginView: View {
                     ProgressView()
                         .tint(themeManager.selectedTheme.primaryActionTextColor)
                 } else {
-                    Text("Login")
+                    Text(localized("Login", "Войти"))
                 }
             }
             .buttonStyle(.plain)
             .themePrimaryAction(isEnabled: !viewModel.isLoading)
             .disabled(viewModel.isLoading)
-            
-            Button("Create account") {
+
+            Button(localized("Create account", "Создать аккаунт")) {
                 onShowSignUp()
             }
             .buttonStyle(.plain)
             .themeSecondaryAction()
             .disabled(viewModel.isLoading)
-            
+
             Spacer()
         }
         .padding()

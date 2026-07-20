@@ -54,6 +54,26 @@ final class CompanyInviteViewModel: ObservableObject {
         isLoading = false
     }
 
+    /// Second manager requests to join an existing company by invite code.
+    func joinAsManager() async {
+        let code = normalizedInviteCode
+        guard !code.isEmpty else {
+            errorMessage = "Invite code is required."
+            return
+        }
+
+        isLoading = true
+        errorMessage = nil
+
+        do {
+            joinedUser = try await repository.joinAsManager(inviteCode: code)
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+
+        isLoading = false
+    }
+
     private var normalizedInviteCode: String {
         inviteCode.trimmingCharacters(in: .whitespacesAndNewlines).uppercased()
     }

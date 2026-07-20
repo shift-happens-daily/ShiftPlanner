@@ -16,11 +16,11 @@ struct CompanySetupView: View {
 
     var body: some View {
         Form {
-            Section("Company") {
-                TextField("Company name", text: $viewModel.companyName)
+            Section(localized("Company", "Компания")) {
+                TextField(localized("Company name", "Название компании"), text: $viewModel.companyName)
                     .themeInputField()
 
-                Toggle("Does the company have branches?", isOn: $viewModel.hasBranches)
+                Toggle(localized("Does the company have branches?", "У компании есть филиалы?"), isOn: $viewModel.hasBranches)
                     .onChange(of: viewModel.hasBranches) { _, hasBranches in
                         if !hasBranches {
                             viewModel.allowsRotationBetweenBranches = false
@@ -29,17 +29,17 @@ struct CompanySetupView: View {
             }
 
             if viewModel.hasBranches {
-                Section("Branches") {
+                Section(localized("Branches", "Филиалы")) {
                     ForEach($viewModel.branches) { $branch in
                         VStack(alignment: .leading, spacing: 12) {
-                            TextField("Branch name", text: $branch.name)
+                            TextField(localized("Branch name", "Название филиала"), text: $branch.name)
                                 .themeInputField()
-                            TextField("Branch address", text: $branch.address, axis: .vertical)
+                            TextField(localized("Branch address", "Адрес филиала"), text: $branch.address, axis: .vertical)
                                 .lineLimit(2...4)
                                 .themeInputField()
 
                             if viewModel.branches.count > 1 {
-                                Button("Remove branch", role: .destructive) {
+                                Button(localized("Remove branch", "Удалить филиал"), role: .destructive) {
                                     viewModel.removeBranch(id: branch.id)
                                 }
                             }
@@ -47,20 +47,20 @@ struct CompanySetupView: View {
                         .padding(.vertical, 4)
                     }
 
-                    Button("Add branch") {
+                    Button(localized("Add branch", "Добавить филиал")) {
                         viewModel.addBranch()
                     }
                 }
 
-                Section("Policies") {
+                Section(localized("Policies", "Политики")) {
                     Toggle(
-                        "Is employee rotation between branches allowed?",
+                        localized("Is employee rotation between branches allowed?", "Разрешена ли ротация сотрудников между филиалами?"),
                         isOn: $viewModel.allowsRotationBetweenBranches
                     )
                 }
             } else {
-                Section("Address") {
-                    TextField("Company address", text: $viewModel.companyAddress, axis: .vertical)
+                Section(localized("Address", "Адрес")) {
+                    TextField(localized("Company address", "Адрес компании"), text: $viewModel.companyAddress, axis: .vertical)
                         .lineLimit(2...4)
                         .themeInputField()
                 }
@@ -80,14 +80,17 @@ struct CompanySetupView: View {
                         ProgressView()
                             .tint(themeManager.selectedTheme.primaryActionTextColor)
                     } else {
-                        Text("Create company")
+                        Text(localized("Create company", "Создать компанию"))
                     }
                 }
                 .buttonStyle(.plain)
                 .themePrimaryAction(isEnabled: !viewModel.isSaving && viewModel.canCreateCompany)
                 .disabled(viewModel.isSaving || !viewModel.canCreateCompany)
             } footer: {
-                Text("For now the backend accepts only the company name. The rest of the form is collected for the upcoming expansion.")
+                Text(localized(
+                    "The company is created with its name. You can add branches afterwards in Company & branches.",
+                    "Компания создаётся с названием. Филиалы можно добавить позже в разделе «Компания и филиалы»."
+                ))
             }
 
             if let errorMessage = viewModel.errorMessage {
@@ -97,7 +100,7 @@ struct CompanySetupView: View {
                 }
             }
         }
-        .navigationTitle("Create Company")
+        .navigationTitle(localized("Create Company", "Создание компании"))
         .navigationBarTitleDisplayMode(.inline)
         .scrollContentBackground(.hidden)
         .background(themeManager.selectedTheme.screenBackground)

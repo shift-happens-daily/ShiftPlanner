@@ -44,6 +44,57 @@ final class APIRequirementsRepository: RequirementsRepository {
         return try response.map(asOccurrence)
     }
 
+    func createRequirement(
+        date: Date,
+        positionId: Int,
+        quantity: Int,
+        startSlot: Int,
+        endSlot: Int
+    ) async throws -> RequirementOccurrence {
+        let payload = ScheduleRequirementCreateDTO(
+            positionId: positionId,
+            date: dateString(from: date),
+            minStaff: quantity,
+            startTime: timeString(for: startSlot),
+            endTime: timeString(for: endSlot)
+        )
+        let body = try JSONEncoder().encode(payload)
+        let request = apiClient.makeRequest(
+            path: "schedule/requirements",
+            method: "POST",
+            body: body,
+            requiresAuthorization: true
+        )
+        let response = try await apiClient.send(request, as: ScheduleRequirementResponseDTO.self)
+        return try asOccurrence(response)
+    }
+
+    func updateRequirement(
+        id: Int,
+        date: Date,
+        positionId: Int,
+        quantity: Int,
+        startSlot: Int,
+        endSlot: Int
+    ) async throws -> RequirementOccurrence {
+        let payload = ScheduleRequirementUpdateDTO(
+            positionId: positionId,
+            date: dateString(from: date),
+            minStaff: quantity,
+            startTime: timeString(for: startSlot),
+            endTime: timeString(for: endSlot)
+        )
+        let body = try JSONEncoder().encode(payload)
+        let request = apiClient.makeRequest(
+            path: "schedule/requirements/\(id)",
+            method: "PATCH",
+            body: body,
+            requiresAuthorization: true
+        )
+        let response = try await apiClient.send(request, as: ScheduleRequirementResponseDTO.self)
+        return try asOccurrence(response)
+    }
+
     func createRequirementsBulk(
         startDate: Date,
         endDate: Date,
@@ -75,6 +126,19 @@ final class APIRequirementsRepository: RequirementsRepository {
         return try response.requirements.map(asOccurrence)
     }
 
+    func importRequirementsXlsx(fileData: Data, fileName: String) async throws -> RequirementsImportResult {
+        let request = apiClient.makeMultipartRequest(
+            path: "imports/requirements/xlsx",
+            fileData: fileData,
+            fileName: fileName
+        )
+        let dto = try await apiClient.send(request, as: RequirementsImportResultDTO.self)
+        return RequirementsImportResult(
+            createdCount: dto.createdCount,
+            errors: dto.errors.map { RequirementImportRowError(row: $0.row, message: $0.message) }
+        )
+    }
+
     func deleteRequirement(id: Int) async throws {
         let request = apiClient.makeRequest(
             path: "schedule/requirements/\(id)",
@@ -99,7 +163,8 @@ final class APIRequirementsRepository: RequirementsRepository {
             positionName: dto.positionTitle,
             quantity: dto.minStaff,
             startSlot: slotIndex(from: dto.startTime),
-            endSlot: slotIndex(from: dto.endTime)
+            endSlot: slotIndex(from: dto.endTime),
+            branchId: dto.branchId
         )
     }
 

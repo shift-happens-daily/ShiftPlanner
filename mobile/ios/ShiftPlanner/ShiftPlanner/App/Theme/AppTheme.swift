@@ -189,4 +189,14 @@ enum AppTheme: String, CaseIterable, Identifiable {
             return Color(red: 1.0, green: 0.42, blue: 0.44)
         }
     }
+
+    /// Green used for "filled" markers (distinct from the red destructive/unfilled color).
+    var successColor: Color {
+        switch self {
+        case .light, .dopamine:
+            return Color(red: 0.18, green: 0.64, blue: 0.38)
+        case .dark:
+            return Color(red: 0.34, green: 0.80, blue: 0.52)
+        }
+    }
 }

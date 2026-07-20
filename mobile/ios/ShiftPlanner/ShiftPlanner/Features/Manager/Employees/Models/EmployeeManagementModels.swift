@@ -53,3 +53,55 @@ struct ManagedEmployee: Identifiable, Equatable {
         self.positionTitle = positionTitle
     }
 }
+
+/// Per-employee working limits (GET/PATCH /employees/{id}/work-limits).
+struct WorkLimits: Equatable {
+    var maxHoursPerWeek: Int
+    var maxHoursPerDay: Int
+
+    init(maxHoursPerWeek: Int, maxHoursPerDay: Int) {
+        self.maxHoursPerWeek = maxHoursPerWeek
+        self.maxHoursPerDay = maxHoursPerDay
+    }
+}
+
+/// A pending manager join request (companies/me/manager-requests).
+struct PendingManagerRequest: Identifiable, Equatable {
+    let id: Int
+    let fullName: String
+    let email: String
+    let managerRole: String
+}
+
+/// A pending employee join request (companies/me/employee-requests).
+struct PendingEmployeeRequest: Identifiable, Equatable {
+    let id: Int
+    let fullName: String
+    let email: String
+    let positionId: Int?
+    let branchId: Int?
+}
+
+/// A single shift in a manager-viewed employee calendar.
+struct EmployeeCalendarShiftItem: Identifiable, Equatable {
+    let id: Int
+    let date: Date
+    let startMinutes: Int
+    let endMinutes: Int
+    let status: String
+}
+
+/// Aggregated calendar for one employee, seen by a manager.
+struct EmployeeCalendarSummary: Equatable {
+    let employeeName: String
+    let totalShifts: Int
+    let totalHours: Double
+    let shifts: [EmployeeCalendarShiftItem]
+}
+
+/// One branch an employee is assigned to (multi-branch), with the primary flag.
+struct EmployeeBranchAssignment: Identifiable, Equatable {
+    let id: Int
+    let name: String
+    let isPrimary: Bool
+}
