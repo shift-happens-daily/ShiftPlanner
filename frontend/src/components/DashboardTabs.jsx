@@ -14,6 +14,7 @@ import { getPositionLabel } from '../utils/employeeDisplay';
 import { usePositionTitleRevision } from '../hooks/usePositionTitleRevision';
 import { useUnsavedChanges } from '../context/useUnsavedChanges';
 import ManagerExchangeInbox from './ManagerExchangeInbox';
+import { setStoredLanguage } from '../services/language';
 import {
   User,
   Languages,
@@ -220,6 +221,7 @@ export default function DashboardTabs({
 
   const handleLanguageClick = () => {
     const nextLanguage = language === 'ru' ? 'en' : 'ru';
+    setStoredLanguage(nextLanguage);
     onLanguageChange?.(nextLanguage);
     setProfileMenuOpen(false);
   };

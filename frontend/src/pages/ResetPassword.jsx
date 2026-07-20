@@ -2,7 +2,7 @@ import { useMemo, useState } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { confirmPasswordResetRequest } from '../services/authService';
 import { extractApiErrorMessage } from '../services/error';
-import { getStoredLanguage } from '../services/language';
+import { getStoredLanguage, setStoredLanguage } from '../services/language';
 
 const APP_ICON_SRC = '/v2-Photoroom.png';
 
@@ -101,7 +101,7 @@ export default function ResetPassword() {
 
   const toggleLanguage = () => {
     const next = language === 'ru' ? 'en' : 'ru';
-    localStorage.setItem('language', next);
+    setStoredLanguage(next);
     setLanguage(next);
   };
 

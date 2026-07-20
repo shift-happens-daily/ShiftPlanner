@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useAuth } from '../context/useAuth';
 import { requestPasswordResetRequest } from '../services/authService';
-import { getStoredLanguage } from '../services/language';
+import { getStoredLanguage, setStoredLanguage } from '../services/language';
 
 const APP_ICON_SRC = '/v2-Photoroom.png';
 
@@ -420,7 +420,7 @@ export default function Auth() {
   const changeLanguage = () => {
     setLanguage((prev) => {
       const nextLanguage = prev === 'ru' ? 'en' : 'ru';
-      localStorage.setItem('language', nextLanguage);
+      setStoredLanguage(nextLanguage);
       return nextLanguage;
     });
   };
