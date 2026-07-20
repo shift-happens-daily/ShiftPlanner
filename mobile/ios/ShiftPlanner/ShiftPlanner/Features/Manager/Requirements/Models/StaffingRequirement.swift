@@ -24,6 +24,30 @@ struct RequirementOccurrence: Identifiable, Equatable {
     let quantity: Int
     let startSlot: Int
     let endSlot: Int
+    /// Branch this requirement belongs to; nil = the company's default branch.
+    let branchId: Int?
+
+    init(
+        id: Int,
+        date: Date,
+        weekday: Int,
+        positionId: Int,
+        positionName: String,
+        quantity: Int,
+        startSlot: Int,
+        endSlot: Int,
+        branchId: Int? = nil
+    ) {
+        self.id = id
+        self.date = date
+        self.weekday = weekday
+        self.positionId = positionId
+        self.positionName = positionName
+        self.quantity = quantity
+        self.startSlot = startSlot
+        self.endSlot = endSlot
+        self.branchId = branchId
+    }
 }
 
 struct RequirementPositionOption: Identifiable, Hashable {
@@ -46,4 +70,17 @@ struct RequirementTemplateDraft: Hashable {
     let quantity: Int
     let startSlot: Int
     let endSlot: Int
+}
+
+/// One failed row in an xlsx requirements import.
+struct RequirementImportRowError: Identifiable, Equatable {
+    let row: Int
+    let message: String
+    var id: Int { row }
+}
+
+/// Result of importing staffing requirements from an Excel file.
+struct RequirementsImportResult: Equatable {
+    let createdCount: Int
+    let errors: [RequirementImportRowError]
 }

@@ -7,6 +7,8 @@ final class EmployeeScheduleViewModel: ObservableObject {
     @Published var isLoading = false
     @Published var errorMessage: String?
     @Published var statusMessage: String?
+    /// Confirmation shown after a shift-exchange request is sent.
+    @Published var exchangeMessage: String?
 
     private let repository: ScheduleRepository
     private let hasCompany: Bool
@@ -22,6 +24,19 @@ final class EmployeeScheduleViewModel: ObservableObject {
 
     var hasShifts: Bool {
         !shifts.isEmpty
+    }
+
+    func requestExchange(shiftId: Int, note: String) async {
+        do {
+            try await repository.createExchangeRequest(shiftId: shiftId, note: note)
+            exchangeMessage = localized(
+                "Exchange request sent. A manager will review it.",
+                "Запрос на обмен отправлен. Менеджер его рассмотрит."
+            )
+            errorMessage = nil
+        } catch {
+            errorMessage = error.localizedDescription
+        }
     }
 
     func loadScheduleIfNeeded() async {

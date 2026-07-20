@@ -12,6 +12,8 @@ struct ManagedEmployeeCardView: View {
     let onToggleBranchPicker: () -> Void
     let onToggleRolePicker: () -> Void
     let onDelete: () -> Void
+    var onWorkLimits: (() -> Void)? = nil
+    var onViewCalendar: (() -> Void)? = nil
 
     var body: some View {
         ZStack(alignment: .topTrailing) {
@@ -27,6 +29,7 @@ struct ManagedEmployeeCardView: View {
                     .foregroundStyle(themeManager.selectedTheme.secondaryTextColor)
                     .lineLimit(1)
                     .truncationMode(.middle)
+                    .frame(maxWidth: .infinity, alignment: .leading)
 
                 HStack(alignment: .center, spacing: 8) {
                     badgeButton(
@@ -44,6 +47,17 @@ struct ManagedEmployeeCardView: View {
                     )
                 }
                 .padding(.trailing, canDeleteEmployee ? 38 : 0)
+
+                if onWorkLimits != nil || onViewCalendar != nil {
+                    HStack(spacing: 8) {
+                        if let onViewCalendar {
+                            actionChip(title: localized("Calendar", "Календарь"), systemImage: "calendar", action: onViewCalendar)
+                        }
+                        if let onWorkLimits {
+                            actionChip(title: localized("Work limits", "Лимиты работы"), systemImage: "clock.arrow.circlepath", action: onWorkLimits)
+                        }
+                    }
+                }
             }
 
             if canDeleteEmployee {
@@ -63,11 +77,31 @@ struct ManagedEmployeeCardView: View {
                         .stroke(themeManager.selectedTheme.borderColor.opacity(0.7), lineWidth: 1)
                 }
                 .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
-                .fixedSize()
             }
         }
         .padding(14)
         .themeCard()
+    }
+
+    private func actionChip(title: String, systemImage: String, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            HStack(spacing: 5) {
+                Image(systemName: systemImage)
+                    .font(.caption)
+                Text(title)
+                    .font(.subheadline)
+            }
+            .padding(.horizontal, 10)
+            .padding(.vertical, 8)
+            .background(themeManager.selectedTheme.cardTint)
+            .overlay {
+                RoundedRectangle(cornerRadius: 14, style: .continuous)
+                    .stroke(themeManager.selectedTheme.borderColor, lineWidth: 1)
+            }
+            .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+        }
+        .buttonStyle(.plain)
+        .foregroundStyle(themeManager.selectedTheme.accentColor)
     }
 
     private func badgeButton(
@@ -84,10 +118,11 @@ struct ManagedEmployeeCardView: View {
                     .font(.subheadline)
                     .lineLimit(1)
                     .truncationMode(.tail)
+                Spacer(minLength: 0)
                 Image(systemName: isExpanded ? "chevron.up" : "chevron.down")
                     .font(.caption)
             }
-            .frame(maxWidth: 144, alignment: .leading)
+            .frame(maxWidth: .infinity, alignment: .leading)
             .padding(.horizontal, 10)
             .padding(.vertical, 8)
             .background(themeManager.selectedTheme.cardTint)
@@ -99,6 +134,5 @@ struct ManagedEmployeeCardView: View {
         }
         .buttonStyle(.plain)
         .foregroundStyle(themeManager.selectedTheme.primaryTextColor)
-        .fixedSize()
     }
 }

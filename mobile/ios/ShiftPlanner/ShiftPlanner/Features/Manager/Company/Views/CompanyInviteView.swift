@@ -26,8 +26,8 @@ struct CompanyInviteView: View {
     var body: some View {
         NavigationStack {
             Form {
-                Section("Invite code") {
-                    TextField("Enter invite code", text: $viewModel.inviteCode)
+                Section(localized("Invite code", "Код приглашения")) {
+                    TextField(localized("Enter invite code", "Введите код приглашения"), text: $viewModel.inviteCode)
                         .textInputAutocapitalization(.characters)
                         .autocorrectionDisabled(true)
                         .themeInputField()
@@ -41,7 +41,7 @@ struct CompanyInviteView: View {
                             ProgressView()
                                 .tint(themeManager.selectedTheme.primaryActionTextColor)
                         } else {
-                            Text("Preview company")
+                            Text(localized("Preview company", "Предпросмотр компании"))
                         }
                     }
                     .buttonStyle(.plain)
@@ -50,21 +50,21 @@ struct CompanyInviteView: View {
                 }
 
                 if let preview = viewModel.preview {
-                    Section("Preview") {
+                    Section(localized("Preview", "Предпросмотр")) {
                         VStack(alignment: .leading, spacing: 8) {
                             Text(preview.name)
                                 .font(.headline)
                                 .foregroundStyle(themeManager.selectedTheme.primaryTextColor)
-                            Text("Invite code: \(preview.inviteCode)")
+                            Text(localized("Invite code: ", "Код приглашения: ") + preview.inviteCode)
                                 .foregroundStyle(themeManager.selectedTheme.secondaryTextColor)
 
                             if !preview.branches.isEmpty {
-                                Text("Branches: \(preview.branches.map(\.name).joined(separator: ", "))")
+                                Text(localized("Branches: ", "Филиалы: ") + preview.branches.map(\.name).joined(separator: ", "))
                                     .font(.footnote)
                             }
 
                             if !preview.positions.isEmpty {
-                                Text("Positions: \(preview.positions.map(\.name).joined(separator: ", "))")
+                                Text(localized("Positions: ", "Должности: ") + preview.positions.map(\.name).joined(separator: ", "))
                                     .font(.footnote)
                             }
                         }
@@ -86,7 +86,7 @@ struct CompanyInviteView: View {
                                     ProgressView()
                                         .tint(themeManager.selectedTheme.primaryActionTextColor)
                                 } else {
-                                    Text("Join company")
+                                    Text(localized("Join company", "Присоединиться"))
                                 }
                             }
                             .buttonStyle(.plain)
@@ -95,9 +95,32 @@ struct CompanyInviteView: View {
                         }
                     } else {
                         Section {
-                            Text("Manager join by invite code will be enabled once the backend supports multi-manager membership.")
+                            Button {
+                                Task {
+                                    await viewModel.joinAsManager()
+                                    if let joinedUser = viewModel.joinedUser {
+                                        onUserJoined?(joinedUser)
+                                        dismiss()
+                                    }
+                                }
+                            } label: {
+                                if viewModel.isLoading {
+                                    ProgressView()
+                                        .tint(themeManager.selectedTheme.primaryActionTextColor)
+                                } else {
+                                    Text(localized("Send join request", "Отправить запрос"))
+                                }
+                            }
+                            .buttonStyle(.plain)
+                            .themePrimaryAction(isEnabled: !viewModel.isLoading)
+                            .disabled(viewModel.isLoading)
+
+                            Text(localized(
+                                "An existing manager needs to approve your request before you can access the company.",
+                                "Действующий менеджер должен одобрить запрос, прежде чем вы получите доступ к компании."
+                            ))
                                 .font(.footnote)
-                                .foregroundStyle(.secondary)
+                                .foregroundStyle(themeManager.selectedTheme.secondaryTextColor)
                         }
                     }
                 }
@@ -109,7 +132,9 @@ struct CompanyInviteView: View {
                     }
                 }
             }
-            .navigationTitle(mode == .employeeJoin ? "Join Company" : "Invite Code")
+            .navigationTitle(mode == .employeeJoin
+                ? localized("Join Company", "Присоединиться к компании")
+                : localized("Invite Code", "Код приглашения"))
             .navigationBarTitleDisplayMode(.inline)
             .scrollContentBackground(.hidden)
             .background(themeManager.selectedTheme.screenBackground)

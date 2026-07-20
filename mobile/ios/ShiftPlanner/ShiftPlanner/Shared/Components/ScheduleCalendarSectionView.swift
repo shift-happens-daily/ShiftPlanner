@@ -8,6 +8,9 @@ struct ScheduleCalendarSectionView<Item: Identifiable, RowContent: View>: View {
     let sectionTitle: String
     let dateProvider: (Item) -> Date
     let rowContent: (Item) -> RowContent
+    /// Optional classifier: true = filled item, false = unfilled. When provided,
+    /// day markers render distinct green (filled) / red (unfilled) dots.
+    var filledProvider: ((Item) -> Bool)? = nil
 
     @State private var selectedDate: Date?
     @State private var visibleMonth: Date = Date()
@@ -27,6 +30,18 @@ struct ScheduleCalendarSectionView<Item: Identifiable, RowContent: View>: View {
 
     private var availableDates: [Date] {
         groupedItems.keys.sorted()
+    }
+
+    private var usesStatusDots: Bool { filledProvider != nil }
+
+    private var filledDates: Set<Date> {
+        guard let filledProvider else { return [] }
+        return Set(items.filter { filledProvider($0) }.map { calendar.startOfDay(for: dateProvider($0)) })
+    }
+
+    private var unfilledDates: Set<Date> {
+        guard let filledProvider else { return [] }
+        return Set(items.filter { !filledProvider($0) }.map { calendar.startOfDay(for: dateProvider($0)) })
     }
 
     private var effectiveSelectedDate: Date? {
@@ -91,22 +106,11 @@ struct ScheduleCalendarSectionView<Item: Identifiable, RowContent: View>: View {
     }
 
     private var granularityPicker: some View {
-        Picker("", selection: $granularity) {
-            Text(languageManager.text("Day", "День"))
-                .tag(ScheduleCalendarGranularity.day)
-            Text(languageManager.text("Week", "Неделя"))
-                .tag(ScheduleCalendarGranularity.week)
-            Text(languageManager.text("Month", "Месяц"))
-                .tag(ScheduleCalendarGranularity.month)
-        }
-        .pickerStyle(.segmented)
-        .padding(8)
-        .background(themeManager.selectedTheme.elevatedSurfaceColor)
-        .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
-        .overlay {
-            RoundedRectangle(cornerRadius: 18, style: .continuous)
-                .stroke(themeManager.selectedTheme.borderColor, lineWidth: 1)
-        }
+        ThemedSegmentedPicker(selection: $granularity, segments: [
+            ThemedSegment(.day, languageManager.text("Day", "День")),
+            ThemedSegment(.week, languageManager.text("Week", "Неделя")),
+            ThemedSegment(.month, languageManager.text("Month", "Месяц"))
+        ])
     }
 
     @ViewBuilder
@@ -231,7 +235,10 @@ struct ScheduleCalendarSectionView<Item: Identifiable, RowContent: View>: View {
                 get: { effectiveSelectedDate },
                 set: { selectedDate = $0 }
             ),
-            availableDates: availableDates
+            availableDates: availableDates,
+            filledDates: filledDates,
+            unfilledDates: unfilledDates,
+            usesStatusDots: usesStatusDots
         )
 
         if let effectiveSelectedDate {
@@ -282,9 +289,7 @@ struct ScheduleCalendarSectionView<Item: Identifiable, RowContent: View>: View {
                 Text("\(dayNumber)")
                     .font(.subheadline.weight(.semibold))
 
-                Circle()
-                    .fill(isAvailable ? currentDotColor(isSelected: isSelected) : .clear)
-                    .frame(width: 5, height: 5)
+                statusDots(for: normalizedDate, isSelected: isSelected, isAvailable: isAvailable)
             }
             .frame(maxWidth: .infinity)
             .frame(height: 54)
@@ -445,6 +450,31 @@ struct ScheduleCalendarSectionView<Item: Identifiable, RowContent: View>: View {
             ? themeManager.selectedTheme.primaryActionTextColor
             : themeManager.selectedTheme.accentColor
     }
+
+    /// Day markers: green dot for filled, red dot for unfilled (both if the day
+    /// has both). Falls back to the single accent dot when no classifier is set.
+    @ViewBuilder
+    private func statusDots(for date: Date, isSelected: Bool, isAvailable: Bool) -> some View {
+        if usesStatusDots {
+            HStack(spacing: 3) {
+                if filledDates.contains(date) {
+                    Circle()
+                        .fill(themeManager.selectedTheme.successColor)
+                        .frame(width: 5, height: 5)
+                }
+                if unfilledDates.contains(date) {
+                    Circle()
+                        .fill(themeManager.selectedTheme.destructiveColor)
+                        .frame(width: 5, height: 5)
+                }
+            }
+            .frame(height: 5)
+        } else {
+            Circle()
+                .fill(isAvailable ? currentDotColor(isSelected: isSelected) : .clear)
+                .frame(width: 5, height: 5)
+        }
+    }
 }
 
 private struct ScheduleCalendarMonthPickerView: View {
@@ -455,6 +485,9 @@ private struct ScheduleCalendarMonthPickerView: View {
     @Binding var selectedDate: Date?
 
     let availableDates: [Date]
+    var filledDates: Set<Date> = []
+    var unfilledDates: Set<Date> = []
+    var usesStatusDots: Bool = false
 
     private let columns = Array(repeating: GridItem(.flexible(), spacing: 8), count: 7)
 
@@ -593,9 +626,7 @@ private struct ScheduleCalendarMonthPickerView: View {
                     Text("\(calendar.component(.day, from: date))")
                         .font(.subheadline.weight(.semibold))
 
-                    Circle()
-                        .fill(day.isAvailable ? currentDotColor(for: day) : .clear)
-                        .frame(width: 5, height: 5)
+                    monthStatusDots(for: date, day: day)
                 }
                 .frame(maxWidth: .infinity)
                 .frame(height: 42)
@@ -690,6 +721,29 @@ private struct ScheduleCalendarMonthPickerView: View {
         }
 
         return .clear
+    }
+
+    @ViewBuilder
+    private func monthStatusDots(for date: Date, day: CalendarDayItem) -> some View {
+        if usesStatusDots {
+            HStack(spacing: 3) {
+                if filledDates.contains(date) {
+                    Circle()
+                        .fill(themeManager.selectedTheme.successColor)
+                        .frame(width: 5, height: 5)
+                }
+                if unfilledDates.contains(date) {
+                    Circle()
+                        .fill(themeManager.selectedTheme.destructiveColor)
+                        .frame(width: 5, height: 5)
+                }
+            }
+            .frame(height: 5)
+        } else {
+            Circle()
+                .fill(day.isAvailable ? currentDotColor(for: day) : .clear)
+                .frame(width: 5, height: 5)
+        }
     }
 
     private func currentDotColor(for day: CalendarDayItem) -> Color {

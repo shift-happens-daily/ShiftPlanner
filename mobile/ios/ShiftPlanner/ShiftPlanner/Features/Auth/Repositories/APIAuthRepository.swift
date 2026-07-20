@@ -6,7 +6,10 @@ enum AuthRepositoryError: LocalizedError {
     var errorDescription: String? {
         switch self {
         case .accountCreatedButLoginFailed:
-            return "Account was created, but automatic sign-in failed. Try logging in from the login screen."
+            return localized(
+                "Account was created, but automatic sign-in failed. Try logging in from the login screen.",
+                "Аккаунт создан, но автоматический вход не удался. Попробуйте войти с экрана входа."
+            )
         }
     }
 }
@@ -42,7 +45,7 @@ final class APIAuthRepository: AuthRepository {
         password: String,
         name: String,
         role: UserRole
-    ) async throws -> AppUser {
+    ) async throws -> SignUpOutcome {
         let requestBody = try JSONEncoder().encode(
             RegisterRequest(
                 fullName: name,
@@ -57,13 +60,29 @@ final class APIAuthRepository: AuthRepository {
             body: requestBody
         )
 
-        _ = try await apiClient.send(request, as: RegisterResponse.self)
+        let response = try await apiClient.send(request, as: RegisterResponse.self)
+
+        // Backend requires email confirmation before login is allowed.
+        if response.emailVerificationRequired == true {
+            return .verificationRequired(email: email, message: response.detail)
+        }
 
         do {
-            return try await login(email: email, password: password)
+            let user = try await login(email: email, password: password)
+            return .loggedIn(user)
         } catch {
             throw AuthRepositoryError.accountCreatedButLoginFailed
         }
+    }
+
+    func resendVerification(email: String) async throws {
+        let body = try JSONEncoder().encode(EmailVerificationResendRequest(email: email))
+        let request = apiClient.makeRequest(
+            path: "auth/resend-verification",
+            method: "POST",
+            body: body
+        )
+        try await apiClient.sendWithoutResponseBody(request)
     }
 
     func logout() async {
@@ -94,6 +113,18 @@ final class APIAuthRepository: AuthRepository {
             currentUser = nil
             return nil
         }
+    }
+
+    func deleteAccount() async throws {
+        let request = apiClient.makeRequest(
+            path: "auth/me",
+            method: "DELETE",
+            requiresAuthorization: true
+        )
+        try await apiClient.sendWithoutResponseBody(request)
+
+        apiClient.clearAccessToken()
+        currentUser = nil
     }
 
     private func fetchCurrentUser() async throws -> AppUser {

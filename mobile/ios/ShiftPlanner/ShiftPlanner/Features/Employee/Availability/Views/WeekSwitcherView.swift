@@ -19,7 +19,7 @@ struct WeekSwitcherView: View {
             Spacer()
 
             VStack(spacing: 4) {
-                Text("Week")
+                Text(localized("Week", "Неделя"))
                     .font(.caption)
                     .foregroundStyle(themeManager.selectedTheme.secondaryTextColor)
                 Text(title)

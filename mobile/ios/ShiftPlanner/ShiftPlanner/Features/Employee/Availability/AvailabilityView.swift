@@ -45,7 +45,9 @@ struct AvailabilityView: View {
                                     .tint(themeManager.selectedTheme.primaryActionTextColor)
                             }
 
-                            Text(viewModel.isSaving ? "Saving..." : "Save availability")
+                            Text(viewModel.isSaving
+                                ? localized("Saving...", "Сохранение...")
+                                : localized("Save availability", "Сохранить доступность"))
                                 .font(.headline)
                                 .fontWeight(.semibold)
                         }
@@ -79,7 +81,7 @@ struct AvailabilityView: View {
                 .padding()
             }
             .background(themeManager.selectedTheme.screenBackground)
-            .navigationTitle("Availability")
+            .navigationTitle(localized("Availability", "Доступность"))
             .navigationBarTitleDisplayMode(.inline)
             .task {
                 await viewModel.loadAvailability()

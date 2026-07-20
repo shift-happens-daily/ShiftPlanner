@@ -69,6 +69,69 @@ struct ThemeSecondaryActionModifier: ViewModifier {
     }
 }
 
+struct ThemeDestructiveActionModifier: ViewModifier {
+    @EnvironmentObject private var themeManager: ThemeManager
+
+    func body(content: Content) -> some View {
+        content
+            .font(.headline)
+            .fontWeight(.semibold)
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 16)
+            .foregroundStyle(themeManager.selectedTheme.destructiveColor)
+            .background(
+                RoundedRectangle(cornerRadius: 18, style: .continuous)
+                    .fill(themeManager.selectedTheme.destructiveColor.opacity(0.12))
+            )
+            .overlay {
+                RoundedRectangle(cornerRadius: 18, style: .continuous)
+                    .stroke(themeManager.selectedTheme.destructiveColor.opacity(0.35), lineWidth: 1)
+            }
+    }
+}
+
+/// Compact pill for inline card actions (Edit / Duplicate / Delete).
+struct ThemeCompactSecondaryActionModifier: ViewModifier {
+    @EnvironmentObject private var themeManager: ThemeManager
+
+    func body(content: Content) -> some View {
+        content
+            .font(.footnote.weight(.semibold))
+            .padding(.horizontal, 14)
+            .padding(.vertical, 8)
+            .foregroundStyle(themeManager.selectedTheme.accentColor)
+            .background(
+                Capsule(style: .continuous)
+                    .fill(themeManager.selectedTheme.cardTint)
+            )
+            .overlay {
+                Capsule(style: .continuous)
+                    .stroke(themeManager.selectedTheme.accentColor.opacity(0.22), lineWidth: 1)
+            }
+    }
+}
+
+/// Compact red pill for inline destructive actions (Decline / Remove).
+struct ThemeCompactDestructiveActionModifier: ViewModifier {
+    @EnvironmentObject private var themeManager: ThemeManager
+
+    func body(content: Content) -> some View {
+        content
+            .font(.footnote.weight(.semibold))
+            .padding(.horizontal, 14)
+            .padding(.vertical, 8)
+            .foregroundStyle(themeManager.selectedTheme.destructiveColor)
+            .background(
+                Capsule(style: .continuous)
+                    .fill(themeManager.selectedTheme.destructiveColor.opacity(0.12))
+            )
+            .overlay {
+                Capsule(style: .continuous)
+                    .stroke(themeManager.selectedTheme.destructiveColor.opacity(0.30), lineWidth: 1)
+            }
+    }
+}
+
 extension View {
     func themeCard() -> some View {
         modifier(ThemeCardModifier())
@@ -84,5 +147,17 @@ extension View {
 
     func themeSecondaryAction() -> some View {
         modifier(ThemeSecondaryActionModifier())
+    }
+
+    func themeCompactSecondaryAction() -> some View {
+        modifier(ThemeCompactSecondaryActionModifier())
+    }
+
+    func themeDestructiveAction() -> some View {
+        modifier(ThemeDestructiveActionModifier())
+    }
+
+    func themeCompactDestructiveAction() -> some View {
+        modifier(ThemeCompactDestructiveActionModifier())
     }
 }

@@ -23,9 +23,15 @@ final class APIClient {
         path: String,
         method: String,
         body: Data? = nil,
+        queryItems: [URLQueryItem]? = nil,
         requiresAuthorization: Bool = false
     ) -> URLRequest {
-        let url = baseURL.appendingPathComponent(path)
+        var url = baseURL.appendingPathComponent(path)
+        if let queryItems, !queryItems.isEmpty,
+           var components = URLComponents(url: url, resolvingAgainstBaseURL: false) {
+            components.queryItems = queryItems
+            if let built = components.url { url = built }
+        }
         var request = URLRequest(url: url)
         request.httpMethod = method
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
@@ -34,6 +40,35 @@ final class APIClient {
             request.setValue("Bearer \(accessToken)", forHTTPHeaderField: "Authorization")
         }
 
+        request.httpBody = body
+        return request
+    }
+
+    /// Builds a multipart/form-data POST carrying a single file part.
+    func makeMultipartRequest(
+        path: String,
+        fileData: Data,
+        fileName: String,
+        fieldName: String = "file",
+        mimeType: String = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        requiresAuthorization: Bool = true
+    ) -> URLRequest {
+        let url = baseURL.appendingPathComponent(path)
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+
+        let boundary = "Boundary-\(UUID().uuidString)"
+        request.setValue("multipart/form-data; boundary=\(boundary)", forHTTPHeaderField: "Content-Type")
+        if requiresAuthorization, let accessToken {
+            request.setValue("Bearer \(accessToken)", forHTTPHeaderField: "Authorization")
+        }
+
+        var body = Data()
+        body.append("--\(boundary)\r\n".data(using: .utf8)!)
+        body.append("Content-Disposition: form-data; name=\"\(fieldName)\"; filename=\"\(fileName)\"\r\n".data(using: .utf8)!)
+        body.append("Content-Type: \(mimeType)\r\n\r\n".data(using: .utf8)!)
+        body.append(fileData)
+        body.append("\r\n--\(boundary)--\r\n".data(using: .utf8)!)
         request.httpBody = body
         return request
     }

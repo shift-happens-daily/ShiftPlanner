@@ -7,10 +7,10 @@ enum AuthScreen {
 struct RootView: View {
     @StateObject private var authViewModel = AuthViewModel(repository: APIAuthRepository())
     @EnvironmentObject private var themeManager: ThemeManager
-    
+
     @State private var authScreen: AuthScreen = .login
     @State private var didLoadSession = false
-    
+
     var body: some View {
         Group {
             if let user = authViewModel.currentUser {
@@ -21,16 +21,22 @@ struct RootView: View {
                         onLogout: {
                             await authViewModel.logout()
                         },
+                        onDeleteAccount: {
+                            await authViewModel.deleteAccount()
+                        },
                         onUserUpdated: { updatedUser in
                             authViewModel.updateCurrentUser(updatedUser)
                         }
                     )
-                    
+
                 case .employee:
                     EmployeeMainView(
                         user: user,
                         onLogout: {
                             await authViewModel.logout()
+                        },
+                        onDeleteAccount: {
+                            await authViewModel.deleteAccount()
                         },
                         onUserUpdated: { updatedUser in
                             authViewModel.updateCurrentUser(updatedUser)

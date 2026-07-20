@@ -17,7 +17,8 @@ struct MainView: View {
             Button(languageManager.text("Logout", "Выйти")) {
                 onLogout()
             }
-            .buttonStyle(.bordered)
+            .buttonStyle(.plain)
+            .themePrimaryAction()
         }
         .padding()
     }

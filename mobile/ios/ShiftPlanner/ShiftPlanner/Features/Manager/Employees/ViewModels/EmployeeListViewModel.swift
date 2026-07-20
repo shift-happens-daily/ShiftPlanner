@@ -6,11 +6,14 @@ final class EmployeeListViewModel: ObservableObject {
     @Published private(set) var employees: [ManagedEmployee] = []
     @Published private(set) var branches: [ManagedBranch] = []
     @Published private(set) var positions: [ManagedPosition] = []
+    @Published private(set) var managerRequests: [PendingManagerRequest] = []
+    @Published private(set) var employeeRequests: [PendingEmployeeRequest] = []
     @Published var errorMessage: String?
     @Published var statusMessage: String?
     @Published var isLoading = false
 
     private let repository: EmployeeManagementRepository
+    private var hasLoaded = false
 
     init(repository: EmployeeManagementRepository? = nil) {
         self.repository = repository ?? MockEmployeeManagementRepository()
@@ -20,16 +23,16 @@ final class EmployeeListViewModel: ObservableObject {
         repository.capabilities
     }
 
-    var hasEmployees: Bool {
-        !employees.isEmpty
-    }
-
-    var hasPositions: Bool {
-        !positions.isEmpty
-    }
+    var hasEmployees: Bool { !employees.isEmpty }
+    var hasPositions: Bool { !positions.isEmpty }
+    var hasPendingRequests: Bool { !managerRequests.isEmpty || !employeeRequests.isEmpty }
 
     func loadData() async {
-        guard employees.isEmpty, positions.isEmpty else { return }
+        // Runs exactly once per view model. A plain "is data empty" guard would
+        // let SwiftUI re-run this via .task for an empty company (no employees /
+        // positions), leaving isLoading stuck true → an endless spinner.
+        guard !hasLoaded else { return }
+        hasLoaded = true
 
         isLoading = true
         errorMessage = nil
@@ -46,6 +49,24 @@ final class EmployeeListViewModel: ObservableObject {
         }
 
         isLoading = false
+        await loadRequests()
+    }
+
+    /// Force a fresh load (e.g. pull-to-refresh or after an error).
+    func reload() async {
+        hasLoaded = false
+        await loadData()
+    }
+
+    func loadRequests() async {
+        managerRequests = (try? await repository.fetchManagerRequests()) ?? []
+        employeeRequests = (try? await repository.fetchEmployeeRequests()) ?? []
+    }
+
+    private func reloadEmployees() async {
+        if let fresh = try? await repository.fetchEmployees() {
+            employees = fresh
+        }
     }
 
     func addPosition(title: String, assigningTo employee: ManagedEmployee? = nil) async {
@@ -129,6 +150,145 @@ final class EmployeeListViewModel: ObservableObject {
             employees = try await repository.removeEmployee(employee, from: employees)
             errorMessage = nil
             statusMessage = localized("Employee removed.", "Сотрудник удален.")
+        } catch {
+            errorMessage = error.localizedDescription
+            statusMessage = nil
+        }
+    }
+
+    // MARK: - Linking
+
+    func linkEmployee(publicId: String, branchId: Int?, positionId: Int?) async {
+        let trimmed = publicId.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else {
+            errorMessage = localized("Enter the employee's ID.", "Введите ID сотрудника.")
+            statusMessage = nil
+            return
+        }
+        do {
+            _ = try await repository.linkEmployeeByPublicId(publicId: trimmed, branchId: branchId, positionId: positionId)
+            await reloadEmployees()
+            errorMessage = nil
+            statusMessage = localized("Employee linked to the company.", "Сотрудник привязан к компании.")
+        } catch {
+            errorMessage = error.localizedDescription
+            statusMessage = nil
+        }
+    }
+
+    // MARK: - Work limits
+
+    func employeeBranches(for employeeId: Int) async -> [EmployeeBranchAssignment]? {
+        do {
+            return try await repository.fetchEmployeeBranches(employeeId: employeeId)
+        } catch {
+            errorMessage = error.localizedDescription
+            return nil
+        }
+    }
+
+    func saveEmployeeBranches(employeeId: Int, branchIds: [Int], primaryBranchId: Int) async {
+        do {
+            let assignments = try await repository.replaceEmployeeBranches(
+                employeeId: employeeId,
+                branchIds: branchIds,
+                primaryBranchId: primaryBranchId
+            )
+            if let primary = assignments.first(where: { $0.isPrimary }) {
+                employees = employees.map { emp in
+                    guard emp.id == employeeId else { return emp }
+                    var copy = emp
+                    copy.branchId = primary.id
+                    copy.branchName = primary.name
+                    return copy
+                }
+            }
+            statusMessage = localized("Branches updated.", "Филиалы обновлены.")
+            errorMessage = nil
+        } catch {
+            errorMessage = error.localizedDescription
+            statusMessage = nil
+        }
+    }
+
+    func employeeCalendar(for employeeId: Int) async -> EmployeeCalendarSummary? {
+        do {
+            return try await repository.fetchEmployeeCalendar(employeeId: employeeId)
+        } catch {
+            errorMessage = error.localizedDescription
+            return nil
+        }
+    }
+
+    func workLimits(for employeeId: Int) async -> WorkLimits? {
+        do {
+            return try await repository.fetchWorkLimits(employeeId: employeeId)
+        } catch {
+            errorMessage = error.localizedDescription
+            return nil
+        }
+    }
+
+    func updateWorkLimits(employeeId: Int, maxHoursPerWeek: Int, maxHoursPerDay: Int) async {
+        do {
+            _ = try await repository.updateWorkLimits(
+                employeeId: employeeId,
+                maxHoursPerWeek: maxHoursPerWeek,
+                maxHoursPerDay: maxHoursPerDay
+            )
+            errorMessage = nil
+            statusMessage = localized("Work limits updated.", "Лимиты работы обновлены.")
+        } catch {
+            errorMessage = error.localizedDescription
+            statusMessage = nil
+        }
+    }
+
+    // MARK: - Join requests
+
+    func acceptManagerRequest(_ request: PendingManagerRequest) async {
+        do {
+            try await repository.acceptManagerRequest(id: request.id)
+            await loadRequests()
+            errorMessage = nil
+            statusMessage = localized("Request accepted.", "Заявка принята.")
+        } catch {
+            errorMessage = error.localizedDescription
+            statusMessage = nil
+        }
+    }
+
+    func declineManagerRequest(_ request: PendingManagerRequest) async {
+        do {
+            try await repository.declineManagerRequest(id: request.id)
+            await loadRequests()
+            errorMessage = nil
+            statusMessage = localized("Request declined.", "Заявка отклонена.")
+        } catch {
+            errorMessage = error.localizedDescription
+            statusMessage = nil
+        }
+    }
+
+    func acceptEmployeeRequest(_ request: PendingEmployeeRequest) async {
+        do {
+            try await repository.acceptEmployeeRequest(id: request.id)
+            await loadRequests()
+            await reloadEmployees()
+            errorMessage = nil
+            statusMessage = localized("Request accepted.", "Заявка принята.")
+        } catch {
+            errorMessage = error.localizedDescription
+            statusMessage = nil
+        }
+    }
+
+    func declineEmployeeRequest(_ request: PendingEmployeeRequest) async {
+        do {
+            try await repository.declineEmployeeRequest(id: request.id)
+            await loadRequests()
+            errorMessage = nil
+            statusMessage = localized("Request declined.", "Заявка отклонена.")
         } catch {
             errorMessage = error.localizedDescription
             statusMessage = nil
