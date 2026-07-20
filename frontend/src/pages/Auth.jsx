@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useAuth } from '../context/useAuth';
 import { requestPasswordResetRequest } from '../services/authService';
 import { getStoredLanguage } from '../services/language';
@@ -49,7 +49,11 @@ function EyeOffIcon() {
 }
 
 export default function Auth() {
-  const [authMode, setAuthMode] = useState('login');
+  const [searchParams] = useSearchParams();
+
+  const [authMode, setAuthMode] = useState(() => (
+    searchParams.get('mode') === 'register' ? 'register' : 'login'
+  ));
   const [role, setRole] = useState('employee');
   const [isCompact, setIsCompact] = useState(false);
   const [language, setLanguage] = useState(getStoredLanguage);
@@ -148,6 +152,18 @@ export default function Auth() {
   const isLogin = authMode === 'login';
   const isRegister = authMode === 'register';
   const isForgot = authMode === 'forgot';
+
+  useEffect(() => {
+    const requestedMode = searchParams.get('mode');
+
+    if (requestedMode === 'register') {
+      setAuthMode('register');
+    }
+
+    if (requestedMode === 'login') {
+      setAuthMode('login');
+    }
+  }, [searchParams]);
 
   useEffect(() => {
     const handleResize = () => {

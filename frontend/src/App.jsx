@@ -7,6 +7,7 @@ import ResetPassword from './pages/ResetPassword';
 import EmployeeDashboard from './pages/EmployeeDashboard';
 import ManagerDashboard from './pages/ManagerDashboard';
 import { getStoredLanguage } from './services/language';
+import WelcomePage from './pages/WelcomePage';
 
 function FullScreenLoader() {
   return <div style={styles.loader}>{getStoredLanguage() === 'en' ? 'Loading...' : 'Загрузка...'}</div>;
@@ -23,6 +24,11 @@ function AppRoutes() {
     <Routes>
       <Route
         path="/"
+        element={isAuthenticated ? <Navigate to="/dashboard" replace /> : <WelcomePage />}
+      />
+
+      <Route
+        path="/auth"
         element={isAuthenticated ? <Navigate to="/dashboard" replace /> : <Auth />}
       />
       <Route
