@@ -448,53 +448,6 @@ private fun EmployeeShell(
                         MyReportScreen(viewModel = myReportVm)
                     }
                 }
-                EmployeeTab.ABSENCES -> {
-                    if (!user.hasCompany || user.employeeId == null) {
-                        PlaceholderWithJoin(
-                            user = user,
-                            screenName = "Absences",
-                            onJoinClick = { showInviteSheet = true }
-                        )
-                    } else {
-                        val absencesVm: AbsencesViewModel = viewModel(
-                            key = "absences_${user.employeeId}",
-                            factory = remember(user.employeeId) {
-                                object : ViewModelProvider.Factory {
-                                    override fun <T : ViewModel> create(modelClass: Class<T>): T {
-                                        @Suppress("UNCHECKED_CAST")
-                                        return AbsencesViewModel(
-                                            appContainer.absenceRepository,
-                                            user.employeeId
-                                        ) as T
-                                    }
-                                }
-                            }
-                        )
-                        AbsencesScreen(viewModel = absencesVm)
-                    }
-                }
-                EmployeeTab.REPORT -> {
-                    if (!user.hasCompany) {
-                        PlaceholderWithJoin(
-                            user = user,
-                            screenName = "Report",
-                            onJoinClick = { showInviteSheet = true }
-                        )
-                    } else {
-                        val myReportVm: MyReportViewModel = viewModel(
-                            key = "my_report",
-                            factory = remember {
-                                object : ViewModelProvider.Factory {
-                                    override fun <T : ViewModel> create(modelClass: Class<T>): T {
-                                        @Suppress("UNCHECKED_CAST")
-                                        return MyReportViewModel(appContainer.reportsRepository) as T
-                                    }
-                                }
-                            }
-                        )
-                        MyReportScreen(viewModel = myReportVm)
-                    }
-                }
                 EmployeeTab.PROFILE -> ProfileScreen(
                     user = user,
                     reportsRepository = appContainer.reportsRepository,
