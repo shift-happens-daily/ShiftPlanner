@@ -20,6 +20,7 @@
 
   min-height: 100vh;
   background: var(--welcome-white);
+  overflow-x: hidden;
   color: var(--welcome-text);
   font-family:
     Inter,
@@ -1216,11 +1217,15 @@
 
 @media (max-width: 1180px) {
   .welcome-hero-grid {
-    grid-template-columns: 1fr;
+    grid-template-columns: minmax(0, 1fr);
+    gap: 56px;
   }
 
   .welcome-hero-copy {
+    max-width: 100%;
     max-width: 780px;
+    margin: 0 auto;
+    text-align: center;
   }
 
   .welcome-industry-list {
@@ -1228,7 +1233,9 @@
   }
 
   .welcome-preview {
+    max-width: 100%;
     max-width: 850px;
+    margin: 0 auto;
   }
 
   .welcome-feature-grid,
@@ -1351,6 +1358,63 @@
     height: 64px;
   }
 
+  .welcome-section-heading {
+    margin-bottom: 34px;
+  }
+
+  .welcome-section-heading > span {
+    font-size: 12px;
+  }
+
+  .welcome-section-heading h2 {
+    font-size: 32px;
+    line-height: 1.15;
+  }
+
+  .welcome-section-heading p {
+    font-size: 16px;
+    line-height: 1.55;
+  }
+
+  .welcome-header-inner {
+    gap: 10px;
+  }
+
+  .welcome-logo {
+    min-width: 0;
+    gap: 8px;
+  }
+
+  .welcome-logo-image,
+  .welcome-logo img {
+    width: 30px;
+    height: 30px;
+  }
+
+  .welcome-logo-text {
+    font-size: 21px;
+  }
+
+  .welcome-header-actions {
+    gap: 8px;
+  }
+
+  .welcome-language-button {
+    min-width: 44px;
+    height: 42px;
+    padding: 0 10px;
+  }
+
+  .welcome-menu-button {
+    width: 42px;
+    height: 42px;
+  }
+
+  .welcome-container {
+    width: calc(100% - 32px);
+    max-width: 100%;
+  }
+
   .welcome-language-button {
     height: 34px;
     min-width: 40px;
@@ -1377,11 +1441,15 @@
   }
 
   .welcome-industry-list {
-    grid-template-columns: 1fr;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 10px;
   }
 
   .welcome-industry-item {
-    min-height: 60px;
+    min-width: 0;
+    min-height: 66px;
+    padding: 12px;
+    font-size: 13px;
   }
 
   .welcome-nav {
@@ -1393,29 +1461,76 @@
   }
 
   .welcome-hero {
-    padding: 58px 0 66px;
+    padding: 48px 0 64px;
+  }
+
+  .welcome-hero-grid {
+    display: block;
+  }
+
+  .welcome-hero-copy {
+    width: 100%;
+    max-width: none;
+    margin: 0;
+    text-align: center;
+  }
+
+  .welcome-eyebrow {
+    max-width: 100%;
+    justify-content: center;
+    padding: 8px 12px;
+    font-size: 13px;
+    white-space: normal;
+    text-align: center;
   }
 
   .welcome-hero-copy h1 {
-    font-size: 43px;
+    width: 100%;
+    max-width: none;
+    margin: 28px auto 20px;
+    font-size: clamp(42px, 12vw, 58px);
+    line-height: 1.02;
+    letter-spacing: -0.045em;
+    overflow-wrap: anywhere;
+  }
+
+  .welcome-hero-copy h1 span {
+    display: block;
+    margin-top: 6px;
   }
 
   .welcome-hero-copy > p {
-    font-size: 17px;
-  }
-
-  .welcome-hero-actions,
-  .welcome-cta > div:last-child {
-    flex-direction: column;
-  }
-
-  .welcome-hero-actions .welcome-button,
-  .welcome-cta .welcome-button {
     width: 100%;
+    max-width: 520px;
+    margin: 0 auto;
+    font-size: 17px;
+    line-height: 1.55;
+    text-align: center;
+  }
+
+  .welcome-hero-actions {
+    width: 100%;
+    margin-top: 32px;
+    margin-left: 0;
+    flex-direction: column;
+    gap: 12px;
+  }
+
+  .welcome-hero-actions .welcome-button {
+    width: 100%;
+    min-height: 56px;
+    padding: 0 18px;
+  }
+
+  .welcome-hero-notes {
+    width: 100%;
+    margin: 20px 0 0;
+    justify-content: center;
+    font-size: 13px;
   }
 
   .welcome-preview {
-    padding: 0;
+    display: none;
   }
 
   .welcome-preview-window {
@@ -1455,8 +1570,9 @@
   .welcome-feature-grid,
   .welcome-problem-grid,
   .welcome-step-grid,
-  .welcome-step-grid {
-    grid-template-columns: 1fr;
+  .welcome-benefit-grid {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 16px;
   }
 
   .welcome-industry-list {
@@ -1499,5 +1615,18 @@
   .welcome-footer-bottom {
     flex-direction: column;
     gap: 10px;
+  }
+}
+@media (max-width: 390px) {
+  .welcome-industry-list {
+    grid-template-columns: 1fr;
+  }
+
+  .welcome-logo-text {
+    font-size: 19px;
+  }
+
+  .welcome-hero-copy h1 {
+    font-size: 40px;
   }
 }
