@@ -70,11 +70,43 @@ struct NotificationsView: View {
 
     private var timeOffSection: some View {
         Section(localized("Time off", "Отгулы")) {
-            emptyRow(localized(
-                "No time-off requests.",
-                "Нет запросов на отгулы."
-            ))
+            if viewModel.timeOff.isEmpty {
+                emptyRow(localized(
+                    "No time-off requests.",
+                    "Нет запросов на отгулы."
+                ))
+            } else {
+                ForEach(viewModel.timeOff) { item in
+                    timeOffRow(item)
+                }
+            }
         }
+    }
+
+    private func timeOffRow(_ item: ManagerTimeOffItem) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text(item.employeeName)
+                .font(.subheadline.weight(.semibold))
+                .foregroundStyle(themeManager.selectedTheme.primaryTextColor)
+
+            Text("\(item.absence.absenceType.title) · \(item.absence.startDate) – \(item.absence.endDate)")
+                .font(.footnote)
+                .foregroundStyle(themeManager.selectedTheme.secondaryTextColor)
+
+            Text(item.absence.status?.title ?? localized("Request sent", "Заявка отправлена"))
+                .font(.caption.weight(.medium))
+                .foregroundStyle(themeManager.selectedTheme.accentColor)
+
+            HStack(spacing: 10) {
+                Button(localized("Remove", "Удалить")) {
+                    Task { await viewModel.deleteTimeOff(item) }
+                }
+                .buttonStyle(.plain)
+                .themeCompactDestructiveAction()
+                Spacer()
+            }
+        }
+        .padding(.vertical, 4)
     }
 
     private var employeeSection: some View {

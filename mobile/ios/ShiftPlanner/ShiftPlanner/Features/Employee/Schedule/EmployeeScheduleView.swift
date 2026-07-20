@@ -5,8 +5,11 @@ struct EmployeeScheduleView: View {
     @EnvironmentObject private var languageManager: LanguageManager
     @StateObject private var viewModel: EmployeeScheduleViewModel
     @State private var exchangeShift: AppScheduledShift?
+    @State private var isShowingNotifications = false
+    private let user: AppUser
 
     init(user: AppUser) {
+        self.user = user
         _viewModel = StateObject(wrappedValue: EmployeeScheduleViewModel(user: user))
     }
 
@@ -46,6 +49,21 @@ struct EmployeeScheduleView: View {
             .background(themeManager.selectedTheme.screenBackground)
             .navigationTitle(languageManager.text("Schedule", "Расписание"))
             .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button {
+                        isShowingNotifications = true
+                    } label: {
+                        Image(systemName: "bell")
+                    }
+                    .accessibilityLabel(localized("Notifications", "Уведомления"))
+                }
+            }
+            .sheet(isPresented: $isShowingNotifications) {
+                EmployeeNotificationsView(companyName: user.company?.name)
+                    .environmentObject(themeManager)
+                    .environmentObject(languageManager)
+            }
             .task { await viewModel.loadScheduleIfNeeded() }
             .sheet(item: $exchangeShift) { shift in
                 RequestExchangeSheet(
